@@ -1,0 +1,455 @@
+@use '../../styles/variables' as *;
+@use '../../styles/ui' as *;
+
+.header {
+  padding: 14px 0;
+  border-bottom: 1px solid $border-subtle;
+  background: $bg-main;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.container {
+  width: 100%;
+  padding: 0 16px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: 20px;
+  row-gap: 10px;
+}
+
+@media (min-width: #{$bp-md}) {
+  .container { padding: 0 40px; }
+}
+
+@media (min-width: #{$bp-xl}) {
+  .container { padding: 0 72px; }
+}
+
+@media (min-width: 1680px) {
+  .container { padding: 0 104px; }
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: opacity 0.15s;
+}
+
+.logoIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, $accent-cyan 0%, #0070cc 100%);
+  box-shadow: 0 0 20px 0 rgba(0, 212, 255, 0.30);
+}
+
+.logoText {
+  display: grid;
+  color: $text-primary;
+  font-family: $font-family;
+  font-size: 15px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 22.5px;
+  letter-spacing: -0.3px;
+}
+
+.logoDescription {
+  color: $accent-cyan;
+  font-family: $font-mono;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 15px;
+  letter-spacing: 0.8px;
+}
+
+.separator {
+  margin: 0 8px;
+  display: flex;
+  width: 1px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.livePill {
+  position: relative;
+  display: flex;
+  padding: 6px 14px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 212, 255, 0.20);
+  background: rgba(0, 212, 255, 0.08);
+}
+
+.liveDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: $accent-cyan;
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.8);
+  flex-shrink: 0;
+  animation: livePulse 2s infinite;
+}
+
+@keyframes livePulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.liveLabel {
+  font-family: $font-mono;
+  color: $accent-cyan;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 18px;
+  letter-spacing: 0.48px;
+}
+
+.liveCount {
+  font-family: $font-mono;
+  color: $accent-cyan;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 21px;
+  letter-spacing: 0.48px;
+}
+
+.liveIcon {
+  color: $text-secondary;
+}
+
+.center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 260px;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.filtersWrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.filtersBtn {
+  @include btn;
+  color: $text-secondary;
+}
+
+.filtersBtnActive {
+  @include btn-selected;
+}
+
+.chevron {
+  transition: transform 0.2s;
+}
+
+.chevronUp {
+  transform: rotate(180deg);
+}
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 200;
+  min-width: 260px;
+  background: $bg-elevated;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+.dropdownHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dropdownTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.dropdownClear {
+  font-size: 12px;
+  font-weight: 500;
+  color: $accent-cyan;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+
+  &:hover {
+    opacity: 0.8;
+  }
+}
+
+.dropdownGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dropdownGroupLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: $text-secondary;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.dropdownOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dropdownOption {
+  font-size: 12px;
+  font-weight: 400;
+  color: $text-secondary;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: $radius-full;
+  padding: 4px 12px;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+
+  &:hover {
+    color: $text-primary;
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+}
+
+.dropdownOptionActive {
+  color: $accent-cyan;
+  border-color: rgba(0, 212, 255, 0.35);
+  background: rgba(0, 212, 255, 0.08);
+}
+
+.dropdownFooter {
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.dropdownApply {
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  background: $accent-cyan;
+  color: $bg-main;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+
+  &:hover {
+    opacity: 0.9;
+  }
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: $control-h;
+  padding: 0 12px;
+  border-radius: $radius-md;
+  border: 1px solid $border-control;
+  background: $bg-input;
+  max-width: 360px;
+  min-width: 0;
+  flex: 1;
+  transition: border-color 0.15s;
+  &:focus-within { border-color: $accent-blue; }
+}
+
+.searchIcon {
+  color: $text-secondary;
+  flex-shrink: 0;
+}
+
+.searchInput {
+  width: 100%;
+  font-size: 13px;
+  color: $text-primary;
+
+  &::placeholder {
+    color: $text-secondary;
+  }
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.timeBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.timeValue {
+  font-family: $font-mono;
+  font-size: 16px;
+  font-weight: 500;
+  color: $text-primary;
+  letter-spacing: 0.48px;
+}
+
+.timeDate {
+  font-family: $font-mono;
+  font-size: 10px;
+  font-weight: 400;
+  color: $text-muted;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.userInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.userName {
+  font-size: 13px;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.userRole {
+  font-size: 11px;
+  font-weight: 400;
+  color: $text-muted;
+}
+
+.avatar {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 2px solid rgba(167, 139, 250, 0.30);
+  background: linear-gradient(135deg, #1e3a5f 0%, $bg-main 100%);
+}
+
+.avatarStatus {
+  position: absolute;
+  bottom: 0;
+  right: 1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid $bg-main;
+  background: $color-green;
+}
+
+.logout {
+  @include icon-btn;
+  width: $control-h-sm;
+  height: $control-h-sm;
+  border-radius: 8px;
+  &:hover:not(:disabled) { color: $status-red; border-color: rgba($status-red, 0.5); }
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+.navLink {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: $text-secondary;
+  border-radius: 8px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.15s, background 0.15s;
+  &:hover { color: $text-primary; background: rgba(255, 255, 255, 0.04); }
+  @include focus-ring;
+}
+.navLinkActive {
+  color: $text-primary;
+  background: rgba($accent-blue, 0.16);
+}
+
+@media (max-width: 1679px) {
+  .timeBlock { display: none; }
+  .right > .separator { display: none; }
+}
+
+@media (max-width: 1599px) {
+  .center { order: 11; flex: 1 1 100%; justify-content: flex-start; }
+  .search { max-width: 480px; }
+}
+
+@media (max-width: 1279px) {
+  .userInfo { display: none; }
+  .logoDescription { display: none; }
+}
+
+@media (max-width: 1180px) {
+  .nav { order: 10; flex: 1 1 100%; margin: 0 -4px; }
+}
+
+@media (max-width: #{$bp-md}) {
+  .search { max-width: none; }
+}
+
+@media (max-width: #{$bp-sm}) {
+  .left > .separator { display: none; }
+  .logoText { display: none; }
+  .right { gap: 8px; }
+}

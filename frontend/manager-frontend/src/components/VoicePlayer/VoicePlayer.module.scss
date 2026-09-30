@@ -1,0 +1,117 @@
+@use '../../styles/variables' as *;
+@use '../../styles/ui' as *;
+
+.player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 260px;
+  max-width: 100%;
+  padding: 2px 0;
+}
+
+.play {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(135deg, $accent-cyan 0%, $accent-blue 100%);
+  box-shadow: 0 4px 14px rgba($accent-cyan, 0.25);
+  transition: transform 0.12s, box-shadow 0.15s;
+
+  svg {
+    fill: currentColor;
+  }
+
+  &:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 18px rgba($accent-cyan, 0.4);
+  }
+
+  &:active {
+    transform: scale(0.96);
+  }
+
+  @include focus-ring;
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wave {
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.bar,
+.barPlayed {
+  flex: 1;
+  min-width: 2px;
+  min-height: 3px;
+  border-radius: 2px;
+  transition: background 0.15s;
+}
+
+.bar {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.barPlayed {
+  background: $accent-cyan;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.time {
+  font-family: $font-mono;
+  font-size: 11px;
+  color: $text-secondary;
+  font-variant-numeric: tabular-nums;
+}
+
+.speed {
+  height: 18px;
+  padding: 0 6px;
+  font-family: $font-mono;
+  font-size: 10px;
+  color: $text-secondary;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid $border-subtle;
+  border-radius: $radius-full;
+  cursor: pointer;
+
+  &:hover {
+    color: $text-primary;
+    border-color: $border-control-hover;
+  }
+}
+
+.failed {
+  .play {
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: none;
+  }
+
+  .time {
+    color: $status-red;
+  }
+}

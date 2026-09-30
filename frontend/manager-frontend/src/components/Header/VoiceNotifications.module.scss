@@ -1,0 +1,10 @@
+.bell { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; min-height: 36px; }
+.banner { position: fixed; bottom: 20px; right: 20px; width: min(390px, calc(100vw - 32px)); box-sizing: border-box; z-index: 990; display: flex; gap: 12px; padding: 16px; border: 1px solid #346b68; border-radius: 12px; background: #142c2d; color: #ecf6f5; box-shadow: 0 8px 30px #0006; }
+.noticeText, .dismiss { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; }
+.noticeText { text-align: left; line-height: 1.55; overflow-wrap: anywhere; }
+.dismiss { align-self: flex-start; font-size: 22px; padding: 0 4px; }
+.list { display: flex; flex-direction: column; gap: 12px; }
+.item { padding: 14px; border: 1px solid #36445a; border-radius: 10px; background: #172130; p { margin: 0 0 8px; line-height: 1.6; overflow-wrap: anywhere; } time { font-size: 13px; color: #b2bfd3; } }
+.unread { border-color: #438e88; background: #142c2d; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+@media (max-width: 640px) { .banner { right: 16px; bottom: 16px; } }

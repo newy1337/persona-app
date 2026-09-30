@@ -1,0 +1,70 @@
+# Установка с нуля: `cp .env.example .env`, заполнить, `docker compose up -d --build`.
+# Панель и API отвечают на одном адресе, поэтому CORS не нужен.
+#
+# Состояние живёт в двух отдельных томах: `pgdata` — база, `data` — медиа,
+# загрузки и личности. Пересборка образов их не трогает; удалить их может только
+# явная команда `docker compose down -v` (обычный `down` тома сохраняет).
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nastya}
+      POSTGRES_USER: ${POSTGRES_USER:-nastya}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Наружу не выставляем: к базе ходит только бэкенд по внутренней сети.
+    expose:
+      - "5432"
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nastya} -d ${POSTGRES_DB:-nastya}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Адрес базы собирается здесь, чтобы в .env не дублировать пароль дважды.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nastya}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-nastya}?schema=public
+      # Медиа, загрузки и личности лежат в своём томе, а не в образе.
+      DATA_DIR: /app/data
+      PERSONAS_DIR: /app/data/personas
+    volumes:
+      - data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+    # Наружу не выставляем: снаружи к API ходят через панель.
+    expose:
+      - "8011"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8011/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      # Служба поднимает все Telegram-аккаунты на старте, это занимает до двух минут.
+      start_period: 180s
+      retries: 3
+
+  panel:
+    build: ./frontend/manager-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${PANEL_PORT:-8080}:80"
+
+volumes:
+  pgdata:
+  data:

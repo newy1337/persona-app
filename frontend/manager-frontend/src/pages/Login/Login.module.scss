@@ -1,0 +1,24 @@
+@use '../../styles/variables' as *;
+@use '../../styles/ui' as *;
+
+.wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 16px;
+  background: $bg-primary;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 340px;
+  max-width: 100%;
+  padding: 28px;
+  @include surface;
+}
+.title { margin: 0 0 6px; font-size: 18px; font-weight: 600; color: $text-primary; }
+.field { @include input; height: 40px; font-size: 14px; }
+.error { margin: 0; font-size: 13px; color: $status-red; }
+.submit { @include btn; @include btn-primary; height: 40px; font-size: 14px; }

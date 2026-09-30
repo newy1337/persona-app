@@ -1,0 +1,125 @@
+@use 'sass:color';
+@use './variables' as *;
+@use './ui' as *;
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 24px 0 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.title { margin: 0; font-size: 20px; font-weight: 600; color: $text-primary; }
+.hint { margin: 0 0 12px; font-size: 13px; color: $text-secondary; }
+.error { margin: 0 0 12px; font-size: 13px; color: $status-red; }
+.empty { font-size: 13px; color: $text-secondary; }
+
+.btn { @include btn; }
+.btnPrimary { @include btn; @include btn-primary; }
+.btnDanger { @include btn; @include btn-danger; }
+.btnGhost { @include btn; @include btn-ghost; }
+.btnSm { @include btn; @include btn-sm; }
+.btnSmDanger { @include btn; @include btn-sm; @include btn-danger; }
+.btnSmGhost { @include btn; @include btn-sm; @include btn-ghost; }
+.btnSelected { @include btn-selected; }
+
+.tableWrap {
+  overflow-x: auto;
+  @include surface;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  th, td { padding: 10px 14px; text-align: left; vertical-align: middle; white-space: nowrap; }
+  th { font-size: 11px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: $text-secondary; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+  td { border-bottom: 1px solid rgba(255, 255, 255, 0.04); color: $text-primary; }
+  tr:last-child td { border-bottom: none; }
+  th:last-child, td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    background: $bg-surface;
+    box-shadow: -12px 0 12px -12px rgba(0, 0, 0, 0.6);
+  }
+}
+.mono { font-family: $font-mono; font-size: 12px; }
+.muted { color: $text-secondary; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.table .actions { flex-wrap: nowrap; }
+
+.badge { @include badge($text-secondary); }
+.badgeActive { @include badge($color-green); }
+.badgePaused { @include badge($status-orange); }
+.badgeUnauthorized { @include badge($accent-cyan); }
+.badgeBanned { @include badge($status-red); }
+.badgeRetired { @include badge($text-secondary); }
+.badgeAdmin { @include badge($color-purple); }
+.badgeManager { @include badge($accent-blue); }
+.badgeVoice { @include badge($status-orange); }
+
+.dot { width: 7px; height: 7px; border-radius: 50%; background: $text-muted; }
+.dotOn { composes: dot; background: $color-green; box-shadow: 0 0 6px rgba($color-green, 0.6); }
+
+.form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+  @include surface;
+}
+.formFull { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; }
+.label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: $text-secondary; }
+.field, .select { @include input; }
+textarea.field { @include textarea; }
+.select { padding-right: 6px; }
+.select option { background: $bg-surface; }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: $text-primary; cursor: pointer; input { accent-color: $accent-blue; } }
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+.modal {
+  width: 400px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  max-width: calc(100vw - 32px);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: $bg-card;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: $radius-lg;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.modalTitle { margin: 0; font-size: 16px; font-weight: 600; color: $text-primary; }
+.modalText { margin: 0; font-size: 13px; line-height: 1.5; color: $text-secondary; }
+.modalActions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.steps { display: flex; gap: 6px; font-size: 11px; color: $text-muted; }
+.step { padding: 2px 8px; border-radius: $radius-full; border: 1px solid rgba(255, 255, 255, 0.08); }
+.stepActive { composes: step; color: $accent-cyan; border-color: rgba($accent-cyan, 0.4); }
+.stepDone { composes: step; color: $color-green; border-color: rgba($color-green, 0.4); }
+.ok { color: $color-green; }
+
+
+/* Restored panel readability and responsive controls. */
+.btn, .btnPrimary, .btnDanger, .btnGhost, .btnSm, .btnSmDanger, .btnSmGhost { min-height:34px; height:auto; font-size:13px; line-height:1.4; padding-top:6px; padding-bottom:6px; }
+.label, .hint, .muted { color:#b3c1d8; font-size:13px; line-height:1.5; }
+.table th { color:#b3c1d8; font-size:12px; }
+.field::placeholder { color:#98a9c4; opacity:1; }
+.btnDanger, .btnSmDanger { color:#ff9fa8; }
+.head { min-width:0; flex-wrap:wrap; gap:12px; }
+.head > input { min-width:0!important; max-width:100%; }
+.actions { min-width:0; max-width:100%; flex-wrap:wrap; }
+.actions button { max-width:100%; white-space:normal; }
+@media(max-width:600px) { .btn, .btnPrimary, .btnDanger, .btnGhost, .btnSm, .btnSmDanger, .btnSmGhost { min-height:40px; } }

@@ -1,0 +1,655 @@
+// Physical table and column names follow the Chutter operator DB so the manager
+// read-model can stay a near-verbatim SQL port. Telegram ids do not fit a
+// 32-bit Int, hence BigInt on every chat_id / telegram_user_id.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Panel users, roles, audit
+// ---------------------------------------------------------------------------
+
+model DashboardUser {
+  id           Int     @id @default(autoincrement())
+  username     String  @unique
+  passwordHash String  @map("password_hash")
+  passwordEncrypted String? @map("password_encrypted")
+  regionCode   String? @map("region_code")
+  role         String  @default("manager")
+  lastLogin    Int?    @map("last_login")
+  createdAt    Int     @map("created_at")
+
+  voicerId Int? @map("voicer_id")
+  voicer DashboardUser? @relation("ManagerVoicer", fields: [voicerId], references: [id], onDelete: SetNull)
+  voicedManagers DashboardUser[] @relation("ManagerVoicer")
+  voiceProfile VoicerProfile?
+  requestedVoiceTasks VoiceTask[] @relation("TaskManager")
+  assignedVoiceTasks VoiceTask[] @relation("TaskVoicer")
+
+  accounts ManagerAccount[]
+  audit    DashboardAuditLog[]
+
+  @@map("dashboard_users")
+}
+
+/// Which Telegram accounts a manager owns. UNIQUE on the account: one account
+/// belongs to exactly one manager; reassignment moves it.
+model ManagerAccount {
+  userId      Int @map("user_id")
+  tgAccountId Int @unique @map("tg_account_id")
+
+  user    DashboardUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account TgAccount     @relation(fields: [tgAccountId], references: [id], onDelete: Cascade)
+
+  @@id([userId, tgAccountId])
+  @@index([userId], map: "idx_manager_accounts_user")
+  @@map("manager_accounts")
+}
+
+model DashboardAuditLog {
+  id          Int     @id @default(autoincrement())
+  ts          Int
+  userId      Int?    @map("user_id")
+  action      String
+  resource    String?
+  payloadJson String? @map("payload_json")
+  result      String  @default("success")
+  error       String?
+
+  user DashboardUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([ts], map: "idx_dashboard_audit_ts")
+  @@map("dashboard_audit_log")
+}
+
+// ---------------------------------------------------------------------------
+// Telegram client accounts (MTProto userbots)
+// ---------------------------------------------------------------------------
+
+/// Личность: то, что раньше лежало в data/personas/<slug>/*.json, плюс тексты
+/// промптов. Документы хранятся как есть, включая авторские заметки «_...»:
+/// движок читает их той же формой, редактор показывает их подсказками.
+/// Одна личность может стоять на нескольких аккаунтах (tg_accounts.persona_id).
+model Persona {
+  id         Int     @id @default(autoincrement())
+  /// латинский идентификатор: он же persona_id аккаунта
+  slug       String  @unique
+  /// имя в разговоре: подставляется в промпт вместо прежней константы
+  name       String
+  isDefault  Boolean @default(false) @map("is_default")
+  enabled    Boolean @default(true)
+  /// persona.json: карточка, биография, манера, примеры
+  persona    String  @default("{}")
+  /// goals.json: этапы знакомства, слоты, темп
+  goals      String  @default("{}")
+  /// storylines.json: сюжетные линии и прошлые эпизоды
+  storylines String  @default("{}")
+  /// day.json: пул состояний дня
+  dayConfig  String  @default("{}") @map("day_config")
+  /// beats.json: рубрика сценария; пусто — выводится из storylines
+  beats      String? 
+  /// тексты промптов; пустые ключи берутся из кода
+  prompts    String  @default("{}")
+  /// ритм: задержки ответов, утреннее сообщение и прощание (config/rhythm.ts)
+  rhythm     String  @default("{}")
+  /// переменные: {site} в любом документе → значение отсюда (config/variables.ts)
+  variables  String  @default("{}")
+  /// заметки оператора, модели не видны
+  notes      String?
+  createdAt  Int     @map("created_at")
+  updatedAt  Int     @map("updated_at")
+
+  versions PersonaVersion[]
+
+  @@map("personas")
+}
+
+/// История секций: при сохранении прежний документ откладывается сюда, и
+/// откатиться на несколько шагов назад можно всегда.
+model PersonaVersion {
+  id        Int     @id @default(autoincrement())
+  personaId Int     @map("persona_id")
+  /// persona | goals | storylines | dayConfig | beats | prompts
+  section   String
+  data      String
+  savedBy   String? @map("saved_by")
+  note      String?
+  createdAt Int     @map("created_at")
+
+  personaRow Persona @relation(fields: [personaId], references: [id], onDelete: Cascade)
+
+  @@index([personaId, section, id], map: "idx_persona_versions")
+  @@map("persona_versions")
+}
+
+model TgAccount {
+  id                   Int     @id @default(autoincrement())
+  phoneE164            String  @unique @map("phone_e164")
+  personaId            String  @map("persona_id")
+  /// GramJS StringSession, encrypted at rest (AES-256-GCM, key from env).
+  sessionEncrypted     String? @map("session_encrypted")
+  proxyConfigEncrypted String? @map("proxy_config_encrypted")
+  status               String  @default("unauthorized")
+  addedAt              Int     @map("added_at")
+  lastLoginAt          Int?    @map("last_login_at")
+  lastHeartbeatAt      Int?    @map("last_heartbeat_at")
+  bannedAt             Int?    @map("banned_at")
+  banReason            String? @map("ban_reason")
+  metaJson             String? @map("meta_json")
+  needsProxySetup      Int     @default(0) @map("needs_proxy_setup")
+  routingWeight        Float   @default(1.0) @map("routing_weight")
+  dailyMsgQuota        Int?    @map("daily_msg_quota")
+  purpose              String  @default("prod")
+  telegramUserId       BigInt? @map("telegram_user_id")
+  username             String?
+  /// имя аккаунта в Telegram (имя и фамилия профиля) — подпись во вкладке «Аккаунты»
+  displayName          String? @map("display_name")
+  /// Telegram ограничил аккаунт (flood / лимит импорта контактов): до этого времени новых лидов не берёт
+  floodUntil           Int?    @map("flood_until")
+  /// что именно ограничено — словами, для панели
+  floodReason          String? @map("flood_reason")
+
+  manager  ManagerAccount?
+  contacts Contact[]
+
+  @@index([personaId, status], map: "idx_tg_persona_status")
+  @@map("tg_accounts")
+}
+
+// ---------------------------------------------------------------------------
+// Conversations
+// ---------------------------------------------------------------------------
+
+/// One row per client chat. Pause is typed: state + reason + actor + until.
+model Contact {
+  chatId      BigInt  @id @map("chat_id")
+  accountId   Int?    @map("account_id")
+  pauseState  String  @default("active") @map("pause_state")
+  pauseReason String? @map("pause_reason")
+  pauseActor  String? @map("pause_actor")
+  pausedUntil Int?    @map("paused_until")
+  pausedTs    Int?    @map("paused_ts")
+  createdAt   Int     @default(0) @map("created_at")
+  /// собеседник прочитал наши сообщения до этого tg id включительно (галочки в Telegram)
+  readOutboxMaxId Int? @map("read_outbox_max_id")
+  /// наш аккаунт прочитал сообщения собеседника до этого tg id включительно
+  readInboxMaxId  Int? @map("read_inbox_max_id")
+  /// статус собеседника в Telegram: online | offline | recently | last_week | last_month | hidden
+  clientStatus    String? @map("client_status")
+  /// online — до какого времени в сети; offline — когда был в сети последний раз
+  clientStatusAt  Int?    @map("client_status_at")
+  /// когда статус узнали
+  clientStatusSeenAt Int? @map("client_status_seen_at")
+  /// собеседник заблокировал наш аккаунт (Telegram ответил USER_IS_BLOCKED); снимается, когда он снова пишет
+  blockedByClientAt Int? @map("blocked_by_client_at")
+  /// когда переписку последний раз открывали в панели: новые сообщения клиента — те, что пришли после
+  managerSeenTs   Int?    @map("manager_seen_ts")
+  /// собеседник почистил переписку (удалил почти всё разом); снимается, когда он снова пишет
+  clearedByClientAt Int?  @map("cleared_by_client_at")
+  /// заметка менеджера об этом диалоге: только для людей, модели не показывается
+  note            String? @map("note")
+  /// кто и когда правил заметку последним — подпись под ней в панели
+  noteBy          String? @map("note_by")
+  noteAt          Int?    @map("note_at")
+
+  account TgAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([accountId], map: "idx_contacts_account")
+  @@map("contacts")
+}
+
+model Message {
+  id              Int     @id @default(autoincrement())
+  chatId          BigInt  @map("chat_id")
+  ts              Int
+  role            String
+  text            String
+  /// Who wrote the turn: `llm`, `operator:<id>`, `reengage`, `initiative`.
+  author          String  @default("llm")
+  sourceMessageId Int?    @map("source_message_id")
+  sourceModality  String  @default("text") @map("source_modality")
+  /// id сообщения в Telegram: у входящих совпадает с source_message_id, у
+  /// исходящих приходит от Telegram — по нему отвечают и ставят реакции
+  tgMsgId         Int?    @map("tg_msg_id")
+  /// photo | video | animation | voice | video_note | document | sticker — пусто у текста
+  mediaKind       String? @map("media_kind")
+  /// файл вложения: путь в uploads/, ссылка или file_id стикера
+  filePath        String? @map("file_path")
+  /// tg id сообщения, на которое это ответ
+  replyTo         Int?    @map("reply_to")
+  /// эмодзи, которым ответили НА это сообщение (наша реакция на реплику клиента)
+  reaction        String?
+  /// собеседник удалил сообщение в Telegram: бот его не читает, панель показывает зачёркнутым
+  deletedAt       Int?    @map("deleted_at")
+  /// сообщение изменили в Telegram (мы из панели или собеседник у себя) — когда
+  editedAt        Int?    @map("edited_at")
+  processedAt     Int?    @map("processed_at")
+  inboundPayload  String? @map("inbound_payload")
+
+  @@index([chatId, id], map: "idx_messages_chat")
+  /// Лента чата читается в порядке времени: без индекса это сортировка всей выборки.
+  @@index([chatId, ts, id], map: "idx_messages_chat_ts")
+  @@index([processedAt, role], map: "idx_messages_unprocessed")
+  @@unique([chatId, sourceMessageId], map: "uq_messages_chat_source_message")
+  @@map("messages")
+}
+
+/// Lead card and panel-facing facts as one JSON blob per chat (SSOT for
+/// funnel_stage, name/age/city, hidden flag and the brain's public mirror).
+model LeadFacts {
+  chatId BigInt @id @map("chat_id")
+  facts  String @default("{}")
+
+  @@map("pinned_facts")
+}
+
+/// The brain's private conversation state (character, memories, judge).
+model BrainState {
+  chatId    BigInt @id @map("chat_id")
+  stateJson String @map("state_json")
+  updatedAt Int    @map("updated_at")
+
+  @@map("brain_state")
+}
+
+/// Отложенный ответ бота: входящие ждут своей очереди по ритму личности.
+/// Одна строка на чат — всё, что он написал за время ожидания, уходит в один ответ.
+/// Живёт в базе, а не в памяти процесса: рестарт не должен терять ответы.
+model ReplySchedule {
+  /// Prepared reply and acknowledged part count; never exposed as conversation memory.
+  delivery String?
+  chatId    BigInt @id @map("chat_id")
+  accountId Int    @map("account_id")
+  /// когда отвечать, unix-секунды
+  dueAt     Int    @map("due_at")
+  /// срок, назначенный первым сообщением: поток сообщений сдвигает dueAt, но не дальше baseDueAt + предел
+  baseDueAt Int    @default(0) @map("base_due_at")
+  /// когда она «открыла» чат: прочитала и начала слушать голосовые; пусто — ещё не открывала
+  openedAt  Int?   @map("opened_at")
+  /// warmup | normal | after_silence | off — почему столько ждать (для панели)
+  reason    String
+  /// входящие, накопленные за ожидание: JSON-массив InboundTurn + подписанный текст
+  turns     String @default("[]")
+  createdAt Int    @map("created_at")
+
+  @@index([dueAt], map: "idx_reply_schedule_due")
+  @@map("reply_schedule")
+}
+
+// ---------------------------------------------------------------------------
+// Operator queues (durable, atomic claim)
+// ---------------------------------------------------------------------------
+
+model PendingReply {
+  id        Int    @id @default(autoincrement())
+  chatId    BigInt @map("chat_id")
+  /// текст сообщения или подпись к вложению; у реакции — сам эмодзи
+  text      String
+  source    String @default("manual")
+  accountId Int?   @map("account_id")
+  claimedAt Int?   @map("claimed_at")
+  retryAt   Int?   @map("retry_at")
+  delivery  String?
+  status    String @default("pending")
+  /// text | photo | video | animation | voice | video_note | document | sticker | reaction
+  kind      String @default("text")
+  /// вложение: путь в uploads/, https-ссылка или file_id стикера
+  filePath  String? @map("file_path")
+  /// tg id сообщения, на которое отвечаем (у реакции — на которое ставим)
+  replyTo   Int?    @map("reply_to")
+  createdTs Int    @map("created_ts")
+  sentTs    Int?   @map("sent_ts")
+  error     String?
+  voicerDelivery VoiceDelivery?
+
+  @@index([chatId, status], map: "idx_pending_replies_status")
+  @@index([status, retryAt], map: "idx_pending_replies_retry")
+  @@map("pending_replies")
+}
+
+model PendingAdminAction {
+  id          Int     @id @default(autoincrement())
+  chatId      BigInt  @map("chat_id")
+  accountId   Int?    @map("account_id")
+  action      String
+  payload     String  @default("")
+  status      String  @default("pending")
+  createdTs   Int     @map("created_ts")
+  processedTs Int?    @map("processed_ts")
+  error       String?
+
+  @@index([chatId, status], map: "idx_admin_actions_status")
+  @@map("pending_admin_actions")
+}
+
+/// Voice requests live here (kind='voice'), as in Chutter.
+// ---------------------------------------------------------------------------
+// Scenario beats, lead handoff, funnel events
+// ---------------------------------------------------------------------------
+
+model BeatDelivery {
+  personaId String  @map("persona_id")
+  chatId    BigInt  @map("chat_id")
+  beat      String
+  status    String  @default("delivered")
+  turn      Int?
+  ts        Float
+  by        String
+  src       String
+  actor     String?
+  evidence  String  @default("")
+  rubricSha String  @default("") @map("rubric_sha")
+  reason    String  @default("")
+
+  @@id([personaId, chatId, beat])
+  @@index([chatId], map: "idx_beat_delivery_chat")
+  @@map("beat_delivery")
+}
+
+model LeadHandoff {
+  personaId          String  @map("persona_id")
+  chatId             BigInt  @map("chat_id")
+  state              String
+  holdArmedAt        Int?    @map("hold_armed_at")
+  phone              String?
+  analystAssignedAt  Int?    @map("analyst_assigned_at")
+  contactDeliveredAt Int?    @map("contact_delivered_at")
+  closedAt           Int?    @map("closed_at")
+  abortReason        String? @map("abort_reason")
+  createdAt          Int     @map("created_at")
+  updatedAt          Int     @map("updated_at")
+
+  @@id([personaId, chatId])
+  @@index([personaId, state], map: "idx_lead_handoff_state")
+  @@map("lead_handoff")
+}
+
+model FunnelEvent {
+  id        Int     @id @default(autoincrement())
+  personaId String  @map("persona_id")
+  chatId    BigInt? @map("chat_id")
+  eventType String  @map("event_type")
+  eventMeta String? @map("event_meta")
+  ts        Int
+
+  @@index([personaId, ts(sort: Desc)], map: "idx_funnel_persona_ts")
+  @@index([chatId, ts(sort: Desc)], map: "idx_funnel_chat_ts")
+  @@map("funnel_events")
+}
+
+// ---------------------------------------------------------------------------
+// Media ledgers
+// ---------------------------------------------------------------------------
+
+/// Outbound media the persona sent: `[media:<kind>]` placeholders in messages
+/// resolve to a file by nearest `shown_ts`.
+model MediaShown {
+  chatId  BigInt @map("chat_id")
+  path    String
+  shownTs Float  @map("shown_ts")
+  kind    String @default("photo")
+
+  @@id([chatId, path])
+  @@map("media_shown")
+}
+
+/// Inbound media saved from the client (photo/voice/video), keyed by message ts.
+model InboundMedia {
+  id      Int    @id @default(autoincrement())
+  chatId  BigInt @map("chat_id")
+  msgTs   Float  @map("msg_ts")
+  kind    String
+  path    String
+  savedAt Float  @map("saved_at")
+
+  @@index([chatId, msgTs], map: "idx_inbound_media_chat")
+  @@map("inbound_media")
+}
+
+// ---------------------------------------------------------------------------
+// Lead registry (profile fallbacks for the card) and settings
+// ---------------------------------------------------------------------------
+
+/// Lead pool for outreach: a phone number or a @username the persona will write to first.
+/// Exactly one of phone_e164 / username_key is set (enforced by the service).
+/// status: pending → queued → assigned (resolved to a Telegram user) → contacted → replied; dead = unreachable.
+model PhoneNumber {
+  id                Int     @id @default(autoincrement())
+  phoneE164         String? @unique @map("phone_e164")
+  /// Lower-cased username without '@' — the lookup key when the lead came in as @username.
+  usernameKey       String? @unique @map("username_key")
+  firstName         String? @map("first_name")
+  city              String?
+  age               Int?
+  /// сайт знакомств, где лайкнули друг друга: `{site}` в текстах этого диалога
+  site              String?
+  gender            String?
+  telegramUserId    BigInt? @map("telegram_user_id")
+  telegramUsername  String? @map("telegram_username")
+  sourceType        String  @default("manual") @map("source_type")
+  insertedAt        Int     @map("inserted_at")
+  status            String  @default("pending")
+  assignedAccountId Int?    @map("assigned_account_id")
+  /// явный выбор при добавлении; null — прежний автоматический подбор
+  preferredAccountId Int?   @map("preferred_account_id")
+  assignedAt        Int?    @map("assigned_at")
+  firstContactAt    Int?    @map("first_contact_at")
+  attempts          Int     @default(0)
+  nextAttemptAt     Int?    @map("next_attempt_at")
+  lastError         String? @map("last_error")
+  notes             String?
+  /// не брать этим аккаунтом: на нём был флуд или менеджер нажал «написать с другого»
+  avoidAccountId    Int?    @map("avoid_account_id")
+  /// какой личностью писать (slug): рассылка берёт только аккаунты этой личности; пусто — любой
+  personaId         String? @map("persona_id")
+  /// кто из пользователей панели добавил лида: менеджер видит только своих, рассылка пишет им только с его аккаунтов
+  ownerUserId       Int?    @map("owner_user_id")
+
+  @@index([telegramUserId], map: "idx_phone_telegram_user")
+  @@index([ownerUserId], map: "idx_phone_owner")
+  @@index([status, nextAttemptAt], map: "idx_phone_status_next")
+  @@index([assignedAccountId, firstContactAt], map: "idx_phone_account_contact")
+  @@map("phone_numbers")
+}
+
+model AppSettings {
+  id                 Int    @id @default(1)
+  initiativeEnabled  Int    @default(1) @map("initiative_enabled")
+  proactiveMaxPerDay Int    @default(1) @map("proactive_max_per_day")
+  quietStart         String @default("23:00") @map("quiet_start")
+  quietEnd           String @default("08:00") @map("quiet_end")
+  customPrompt       String @default("") @map("custom_prompt")
+  updatedAt          Int    @map("updated_at")
+
+  @@map("app_settings")
+}
+
+model ModelUsage {
+  id                       Int    @id @default(autoincrement())
+  createdAt                Int    @map("created_at")
+  chatId                   BigInt? @map("chat_id")
+  /// slug личности, которой шёл вызов
+  personaId                String? @map("persona_id")
+  provider                 String
+  model                    String
+  stage                    String
+  /// весь промпт: свежие токены + чтение кеша + запись кеша
+  inputTokens              Int?   @map("input_tokens")
+  outputTokens             Int?   @map("output_tokens")
+  /// прочитано из кеша (дешёвые токены)
+  cachedTokens             Int?   @map("cached_tokens")
+  /// записано в кеш (дороже входа) — без него цену задним числом не пересчитать
+  cacheWriteTokens         Int?   @map("cache_write_tokens")
+  /// из них — в часовой кеш: запись ×2 от входа вместо ×1,25 (пятиминутный); null — старые строки, всё пятиминутное
+  cacheWrite1hTokens       Int?   @map("cache_write_1h_tokens")
+  providerEstimatedCostUsd Float? @map("provider_estimated_cost_usd")
+  elapsedMs                Int?   @map("elapsed_ms")
+
+  @@index([createdAt], map: "idx_model_usage_created")
+  @@map("model_usage")
+}
+
+/// Настройки панели ключ → JSON: таблица цен и прочее на вырост.
+model Setting {
+  key       String @id
+  value     String @default("{}")
+  updatedAt Int    @map("updated_at")
+
+  @@map("settings")
+}
+
+
+// Human voice production: assignments are snapshotted at task creation.
+model VoicerProfile {
+  userId Int @id @map("user_id")
+  telegramId BigInt? @unique @map("telegram_id")
+  telegramUsername String? @map("telegram_username")
+  linkHash String? @unique @map("link_hash")
+  linkExpiresAt Int? @map("link_expires_at")
+  user DashboardUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@map("voicer_profiles")
+}
+
+model VoiceTask {
+  source String @default("manager")
+  autoKey String? @unique @map("auto_key")
+  autoReplyId String? @map("auto_reply_id")
+  autoContextId Int? @map("auto_context_id")
+  autoContextHash String? @map("auto_context_hash")
+  autoExpiresAt Int? @map("auto_expires_at")
+  autoPersonaUpdatedAt Int? @map("auto_persona_updated_at")
+  id Int @id @default(autoincrement())
+  managerId Int? @map("manager_id")
+  voicerId Int? @map("voicer_id")
+  managerName String @map("manager_name")
+  voicerName String @map("voicer_name")
+  manager DashboardUser? @relation("TaskManager", fields: [managerId], references: [id], onDelete: SetNull)
+  voicer DashboardUser? @relation("TaskVoicer", fields: [voicerId], references: [id], onDelete: SetNull)
+  kind String
+  voiceMode String @default("library") @map("voice_mode")
+  sendAccountId Int? @map("send_account_id")
+  sendRequestedById Int? @map("send_requested_by_id")
+  title String
+  script String @default("")
+  emotion String @default("")
+  tempo String @default("")
+  instructions String @default("")
+  contactLabel String @map("contact_label")
+  contactRef String @default("") @map("contact_ref")
+  chatId BigInt? @map("chat_id")
+  /// An admin may share an unassigned account's chat through this task only.
+  /// These snapshots never assign the Telegram account to the task manager.
+  chatGrantAccountId Int? @map("chat_grant_account_id")
+  chatGrantedById Int? @map("chat_granted_by_id")
+  personaSlug String @map("persona_slug")
+  personaName String @map("persona_name")
+  biography String
+  status String @default("queued")
+  priority Int @default(0)
+  revision Int @default(1)
+  feedback String @default("")
+  outcome String @default("")
+  createdAt Int @map("created_at")
+  updatedAt Int @map("updated_at")
+  dueAt Int? @map("due_at")
+  notifyVersion Int @default(1) @map("notify_version")
+  notifiedVersion Int @default(0) @map("notified_version")
+  notifyAfter Int @default(0) @map("notify_after")
+  notifyError String? @map("notify_error")
+  botMessageId Int? @map("bot_message_id")
+  botChatId BigInt? @map("bot_chat_id")
+  calls VoiceCall[]
+  recordings VoiceRecording[]
+  deliveries VoiceDelivery[]
+  notices VoiceNotice[]
+  @@index([managerId, status, id])
+  @@index([voicerId, status, priority, id])
+  @@index([source, status, autoExpiresAt])
+  @@map("voice_tasks")
+}
+
+model VoiceRecording {
+  id Int @id @default(autoincrement())
+  taskId Int @map("task_id")
+  revision Int
+  title String
+  filePath String @map("file_path")
+  duration Int
+  createdAt Int @map("created_at")
+  telegramMessageId Int @map("telegram_message_id")
+  telegramChatId BigInt @map("telegram_chat_id")
+  task VoiceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  deliveries VoiceDelivery[]
+  @@unique([taskId, revision])
+  @@unique([telegramChatId, telegramMessageId])
+  @@map("voice_recordings")
+}
+
+model VoiceNotice {
+  id Int @id @default(autoincrement())
+  taskId Int @map("task_id")
+  userId Int @map("user_id")
+  eventKey String @map("event_key")
+  text String
+  createdAt Int @map("created_at")
+  readAt Int? @map("read_at")
+  task VoiceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  @@unique([userId, eventKey])
+  @@index([userId, readAt, id])
+  @@map("voice_notices")
+}
+
+model VoiceDelivery {
+  notifiedStatus String @default("") @map("notified_status")
+  id Int @id @default(autoincrement())
+  taskId Int @map("task_id")
+  recordingId Int @map("recording_id")
+  requestKey String @unique @map("request_key")
+  mode String
+  requestedById Int @map("requested_by_id")
+  chatId BigInt @map("chat_id")
+  accountId Int @map("account_id")
+  personaSlug String @map("persona_slug")
+  historyText String @map("history_text")
+  createdAt Int @map("created_at")
+  pendingReplyId Int? @unique @map("pending_reply_id")
+  task VoiceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  recording VoiceRecording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  pendingReply PendingReply? @relation(fields: [pendingReplyId], references: [id], onDelete: SetNull)
+  @@index([taskId, id])
+  @@map("voice_deliveries")
+}
+
+model VoicerBotState {
+  id Int @id @default(1)
+  nextUpdateId Int @default(0) @map("next_update_id")
+  @@map("voicer_bot_state")
+}
+
+/// A browser call belongs to one assigned task, never an arbitrary client-supplied peer.
+model VoiceCall {
+  id String @id
+  taskId Int @map("task_id")
+  task VoiceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  revision Int
+  accountId Int @map("account_id")
+  chatId BigInt @map("chat_id")
+  voicerId Int @map("voicer_id")
+  status String @default("connecting")
+  reason String @default("")
+  createdAt Int @map("created_at")
+  connectedAt Int? @map("connected_at")
+  endedAt Int? @map("ended_at")
+  finalizedAt Int? @map("finalized_at")
+  resumeStatus String @default("pending") @map("resume_status")
+  followupStatus String @default("none") @map("followup_status")
+  note String @default("")
+  @@index([taskId, createdAt])
+  @@map("voice_calls")
+}

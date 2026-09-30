@@ -1,0 +1,6 @@
+# Единые переводы строк в репозитории; в рабочей копии — как принято в системе.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.svg text
+*.sh text eol=lf

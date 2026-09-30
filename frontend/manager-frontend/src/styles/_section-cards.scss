@@ -1,0 +1,142 @@
+@use './variables' as *;
+@use './ui' as *;
+
+@mixin section-cards($color, $cards-pb: 0) {
+  .section {
+    padding: 28px 0 0;
+  }
+
+  .header {
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .titleRow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .accent {
+    width: 3px;
+    height: 20px;
+    border-radius: 2px;
+    background: $color;
+    flex-shrink: 0;
+  }
+
+  .title {
+    font-size: 15px;
+    font-weight: 700;
+    color: $text-primary;
+  }
+
+  .badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: $color;
+    border: 1px solid rgba($color, 0.4);
+    border-radius: $radius-full;
+    padding: 3px 10px;
+    letter-spacing: 0.3px;
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+    @if $cards-pb != 0 {
+      padding-bottom: $cards-pb;
+    }
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .showWrap {
+    position: relative;
+  }
+
+  .showSelect {
+    @include btn;
+    color: $text-secondary;
+    &:hover:not(:disabled) { color: $text-primary; }
+  }
+
+  .showSelectActive {
+    @include btn-selected;
+  }
+
+  .showDropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 200;
+    overflow: hidden;
+    min-width: 100%;
+    padding: 4px 0;
+    @include dropdown-panel;
+  }
+
+  .showOption {
+    @include dropdown-option;
+    white-space: nowrap;
+  }
+
+  .showOptionActive {
+    @include dropdown-option-selected;
+  }
+
+  .pageBtn {
+    @include icon-btn;
+  }
+
+  .pageInfo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: $control-h;
+    padding: 0 14px;
+    background: $bg-control;
+    border: 1px solid $border-control;
+    border-radius: $radius-md;
+    color: $text-secondary;
+    font-family: $font-mono;
+    font-size: 12px;
+    letter-spacing: 0.48px;
+  }
+
+  .page {
+    color: $text-primary;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 18px;
+    letter-spacing: 0.48px;
+  }
+
+  @media (max-width: #{$bp-lg}) {
+    .controls {
+      gap: 6px;
+    }
+  }
+
+  @media (max-width: #{$bp-md}) {
+    .header {
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+  }
+
+  @media (max-width: #{$bp-sm}) {
+    .pageInfo {
+      display: none;
+    }
+  }
+}

@@ -1,0 +1,9 @@
+/dist
+/node_modules
+/build
+/coverage
+.env
+.env.*.local
+*.log
+/data
+/.idea

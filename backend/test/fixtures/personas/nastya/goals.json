@@ -1,0 +1,64 @@
+{
+  "stages": [
+    {
+      "id": "knock",
+      "title": "первое касание",
+      "enter": {
+        "turns": 0,
+        "days": 0,
+        "slots": 0
+      },
+      "min_turns": 8,
+      "ask_slots": [
+        "work",
+        "location",
+        "age"
+      ]
+    },
+    {
+      "id": "smalltalk",
+      "title": "разговорились",
+      "enter": {
+        "turns": 10,
+        "days": 1,
+        "slots": 1
+      },
+      "min_turns": 16,
+      "ask_slots": [
+        "work",
+        "location",
+        "age"
+      ]
+    }
+  ],
+  "slots": [
+    {
+      "id": "work",
+      "topic": "работа",
+      "hint": "Чем занимаешься?",
+      "priority": 1,
+      "required_by_day": 1
+    },
+    {
+      "id": "location",
+      "topic": "город",
+      "hint": "В каком городе живёшь?",
+      "priority": 2,
+      "required_by_day": 1
+    },
+    {
+      "id": "age",
+      "topic": "возраст",
+      "hint": "Сколько тебе лет?",
+      "priority": 3,
+      "required_by_day": 1
+    },
+    {
+      "id": "dating_site",
+      "topic": "сайт знакомства",
+      "hint": "Где познакомились?",
+      "priority": 4,
+      "required_by_day": 1
+    }
+  ]
+}

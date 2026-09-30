@@ -1,0 +1,289 @@
+.mr-attribution{display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:1.5;white-space:nowrap;color:#edf3ff;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-weight:500}
+.mr-caption{color:#b3c1d8;opacity:1;font-weight:400}
+.mr-compact{font-size:12px;white-space:normal;margin:6px 0}
+.mr-create{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:16px;align-items:end;margin:18px 0}
+.mr-full{grid-column:1/-1;margin:0}
+.mr-credentials{border:1px solid #58688666;border-radius:12px;padding:20px;margin:20px 0;background:#5c76a00b}
+.mr-credentials h3{font-size:17px;margin:0}
+.mr-region-input{max-width:110px;min-width:85px}
+@media(max-width:700px){.mr-create{grid-template-columns:1fr}.mr-credentials{padding:14px}}
+/* Keep the actions usable without covering account/region fields on a phone. */
+@media(max-width:700px){
+}
+@media(max-width:700px){}
+
+
+/* My dialogs: five bounded columns, then stacked rows on smaller screens. */
+.mr-dialogs{min-width:0;width:100%;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.mr-dialog-table{width:100%;max-width:100%;min-width:0;table-layout:fixed;border-collapse:separate;border-spacing:0;background:#0d1220;border:1px solid #ffffff18;border-radius:14px;font-size:12px;color:#edf3ff}
+.mr-dialog-table th{text-align:left;padding:14px 12px;border-bottom:1px solid #ffffff18;color:#b3c1d8;font-size:11px;font-weight:600;white-space:normal;overflow-wrap:anywhere}
+.mr-dialog-sort{border:0;background:none;color:inherit;padding:0;font:inherit;cursor:pointer;text-align:left;display:inline-flex;gap:4px;align-items:center}
+.mr-dialog-sort:hover{color:#fff}
+.mr-dialog-table td{vertical-align:top;padding:16px 12px;white-space:normal;overflow-wrap:anywhere;min-width:0;border-bottom:1px solid #ffffff10;line-height:1.5}
+.mr-dialog-table tr:last-child td{border-bottom:0}
+.mr-dialog-row{cursor:pointer}
+.mr-dialog-row:hover{background:#172136}
+.mr-dialog-row:focus-within{background:#172136}
+.mr-dialog-new{background:#00d4ff08}
+.mr-dialog-person-head{display:flex;gap:10px;align-items:flex-start;min-width:0}
+.mr-dialog-avatar{width:34px;height:34px;flex:0 0 34px;border-radius:10px;background:var(--av-bg);display:flex;align-items:center;justify-content:center;color:#fff;object-fit:cover}
+.mr-dialog-person-text{min-width:0;flex:1}
+.mr-dialog-name{display:inline;border:0;background:none;text-align:left;padding:0;color:#edf3ff;font:inherit;font-size:13px;font-weight:600;line-height:1.5;overflow-wrap:anywhere;cursor:pointer}
+.mr-dialog-name:hover{text-decoration:underline}
+.mr-dialog-muted{color:#aebed5;font-size:11px;line-height:1.5}
+.mr-dialog-contact{display:flex;flex-wrap:wrap;gap:2px 8px;margin-top:8px;font-size:12px}
+.mr-dialog-table a{color:#8ebfff;text-decoration:none;overflow-wrap:anywhere}
+.mr-dialog-table a:hover{text-decoration:underline}
+.mr-dialog-id{margin-top:3px}
+.mr-dialog-new-badge{display:inline-block;margin-left:6px;border:1px solid #00d4ff55;background:#00d4ff15;color:#91edff;border-radius:6px;padding:0 5px;font-size:10px}
+.mr-dialog-owner .mr-attribution{white-space:normal;overflow-wrap:anywhere}
+.mr-dialog-account{margin-top:8px;color:#d8e3f4;font-size:11px}
+.mr-dialog-mode{font-size:11px;margin:8px 0 3px}
+.mr-dialog-online{color:#73dfb8}
+.mr-dialog-manual{color:#dfc8ff}
+.mr-dialog-warning{color:#ffb7b7;font-size:11px;margin-top:4px}
+.mr-dialog-last>span{display:block}
+.mr-dialog-time{font-size:13px;font-variant-numeric:tabular-nums;font-weight:600;margin-bottom:3px}
+.mr-dialog-actions button{display:flex;justify-content:center;align-items:center;width:fit-content;max-width:100%;height:auto;min-height:32px;padding:6px 10px;line-height:1.4;white-space:normal}
+.mr-dialog-actions .mr-dialog-open{width:fit-content;max-width:100%;gap:7px;white-space:nowrap}
+.mr-dialog-open svg{flex:0 0 14px}
+.mr-dialog-actions .mr-dialog-archive{margin-top:4px}
+.mr-dialog-name:focus-visible,.mr-dialog-sort:focus-visible,.mr-dialogs a:focus-visible,.mr-dialogs select:focus-visible{outline:2px solid #4178f0b3;outline-offset:1px}
+.mr-dialog-table .mr-dialog-empty{text-align:center;padding:28px 16px;color:#b3c1d8}
+.mr-dialog-mobile-sort{display:none}
+@media(max-width:1000px){
+ .mr-dialog-mobile-sort{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;color:#b3c1d8;font-size:12px}
+ .mr-dialog-mobile-sort select{min-width:0;max-width:70%;background:#0e1524;color:#edf3ff;border:1px solid #ffffff25;border-radius:8px;padding:8px;font:inherit;color-scheme:dark}
+ .mr-dialog-table,.mr-dialog-table tbody{display:block;border:0;background:none;width:100%}
+ .mr-dialog-table thead{display:none}
+ .mr-dialog-table .mr-dialog-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;background:#0d1220;border:1px solid #ffffff20;border-radius:14px;padding:16px;margin-bottom:12px}
+ .mr-dialog-table .mr-dialog-row:hover,.mr-dialog-table .mr-dialog-row:focus-within{background:#131d30}
+ .mr-dialog-table .mr-dialog-new{border-color:#00d4ff66}
+ .mr-dialog-table td{display:block;padding:0;border:0;width:auto}
+ .mr-dialog-person{grid-column:1/-1}
+ .mr-dialog-owner{grid-column:1;grid-row:2}
+ .mr-dialog-status{grid-column:2;grid-row:2}
+ .mr-dialog-table td[data-label]:before{content:attr(data-label);display:block;font-size:11px;color:#b3c1d8;margin-bottom:6px}
+ .mr-dialog-last{grid-column:1;grid-row:3;align-self:center}
+ .mr-dialog-actions{grid-column:2;grid-row:3;align-self:end}
+ .mr-dialog-actions button,.mr-dialog-actions .mr-dialog-open{min-height:40px}
+ .mr-dialog-table .mr-dialog-empty{border:1px solid #ffffff20;border-radius:12px;background:#0d1220}
+}
+@media(max-width:420px){
+ .mr-dialog-table .mr-dialog-row{gap:14px 12px;padding:14px}
+ .mr-dialog-person-head{gap:8px}
+ .mr-dialog-owner .mr-attribution{font-size:11px}
+}
+@media(max-width:560px){
+ .mr-dialog-owner{grid-column:1/-1;grid-row:2}
+ .mr-dialog-owner .mr-attribution{flex-direction:row;flex-wrap:wrap;gap:4px 18px;font-size:12px}
+ .mr-dialog-owner .mr-attribution>span:first-child{flex:1 1 200px}
+ .mr-dialog-owner .mr-attribution>span:last-child{flex:0 0 auto}
+ .mr-dialog-status{grid-column:1;grid-row:3}
+ .mr-dialog-last{grid-column:2;grid-row:3;align-self:start}
+ .mr-dialog-actions{grid-column:1/-1;grid-row:4;display:flex!important;gap:8px}
+ .mr-dialog-actions button{flex:0 0 auto;min-width:0;margin:0}
+ .mr-dialog-actions .mr-dialog-archive{margin-top:0}
+}
+.mr-attribution{min-width:0;overflow-wrap:anywhere}
+
+
+/* Leads use the same bounded table and mobile cards as dialogs. */
+.mr-lead-selection{display:flex;align-items:center;flex-wrap:wrap;gap:10px 16px;margin:0 0 12px;min-height:32px}
+.mr-lead-select-all,.mr-lead-identity{display:flex;align-items:flex-start;gap:9px;min-width:0;cursor:pointer}
+.mr-lead-select-all{align-items:center;font-size:12px;color:#dbe5f5}
+.mr-leads-list input[type=checkbox]{width:16px;height:16px;flex:0 0 16px;accent-color:#719cf0;margin:2px 0 0;cursor:pointer}
+.mr-lead-select-all input[type=checkbox]{margin:0}
+.mr-lead-clear{height:auto;min-height:28px}
+.mr-lead-identity{margin-bottom:4px}
+.mr-lead-name{font-size:13px;line-height:1.5;font-weight:600;overflow-wrap:anywhere}
+.mr-lead-row:hover{background:#131d30}
+.mr-lead-selected{background:#8ebfff0a}
+.mr-lead-owner .mr-attribution{white-space:normal;overflow-wrap:anywhere}
+.mr-lead-persona-field{display:block;min-width:0;max-width:100%}
+.mr-lead-persona-select{display:block;width:100%;max-width:100%;min-width:0;padding:7px 9px!important;text-overflow:ellipsis}
+.mr-lead-persona-name{font-weight:500}
+.mr-lead-contact-time,.mr-lead-telegram{margin-top:8px;font-size:11px}
+.mr-lead-status>span{white-space:normal;max-width:100%;overflow-wrap:anywhere}
+.mr-lead-error{margin-top:10px;color:#ffb7b7;font-size:11px}
+.mr-lead-error summary{cursor:pointer;line-height:1.5}
+.mr-lead-error p{margin:8px 0 0;color:#ced8e9;overflow-wrap:anywhere;white-space:pre-wrap;line-height:1.5}
+.mr-dialog-table td.mr-lead-actions{display:table-cell}
+.mr-lead-actions button{max-width:100%;width:fit-content;margin-bottom:4px;font-size:12px}
+.mr-lead-empty{padding:28px 16px;border:1px solid #ffffff18;border-radius:14px;color:#b3c1d8;background:#0d1220;text-align:center;font-size:13px;line-height:1.6}
+.mr-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:1000px){
+ .mr-leads-table .mr-lead-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;background:#0d1220;border:1px solid #ffffff20;border-radius:14px;padding:16px;margin-bottom:12px}
+ .mr-leads-table .mr-lead-selected{border-color:#719cf080;background:#111c30}
+ .mr-lead-person{grid-column:1/-1;grid-row:1}
+ .mr-lead-owner{grid-column:1;grid-row:2}
+ .mr-lead-persona{grid-column:2;grid-row:2}
+ .mr-lead-status{grid-column:1;grid-row:3}
+ .mr-dialog-table td.mr-lead-actions{grid-column:2;grid-row:3;display:flex;flex-wrap:wrap;align-content:flex-start;align-items:flex-start;gap:6px}
+ .mr-lead-actions button{flex:0 1 auto;margin:0;min-height:40px}
+ .mr-lead-status:before,.mr-lead-persona:before{content:attr(data-label);display:block;font-size:11px;color:#b3c1d8;margin-bottom:6px}
+}
+@media(max-width:560px){
+ .mr-leads-table .mr-lead-row{padding:14px;gap:14px 12px}
+ .mr-lead-owner{grid-column:1/-1;grid-row:2}
+ .mr-lead-owner .mr-attribution{flex-direction:row;flex-wrap:wrap;gap:4px 18px}
+ .mr-lead-owner .mr-attribution>span:first-child{flex:1 1 200px}
+ .mr-lead-persona{grid-column:1;grid-row:3}
+ .mr-lead-status{grid-column:2;grid-row:3}
+ .mr-dialog-table td.mr-lead-actions{grid-column:1/-1;grid-row:4}
+}
+
+.mr-lead-row[data-lead-status=pending] .mr-lead-status>span{color:#bac9df}
+.mr-lead-row[data-lead-status=queued] .mr-lead-status>span{color:#8fe6ff}
+.mr-lead-row[data-lead-status=assigned] .mr-lead-status>span{color:#d4bdff}
+.mr-lead-row[data-lead-status=contacted] .mr-lead-status>span{color:#fbd28c}
+.mr-lead-row[data-lead-status=replied] .mr-lead-status>span{color:#75dfb8}
+.mr-lead-row[data-lead-status=dead] .mr-lead-status>span{color:#ffb0b8}
+
+/* Accounts: a compact overview; diagnostics and secondary actions expand below. */
+.mr-account-table{width:100%;max-width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;border:1px solid #ffffff18;border-radius:14px;background:#0e1524;color:#e8edf5;font-size:13px}
+.mr-account-table th{text-align:left;padding:12px 16px;color:#aebed5;font-size:11px;font-weight:500;border-bottom:1px solid #ffffff14}
+.mr-account-table td{padding:14px 16px;vertical-align:middle;min-width:0;border-bottom:1px solid #ffffff0a}
+.mr-account-table tbody>tr:last-child>td{border-bottom:0}
+.mr-account-table tbody>tr:last-child>td:first-child{border-bottom-left-radius:14px}
+.mr-account-table tbody>tr:last-child>td:last-child{border-bottom-right-radius:14px}
+.mr-account-row:hover,.mr-account-expanded{background:#131c2d}
+.mr-account-who{display:flex;align-items:center;gap:10px;min-width:0}
+.mr-account-avatar{width:34px;height:34px;border-radius:50%;flex:0 0 34px;display:flex;align-items:center;justify-content:center;background:var(--av-bg);object-fit:cover;font-size:11px}
+.mr-account-name-wrap{min-width:0;flex:1}
+.mr-account-name{font-weight:600;line-height:1.5;overflow-wrap:anywhere}
+.mr-account-contact{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:11px;line-height:1.5;color:#aebed5;margin-top:2px;overflow-wrap:anywhere}
+.mr-account-contact a{color:#8ebfff;text-decoration:none;max-width:100%}
+.mr-account-contact a:hover{text-decoration:underline}
+.mr-account-persona{font-weight:500;line-height:1.5;overflow-wrap:anywhere}
+.mr-account-test{margin-left:7px;color:#aebed5;font-size:10px;font-weight:400}
+.mr-account-owner{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;margin-top:4px;font-size:11px;line-height:1.5;color:#cbd7ea;overflow-wrap:anywhere}
+.mr-account-owner>span{min-width:0;max-width:100%}
+.mr-account-region{color:#aebed5}
+.mr-account-state>span{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.mr-account-connection{display:flex;align-items:center;gap:5px;margin-top:5px;color:#aebed5;font-size:11px}
+.mr-account-connection i{width:5px;height:5px;border-radius:50%;background:#738099;flex-shrink:0}
+.mr-account-online i{background:#60d7af}
+.mr-account-warning{display:block;color:#ffb7b7;font-size:11px;line-height:1.5;overflow-wrap:anywhere;margin:6px 0 0}
+.mr-account-buttons{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:6px}
+.mr-account-buttons button,.mr-account-extra-actions button{min-height:32px;height:auto;white-space:nowrap}
+.mr-account-more{display:inline-flex;align-items:center;gap:5px}
+.mr-account-more[aria-expanded=true]{background:#141d31;border-color:#ffffff38}
+.mr-account-table th:last-child{text-align:right}
+.mr-account-table .mr-account-details-row>td{padding:0 16px 16px;background:#111a2b}
+.mr-account-details{padding-top:14px}
+.mr-account-details dl{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 20px;margin:0}
+.mr-account-details dt{color:#aebed5;font-size:11px;line-height:1.5}
+.mr-account-details dd{margin:3px 0 0;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.mr-account-extra-actions{display:flex;flex-wrap:wrap;gap:6px;padding-top:14px;margin-top:14px;border-top:1px solid #ffffff0a}
+.mr-account-table a:focus-visible{outline:2px solid #4178f0b3;outline-offset:2px}
+@media(max-width:1100px){
+ .mr-account-table,.mr-account-table tbody{display:block;border:0;background:none}
+ .mr-account-table thead{display:none}
+ .mr-account-table .mr-account-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(120px,.7fr);gap:14px 20px;padding:16px;margin-bottom:12px;border:1px solid #ffffff18;border-radius:14px;background:#0e1524}
+ .mr-account-table .mr-account-row>td{display:block;padding:0;border:0}
+ .mr-account-identity{grid-column:1;grid-row:1}
+ .mr-account-assignment{grid-column:1;grid-row:2}
+ .mr-account-state{grid-column:2;grid-row:1;justify-self:end}
+ .mr-account-actions{grid-column:2;grid-row:2;align-self:end}
+ .mr-account-table .mr-account-expanded{margin-bottom:0;border-bottom:0;border-radius:14px 14px 0 0}
+ .mr-account-table .mr-account-details-row{display:block;margin-bottom:12px;border:1px solid #ffffff18;border-top:0;border-radius:0 0 14px 14px;overflow:hidden}
+ .mr-account-table .mr-account-details-row>td{display:block;padding:0 16px 16px;border:0}
+ .mr-account-details dl{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:600px){
+ .mr-account-table .mr-account-row{grid-template-columns:minmax(0,1fr) auto;gap:14px 10px;padding:14px}
+ .mr-account-assignment{grid-column:1/-1;grid-row:2}
+ .mr-account-state{max-width:104px}
+ .mr-account-actions{grid-column:1/-1;grid-row:3}
+ .mr-account-buttons{justify-content:flex-start}
+ .mr-account-buttons button,.mr-account-extra-actions button{min-height:40px}
+ .mr-account-details dl{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .mr-account-table .mr-account-details-row>td{padding:0 14px 14px}
+ .mr-account-identity .mr-account-who{gap:8px}
+ .mr-account-avatar{width:30px;height:30px;flex-basis:30px}
+}
+:is(.mr-account-contact,.mr-account-owner,.mr-account-connection,.mr-account-warning,.mr-account-details dt,.mr-account-test){font-size:12px}
+/* A single confirmation and feedback surface across the panel. */
+.ux-overlay{position:fixed;inset:0;z-index:1200;background:#030817bd;backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}
+.ux-modal{display:flex;flex-direction:column;width:100%;max-width:480px;max-height:calc(100dvh - 48px);border:1px solid #ffffff26;border-radius:16px;background:#0e1524;color:#e8edf5;box-shadow:0 24px 80px #0009;outline:none;overflow:hidden;min-width:0}
+.ux-modal-wide{max-width:660px}
+.ux-modal-head{padding:20px 22px 16px;border-bottom:1px solid #ffffff14}
+.ux-modal-head h3{margin:0;font-size:17px;line-height:1.4;font-weight:600;overflow-wrap:anywhere}
+.ux-modal-body{padding:18px 22px;overflow-y:auto;min-height:0;font-size:14px;line-height:1.6;overscroll-behavior:contain}
+.ux-modal-body>input{box-sizing:border-box;width:100%;min-width:0}
+.ux-modal-footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:16px 22px;border-top:1px solid #ffffff14;flex-shrink:0;flex-wrap:wrap;background:#111a2b}
+.ux-confirm-text{margin:0;color:#cbd7ea;white-space:pre-line;overflow-wrap:anywhere}
+.ux-check{display:flex;align-items:flex-start;gap:10px;margin-top:18px;cursor:pointer;color:#e8edf5}
+.ux-check input,.mr-assignment-item input{width:17px;height:17px;flex:0 0 17px;margin:3px 0 0;accent-color:#4178f0}
+.ux-inline-error{margin:12px 0 0;color:#ffb7b7;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.ux-notices{position:fixed;right:20px;top:84px;z-index:1400;display:grid;gap:8px;width:min(380px,calc(100vw - 32px));pointer-events:none}
+.ux-notice{display:flex;align-items:center;gap:10px;background:#182439;color:#e8edf5;border:1px solid #6682b070;border-radius:12px;padding:12px 14px;box-shadow:0 8px 32px #0007;font-size:13px;line-height:1.5;pointer-events:auto}
+.ux-notice>span:nth-child(2){flex:1;min-width:0;overflow-wrap:anywhere}
+.ux-notice-success{border-color:#60d7af70}.ux-notice-success .ux-notice-icon{color:#75dfb8}
+.ux-notice-error{border-color:#ffb7b770}.ux-notice-error .ux-notice-icon{color:#ffb7b7}
+.ux-notice-icon{font-size:18px;flex:0 0 18px;text-align:center}
+.ux-notice button{flex:0 0 28px;width:28px;height:28px;border:0;background:transparent;color:#b3c1d8;border-radius:6px;font-size:21px;cursor:pointer}
+.ux-notice button:hover{color:#fff;background:#ffffff0d}
+.ux-notice button:focus-visible,.mr-manager-table button:focus-visible,.ux-modal button:focus-visible,.ux-modal input:focus-visible{outline:2px solid #779fff;outline-offset:2px}
+/* Managers: summary rows with account assignment in a searchable dialog. */
+.mr-manager-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:18px 0 14px}
+.mr-manager-toolbar input{max-width:360px;width:100%;min-width:0;box-sizing:border-box}
+.mr-manager-table{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;border:1px solid #ffffff18;border-radius:14px;background:#0e1524;color:#e8edf5;font-size:13px}
+.mr-manager-table th{text-align:left;padding:12px 16px;font-size:12px;font-weight:500;color:#b3c1d8;border-bottom:1px solid #ffffff14}
+.mr-manager-table td{padding:16px;vertical-align:middle;border-bottom:1px solid #ffffff0a;min-width:0;overflow-wrap:anywhere}
+.mr-manager-table tr:last-child td{border-bottom:0}
+.mr-manager-identity strong{display:block;font-size:14px;font-weight:600;line-height:1.5}
+.mr-manager-identity>.mr-caption,.mr-manager-role>span{display:block;margin-top:3px}
+.mr-manager-account-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mr-manager-account-preview{margin-top:6px;line-height:1.5;color:#aebed5;font-size:12px;overflow-wrap:anywhere}
+.mr-manager-actions button{margin:3px 6px 3px 0;max-width:100%}
+.mr-manager-form{display:grid;gap:16px}
+.mr-manager-form label input,.mr-manager-form label select{width:100%;box-sizing:border-box}
+.mr-assignment-filters{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
+.mr-assignment-list{max-height:340px;overflow-y:auto;overscroll-behavior:contain;border:1px solid #ffffff18;border-radius:10px;padding:4px;background:#0b1120}
+.mr-assignment-list>p{padding:8px 12px}
+.mr-assignment-item{display:grid;grid-template-columns:17px minmax(0,1fr) minmax(90px,30%);align-items:start;gap:12px;padding:12px;border:1px solid transparent;border-radius:7px;cursor:pointer}
+.mr-assignment-item:hover{background:#141d31}
+.mr-assignment-selected{background:#14213b;border-color:#4178f04d}
+.mr-assignment-identity{display:flex;flex-direction:column;gap:3px;min-width:0;overflow-wrap:anywhere}
+.mr-assignment-identity strong{font-size:13px;font-weight:500;color:#e8edf5}
+.mr-assignment-identity>span,.mr-assignment-owner{font-size:12px;line-height:1.5;color:#b3c1d8;overflow-wrap:anywhere}
+.mr-assignment-owner{text-align:right}
+.mr-assignment-warning{margin:12px 0 0;font-size:13px;line-height:1.5;color:#fbd28c}
+.mr-assignment-count{margin-right:auto;font-size:13px;color:#cbd7ea}
+@media(max-width:1100px){
+ .mr-manager-table,.mr-manager-table tbody{display:block;background:none;border:0}
+ .mr-manager-table thead{display:none}
+ .mr-manager-table tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(130px,.65fr);gap:14px;padding:16px;margin-bottom:12px;border:1px solid #ffffff18;border-radius:14px;background:#0e1524}
+ .mr-manager-table td{padding:0;border:0;display:block}
+ .mr-manager-identity{grid-column:1;grid-row:1}
+ .mr-manager-role{grid-column:2;grid-row:1}
+ .mr-manager-accounts{grid-column:1;grid-row:2}
+ .mr-manager-actions{grid-column:2;grid-row:2;align-self:end}
+}
+@media(max-width:600px){
+ .ux-modal :is(input:not([type=checkbox]),select),.mr-managers :is(input:not([type=checkbox]),select){min-height:40px;font-size:16px}
+ .ux-overlay{padding:12px}
+ .ux-modal{max-height:calc(100dvh - 24px);border-radius:14px}
+ .ux-modal-head{padding:16px}
+ .ux-modal-body{padding:16px}
+ .ux-modal-footer{padding:12px 16px;gap:8px}
+ .ux-notices{right:12px;top:74px;width:calc(100vw - 24px)}
+ .mr-manager-table tr{grid-template-columns:minmax(0,1fr);padding:14px;gap:12px}
+ .mr-manager-role{grid-column:1;grid-row:2;display:flex!important;gap:12px;flex-wrap:wrap}
+ .mr-manager-accounts{grid-column:1;grid-row:3}
+ .mr-manager-actions{grid-column:1;grid-row:4;padding-top:8px!important;border-top:1px solid #ffffff14!important}
+ .mr-manager-toolbar{gap:8px}
+ .mr-manager-toolbar input{max-width:none}
+ .mr-assignment-item{grid-template-columns:17px minmax(0,1fr);gap:3px 10px;padding:10px}
+ .mr-assignment-item input{grid-row:1/3}
+ .mr-assignment-owner{grid-column:2;text-align:left}
+ .mr-assignment-list{max-height:40dvh}
+}
+@media(max-width:600px){}
+
+/* The account selector and its explanation stack within the existing lead form. */
+.mr-leads .mr-lead-sender{display:block;min-width:0;width:100%;grid-column:1/-1}
+.mr-lead-sender label,.mr-lead-sender select{width:100%;min-width:0;max-width:100%}
+.mr-lead-sender p{margin:8px 0 0;line-height:1.45}

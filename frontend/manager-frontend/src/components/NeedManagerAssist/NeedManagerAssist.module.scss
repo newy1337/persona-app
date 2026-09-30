@@ -1,0 +1,39 @@
+@use '../../styles/variables' as *;
+@use '../../styles/section-cards' as sc;
+
+@include sc.section-cards($status-orange);
+
+.empty {
+  grid-column: 1 / -1;
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: $text-muted;
+}
+// Галочка «Ручной режим»: показывать ли диалоги, где бота выключили руками.
+.manualToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  color: $text-secondary;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+
+  input {
+    accent-color: $accent-blue;
+    cursor: pointer;
+  }
+
+  &:hover {
+    color: $text-primary;
+  }
+}
+
+.manualCount {
+  padding: 1px 6px;
+  border-radius: $radius-full;
+  background: rgba(255, 255, 255, 0.08);
+  font-variant-numeric: tabular-nums;
+}

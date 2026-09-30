@@ -1,0 +1,241 @@
+@use '../../styles/variables' as *;
+@use '../../styles/ui' as *;
+
+:root, .kpis {
+  --split-0: #{$accent-blue};
+  --split-1: #{$color-green};
+  --split-2: #{$color-purple};
+  --split-3: #{$status-orange};
+  --split-4: #{$accent-cyan};
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  @include surface;
+}
+.kpiTitle { font-size: 11px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: $text-secondary; }
+.kpiValue { font-size: 22px; font-weight: 700; color: $text-primary; font-variant-numeric: tabular-nums; }
+.kpiHint { font-size: 12px; color: $text-muted; }
+
+.chartWrap {
+  padding: 14px 16px 10px;
+  margin-bottom: 16px;
+  @include surface;
+}
+.chartHead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.chartTitle { font-size: 14px; font-weight: 600; color: $text-primary; }
+.chartHint { font-size: 12px; color: $text-secondary; font-variant-numeric: tabular-nums; }
+.chart { width: 100%; height: 180px; margin-top: 8px; }
+.bar { fill: rgba($accent-blue, 0.75); }
+.barHot { fill: $accent-cyan; }
+.msgLine { fill: rgba(16, 185, 129, 0.9); }
+.tick { fill: $text-muted; font-size: 11px; }
+.legend {
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+  color: $text-secondary;
+  span { display: inline-flex; align-items: center; gap: 6px; }
+}
+.swatchBar { width: 10px; height: 10px; border-radius: 2px; background: rgba($accent-blue, 0.75); }
+.swatchMsg { width: 10px; height: 3px; border-radius: 2px; background: rgba(16, 185, 129, 0.9); }
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.4fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.card {
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  @include surface;
+  min-width: 0;
+}
+.cardTitle { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: $text-primary; }
+
+.split { display: flex; flex-direction: column; gap: 10px; }
+.splitBar {
+  display: flex;
+  height: 12px;
+  border-radius: $radius-full;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+}
+.splitPart { display: block; height: 100%; }
+.splitLegend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: $text-primary;
+  span { display: inline-flex; align-items: center; gap: 7px; }
+}
+.swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+
+.prices { margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
+.priceInput { width: 92px; height: $control-h-sm; font-family: $font-mono; font-size: 12px; }
+
+@media (max-width: 900px) {
+  .columns { grid-template-columns: 1fr; }
+}
+
+
+/* Restored panel readability and responsive controls. */
+.kpiTitle, .kpiHint, .chartHint, .legend { color:#b3c1d8; font-size:12px; line-height:1.5; }
+.tick { fill:#aebed5; font-size:12px; }
+.priceInput { min-height:34px; font-size:13px; }
+@media(max-width:600px) { .priceInput { min-height:40px; font-size:16px; } }
+
+// Вкладки статистики: общий обзор и разрез по учётным записям менеджеров.
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 14px 0 16px;
+  padding: 3px;
+  width: fit-content;
+  border-radius: $radius-md;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid $border-subtle;
+}
+
+.tab {
+  @include btn-ghost;
+  padding: 7px 16px;
+  border-radius: $radius-sm;
+  font-size: 13px;
+}
+
+.tabActive {
+  @include btn-selected;
+}
+
+// Строка менеджера раскрывает дни — показываем, что по ней можно нажать.
+.rowClickable {
+  cursor: pointer;
+
+  &:hover {
+    background: $bg-control-hover;
+  }
+}
+
+.caret {
+  display: inline-block;
+  width: 14px;
+  color: $text-secondary;
+  font-size: 10px;
+}
+
+
+
+// Таблица по менеджерам: числа выровнены по правому краю, дни идут теми же столбцами.
+.managers {
+  th, td {
+    white-space: nowrap;
+  }
+}
+
+.numCell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sortable {
+  cursor: pointer;
+  user-select: none;
+
+  &:hover {
+    color: $text-primary;
+  }
+}
+
+.sorted {
+  color: $text-primary;
+}
+
+.dayRow {
+  background: rgba(0, 0, 0, 0.18);
+
+  td {
+    padding-top: 5px;
+    padding-bottom: 5px;
+    font-size: 12px;
+  }
+}
+
+.dayName {
+  padding-left: 30px !important;
+  color: $text-secondary;
+  font-variant-numeric: tabular-nums;
+}
+
+.totalRow {
+  font-weight: 600;
+  border-top: 1px solid $border-light;
+}
+
+// Баланс OpenRouter: рамка меняет цвет, когда деньги подходят к концу.
+.balance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  border-left: 3px solid $border-light;
+}
+
+.balanceCalm { border-left-color: $color-green; }
+.balanceWarn { border-left-color: $status-yellow; }
+.balanceAlarm { border-left-color: $status-red; }
+
+.balanceMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.balanceLabel {
+  color: $text-secondary;
+  font-size: 12px;
+}
+
+.balanceValue {
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: $text-primary;
+}
+
+.balanceHint {
+  color: $text-secondary;
+  font-size: 12px;
+}
+
+.balanceSide {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: right;
+  font-size: 12px;
+  color: $text-secondary;
+
+  b {
+    color: $text-primary;
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (max-width: 560px) {
+    text-align: left;
+  }
+}

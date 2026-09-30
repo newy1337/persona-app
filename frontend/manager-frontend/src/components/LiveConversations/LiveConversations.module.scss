@@ -1,0 +1,12 @@
+@use '../../styles/variables' as *;
+@use '../../styles/section-cards' as sc;
+
+@include sc.section-cards($color-green, $cards-pb: 16px);
+
+.empty {
+  grid-column: 1 / -1;
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: $text-muted;
+}

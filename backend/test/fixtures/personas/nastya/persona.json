@@ -1,0 +1,6 @@
+{
+  "_fixture": "Synthetic persona for offline API tests; contains no production data.",
+  "name": "Настя",
+  "card": ["Тестовая личность для проверки панели", "Живёт на Пхукете"],
+  "biography": { "current": "Живёт на Пхукете" }
+}

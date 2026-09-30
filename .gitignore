@@ -1,0 +1,40 @@
+# В репозитории — только код и шаблоны развёртывания.
+
+# Секреты и локальные настройки; в .env.example лежат заглушки.
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+# Сессии Telegram — доступ к аккаунтам, в репозиторий не попадают никогда.
+*.session
+*.session-*
+
+# Рабочие данные: база, медиа, выгрузки, личности.
+/data/
+/backend/data/
+*.db
+*.db-*
+
+# Сборки и зависимости.
+node_modules/
+dist/
+dist-ssr/
+build/
+coverage/
+*.tsbuildinfo
+.vite/
+
+# Мусор редакторов и запусков.
+*.log
+*.bak
+*.backup
+*.local
+.DS_Store
+.idea/
+.vscode/
+/.claude/
+/.claude/

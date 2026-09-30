@@ -1,0 +1,533 @@
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
+import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
+import { join } from 'path';
+import Anthropic from '@anthropic-ai/sdk';
+import { createOpenRouterClient } from './nastya/llm/openrouter';
+import { appConfig } from 'src/config/app.config';
+import { PrismaService } from 'src/prisma.service';
+import { ClockService } from 'src/shared/clock.service';
+import { toChatId } from 'src/utils/ids';
+import type { CharacterConfig } from './nastya/kernel/types';
+import {
+  DEFAULT_PROMPTS,
+  PROMPT_KEYS,
+  mergePrompts,
+  type PersonaPrompts,
+} from './nastya/config/prompts';
+import {
+  DEFAULT_RHYTHM,
+  mergeRhythm,
+  type Rhythm,
+} from './nastya/config/rhythm';
+import {
+  chatVariables,
+  fillVariables,
+  variableValues,
+  withoutChatVariables,
+} from './nastya/config/variables';
+import { parseLeadFacts } from 'src/domain/lead-facts';
+import { UsageRecorderService } from './usage-recorder.service';
+import {
+  LocationResolver,
+  LOCATION_RULES,
+} from './nastya/kernel/location-resolver';
+import { type Place } from './nastya/kernel/location';
+import { completeText } from './nastya/llm/anthropic';
+import { resolveModel } from './nastya/config/models';
+import { parseJsonObject } from './nastya/judge/transport';
+
+/** Секции личности: одна секция — один документ, одна запись в истории. */
+export const PERSONA_SECTIONS = [
+  'persona',
+  'goals',
+  'storylines',
+  'dayConfig',
+  'beats',
+  'prompts',
+  'rhythm',
+  'variables',
+] as const;
+export type PersonaSection = (typeof PERSONA_SECTIONS)[number];
+
+/** Личность, готовая к работе: документы разобраны, тексты дополнены умолчаниями. */
+export interface LoadedPersona {
+  enabled?: boolean;
+  locationIssue?: string;
+  id: number;
+  slug: string;
+  name: string;
+  config: CharacterConfig;
+  prompts: PersonaPrompts;
+  /** Когда писать самой и как быстро отвечать: документ личности поверх умолчаний. */
+  rhythm: Rhythm;
+  /**
+   * Значения переменных плюс встроенная `name`. В документы выше подставлены все,
+   * кроме переменных диалога (`{city}`, `{site}`): те остаются скобками, чтобы текст
+   * личности был одинаковым у всех чатов и кеш промпта читался. Модели значения
+   * уходят через `LlmDeps.variables`; текст, который идёт в Telegram без модели,
+   * заполняется `fillText(…, variables)`.
+   */
+  variables: Record<string, string>;
+  /** beats.json личности; `null` — рубрику выводим из сюжетов. */
+  beats: Record<string, unknown>[] | null;
+  updatedAt: number;
+}
+
+/** Разобранные документы личности до подстановки — из них собираются версии для диалогов. */
+interface RawPersona {
+  id: number;
+  slug: string;
+  name: string;
+  updatedAt: number;
+  docs: {
+    persona: Record<string, any>;
+    day: Record<string, any>;
+    goals: Record<string, any>;
+    storylines: Record<string, any>;
+  };
+  prompts: PersonaPrompts;
+  rhythm: Rhythm;
+  beats: Record<string, unknown>[] | null;
+  /** Переменные с вкладки личности. */
+  variables: Record<string, string>;
+  /** Готовые версии по набору значений: у диалогов с одним городом и сайтом — одна. */
+  views: Map<string, LoadedPersona>;
+}
+
+/** Больше разных наборов переменных на личность не держим: лиды из тысячи городов не должны съесть память. */
+const MAX_VIEWS = 300;
+
+const json = (text: string | null | undefined): Record<string, any> => {
+  if (!text) return {};
+  try {
+    const value = JSON.parse(text);
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? value
+      : {};
+  } catch {
+    return {};
+  }
+};
+
+/**
+ * Личности и клиент модели — то, чем движок параметризован.
+ *
+ * Личности живут в базе (таблица `personas`) и правятся в панели; папка
+ * `PERSONAS_DIR` нужна только один раз — при первом старте на пустой таблице
+ * из неё импортируются готовые JSON. Разбор документов кэшируется и
+ * обновляется сам: перед выдачей сверяется `updated_at`, поэтому правка в
+ * панели действует со следующего же хода, без перезапуска.
+ */
+@Injectable()
+export class PersonaService implements OnModuleInit {
+  private readonly log = new Logger(PersonaService.name);
+  private readonly cache = new Map<string, RawPersona>();
+
+  /** Через кого идут вызовы модели — пишется в учёт расходов. */
+  readonly provider = appConfig.llmProvider;
+
+  /**
+   * Judges, generator and vision — one client, one prompt cache. OpenRouter подставляется
+   * клиентом с тем же `messages.create`: промпты, кеш и разбор ответов не меняются.
+   */
+  readonly anthropic: Anthropic =
+    appConfig.llmProvider === 'openrouter'
+      ? createOpenRouterClient({
+          apiKey: appConfig.openrouterApiKey || 'missing',
+          baseUrl: appConfig.openrouterBaseUrl,
+          providers: appConfig.openrouterProviders,
+          timeoutMs: 180_000,
+          maxRetries: 2,
+          title: 'Nastya panel',
+        })
+      : new Anthropic({
+          apiKey: appConfig.anthropicApiKey || 'missing',
+          timeout: 180_000,
+          maxRetries: 2,
+          ...(appConfig.anthropicWorkspaceId
+            ? {
+                defaultHeaders: {
+                  'anthropic-workspace-id': appConfig.anthropicWorkspaceId,
+                },
+              }
+            : {}),
+        });
+
+  constructor(
+    private prisma: PrismaService,
+    private clock: ClockService,
+    private usage: UsageRecorderService,
+  ) {}
+
+  private locations = new LocationResolver(
+    {
+      get: (key) => this.prisma.setting.findUnique({ where: { key } }),
+      set: async (key, value, updatedAt) => {
+        await this.prisma.setting.upsert({
+          where: { key },
+          create: { key, value, updatedAt },
+          update: { value, updatedAt },
+        });
+      },
+    },
+    async (source) => {
+      if (!this.ready)
+        throw new Error('Location resolver requires the configured model');
+      const logger = {
+        info: (m: string) => this.log.log(m),
+        warn: (m: string) => this.log.warn(m),
+        error: (m: string) => this.log.error(m),
+      };
+      const text = await completeText(
+        {
+          client: this.anthropic,
+          usageDb: this.usage,
+          logger,
+          provider: this.provider,
+        },
+        {
+          model: resolveModel(appConfig.generatorModel),
+          system: { stable: LOCATION_RULES },
+          messages: [{ role: 'user', content: source }],
+          maxTokens: 600,
+          effort: 'off',
+          stage: 'time_location',
+        },
+      );
+      return parseJsonObject(text);
+    },
+  );
+
+  async interlocutorLocation(source: string): Promise<Place> {
+    return this.locations.resolve('interlocutor', source);
+  }
+
+  /** Whether the key needed for a reply is present. */
+  get ready(): boolean {
+    return Boolean(
+      appConfig.llmProvider === 'openrouter'
+        ? appConfig.openrouterApiKey
+        : appConfig.anthropicApiKey,
+    );
+  }
+
+  async onModuleInit(): Promise<void> {
+    this.log.log(
+      appConfig.llmProvider === 'openrouter'
+        ? `LLM via OpenRouter (providers: ${appConfig.openrouterProviders.join(', ') || 'any'})${appConfig.openrouterApiKey ? '' : ' — OPENROUTER_API_KEY is empty'}`
+        : `LLM via Anthropic API${appConfig.anthropicApiKey ? '' : ' — ANTHROPIC_API_KEY is empty'}`,
+    );
+    await this.seedFromFiles();
+    await this.fillPrompts();
+  }
+
+  /**
+   * Тексты промптов лежат у личности целиком, а не «пусто — значит из кода»:
+   * оператор правит то, что видит. Личностям, заведённым до этого (импорт,
+   * старые копии), недостающие тексты дописываем один раз — молча, без записи
+   * в историю: подставить умолчание не правка, а то же самое другими словами.
+   */
+  private async fillPrompts(): Promise<void> {
+    const rows = await this.prisma.persona.findMany({
+      select: { id: true, slug: true, prompts: true, rhythm: true },
+    });
+    for (const row of rows) {
+      const own = json(row.prompts);
+      if (
+        !PROMPT_KEYS.every(
+          (key) => typeof own[key] === 'string' && own[key].trim(),
+        )
+      ) {
+        await this.prisma.persona.update({
+          where: { id: row.id },
+          data: { prompts: JSON.stringify(mergePrompts(own)) },
+        });
+        this.log.log(
+          `личность «${row.slug}»: тексты промптов дописаны из кода`,
+        );
+      }
+      const rhythm = json(row.rhythm);
+      const full = Object.keys(rhythm).length
+        ? mergeRhythm(rhythm)
+        : DEFAULT_RHYTHM;
+      const missing = Object.keys(full).filter((key) => !(key in rhythm));
+      if (missing.length) {
+        await this.prisma.persona.update({
+          where: { id: row.id },
+          data: { rhythm: JSON.stringify({ ...full, ...rhythm }) },
+        });
+        this.log.log(
+          `личность «${row.slug}»: ритм дополнен умолчаниями (${missing.join(', ')})`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Первый старт на пустой таблице: каждая папка с `persona.json` под
+   * `PERSONAS_DIR` становится личностью. Дальше файлы не читаются — источник
+   * правды база, иначе правка в панели молча терялась бы при перезапуске.
+   */
+  private async seedFromFiles(): Promise<void> {
+    if ((await this.prisma.persona.count()) > 0) return;
+    const root = appConfig.personasDir;
+    if (!existsSync(root)) return;
+    const dirs = readdirSync(root).filter(
+      (name) =>
+        statSync(join(root, name)).isDirectory() &&
+        existsSync(join(root, name, 'persona.json')),
+    );
+    if (!dirs.length) return;
+
+    const now = this.clock.ts();
+    for (const slug of dirs) {
+      const dir = join(root, slug);
+      const file = (name: string) =>
+        existsSync(join(dir, `${name}.json`))
+          ? readFileSync(join(dir, `${name}.json`), 'utf8')
+          : null;
+      const personaDoc = file('persona') ?? '{}';
+      await this.prisma.persona.create({
+        data: {
+          slug,
+          name: String(json(personaDoc).name ?? slug),
+          isDefault: slug === appConfig.personaId || dirs.length === 1,
+          persona: personaDoc,
+          goals: file('goals') ?? '{}',
+          storylines: file('storylines') ?? '{}',
+          dayConfig: file('day') ?? '{}',
+          beats: file('beats'),
+          prompts: JSON.stringify(DEFAULT_PROMPTS),
+          rhythm: JSON.stringify(DEFAULT_RHYTHM),
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      this.log.log(`личность «${slug}» импортирована из ${dir}`);
+    }
+    if (!(await this.prisma.persona.count({ where: { isDefault: true } }))) {
+      const first = await this.prisma.persona.findFirst({
+        orderBy: { id: 'asc' },
+      });
+      if (first)
+        await this.prisma.persona.update({
+          where: { id: first.id },
+          data: { isDefault: true },
+        });
+    }
+  }
+
+  /** Разбор дорогой (сотни КБ JSON), сверка `updated_at` — нет: кэш всегда свежий. */
+  private raw(row: {
+    id: number;
+    slug: string;
+    name: string;
+    persona: string;
+    goals: string;
+    storylines: string;
+    dayConfig: string;
+    beats: string | null;
+    prompts: string;
+    rhythm: string;
+    variables: string;
+    updatedAt: number;
+  }): RawPersona {
+    const cached = this.cache.get(row.slug);
+    if (cached && cached.updatedAt === row.updatedAt && cached.id === row.id)
+      return cached;
+    const beatsDoc = row.beats ? JSON.parse(row.beats) : null;
+    const raw: RawPersona = {
+      id: row.id,
+      slug: row.slug,
+      name: row.name || row.slug,
+      updatedAt: row.updatedAt,
+      docs: {
+        persona: json(row.persona),
+        day: json(row.dayConfig),
+        goals: json(row.goals),
+        storylines: json(row.storylines),
+      },
+      prompts: mergePrompts(json(row.prompts)),
+      rhythm: mergeRhythm(json(row.rhythm)),
+      beats: Array.isArray(beatsDoc) ? beatsDoc : null,
+      variables: variableValues(json(row.variables)),
+      views: new Map(),
+    };
+    this.cache.set(row.slug, raw);
+    return raw;
+  }
+
+  /**
+   * Личность с подставленными переменными. Порядок: значения диалога (город и сайт
+   * лида) → вкладка «Переменные» личности → встроенная `{name}`. Дальше движок читает
+   * готовый текст и про `{site}` не знает; правка личности меняет updated_at — версии
+   * пересоберутся со следующего хода.
+   */
+  private materialise(
+    row: Parameters<PersonaService['raw']>[0] & { enabled?: boolean },
+    chat: Record<string, string> = {},
+  ): LoadedPersona {
+    const raw = this.raw(row);
+    const variables = { ...raw.variables, ...chat, name: raw.name };
+    const shared = withoutChatVariables(variables);
+    const key = JSON.stringify(
+      Object.entries(shared).sort(([a], [b]) => a.localeCompare(b)),
+    );
+    const ready = raw.views.get(key);
+    if (ready) return { ...ready, variables, enabled: row.enabled !== false };
+    const fill = <T>(doc: T): T => fillVariables(doc, shared);
+    const loaded: LoadedPersona = {
+      id: raw.id,
+      slug: raw.slug,
+      name: raw.name,
+      config: {
+        timeZone: raw.rhythm.timezone,
+        persona: fill(raw.docs.persona),
+        day: fill(raw.docs.day),
+        goals: fill(raw.docs.goals),
+        storylines: fill(raw.docs.storylines),
+      },
+      prompts: fill(raw.prompts),
+      rhythm: raw.rhythm,
+      variables,
+      beats: raw.beats ? fill(raw.beats) : null,
+      updatedAt: raw.updatedAt,
+    };
+    if (raw.views.size >= MAX_VIEWS) raw.views.clear();
+    raw.views.set(key, loaded);
+    return { ...loaded, variables, enabled: row.enabled !== false };
+  }
+
+  /** Город и сайт лида из карточки диалога — переменные `{city}` и `{site}` этого чата. */
+  private async chatVars(
+    chatId: number | null | undefined,
+  ): Promise<Record<string, string>> {
+    if (chatId == null) return {};
+    const row = await this.prisma.leadFacts.findUnique({
+      where: { chatId: toChatId(chatId) },
+      select: { facts: true },
+    });
+    return chatVariables(parseLeadFacts(row?.facts));
+  }
+
+  async bySlug(slug: string): Promise<LoadedPersona> {
+    const row = await this.prisma.persona.findUnique({ where: { slug } });
+    if (!row) throw new NotFoundException(`личность «${slug}» не найдена`);
+    return this.materialise(row);
+  }
+
+  private async defaultRow() {
+    const row =
+      (await this.prisma.persona.findFirst({
+        where: { isDefault: true, enabled: true },
+      })) ??
+      (await this.prisma.persona.findFirst({
+        where: { enabled: true },
+        orderBy: { id: 'asc' },
+      }));
+    if (!row)
+      throw new NotFoundException(
+        'в базе нет ни одной личности — заведите её в панели',
+      );
+    return row;
+  }
+
+  /** Личность по умолчанию: ею говорят чаты без своего аккаунта или без привязки. */
+  async default(): Promise<LoadedPersona> {
+    return this.materialise(await this.defaultRow());
+  }
+
+  /**
+   * Личность аккаунта: `tg_accounts.persona_id` — это slug. С `chatId` — в разрезе
+   * диалога: `{city}` и `{site}` берутся из карточки этого лида.
+   */
+  async forAccount(
+    accountId: number | null | undefined,
+    chatId?: number | null,
+  ): Promise<LoadedPersona> {
+    const chat = await this.chatVars(chatId);
+    const fallback = async () => {
+      const row = await this.defaultRow();
+      return this.withCurrentLocation(row, chat);
+    };
+    if (accountId == null) return fallback();
+    const account = await this.prisma.tgAccount.findUnique({
+      where: { id: accountId },
+      select: { personaId: true },
+    });
+    if (!account?.personaId)
+      throw new NotFoundException('У аккаунта не задана личность');
+    const row = await this.prisma.persona.findUnique({
+      where: { slug: account.personaId },
+    });
+    if (!row)
+      throw new NotFoundException(
+        'Привязанная личность не найдена — автоматические ответы остановлены',
+      );
+    return this.withCurrentLocation(row, chat);
+  }
+
+  private async withCurrentLocation(
+    row: any,
+    chat: Record<string, string>,
+  ): Promise<LoadedPersona> {
+    const loaded = this.materialise(row, chat);
+    if (json(row.rhythm).timezone_mode !== 'bio' || row.enabled === false)
+      return loaded;
+    const place = await this.locations.resolve('persona', row.persona);
+    if (place.status !== 'resolved')
+      return {
+        ...loaded,
+        locationIssue:
+          'Не удалось определить текущее место личности. Укажите, где она сейчас живёт, в биографии или сохраните часовой пояс вручную в разделе «Ритм».',
+      };
+    const rhythm = { ...loaded.rhythm, timezone: place.timezone };
+    let effectiveStamp = row.updatedAt;
+    if (loaded.rhythm.timezone !== place.timezone) {
+      const updatedAt = Math.max(row.updatedAt + 1, this.clock.ts());
+      const changed = await this.prisma.persona.updateMany({
+        where: {
+          id: row.id,
+          updatedAt: row.updatedAt,
+          rhythm: row.rhythm,
+          persona: row.persona,
+        },
+        data: {
+          rhythm: JSON.stringify({
+            ...json(row.rhythm),
+            timezone: place.timezone,
+          }),
+          updatedAt,
+        },
+      });
+      if (!changed.count) {
+        const latest = await this.prisma.persona.findUnique({
+          where: { id: row.id },
+        });
+        if (!latest) throw new NotFoundException('Личность удалена');
+        return this.withCurrentLocation(latest, chat);
+      }
+      effectiveStamp = updatedAt;
+    }
+    return {
+      ...loaded,
+      updatedAt: effectiveStamp,
+      rhythm,
+      config: { ...loaded.config, timeZone: place.timezone },
+    };
+  }
+
+  /** Кто говорит в этом чате: аккаунт-владелец решает, карточка лида даёт `{city}` и `{site}`. */
+  async forChat(chatId: number): Promise<LoadedPersona> {
+    const contact = await this.prisma.contact.findUnique({
+      where: { chatId: toChatId(chatId) },
+      select: { accountId: true },
+    });
+    return this.forAccount(contact?.accountId ?? null, chatId);
+  }
+}

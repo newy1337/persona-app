@@ -1,0 +1,40 @@
+@use './styles/variables' as *;
+@use './styles/scrollbar';
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: $bg-primary;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.container {
+  width: 100%;
+  padding: 0 16px;
+  margin: 0 auto;
+  position: relative;
+}
+
+@media (min-width: #{$bp-md}) {
+  .container {
+    padding: 0 40px;
+  }
+}
+
+@media (min-width: #{$bp-xl}) {
+  .container {
+    padding: 0 72px;
+  }
+}
+
+@media (min-width: 1680px) {
+  .container {
+    padding: 0 104px;
+  }
+}

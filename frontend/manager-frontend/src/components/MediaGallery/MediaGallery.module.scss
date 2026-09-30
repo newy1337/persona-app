@@ -1,0 +1,262 @@
+@use '../../styles/variables' as *;
+@use '../../styles/ui' as *;
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  height: 100%;
+  background: $bg-main;
+  border-left: 1px solid $border-subtle;
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.4);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 12px;
+  border-bottom: 1px solid $border-subtle;
+}
+
+.title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: $text-primary;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tab {
+  @include chip;
+  gap: 6px;
+}
+
+.tabActive {
+  @include chip-selected;
+}
+
+.count {
+  font-size: 11px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.close {
+  @include icon-btn;
+}
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 12px 24px;
+}
+
+.month {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 10px 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: $text-secondary;
+  background: $bg-main;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 4px;
+}
+
+.cell {
+  position: relative;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border: none;
+  border-radius: 4px;
+  background: $bg-card;
+  cursor: pointer;
+
+  img,
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.15s ease;
+  }
+
+  &:hover img,
+  &:hover video {
+    transform: scale(1.04);
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.cellRound {
+  border-radius: 50%;
+}
+
+.play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #fff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.ours {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 1px 6px;
+  border-radius: $radius-full;
+  font-size: 10px;
+  color: #fff;
+  background: rgba($accent-blue, 0.85);
+}
+
+.empty,
+.error {
+  margin: 40px 0;
+  text-align: center;
+  font-size: 13px;
+  color: $text-secondary;
+}
+
+.error {
+  color: $status-red;
+}
+
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 1010;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 64px;
+  background: rgba(0, 0, 0, 0.9);
+
+  @media (max-width: 600px) {
+    padding: 48px 8px 16px;
+  }
+}
+
+.figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.full {
+  max-width: 100%;
+  max-height: calc(100vh - 160px);
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+.fullRound {
+  width: min(420px, 90vw);
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.caption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 16px;
+  width: 100%;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.captionActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.counter {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+.toChat {
+  @include btn;
+  @include btn-sm;
+  text-decoration: none;
+}
+
+.nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 64px;
+  border: none;
+  border-radius: $radius-md;
+  font-size: 34px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.2;
+    cursor: default;
+  }
+
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.16);
+  }
+}
+
+.navPrev { left: 10px; }
+.navNext { right: 10px; }
+
+.viewerClose {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  font-size: 16px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+}

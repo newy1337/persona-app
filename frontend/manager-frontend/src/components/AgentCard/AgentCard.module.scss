@@ -1,0 +1,187 @@
+@use '../../styles/variables' as *;
+
+.card {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: linear-gradient(135deg, $bg-main 0%, #0a0f1a 100%);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: border-color 0.15s;
+  min-width: 0;
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+}
+
+.top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.name {
+  font-size: 14px;
+  font-weight: 600;
+  color: $text-primary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.subAge {
+  font-size: 12px;
+  font-weight: 400;
+  color: $text-secondary;
+  flex-shrink: 0;
+}
+
+.subDot {
+  font-size: 12px;
+  color: $text-muted;
+  flex-shrink: 0;
+}
+
+.subLocation {
+  font-size: 12px;
+  font-weight: 400;
+  color: $text-secondary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tooltipWrap {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 9999;
+  width: 220px;
+  background: #1a2540;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: $radius-lg;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.tooltipTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.tooltipText {
+  font-size: 12px;
+  font-weight: 400;
+  color: $text-secondary;
+  line-height: 1.5;
+}
+
+.bottom {
+  padding-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: $radius-full;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pillAI {
+  color: $color-green;
+  border: 1px solid rgba($color-green, 0.25);
+  background: rgba($color-green, 0.10);
+}
+
+.pillManager {
+  color: $color-purple;
+  border: 1px solid rgba($color-purple, 0.25);
+  background: rgba($color-purple, 0.10);
+}
+
+.pillDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.reason {
+  align-self: flex-start;
+  max-width: 100%;
+  margin-top: -4px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: $text-primary;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid $border-subtle;
+  border-radius: $radius-full;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reasonUrgent {
+  color: $status-orange;
+  background: rgba($status-orange, 0.1);
+  border-color: rgba($status-orange, 0.35);
+}
+
+.timer {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  color: $text-secondary;
+}
+
+.timerValue {
+  color: $text-primary;
+  font-family: $font-mono;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 21px;
+  letter-spacing: 0.84px;
+}
+
+
+/* Restored panel readability and responsive controls. */
+.subAge, .subLocation, .timer { color:#aebed5; }

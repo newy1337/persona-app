@@ -1,0 +1,49 @@
+@use '../../styles/variables' as *;
+@use '../../styles/ui' as *;
+
+.view {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+
+  &:hover .pen { opacity: 1; }
+}
+
+.value { overflow: hidden; text-overflow: ellipsis; }
+.empty { color: $text-muted; }
+
+.pen {
+  font-size: 11px;
+  color: $text-secondary;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.edit {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.input {
+  width: 100%;
+  min-width: 90px;
+  padding: 2px 6px;
+  font: inherit;
+  color: $text-primary;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid $accent-blue;
+  border-radius: 6px;
+  outline: none;
+}
+
+.error { font-size: 11px; color: $status-red; }

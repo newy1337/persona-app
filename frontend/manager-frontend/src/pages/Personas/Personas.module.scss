@@ -1,0 +1,354 @@
+@use '../../styles/variables' as *;
+@use '../../styles/ui' as *;
+
+.layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  @include surface;
+  padding: 8px;
+  position: sticky;
+  top: 12px;
+}
+
+.listItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 11px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: $radius-md;
+  cursor: pointer;
+  color: $text-primary;
+  &:hover { background: rgba(255, 255, 255, 0.04); }
+}
+.listItemActive {
+  background: rgba($accent-blue, 0.16);
+  border-color: rgba($accent-blue, 0.55);
+}
+.listName { font-size: 14px; font-weight: 600; }
+.listMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: $text-secondary;
+}
+
+.detail {
+  min-width: 0;
+  @include surface;
+  padding: 16px;
+}
+.detailHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.detailName { margin: 0; font-size: 17px; font-weight: 600; color: $text-primary; }
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 16px 0 12px;
+  border-bottom: 1px solid $border-subtle;
+  overflow-x: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+.tab {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: $text-secondary;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  white-space: nowrap;
+  &:hover { color: $text-primary; }
+  @include focus-ring;
+}
+.tabActive { color: $text-primary; border-bottom-color: $accent-blue; }
+
+.section { display: flex; flex-direction: column; gap: 10px; }
+.sectionBar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.json {
+  width: 100%;
+  min-height: 60vh;
+  font-family: $font-mono;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+.prompts { display: flex; flex-direction: column; gap: 18px; }
+.promptBlock { display: flex; flex-direction: column; gap: 6px; }
+.promptHead { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.promptTitle { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: $text-primary; }
+.promptOwn {
+  font-size: 11px;
+  font-weight: 600;
+  color: $accent-cyan;
+  border: 1px solid rgba($accent-cyan, 0.4);
+  border-radius: $radius-full;
+  padding: 2px 8px;
+}
+.promptHint { margin: 0; font-size: 12px; color: $text-secondary; }
+.promptText {
+  width: 100%;
+  font-family: $font-mono;
+  font-size: 12px;
+  line-height: 1.55;
+  resize: vertical;
+  &::placeholder { color: $text-muted; }
+}
+
+.stickyBar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  background: linear-gradient(to top, $bg-surface 60%, rgba(14, 21, 36, 0));
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1024px) {
+  .layout { grid-template-columns: 1fr; }
+  .list { position: static; flex-direction: row; overflow-x: auto; }
+  .listItem { min-width: 160px; }
+}
+
+.modes { display: inline-flex; gap: 2px; background: rgba(0, 0, 0, 0.25); border-radius: $radius-md; padding: 2px; }
+.modeBtn {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: $text-secondary;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  &:hover { color: $text-primary; }
+}
+.modeBtnActive { color: $text-primary; background: rgba(255, 255, 255, 0.08); }
+
+.draftNote {
+  margin: 0;
+  padding: 7px 11px;
+  font-size: 12px;
+  color: $status-orange;
+  background: rgba(249, 115, 22, 0.08);
+  border: 1px solid rgba(249, 115, 22, 0.25);
+  border-radius: $radius-md;
+}
+
+.notes {
+  font-size: 12px;
+  color: $text-secondary;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: $radius-md;
+  padding: 8px 11px;
+  summary { cursor: pointer; user-select: none; }
+  ul { margin: 8px 0 0; padding-left: 16px; display: flex; flex-direction: column; gap: 6px; }
+  li { line-height: 1.45; }
+}
+
+.docLayout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.docNav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 62vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.docNavItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 13px;
+  color: $text-secondary;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  &:hover { background: rgba(255, 255, 255, 0.05); color: $text-primary; }
+}
+.docNavItemActive { background: rgba(255, 255, 255, 0.08); color: $text-primary; font-weight: 600; }
+.docNavTitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.docNavCount { margin-left: auto; font-family: $font-mono; font-size: 11px; color: $text-muted; }
+
+.docBody { min-width: 0; max-height: 62vh; overflow-y: auto; padding-right: 6px; }
+.groupHint { margin: 0 0 12px; font-size: 12px; line-height: 1.5; color: $text-secondary; }
+
+.fields { display: flex; flex-direction: column; gap: 14px; }
+.field { display: grid; grid-template-columns: minmax(150px, 210px) minmax(0, 1fr); gap: 14px; align-items: start; }
+.fieldLabel { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; }
+.fieldName { font-size: 13px; font-weight: 600; color: $text-primary; }
+.fieldKey { font-family: $font-mono; font-size: 11px; color: $text-muted; }
+.fieldHint { font-size: 11px; line-height: 1.4; color: $text-secondary; }
+.fieldValue { min-width: 0; }
+
+.numField { width: 120px; font-family: $font-mono; }
+.textField { width: 100%; line-height: 1.5; resize: vertical; }
+
+.fieldList { display: flex; flex-direction: column; gap: 8px; }
+.listRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+.listCard {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: $radius-md;
+}
+.cardHead { display: flex; align-items: center; gap: 8px; padding: 7px 9px; }
+.cardToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: $text-primary;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.caret { color: $text-muted; font-size: 11px; }
+.cardName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cardBody { padding: 4px 11px 11px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+
+.rowTools { display: flex; gap: 2px; flex-shrink: 0; }
+.iconBtn {
+  @include icon-btn;
+  width: 26px;
+  height: 26px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+.iconDanger:hover:not(:disabled) { color: $status-red; border-color: rgba($status-red, 0.5); }
+
+.draftMark { color: $status-orange; font-size: 11px; }
+
+@media (max-width: 900px) {
+  .docLayout { grid-template-columns: 1fr; }
+  .docNav { flex-direction: row; overflow-x: auto; max-height: none; }
+  .field { grid-template-columns: 1fr; gap: 6px; }
+}
+
+.rhythmGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  margin-bottom: 72px;
+}
+
+.rhythmCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: $radius-lg;
+}
+
+.rhythmHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rhythmField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rhythmLabel { font-size: 12px; color: $text-secondary; }
+.rhythmHint { font-size: 11px; color: $text-muted; line-height: 1.4; }
+
+.rhythmInput {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  input { width: 100%; max-width: 120px; }
+}
+
+.rhythmPair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.varTable {
+  td { vertical-align: top; white-space: normal; }
+  margin-bottom: 72px;
+}
+
+.varKey {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  input { width: 150px; }
+}
+
+.varValue { width: 100%; min-width: 160px; }
+
+.varError {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: $status-red;
+}
+
+.varBuiltin td { opacity: 0.75; }
+
+.varMissing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: $status-orange;
+  background: rgba(255, 170, 0, 0.06);
+  border: 1px solid rgba(255, 170, 0, 0.25);
+  border-radius: $radius-md;
+}
+
+
+/* Restored panel readability and responsive controls. */
+.promptHint, .groupHint, .fieldHint, .rhythmLabel, .rhythmHint { color:#b3c1d8; font-size:13px; line-height:1.5; }

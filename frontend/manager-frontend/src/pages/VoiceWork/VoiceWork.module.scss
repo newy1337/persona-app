@@ -1,0 +1,45 @@
+@use '../../styles/variables' as *;
+@use '../../styles/ui' as *;
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 16px 0; > input { flex: 1 1 240px; min-width: 0; } }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 16px; padding-bottom: 24px; }
+.card { @include surface; padding: 20px; min-width: 0; display: flex; flex-direction: column; gap: 12px; overflow-wrap: anywhere;
+ h3 { font-size: 17px; line-height: 1.4; margin: 0; color: $text-primary; }
+ p { margin: 0; font-size: 14px; line-height: 1.6; }
+ audio { width: 100%; height: 42px; }
+}
+.cardTop { display: flex; gap: 8px; justify-content: space-between; align-items: flex-start; }
+.meta { color: #b2bfd3; font-size: 14px; line-height: 1.6; }
+.preview { white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 6px; }
+.notice { border: 1px solid rgba($accent-cyan, .3); background: rgba($accent-cyan, .06); color: $text-primary; border-radius: 12px; padding: 14px 16px; margin: 16px 0; font-size: 14px; line-height: 1.6; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.warning { color: $status-orange; }
+.form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; min-width: 0; label { font-size: 14px; } input, textarea, select { min-width: 0; width: 100%; box-sizing: border-box; } textarea { min-height: 100px; } }
+.full { grid-column: 1 / -1; }
+.brief { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: 14px; line-height: 1.7; margin: 8px 0; max-height: 45vh; overflow-y: auto; }
+.detail { display: flex; flex-direction: column; gap: 14px; p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; } summary { cursor: pointer; color: $accent-cyan; padding: 8px 0; } label { font-size: 14px; } }
+.empty { @include surface; padding: 40px 24px; text-align: center; color: #b2bfd3; line-height: 1.7; }
+.pager { display: flex; gap: 14px; justify-content: center; align-items: center; margin-bottom: 24px; }
+@media (max-width: 640px) { .form { grid-template-columns: 1fr; } .card { padding: 16px; } }
+
+.tag { @include badge(#b2bfd3); }
+.chatSelect { display: flex; flex-direction: column; gap: 10px; min-width: 0; p { margin: 0; font-size: 13px; } }
+.chat { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.chatHeading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.messages { display: flex; flex-direction: column; gap: 12px; height: 42vh; min-height: 220px; overflow-y: auto; overscroll-behavior: contain; padding: 4px 8px 4px 2px; }
+.message { border: 1px solid #36445a; border-radius: 12px; padding: 12px; background: #172130; color: #eef4fc; width: fit-content; max-width: 88%; overflow-wrap: anywhere; flex-shrink: 0;
+ p { white-space: pre-wrap; font-size: 14px; line-height: 1.6; } }
+.outgoing { align-self: flex-end; background: #123330; border-color: #2e6660; }
+.messageMeta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 6px; color: #bbcddd; font-size: 12px; }
+.attachment { margin-top: 8px; min-width: 0; img, video { display: block; max-width: 100%; max-height: 280px; border-radius: 8px; } }
+@media (max-width: 640px) { .message { max-width: 95%; padding: 10px; } .messages { padding-right: 2px; } }
+
+.callPanel { box-shadow: 0 8px 18px rgba(0,0,0,.22); border: 1px solid #2e6660; border-radius: 12px; padding: 16px; background: #102824; display: flex; flex-direction: column; gap: 12px; color: #eef4fc; }
+.callActive { position: sticky; top: 0; z-index: 3; }
+.callBrief { border: 1px solid #36445a; background: #172130; border-radius: 12px; padding: 12px 16px; min-width: 0; color: #eef4fc;
+  > summary { font-weight: 600; } ul { padding-left: 20px; margin: 8px 0; } li { margin: 6px 0; line-height: 1.6; overflow-wrap: anywhere; } small { color: #bbcddd; }
+}
+.briefColumns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; max-height: 38vh; overflow-y: auto; overscroll-behavior: contain;
+  section { min-width: 0; } h4 { margin: 12px 0; } dl { margin: 0; } dl > div { margin: 8px 0; } dt { font-size: 12px; color: #bbcddd; } dd { margin: 2px 0 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+}
+@media (max-width: 640px) { .briefColumns { grid-template-columns: minmax(0, 1fr); } }

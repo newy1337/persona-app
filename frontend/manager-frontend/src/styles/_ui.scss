@@ -1,0 +1,198 @@
+@use './variables' as *;
+
+@mixin focus-ring {
+  &:focus-visible {
+    outline: 2px solid rgba($accent-blue, 0.7);
+    outline-offset: 1px;
+  }
+}
+
+@mixin btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: $control-h;
+  padding: 0 14px;
+  font-family: $font-family;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  color: $text-primary;
+  background: $bg-control;
+  border: 1px solid $border-control;
+  border-radius: $radius-md;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+  &:hover:not(:disabled) {
+    background: $bg-control-hover;
+    border-color: $border-control-hover;
+  }
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  @include focus-ring;
+}
+
+@mixin btn-sm {
+  height: $control-h-sm;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+@mixin btn-primary {
+  color: #fff;
+  background: $accent-blue;
+  border-color: $accent-blue;
+  font-weight: 600;
+  &:hover:not(:disabled) {
+    background: $accent-blue-hover;
+    border-color: $accent-blue-hover;
+  }
+}
+
+@mixin btn-danger {
+  color: $status-red;
+  &:hover:not(:disabled) {
+    background: rgba($status-red, 0.08);
+    border-color: rgba($status-red, 0.5);
+  }
+}
+
+@mixin btn-ghost {
+  color: $text-secondary;
+  background: transparent;
+  border-color: transparent;
+  &:hover:not(:disabled) {
+    color: $text-primary;
+    background: rgba(255, 255, 255, 0.05);
+    border-color: transparent;
+  }
+}
+
+@mixin btn-selected {
+  color: $text-primary;
+  background: rgba($accent-blue, 0.16);
+  border-color: rgba($accent-blue, 0.55);
+  &:hover:not(:disabled) {
+    background: rgba($accent-blue, 0.22);
+    border-color: rgba($accent-blue, 0.7);
+  }
+}
+
+@mixin icon-btn {
+  @include btn;
+  width: $control-h;
+  padding: 0;
+  color: $text-secondary;
+  &:hover:not(:disabled) { color: $text-primary; }
+}
+
+@mixin input {
+  height: $control-h;
+  padding: 0 10px;
+  font-family: $font-family;
+  font-size: 13px;
+  color: $text-primary;
+  background: $bg-input;
+  border: 1px solid $border-control;
+  border-radius: $radius-md;
+  outline: none;
+  transition: border-color 0.15s;
+  &::placeholder { color: $text-secondary; }
+  &:hover:not(:disabled):not(:focus) { border-color: $border-control-hover; }
+  &:focus { border-color: $accent-blue; }
+  &:disabled { opacity: 0.5; }
+}
+
+@mixin textarea {
+  @include input;
+  height: auto;
+  padding: 8px 10px;
+  line-height: 1.5;
+}
+
+@mixin chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: $text-secondary;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid $border-control;
+  border-radius: $radius-full;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  &:hover { color: $text-primary; border-color: $border-control-hover; }
+  @include focus-ring;
+}
+
+@mixin chip-selected {
+  color: $text-primary;
+  background: rgba($accent-blue, 0.16);
+  border-color: rgba($accent-blue, 0.55);
+}
+
+@mixin badge($color) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  color: $color;
+  background: rgba($color, 0.08);
+  border: 1px solid rgba($color, 0.35);
+  border-radius: $radius-full;
+}
+
+@mixin surface {
+  background: $bg-surface;
+  border: 1px solid $border-subtle;
+  border-radius: $radius-lg;
+}
+
+@mixin dropdown-panel {
+  background: $bg-elevated;
+  border: 1px solid $border-control;
+  border-radius: $radius-md;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+@mixin dropdown-option {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  text-align: left;
+  font-size: 13px;
+  color: $text-secondary;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  &:hover { color: $text-primary; background: rgba(255, 255, 255, 0.05); }
+}
+
+@mixin dropdown-option-selected {
+  color: $text-primary;
+  background: rgba($accent-blue, 0.14);
+}
+
+@mixin section-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  color: $text-primary;
+}
