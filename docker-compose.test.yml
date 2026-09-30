@@ -10,7 +10,7 @@ services:
       POSTGRES_USER: nastya
       POSTGRES_PASSWORD: nastya
     ports:
-      # 5432 на машине разработчика часто занят: берём отдельный порт.
+
       - "5436:5432"
     tmpfs:
       - /var/lib/postgresql/data
