@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { matchesQuery, matchesHeadFilters, matchesDateFilter } from './search';
+import { moscowDay, moscowMidnight } from './panelTime';
 
 const ROW = {
   chat_id: 2055107445,
@@ -64,7 +65,9 @@ describe('matchesDateFilter — «SELECT DATE»', () => {
   const DAY = 24 * 3600;
   const NOW = Math.floor(Date.now() / 1000);
   const rowAt = (ts) => ({ ...ROW, last_message_ts: ts });
-  const startToday = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+  // Сутки у фильтра московские, а не по часам машины: на сервере в UTC между
+  // 21:00 и полуночью местная полночь попадает уже во вчера по Москве.
+  const startToday = moscowMidnight(moscowDay(new Date()));
 
   it('пустой фильтр пропускает всё, даже без last_message_ts', () => {
     expect(matchesDateFilter({ ...ROW, last_message_ts: 0 }, '')).toBe(true);
