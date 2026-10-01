@@ -38,7 +38,9 @@ export default function MediaGallery({ items, loading, error, onClose, onShowInC
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') (open >= 0 ? setOpen(-1) : onClose());
+      if (e.key === 'Escape') {
+        if (open >= 0) setOpen(-1); else onClose();
+      }
       if (open < 0) return;
       if (e.key === 'ArrowLeft') setOpen((i) => Math.max(0, i - 1));
       if (e.key === 'ArrowRight') setOpen((i) => Math.min(shown.length - 1, i + 1));

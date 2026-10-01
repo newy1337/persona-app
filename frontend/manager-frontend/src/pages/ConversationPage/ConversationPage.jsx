@@ -212,7 +212,6 @@ function ConversationPage() {
   const [gallery, setGallery] = useState(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [reactFor, setReactFor] = useState(null);
-  const [dragOver, setDragOver] = useState(false);
   const fileInput = useRef(null);
   const voiceInput = useRef(null);
   const roundInput = useRef(null);

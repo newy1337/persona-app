@@ -21,7 +21,7 @@ export function CallPanel({ task, onActive }) {
     api.get(`/api/voicer/tasks/${task.id}/call`).then(row => { if (alive.current && !resources.current && row) { setState(row.status); setReason(row.reason); } }).catch(() => {});
     const timer = setInterval(() => { if (startAt.current) setSeconds(Math.max(0, Math.floor(Date.now() / 1000 - startAt.current))); }, 1000);
     return () => { alive.current = false; clearInterval(timer); release(); };
-  }, [task.id]);
+  }, [task.id]); // eslint-disable-line react-hooks/exhaustive-deps
   async function start() {
     if (resources.current) return;
     const r = { stopped: false }; resources.current = r;

@@ -4,7 +4,6 @@ import { createRoot } from 'react-dom/client';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, afterEach, expect, test, vi } from 'vitest';
 import { api } from '../../api/client';
-import { PanelUX } from '../../ui/PanelUX';
 import VoiceWork from './VoiceWork';
 vi.mock('../../components/Header/Header', () => ({ default: () => null }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;

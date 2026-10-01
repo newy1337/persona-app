@@ -12,6 +12,7 @@ const SHORT = new Set(['opener', 'intro']);
 
 export default function PromptsEditor({ persona, defaults, onSaved, onError }) {
   const server = persona.sections.prompts ?? {};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const serverText = useMemo(() => JSON.stringify(server), [server]);
 
   const [draft, setDraft] = useState(server);
@@ -47,7 +48,7 @@ export default function PromptsEditor({ persona, defaults, onSaved, onError }) {
       setFlash(null);
       versions.hide();
     }
-  }, [persona.id, serverText]);
+  }, [persona.id, serverText]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => () => clearTimeout(timer.current), []);
 

@@ -210,7 +210,7 @@ export default function Leads() {
     }
   }
 
-  const toggle = (id) => setSelected((v) => { const n = new Set(v); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggle = (id) => setSelected((v) => { const n = new Set(v); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const ids = [...selected];
   const counts = data.counts ?? {};
 
@@ -270,7 +270,7 @@ export default function Leads() {
           <LeadsTable rows={data.items} query={q} status={status} selected={selected}
             onToggle={toggle} onSelectVisible={checked => setSelected(previous => {
               const next = new Set(previous);
-              for (const row of data.items) checked ? next.add(row.id) : next.delete(row.id);
+              for (const row of data.items) { if (checked) next.add(row.id); else next.delete(row.id); }
               return next;
             })} onClearSelection={() => setSelected(new Set())}
             onChat={id => navigate(`/conversation/${id}`)}

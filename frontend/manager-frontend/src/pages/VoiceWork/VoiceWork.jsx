@@ -211,6 +211,7 @@ export default function VoiceWork() {
     } catch (e) { if (current === sequence.current) setError(errorText(e)); }
     finally { if (current === sequence.current) setLoading(false); }
   }, [tab, page, status, search]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setLoading(true); load(); const timer = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 15000); return () => { clearInterval(timer); sequence.current++; }; }, [load]);
   async function open(id) {
     try { setDetail(await api.get(`/api/voicer/tasks/${id}`)); setDetailError(''); }

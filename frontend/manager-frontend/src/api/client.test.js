@@ -60,7 +60,7 @@ describe('api client', () => {
 
   it.each(['/api/manager/queue', '/auth/me'])('на 401 продлевает вход и повторяет %s один раз', async (path) => {
     const calls = [];
-    globalThis.fetch = vi.fn(async (url, init) => {
+    globalThis.fetch = vi.fn(async (url) => {
       calls.push(url);
       if (url.endsWith('/auth/token/refresh')) {
         return { ok: true, status: 200, json: async () => ({ tokens: { accessToken: 'new', refreshToken: 'ref456' } }) };

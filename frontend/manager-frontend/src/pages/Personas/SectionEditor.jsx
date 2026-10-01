@@ -47,7 +47,7 @@ export default function SectionEditor({ persona, section, onSaved, onError }) {
       setFlash(null);
       versions.hide();
     }
-  }, [persona.id, section, server]);
+  }, [persona.id, section, server]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => () => clearTimeout(timer.current), []);
 

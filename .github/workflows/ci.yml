@@ -8,9 +8,6 @@ on:
 permissions:
   contents: read
 
-# Один прогон проверок на ветку: новый push отменяет предыдущий.
-# Деплой не отменяется никогда — иначе сервер может остаться в полусобранном
-# состоянии.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -21,7 +18,7 @@ env:
 jobs:
   checks:
     name: checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     services:
@@ -40,9 +37,9 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -50,14 +47,12 @@ jobs:
             backend/package-lock.json
             frontend/manager-frontend/package-lock.json
 
-      # --- backend ---
       - name: backend · install
         working-directory: backend
         run: npm ci --no-audit --no-fund
 
       - name: backend · lint
         working-directory: backend
-        # npm run lint правит файлы через --fix; в CI только проверяем.
         run: npx eslint "{src,test}/**/*.ts"
 
       - name: backend · unit tests
@@ -74,7 +69,6 @@ jobs:
           TEST_DATABASE_URL: postgresql://nastya:nastya@127.0.0.1:5436/nastya_test
         run: npx jest --ci --config ./test/jest-e2e.json
 
-      # --- frontend ---
       - name: frontend · install
         working-directory: frontend/manager-frontend
         run: npm ci --no-audit --no-fund
@@ -91,11 +85,8 @@ jobs:
         working-directory: frontend/manager-frontend
         run: npm run build
 
-      # Образы собираются так же, как на сервере: ловим ошибки Dockerfile до деплоя.
       - name: docker · build images
         env:
-          # compose падает на ${POSTGRES_PASSWORD:?} уже при разборе файла;
-          # для сборки образов значение не важно.
           POSTGRES_PASSWORD: ci
         run: docker compose build --quiet
 
@@ -103,8 +94,6 @@ jobs:
     name: deploy
     needs: checks
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    # Self-hosted runner стоит на самом сервере: ни ssh, ни ключей не нужно.
-    # Метки задаются при регистрации runner'а (см. README, «Автодеплой»).
     runs-on: [self-hosted, persona]
     timeout-minutes: 30
     environment:
@@ -117,8 +106,6 @@ jobs:
     steps:
       - name: update and deploy
         env:
-          # Каталог с рабочей установкой (там лежит .env). Переменная репозитория
-          # DEPLOY_PATH; пусто — /srv/persona-app.
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/srv/persona-app' }}
         run: |
           set -euo pipefail
@@ -131,7 +118,7 @@ jobs:
     name: notify
     needs: [checks, deploy]
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:

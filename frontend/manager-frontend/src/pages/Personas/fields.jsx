@@ -144,7 +144,7 @@ function ArrayEditor({ value, onChange }) {
       onChange([...value, '']);
     }
   };
-  const toggle = (i) => setOpen((v) => { const n = new Set(v); n.has(i) ? n.delete(i) : n.add(i); return n; });
+  const toggle = (i) => setOpen((v) => { const n = new Set(v); if (n.has(i)) n.delete(i); else n.add(i); return n; });
 
   return (
     <div className={p.fieldList}>

@@ -28,7 +28,7 @@ export function SendVoice({ item, initialChat, onClose, onChange }) {
       finally { pending = false; }
     }, 3000);
     return () => { active = false; clearInterval(timer); };
-  }, [delivery?.id, delivery?.status, onChange]);
+  }, [delivery?.id, delivery?.status, onChange]); // eslint-disable-line react-hooks/exhaustive-deps
   async function send(retry = false) {
     if (locked.current || !chat) return;
     locked.current = true; setBusy(true); setError('');

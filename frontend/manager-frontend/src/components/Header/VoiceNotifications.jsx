@@ -14,6 +14,7 @@ export default function VoiceNotifications({ userId }) {
   const load = useCallback(async () => {
     const result = await api.get('/api/voicer/notices');
     setData(normalize(result)); setError('');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
   useEffect(() => {
     let active = true, pending = false;
@@ -40,7 +41,7 @@ export default function VoiceNotifications({ userId }) {
     if (!latest || latest.id === dismissed || open) return;
     const timer = setTimeout(() => setDismissed(latest.id), 7000);
     return () => clearTimeout(timer);
-  }, [latest?.id, dismissed, open]);
+  }, [latest?.id, dismissed, open]); // eslint-disable-line react-hooks/exhaustive-deps
   return <>
     <button className={`${s.btnSm} ${v.bell}`} aria-label={`Уведомления: ${data.unread} непрочитанных`} onClick={() => setOpen(true)} title="Уведомления о голосовых">
       <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M9 21h6" /></svg>

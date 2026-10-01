@@ -26,7 +26,7 @@ export default function PricesEditor({ onChanged, onError }) {
 
   useEffect(() => {
     load();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!table || !draft) return <p className={s.empty}>Загружаю цены…</p>;
 

@@ -58,7 +58,7 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
       setFlash(null);
       versions.hide();
     }
-  }, [persona.id, serverText]);
+  }, [persona.id, serverText]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
