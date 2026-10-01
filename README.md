@@ -112,3 +112,62 @@ cd backend && npm run test:e2e
 
 Каждый набор работает в своей схеме и пересоздаёт её на входе, поэтому наборы не
 мешают друг другу. Другой адрес базы можно задать переменной `TEST_DATABASE_URL`.
+
+## Автодеплой
+
+Пайплайн в `.github/workflows/ci.yml` запускается на каждый push и pull request:
+
+| Шаг | Где | Что делает |
+|---|---|---|
+| `checks` | GitHub | Бэкенд: eslint, unit, сборка, e2e на PostgreSQL. Панель: oxlint, vitest, сборка. Плюс `docker compose build`. |
+| `deploy` | runner на сервере | Только push в `main`. Переключает репозиторий на коммит и запускает `deploy/deploy.sh`. |
+| `notify` | GitHub | Пишет итог в Telegram. Без токена шаг молча пропускается. |
+
+`deploy/deploy.sh` делает снимок базы в `backups/`, собирает образы, перезапускает
+стек и ждёт `healthcheck` бэкенда. Если бэкенд не поднялся, скрипт откатывает код
+и образы на прежний коммит (база остаётся как есть, миграции идут только вперёд).
+Запускать его можно и руками с сервера.
+
+### Сервер, один раз
+
+```bash
+git clone https://github.com/newy1337/persona-app /srv/persona-app
+cd /srv/persona-app && cp .env.example .env   # и заполнить
+```
+
+### Runner на сервере
+
+Деплой выполняет self-hosted runner GitHub Actions, который стоит на том же
+сервере. В репозитории: Settings → Actions → Runners → New self-hosted runner,
+Linux. GitHub покажет команды скачивания и регистрации; при регистрации добавьте
+метку `persona` — по ней workflow выбирает этот runner:
+
+```bash
+./config.sh --url https://github.com/newy1337/persona-app --token <из страницы> --labels persona --unattended
+sudo ./svc.sh install && sudo ./svc.sh start
+```
+
+Пользователь, от которого работает служба runner'а, должен уметь запускать
+docker и писать в каталог установки:
+
+```bash
+sudo usermod -aG docker $(whoami)
+```
+
+Runner'у ssh не нужен: job просто делает `git checkout` в каталоге установки и
+запускает скрипт.
+
+### Настройки репозитория
+
+Settings → Secrets and variables → Actions:
+
+| Тип | Имя | Значение |
+|---|---|---|
+| Variable | `DEPLOY_PATH` | каталог установки; пусто — `/srv/persona-app` |
+| Variable | `PANEL_URL` | ссылка на панель, показывается в карточке окружения `production`; необязательно |
+| Secret | `TG_NOTIFY_BOT_TOKEN` | токен бота для уведомлений; необязательно |
+| Secret | `TG_NOTIFY_CHAT_ID` | куда писать; необязательно |
+
+Деплой идёт через окружение `production`: в его настройках можно включить ручное
+подтверждение перед выкаткой. Runner запускает только `deploy` и только из
+`main`, проверки pull request'ов на нём не выполняются.

@@ -27,6 +27,16 @@
       "env": {
         "node": true
       }
+    },
+    {
+      "files": [
+        "public/audio/*.js"
+      ],
+      "globals": {
+        "AudioWorkletProcessor": "readonly",
+        "registerProcessor": "readonly",
+        "sampleRate": "readonly"
+      }
     }
   ]
 }

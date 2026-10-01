@@ -38,3 +38,7 @@ coverage/
 .vscode/
 /.claude/
 /.claude/
+
+# Деплой: снимки базы и отметка последнего выкаченного коммита.
+/backups/
+/.deployed-sha

@@ -1,0 +1,171 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Один прогон проверок на ветку: новый push отменяет предыдущий.
+# Деплой не отменяется никогда — иначе сервер может остаться в полусобранном
+# состоянии.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: 22
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      db:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: nastya_test
+          POSTGRES_USER: nastya
+          POSTGRES_PASSWORD: nastya
+        ports:
+          - 5436:5432
+        options: >-
+          --health-cmd "pg_isready -U nastya -d nastya_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/manager-frontend/package-lock.json
+
+      # --- backend ---
+      - name: backend · install
+        working-directory: backend
+        run: npm ci --no-audit --no-fund
+
+      - name: backend · lint
+        working-directory: backend
+        # npm run lint правит файлы через --fix; в CI только проверяем.
+        run: npx eslint "{src,test}/**/*.ts"
+
+      - name: backend · unit tests
+        working-directory: backend
+        run: npx jest --ci
+
+      - name: backend · build
+        working-directory: backend
+        run: npm run build
+
+      - name: backend · e2e tests
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: postgresql://nastya:nastya@127.0.0.1:5436/nastya_test
+        run: npx jest --ci --config ./test/jest-e2e.json
+
+      # --- frontend ---
+      - name: frontend · install
+        working-directory: frontend/manager-frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: frontend · lint
+        working-directory: frontend/manager-frontend
+        run: npm run lint
+
+      - name: frontend · tests
+        working-directory: frontend/manager-frontend
+        run: npx vitest run
+
+      - name: frontend · build
+        working-directory: frontend/manager-frontend
+        run: npm run build
+
+      # Образы собираются так же, как на сервере: ловим ошибки Dockerfile до деплоя.
+      - name: docker · build images
+        env:
+          # compose падает на ${POSTGRES_PASSWORD:?} уже при разборе файла;
+          # для сборки образов значение не важно.
+          POSTGRES_PASSWORD: ci
+        run: docker compose build --quiet
+
+  deploy:
+    name: deploy
+    needs: checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Self-hosted runner стоит на самом сервере: ни ssh, ни ключей не нужно.
+    # Метки задаются при регистрации runner'а (см. README, «Автодеплой»).
+    runs-on: [self-hosted, persona]
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ vars.PANEL_URL }}
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    steps:
+      - name: update and deploy
+        env:
+          # Каталог с рабочей установкой (там лежит .env). Переменная репозитория
+          # DEPLOY_PATH; пусто — /srv/persona-app.
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/srv/persona-app' }}
+        run: |
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
+          git fetch --prune origin
+          git checkout --quiet --force "$GITHUB_SHA"
+          bash deploy/deploy.sh "$GITHUB_SHA"
+
+  notify:
+    name: notify
+    needs: [checks, deploy]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: telegram
+        env:
+          BOT_TOKEN: ${{ secrets.TG_NOTIFY_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TG_NOTIFY_CHAT_ID }}
+          CHECKS: ${{ needs.checks.result }}
+          DEPLOY: ${{ needs.deploy.result }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+            echo "TG_NOTIFY_BOT_TOKEN / TG_NOTIFY_CHAT_ID не заданы, уведомление пропущено"
+            exit 0
+          fi
+          if [ "$DEPLOY" = "success" ]; then
+            ICON="✅"; TITLE="Деплой прошёл"
+          elif [ "$CHECKS" != "success" ]; then
+            ICON="❌"; TITLE="Проверки упали, деплоя не было"
+          else
+            ICON="🔥"; TITLE="Деплой упал ($DEPLOY)"
+          fi
+          SHORT_SHA="${SHA:0:7}"
+          FIRST_LINE="$(printf '%s' "$MESSAGE" | head -n1)"
+          TEXT="$ICON $TITLE
+          $REPO @ $SHORT_SHA by $ACTOR
+          $FIRST_LINE
+          checks: $CHECKS · deploy: $DEPLOY
+          $RUN_URL"
+          curl -fsS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${TEXT}" \
+            --data-urlencode "disable_web_page_preview=true" > /dev/null

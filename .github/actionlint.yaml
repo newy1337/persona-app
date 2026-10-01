@@ -1,0 +1,4 @@
+self-hosted-runner:
+  # Метка runner'а на сервере, см. README «Автодеплой».
+  labels:
+    - persona
