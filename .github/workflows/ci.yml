@@ -135,24 +135,26 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
-            echo "TG_NOTIFY_BOT_TOKEN / TG_NOTIFY_CHAT_ID не заданы, уведомление пропущено"
+            echo "TG_NOTIFY_BOT_TOKEN / TG_NOTIFY_CHAT_ID not set, skipping"
             exit 0
           fi
           if [ "$DEPLOY" = "success" ]; then
-            ICON="✅"; TITLE="Деплой прошёл"
+            TITLE="✅ Деплой прошёл"
           elif [ "$CHECKS" != "success" ]; then
-            ICON="❌"; TITLE="Проверки упали, деплоя не было"
+            TITLE="❌ Проверки упали, деплоя не было"
           else
-            ICON="🔥"; TITLE="Деплой упал ($DEPLOY)"
+            TITLE="🔥 Деплой упал ($DEPLOY)"
           fi
-          SHORT_SHA="${SHA:0:7}"
           FIRST_LINE="$(printf '%s' "$MESSAGE" | head -n1)"
-          TEXT="$ICON $TITLE
-          $REPO @ $SHORT_SHA by $ACTOR
-          $FIRST_LINE
-          checks: $CHECKS · deploy: $DEPLOY
-          $RUN_URL"
-          curl -fsS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+          TEXT="$(printf '%s\n%s @ %s by %s\n%s\nchecks: %s · deploy: %s\n%s' \
+            "$TITLE" "$REPO" "${SHA:0:7}" "$ACTOR" "$FIRST_LINE" "$CHECKS" "$DEPLOY" "$RUN_URL")"
+          RESPONSE="$(curl -sS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${CHAT_ID}" \
             --data-urlencode "text=${TEXT}" \
-            --data-urlencode "disable_web_page_preview=true" > /dev/null
+            --data-urlencode "disable_web_page_preview=true")"
+          if printf '%s' "$RESPONSE" | grep -q '"ok":true'; then
+            echo "sent"
+          else
+            echo "telegram error: $(printf '%s' "$RESPONSE" | sed -E 's/"ok":false,?//')"
+            exit 1
+          fi
