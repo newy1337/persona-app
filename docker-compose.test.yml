@@ -11,7 +11,7 @@ services:
       POSTGRES_PASSWORD: nastya
     ports:
 
-      - "5436:5432"
+      - "127.0.0.1:5436:5432"
     tmpfs:
       - /var/lib/postgresql/data
     healthcheck:

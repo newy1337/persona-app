@@ -1,9 +1,14 @@
 # Установка с нуля: `cp .env.example .env`, заполнить, `docker compose up -d --build`.
 # Панель и API отвечают на одном адресе, поэтому CORS не нужен.
 #
-# Состояние живёт в двух отдельных томах: `pgdata` — база, `data` — медиа,
-# загрузки и личности. Пересборка образов их не трогает; удалить их может только
-# явная команда `docker compose down -v` (обычный `down` тома сохраняет).
+# Состояние лежит в обычных каталогах хоста, а не в томах Docker: `docker compose
+# down -v` и `docker system prune --volumes` до них не дотянутся. Корень задаётся
+# через DATA_ROOT в .env, по умолчанию /srv/persona-data.
+#
+# Каталоги нужно создать заранее и отдать их владельцам из контейнеров:
+#   sudo mkdir -p /srv/persona-data/{pgdata,app}
+#   sudo chown 70:70     /srv/persona-data/pgdata   # postgres в alpine-образе
+#   sudo chown 1000:1000 /srv/persona-data/app      # node в образе бэкенда
 
 services:
   db:
@@ -14,8 +19,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-nastya}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
     volumes:
-      - pgdata:/var/lib/postgresql/data
-    # Наружу не выставляем: к базе ходит только бэкенд по внутренней сети.
+      - ${DATA_ROOT:-/srv/persona-data}/pgdata:/var/lib/postgresql/data
+
     expose:
       - "5432"
     healthcheck:
@@ -30,17 +35,14 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      # Адрес базы собирается здесь, чтобы в .env не дублировать пароль дважды.
       DATABASE_URL: postgresql://${POSTGRES_USER:-nastya}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-nastya}?schema=public
-      # Медиа, загрузки и личности лежат в своём томе, а не в образе.
       DATA_DIR: /app/data
       PERSONAS_DIR: /app/data/personas
     volumes:
-      - data:/app/data
+      - ${DATA_ROOT:-/srv/persona-data}/app:/app/data
     depends_on:
       db:
         condition: service_healthy
-    # Наружу не выставляем: снаружи к API ходят через панель.
     expose:
       - "8011"
     healthcheck:
@@ -53,7 +55,7 @@ services:
         ]
       interval: 30s
       timeout: 5s
-      # Служба поднимает все Telegram-аккаунты на старте, это занимает до двух минут.
+
       start_period: 180s
       retries: 3
 
@@ -64,7 +66,3 @@ services:
       - backend
     ports:
       - "127.0.0.1:${PANEL_PORT:-8080}:80"
-
-volumes:
-  pgdata:
-  data:
