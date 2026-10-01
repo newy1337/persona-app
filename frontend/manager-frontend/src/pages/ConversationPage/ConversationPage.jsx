@@ -41,6 +41,7 @@ import {
   telegramReadMark,
   withToken,
   saveReadCursor,
+  liveRows,
 } from '../../utils/chat';
 import {
   getConversationById,
@@ -52,10 +53,10 @@ import {
   getInboundMedia,
   downloadChatHtml,
   getMediaGallery,
+  markListened as markListenedApi,
   editMessage,
   sendAlbum,
   setConversationHidden,
-  getLiveConversations,
   getPauseStatus,
   pinFact,
   setAiMode as setAiModeApi,
@@ -101,6 +102,15 @@ function fmtTime(ts) {
   return new Date(ts * 1000).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' });
 }
 
+const listened = new Set();
+function markListened(chatId, msg) {
+  if (msg.role !== 'user' || listened.has(msg.id)) return;
+  listened.add(msg.id);
+  markListenedApi(chatId, msg.id).catch(() => {
+    listened.delete(msg.id);
+  });
+}
+
 function MediaContent({ chatId, msg, inbound = null }) {
   if (msg.media_kind && msg.media_url) {
     const raw = String(msg.content || '');
@@ -128,7 +138,7 @@ function MediaContent({ chatId, msg, inbound = null }) {
     }
     if (msg.media_kind === 'voice') {
       return <>
-        <VoicePlayer src={withToken(msg.media_url)} />
+        <VoicePlayer src={withToken(msg.media_url)} onListened={() => markListened(chatId, msg)} />
         {label}
       </>;
     }
@@ -252,8 +262,15 @@ function ConversationPage() {
   useEffect(load, [load]);
 
   useEffect(() => {
-    getConversations().then(setChats).catch(() => setChats([]));
-    getLiveConversations().then((r) => setLiveCount(r.length)).catch(() => setLiveCount(0));
+    getConversations()
+      .then((rows) => {
+        setChats(rows);
+        setLiveCount(liveRows(rows).length);
+      })
+      .catch(() => {
+        setChats([]);
+        setLiveCount(0);
+      });
   }, [id]);
 
   const revision = useRef(null);

@@ -78,6 +78,14 @@ export class ReactionDto {
   emoji: string;
 }
 
+export class ListenedDto {
+  @ApiProperty()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  message_id: number;
+}
+
 export class StickerDto {
   @ApiProperty()
   @IsString()

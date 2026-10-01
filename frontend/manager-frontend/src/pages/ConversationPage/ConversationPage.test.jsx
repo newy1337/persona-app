@@ -41,9 +41,9 @@ vi.mock('../../api/conversations', () => ({
   })),
   getBeats: (...args) => getBeatsMock(...args),
   getConversations: vi.fn(async () => [
-    { chat_id: 111, name: 'А' },
-    { chat_id: 222, name: 'Б' },
-    { chat_id: 333, name: 'В' },
+    { chat_id: 111, name: 'А', last_message_ts: Math.floor(Date.now() / 1000) - 60 },
+    { chat_id: 222, name: 'Б', last_message_ts: Math.floor(Date.now() / 1000) - 3600 },
+    { chat_id: 333, name: 'В', last_message_ts: Math.floor(Date.now() / 1000) - 48 * 3600 },
   ]),
   getLiveConversations: vi.fn(async () => [{ chat_id: 111 }, { chat_id: 222 }]),
   setAiMode: vi.fn(async () => ({})),
@@ -109,7 +109,7 @@ afterEach(() => {
 });
 
 describe('ConversationPage: шапка и навигация по чатам', () => {
-  it('LIVE в шапке показывает число (2 живых чата), а не дефолтный 0', async () => {
+  it('LIVE в шапке считается из списка диалогов: два свежих, третий старше суток', async () => {
     await renderPage();
     expect(liveCount()).toBe('2');
   });

@@ -33,6 +33,7 @@ import {
   SetStageDto,
 } from './dto/conversation.dto';
 import {
+  ListenedDto,
   ReactionDto,
   SendAlbumDto,
   SendAttachmentDto,
@@ -152,6 +153,21 @@ export class ConversationsController {
       },
       () => this.conversations.reaction(chatId, dto.message_id, dto.emoji),
     );
+  }
+
+  @ApiOperation({
+    summary: 'Голосовое прослушано в панели — снять точку у собеседника',
+  })
+  @Post(':chatId/listened')
+  @HttpCode(200)
+  @UsePipes(ValidationPipe)
+  async listened(
+    @Param('chatId', ParseIntPipe) chatId: number,
+    @Body() dto: ListenedDto,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    await this.scope.requireChatOwned(user, chatId);
+    return this.conversations.markListened(chatId, dto.message_id);
   }
 
   @ApiOperation({ summary: 'Отправить стикер из набора аккаунта' })

@@ -137,6 +137,30 @@ interface LiveAccount {
   telegramUserId: number | null;
 }
 
+const UNKNOWN_MEDIA: Array<[new (...args: any[]) => unknown, string]> = [
+  [Api.MessageMediaGeo, 'геопозиция'],
+  [Api.MessageMediaGeoLive, 'геопозиция'],
+  [Api.MessageMediaVenue, 'место'],
+  [Api.MessageMediaContact, 'контакт'],
+  [Api.MessageMediaPoll, 'опрос'],
+  [Api.MessageMediaDice, 'кубик'],
+  [Api.MessageMediaStory, 'история'],
+  [Api.MessageMediaGame, 'игра'],
+  [Api.MessageMediaInvoice, 'счёт'],
+  [Api.MessageMediaUnsupported, 'вложение, не поддержанное Telegram'],
+];
+
+export function inboundText(
+  message: Api.Message,
+  media: InboundMedia | null,
+): string {
+  const text = message.message ?? '';
+  if (text.trim() || media) return text;
+  if (!message.media) return text;
+  const known = UNKNOWN_MEDIA.find(([type]) => message.media instanceof type);
+  return `[${known ? known[1] : `вложение: ${message.media.className}`}]`;
+}
+
 @Injectable()
 export class TelegramService
   implements OnModuleInit, OnModuleDestroy, OutboundTransport
@@ -169,17 +193,23 @@ export class TelegramService
     return Boolean(appConfig.tgApiId && appConfig.tgApiHash);
   }
 
-  async onModuleInit() {
+  onModuleInit(): void {
     if (!this.configured) {
       this.log.warn(
         'TG_API_ID / TG_API_HASH are not set — Telegram accounts stay offline',
       );
       return;
     }
+    void this.connectAll();
+  }
+
+  private async connectAll(): Promise<void> {
     const accounts = await this.prisma.tgAccount.findMany({
       where: { status: 'active', sessionEncrypted: { not: null } },
     });
+    this.log.log(`подключаю ${accounts.length} аккаунт(ов) в фоне`);
     for (const acc of accounts) {
+      if (this.stopping) return;
       void this.connect(acc.id).catch((e) =>
         this.log.error(
           `account ${acc.id} failed to connect: ${e?.message ?? e}`,
@@ -741,7 +771,7 @@ export class TelegramService
         chatId,
         accountId: account.id,
         messageId: message.id,
-        text: message.message ?? '',
+        text: inboundText(message, media),
         ts: message.date,
         media,
       });

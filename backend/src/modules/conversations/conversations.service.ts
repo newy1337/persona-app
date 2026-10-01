@@ -3,6 +3,7 @@ import {
   Injectable,
   UnprocessableEntityException,
   forwardRef,
+  NotFoundException,
 } from '@nestjs/common';
 import { REPLY_BRAIN, ReplyBrain } from 'src/brain/reply-brain.port';
 import { fillVariables } from 'src/brain/nastya/config/variables';
@@ -12,6 +13,7 @@ import { HistoryService, StoredMessage } from 'src/shared/history.service';
 import { PauseService } from 'src/shared/pause.service';
 import { ClockService } from 'src/shared/clock.service';
 import { FunnelEventsService } from 'src/shared/funnel-events.service';
+import { TelegramService } from '../telegram/telegram.service';
 import {
   DEFAULT_FUNNEL_STAGE,
   isFunnelStage,
@@ -78,6 +80,7 @@ export class ConversationsService {
     private pause: PauseService,
     private clock: ClockService,
     private funnel: FunnelEventsService,
+    private telegram: TelegramService,
     private settings: SettingsService,
     private persona: PersonaService,
     private brainState: BrainStateService,
@@ -435,6 +438,20 @@ export class ConversationsService {
       files: paths.length,
       scheduled_ts: ts,
     };
+  }
+
+  async markListened(chatId: number, messageId: number) {
+    const row = await this.history.messageById(chatId, messageId);
+    if (!row || row.role !== 'user' || !row.sourceMessageId) {
+      throw new NotFoundException('Сообщение собеседника не найдено');
+    }
+    if (!['voice', 'video_note'].includes(row.mediaKind ?? '')) {
+      throw new UnprocessableEntityException(
+        'Отмечать прослушанным можно только голосовое или кружок',
+      );
+    }
+    await this.telegram.markListened(chatId, [row.sourceMessageId]);
+    return { ok: true, message_id: messageId };
   }
 
   async reaction(chatId: number, messageId: number, emoji: string) {

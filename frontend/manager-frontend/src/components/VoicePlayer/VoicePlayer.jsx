@@ -4,7 +4,7 @@ import { BARS, fallbackPeaks, fmtClock, peaksFromSamples, seekRatio } from './vo
 
 const SPEEDS = [1, 1.5, 2];
 
-export default function VoicePlayer({ src }) {
+export default function VoicePlayer({ src, onListened = null }) {
   const audioRef = useRef(null);
   const waveRef = useRef(null);
   const [playing, setPlaying] = useState(false);
@@ -86,7 +86,10 @@ export default function VoicePlayer({ src }) {
         onLoadedMetadata={readDuration}
         onDurationChange={readDuration}
         onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
-        onPlay={() => setPlaying(true)}
+        onPlay={() => {
+          setPlaying(true);
+          onListened?.();
+        }}
         onPause={() => setPlaying(false)}
         onEnded={() => {
           setPlaying(false);

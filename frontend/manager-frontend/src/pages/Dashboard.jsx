@@ -7,11 +7,11 @@ import ConversationsTable from '../components/ConversationsTable/ConversationsTa
 import {
   getConversations,
   getHiddenConversations,
-  getLiveConversations,
   getNeedManagerAssist,
   setConversationHidden,
 } from '../api/conversations';
 import { getStats } from '../api/stats';
+import { liveRows } from '../utils/chat';
 
 const STAT_TILES = [
   { key: 'need_manager', label: 'Ждут менеджера', color: '#00D4FF' },
@@ -20,6 +20,8 @@ const STAT_TILES = [
   { key: 'leads', label: 'Лидов оформлено', color: '#F59E0B' },
   { key: 'accounts', label: 'Мои аккаунты', color: '#4A9EFF' },
 ];
+
+const POLL_MS = 10000;
 
 function Dashboard() {
   const [liveAgents, setLiveAgents] = useState([]);
@@ -34,13 +36,13 @@ function Dashboard() {
 
   const load = useCallback(() => {
     Promise.all([
-      getLiveConversations(),
       getNeedManagerAssist(),
       showHidden ? getHiddenConversations() : getConversations(),
       getStats(),
+      showHidden ? getConversations() : null,
     ])
-      .then(([live, queue, all, raw]) => {
-        setLiveAgents(live);
+      .then(([queue, all, raw, visible]) => {
+        setLiveAgents(liveRows(visible ?? all));
         setManagerAgents(queue);
         setRows(all);
         setStats(STAT_TILES.map((t) => ({ id: t.key, label: t.label, color: t.color, value: String(raw?.[t.key] ?? '—') })));
@@ -65,7 +67,7 @@ function Dashboard() {
     load();
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') load();
-    }, 5000);
+    }, POLL_MS);
     const onVisible = () => {
       if (document.visibilityState === 'visible') load();
     };

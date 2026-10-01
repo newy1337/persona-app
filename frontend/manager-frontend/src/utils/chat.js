@@ -62,3 +62,10 @@ export function mediaUrl(chatId, ts) {
   const token = getToken();
   return `/api/conversations/${chatId}/media/${ts}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 }
+
+export const ACTIVE_WINDOW_S = 24 * 3600;
+
+export function liveRows(rows) {
+  const since = Math.floor(Date.now() / 1000) - ACTIVE_WINDOW_S;
+  return (rows ?? []).filter((r) => (r.last_message_ts ?? 0) >= since);
+}

@@ -123,6 +123,10 @@ export function setSlot(chatId, slotId, value) {
   return api.post(`/api/conversations/${chatId}/slot`, { slot_id: slotId, value: value || null });
 }
 
+export function markListened(chatId, messageId) {
+  return api.post(`/api/conversations/${chatId}/listened`, { message_id: messageId });
+}
+
 export function sendReaction(chatId, messageId, emoji) {
   return api.post(`/api/conversations/${chatId}/reaction`, { message_id: messageId, emoji });
 }

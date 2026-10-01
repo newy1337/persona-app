@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { api, setTokens } from '../../api/client';
-import { getLiveConversations } from '../../api/conversations';
+import { getStats } from '../../api/stats';
 import { Link, NavLink } from 'react-router-dom';
 import styles from './Header.module.scss';
 import VoiceNotifications from './VoiceNotifications';
@@ -106,7 +106,7 @@ function Header({
 
   useEffect(() => {
     if (liveCount !== undefined || !me || me.role === 'voice') return undefined;
-    const pull = () => getLiveConversations().then((r) => setOwnLive(r.length)).catch(() => {});
+    const pull = () => getStats().then((s) => setOwnLive(s?.active_now ?? 0)).catch(() => {});
     pull();
     const t = setInterval(() => document.visibilityState === 'visible' && pull(), 30000);
     return () => clearInterval(t);
