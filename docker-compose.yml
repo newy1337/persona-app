@@ -14,6 +14,25 @@ services:
   db:
     image: postgres:17-alpine
     restart: unless-stopped
+    # Умолчания образа рассчитаны на крошечную машину: 128 МБ под кеш страниц и
+    # стоимость случайного чтения как у вращающегося диска. Здесь 16 ГБ и SSD,
+    # и вся база помещается в память.
+    command: >
+      postgres
+      -c shared_buffers=4GB
+      -c effective_cache_size=11GB
+      -c work_mem=32MB
+      -c maintenance_work_mem=512MB
+      -c max_connections=50
+      -c max_wal_size=4GB
+      -c min_wal_size=1GB
+      -c checkpoint_completion_target=0.9
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c jit=off
+      -c track_io_timing=on
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-nastya}
       POSTGRES_USER: ${POSTGRES_USER:-nastya}
