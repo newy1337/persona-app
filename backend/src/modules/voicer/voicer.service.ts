@@ -858,10 +858,6 @@ export class VoicerService {
     return this.libraryDelivery(requestKey, id, chatId, r, user);
   }
 
-  /**
-   * Два одинаковых запроса доходят до вставки одновременно: у первого она
-   * проходит, второй падает на уникальном ключе — ему отдаём результат первого.
-   */
   private async libraryDelivery(
     requestKey: string,
     id: number,

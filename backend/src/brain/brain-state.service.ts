@@ -9,11 +9,6 @@ import { reconcileTranscript } from './nastya/memory/transcript';
 import { pruneUnsupportedEvents } from './nastya/memory/persona-events';
 import { stateFingerprint } from './reply-delivery';
 
-/**
- * The mind's private per-chat state: character progress, memories, judge
- * decisions. Separate from the panel-facing lead facts on purpose — the
- * panel reads a curated mirror, never the engine's internals.
- */
 @Injectable()
 export class BrainStateService {
   constructor(
@@ -45,7 +40,6 @@ export class BrainStateService {
     return state;
   }
 
-  /** Run under the chat lock, only on actual conversation work (never panel polling). */
   async reconcile(chatId: number, force = false): Promise<ConversationState> {
     const state = await this.load(chatId);
     const rebuild = force || state.history_cursor === undefined;
@@ -96,7 +90,6 @@ export class BrainStateService {
     });
   }
 
-  /** Telegram has acknowledged this part. All local delivery records commit together. */
   async confirmPart(
     chatId: number,
     state: ConversationState,
@@ -143,7 +136,6 @@ export class BrainStateService {
     });
   }
 
-  /** Chats with any brain state touched since `sinceTs`, newest first. */
   async activeChatIds(sinceTs: number): Promise<number[]> {
     const rows = await this.prisma.brainState.findMany({
       where: { updatedAt: { gte: sinceTs } },

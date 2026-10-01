@@ -11,7 +11,6 @@ import { REPLY_BRAIN, ReplyBrain } from './reply-brain.port';
 import { SettingsModule } from 'src/modules/settings/settings.module';
 import { TelegramModule } from 'src/modules/telegram/telegram.module';
 
-/** Fires the initiative pass; the mind decides per chat whether one is due. */
 @Injectable()
 export class InitiativeScheduler {
   private readonly log = new Logger(InitiativeScheduler.name);
@@ -32,10 +31,6 @@ export class InitiativeScheduler {
   }
 }
 
-/**
- * Ритм: отложенные ответы проверяются каждые 5 секунд (срок у них до секунды),
- * утро и прощание — раз в минуту (окна в минутах).
- */
 @Injectable()
 export class RhythmScheduler {
   private readonly log = new Logger(RhythmScheduler.name);

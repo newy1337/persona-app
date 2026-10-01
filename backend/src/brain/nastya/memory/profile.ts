@@ -10,13 +10,6 @@ export interface InterlocutorProfile {
   dating_site?: string;
 }
 
-/**
- * Mirrors the operator-supplied profile into slots and memories.
- *
- * A value is written on first contact and whenever the operator changes it;
- * clearing a field removes the slot and the memories derived from it, so a
- * correction cannot be resurrected from an old record.
- */
 export function seedInterlocutorSettings(
   state: ConversationState,
   profile: InterlocutorProfile,
@@ -65,14 +58,6 @@ export function seedInterlocutorSettings(
 
 const OPERATOR_SLOT_LIMIT = 500;
 
-/**
- * Отметка оператора в карточке или в целях: «город — Омск», «работает таксистом».
- *
- * Пишется в слоты и в память тем же путём, что и факт, услышанный в разговоре, —
- * поэтому бот знает его со следующего хода и не спрашивает заново. Пустое
- * значение снимает отметку вместе с памятью о ней: исправление не должно
- * воскресать из старой записи.
- */
 export function applyOperatorSlots(
   state: ConversationState,
   patch: Record<string, string | null>,

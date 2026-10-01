@@ -5,10 +5,8 @@ import { toChatId } from 'src/utils/ids';
 import type { ReplyDelivery } from './reply-delivery';
 import type { InboundTurn } from './reply-brain.port';
 
-/** Одно входящее в ожидании ответа: сам ход и подписанный текст, как он лёг в историю. */
 export interface PendingTurn {
   turn: InboundTurn;
-  /** «[Фото]\nподпись» — то, что прочитает модель. */
   text: string;
   modality: string;
 }
@@ -18,7 +16,6 @@ export interface ScheduledReply {
   accountId: number;
   dueAt: number;
   baseDueAt: number;
-  /** Когда она открыла чат; null — ещё не открывала. */
   openedAt: number | null;
   reason: string;
   turns: PendingTurn[];
@@ -35,7 +32,6 @@ const parseTurns = (raw: string): PendingTurn[] => {
   }
 };
 
-/** Поток сообщений отодвигает ответ не дальше этого: болтливый собеседник не должен ждать вечно. */
 export const BURST_CAP_SECONDS = 5 * 60;
 
 const view = (row: {
@@ -60,17 +56,6 @@ const view = (row: {
   delivery: row.delivery ? JSON.parse(row.delivery) : null,
 });
 
-/**
- * Очередь отложенных ответов: одна строка на чат.
- *
- * Всё, что собеседник написал, пока она «не видела», копится в одной строке и
- * уходит одним ответом — как у человека, который открыл чат и прочёл всё разом.
- * Пока он пишет, ответ ждёт паузы в потоке — но не дольше `BURST_CAP_SECONDS`
- * после первого срока: болтливый собеседник не отодвинет ответ бесконечно.
- *
- * Строки живут в базе — рестарт процесса ответов не теряет. Работа с одной
- * строкой идёт под замком чата в мозге. Она остаётся до подтверждённой доставки.
- */
 @Injectable()
 export class ReplyScheduleService {
   constructor(
@@ -106,10 +91,6 @@ export class ReplyScheduleService {
     return view(row);
   }
 
-  /**
-   * Ещё одно сообщение в ту же очередь. Срок сдвигается до `notBefore` (пауза в
-   * потоке, время прослушать голосовое), но не дальше первого срока + предел.
-   */
   async append(
     chatId: number,
     entry: PendingTurn,
@@ -130,7 +111,6 @@ export class ReplyScheduleService {
     return view(row);
   }
 
-  /** Она открыла чат: прочитала всё и слушает голосовые до `dueAt`. */
   async open(chatId: number, openedAt: number, dueAt: number): Promise<void> {
     await this.prisma.replySchedule.updateMany({
       where: { chatId: toChatId(chatId) },
@@ -138,7 +118,6 @@ export class ReplyScheduleService {
     });
   }
 
-  /** Удалённые им сообщения выпадают из очереди; ничего не осталось — отвечать не на что. */
   async removeTurns(
     chatId: number,
     messageIds: number[],
@@ -159,17 +138,12 @@ export class ReplyScheduleService {
     return view(row);
   }
 
-  /** Забрать строку, если её срок наступил. Вызывается под замком чата. */
   async claim(chatId: number, now: number): Promise<ScheduledReply | null> {
     const current = await this.get(chatId);
     if (!current || current.dueAt > now) return null;
     return current;
   }
 
-  /**
-   * Перенести повтор после ошибки генерации или доставки, сохранив подтверждённые части.
-   * Входящие сообщения и подготовленный ответ остаются в базе всё время обработки.
-   */
   async restore(
     taken: ScheduledReply,
     dueAt: number,
@@ -236,7 +210,6 @@ export class ReplyScheduleService {
     });
   }
 
-  /** Discard stale text, retaining unanswered inputs only when nothing was sent. */
   async invalidate(chatId: number): Promise<void> {
     const current = await this.get(chatId);
     if (!current?.delivery) return;
@@ -255,7 +228,6 @@ export class ReplyScheduleService {
     });
   }
 
-  /** Ответ ждёт аккаунт, который не в сети: срок сдвигается, причина — «offline». */
   async postpone(chatId: number, dueAt: number): Promise<void> {
     await this.prisma.replySchedule.updateMany({
       where: { chatId: toChatId(chatId) },
@@ -263,7 +235,6 @@ export class ReplyScheduleService {
     });
   }
 
-  /** Оператор ответил сам или чат забрали — боту отвечать уже не на что. */
   async drop(chatId: number): Promise<void> {
     await this.prisma.replySchedule.deleteMany({
       where: { chatId: toChatId(chatId) },
@@ -274,7 +245,6 @@ export class ReplyScheduleService {
     return (await this.dueRows(now, limit)).map((r) => r.chatId);
   }
 
-  /** Наступившие ответы вместе с аккаунтом: по нему мозг раскладывает их по потокам. */
   async dueRows(
     now: number,
     limit = 50,

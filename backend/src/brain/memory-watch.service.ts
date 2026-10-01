@@ -3,15 +3,8 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { REPLY_BRAIN, ReplyBrain } from './reply-brain.port';
 
 const MB = 1024 * 1024;
-/** Куча больше этого — GC начинает душить процесс, и панель отвечает секундами. */
 const HEAP_ALERT_MB = 700;
 
-/**
- * Сторож памяти. 25.09 процесс за 16 часов дорос до 2,4 ГБ при 3,8 ГБ на машине:
- * куча почти упёрлась в предел, сборщик мусора занял ядро, и панель стала
- * отвечать по четыре секунды. Чтобы такое было видно заранее — и чтобы знать,
- * что именно растёт, — раз в пять минут пишем размер памяти и счётчики кешей.
- */
 @Injectable()
 export class MemoryWatchService {
   private readonly log = new Logger(MemoryWatchService.name);

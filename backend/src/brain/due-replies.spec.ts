@@ -1,10 +1,5 @@
 import { NastyaBrainService } from './nastya-brain.service';
 
-/**
- * Очередь наступивших ответов. Пока её разбирали по одному чату, ответ занимал
- * секунды на генерацию плюс набор текста, и на два десятка чатов проход шёл
- * десятки минут: собеседники ждали, а панель обещала ответ вот-вот.
- */
 describe('разбор очереди ответов', () => {
   function brain(due: Array<{ chatId: number; accountId: number }>) {
     const svc: any = Object.create(NastyaBrainService.prototype);

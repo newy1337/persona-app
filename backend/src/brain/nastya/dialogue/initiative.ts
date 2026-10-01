@@ -5,17 +5,12 @@ import { asInt, clamp } from '../kernel/coerce';
 
 const MIN_HOURS_SINCE_USER = 3;
 
-/** Её сообщения без повода: написала сама, а не в ответ. */
 export const UNPROMPTED_SOURCES: ReadonlySet<string> = new Set([
   'initiative',
   'morning',
   'goodnight',
 ]);
 
-/**
- * Сколько её сообщений без повода подряд остались без ответа — после его последнего
- * сообщения. Многочастное сообщение в памяти бота — одна запись, считается одним.
- */
 export function unansweredUnprompted(state: ConversationState): number {
   const history = state.history ?? [];
   let count = 0;
@@ -27,11 +22,6 @@ export function unansweredUnprompted(state: ConversationState): number {
   return count;
 }
 
-/**
- * Что писать, когда он пропал. Раньше тут был «рассказ о текущем бытовом событии» —
- * и модель выдавала сюжет из биографии (мама, брат, дождь) на 2–3 сообщения.
- * Живой человек в такой момент пишет коротко и спрашивает.
- */
 export function checkInGuidance(gender: Gender = 'female'): string {
   const g = voiceOf(gender);
   return (
@@ -44,7 +34,6 @@ export function checkInGuidance(gender: Gender = 'female'): string {
   );
 }
 
-/** Прежнее имя — женская личность. */
 export const CHECK_IN_GUIDANCE = checkInGuidance('female');
 const MIN_HOURS_BETWEEN_SENDS = 4;
 
@@ -66,7 +55,6 @@ function atOrAfter(current: Clock, slot: Clock): boolean {
   );
 }
 
-/** Quiet hours are read in the character's timezone and may wrap midnight. */
 export function insideQuietHours(
   now: Date,
   startText: string,
@@ -84,13 +72,6 @@ export function insideQuietHours(
   return atOrAfter(current, start) || !atOrAfter(current, end);
 }
 
-/**
- * Whether an initiative message is due right now.
- *
- * A message is only sent inside a fixed daily slot, outside quiet hours, when
- * the interlocutor has been silent for a while and enough time has passed
- * since the last one — so silence is never answered with a stream.
- */
 export function initiativeIsDue(
   state: ConversationState,
   settings: Pick<

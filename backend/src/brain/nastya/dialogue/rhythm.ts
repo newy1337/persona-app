@@ -1,21 +1,8 @@
 import { capital, voiceOf, type Gender } from '../character/gender';
 import { clockMinutes, type Rhythm, type TimeWindow } from '../config/rhythm';
 
-/**
- * Расчёты ритма без побочных эффектов: задержка ответа, окна утра и прощания.
- *
- * Всё время — unix-секунды, стенные часы — в поясе ритма. Случайность приходит
- * параметром, чтобы тесты могли её прибить.
- */
-
 const DAY_MINUTES = 24 * 60;
 
-/**
- * Пояса живут вечно, а `Intl.DateTimeFormat` строится долго. Прогноз перебирает
- * двое суток с шагом десять минут для каждого чата, поэтому на список диалогов
- * приходились сотни тысяч таких объектов: треть процессорного времени сервера
- * уходила сюда, и панель отвечала секундами.
- */
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
 function formatterFor(timeZone: string): Intl.DateTimeFormat {
@@ -35,7 +22,6 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
   return formatter;
 }
 
-/** Одни и те же минуты запрашиваются по многу раз подряд — считаем их однажды. */
 const parsed = new Map<string, { date: string; minutes: number }>();
 const PARSED_CAP = 4096;
 
@@ -55,17 +41,14 @@ const zonedParts = (at: Date, timeZone: string) => {
   return value;
 };
 
-/** Минуты от полуночи по стенным часам пояса. */
 export function zonedMinutes(at: Date, timeZone: string): number {
   return zonedParts(at, timeZone).minutes;
 }
 
-/** Календарный день YYYY-MM-DD по стенным часам пояса. */
 export function zonedDate(at: Date, timeZone: string): string {
   return zonedParts(at, timeZone).date;
 }
 
-/** Окно в минутах: начало и длина. «До» раньше «с» — окно через полночь; "00:00" — конец суток. */
 export function windowSpan(w: Pick<TimeWindow, 'from' | 'to'>): {
   start: number;
   length: number;
@@ -76,7 +59,6 @@ export function windowSpan(w: Pick<TimeWindow, 'from' | 'to'>): {
   return { start, length };
 }
 
-/** Сколько минут прошло от начала окна; вне окна — null. */
 export function minutesIntoWindow(
   nowMinutes: number,
   w: Pick<TimeWindow, 'from' | 'to'>,
@@ -86,7 +68,6 @@ export function minutesIntoWindow(
   return into < length ? into : null;
 }
 
-/** Детерминированное «случайное» число: одно на чат, день и вид — рестарт его не перебросит. */
 export function stableHash(text: string): number {
   let h = 2166136261;
   for (let i = 0; i < text.length; i += 1) {
@@ -99,22 +80,12 @@ export function stableHash(text: string): number {
 export type RitualKind = 'morning' | 'goodnight';
 
 export interface RitualSlot {
-  /** Пора писать: окно открыто и назначенная минута наступила. */
   due: boolean;
-  /** День окна (для окна через полночь — день его начала): ключ «уже писала». */
   day: string;
-  /** Начало окна, unix-секунды; null вне окна. */
   windowStartTs: number | null;
-  /** На какой минуте окна назначено сообщение. */
   plannedMinute: number;
 }
 
-/**
- * Утро или прощание для одного чата сейчас.
- *
- * Минута внутри окна выбирается хешем чата и дня: у разных собеседников
- * «доброе утро» приходит в разное время, а у одного — не скачет от рестарта.
- */
 export function ritualSlot(
   now: Date,
   w: TimeWindow,
@@ -143,12 +114,6 @@ export function ritualSlot(
   };
 }
 
-/**
- * Сколько секунд из промежутка человек не спал.
- *
- * Молчание ночью — не игнор: ночь в ритме — от конца прощания до начала утра.
- * Считается шагами по 5 минут; длинные промежутки режутся двумя неделями.
- */
 export function awakeSeconds(
   fromTs: number,
   toTs: number,
@@ -175,18 +140,10 @@ export function awakeSeconds(
 }
 
 export interface DelayInput {
-  /** Когда пришло сообщение, на которое отвечаем. */
   inboundTs: number;
-  /** Первое сообщение собеседника в этом чате (или это же). */
   firstUserTs: number | null;
-  /** Её последнее сообщение до входящего. */
   lastAssistantTs: number | null;
-  /** Его предыдущее сообщение до входящего. */
   prevUserTs: number | null;
-  /**
-   * Когда в последний раз прощались на ночь (она или он). Разговор, закрытый
-   * «спокойной ночи», утром не игнор — долгой задержки за ночь не полагается.
-   */
   lastGoodnightTs?: number | null;
 }
 
@@ -201,16 +158,6 @@ export interface ReplyDelay {
 const between = (lo: number, hi: number, random: () => number) =>
   lo + (hi - lo) * random();
 
-/**
- * Через сколько ответить на входящее.
- *
- *  1. Разогрев: первые `warmup_minutes` от его первого сообщения — быстро.
- *     Стоит первым: ответ на холодное сообщение лиду не должен ждать часами,
- *     даже если сам лид молчал до этого сутки.
- *  2. После молчания: она написала, он не отвечал дольше `silence_hours`
- *     бодрствования — отвечает не сразу. Следующий ответ уже обычный.
- *  3. Обычная задержка.
- */
 export function replyDelay(
   input: DelayInput,
   rhythm: Rhythm,
@@ -270,10 +217,6 @@ const GOODNIGHT_RX = new RegExp(
   'iu',
 );
 
-/**
- * К какому дню отнести прощание. «Спокойной ночи» в половине второго ночи —
- * это прощание вчерашнего вечера, а не сегодняшнего: иначе вечером она не попрощается.
- */
 export function goodnightDay(
   now: Date,
   rhythm: Pick<Rhythm, 'timezone' | 'morning' | 'goodnight'>,
@@ -295,17 +238,12 @@ export function goodnightDay(
   );
 }
 
-/** Он прощается на ночь — тогда её собственное прощание сегодня не нужно. */
 export function isGoodnightText(text: string): boolean {
   return GOODNIGHT_RX.test(text ?? '');
 }
 
 export type Staleness = 'fresh' | 'late' | 'expired';
 
-/**
- * Насколько старое входящее. «Догон пропущенных» при подключении аккаунта приносит
- * сообщения и недельной давности — отвечать на них как на свежие нельзя.
- */
 export function staleness(
   inboundTs: number,
   nowTs: number,
@@ -317,10 +255,6 @@ export function staleness(
   return 'fresh';
 }
 
-/**
- * Срок, выпавший на ночь, переносится на утро: от начала утреннего окна плюс
- * случайные (но постоянные для чата) полчаса — чтобы старые ответы не ушли пачкой в 7:00.
- */
 export function outOfNight(
   ts: number,
   rhythm: Pick<Rhythm, 'timezone' | 'morning' | 'goodnight'>,
@@ -338,14 +272,12 @@ export function outOfNight(
   return morningAt + (stableHash(`${seed}:${morningAt}`) % 30) * 60;
 }
 
-/** «5 дней», «14 часов» — для подсказки модели, сколько сообщение ждало ответа. */
 export function ageText(seconds: number): string {
   const hours = Math.round(seconds / 3600);
   if (hours < 48) return `${Math.max(1, hours)} ч`;
   return `${Math.round(hours / 24)} дн`;
 }
 
-/** Подсказка для судьи и автора: сообщение старое, отвечать как вернувшийся к переписке человек. */
 export function lateReplyNote(
   ageSeconds: number,
   gender: Gender = 'female',

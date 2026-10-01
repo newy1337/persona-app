@@ -22,7 +22,6 @@ import { dayKey, resolveRange, type DayRange } from './range';
 import { normalizeModel } from './prices';
 
 const TOP_CHATS = 12;
-/** Чаты, у которых нет закреплённого менеджера, считаются отдельной строкой. */
 const NO_MANAGER = '—';
 
 interface LeadCounts {
@@ -36,7 +35,6 @@ interface MessageCounts {
   in: number;
   out: number;
   manual: number;
-  /** Чаты, где собеседник писал в этот период, — живая переписка. */
   chats: Set<string>;
   byDay: Map<
     string,
@@ -308,12 +306,6 @@ export class StatsService {
     return row ? dayKey(row.createdAt) : null;
   }
 
-  /**
-   * Расход и переписка в разрезе учётных записей менеджеров: итог за период и дни.
-   *
-   * Отдельной ручкой, а не частью сводки: разрез нужен, только когда открывают его
-   * вкладку, а стоит он лишнего чтения контактов, привязок аккаунтов и всех сообщений.
-   */
   async byManager({ from, to }: { from?: string; to?: string }) {
     const range = resolveRange({ from, to }, this.clock.ts());
     const table = await this.prices();
@@ -416,11 +408,6 @@ export class StatsService {
     };
   }
 
-  /**
-   * Воронка прозвона по менеджерам: сколько номеров он загрузил за период, у скольких
-   * нашёлся Telegram и сколько людей ответили. Считается по тому, кто добавил номер, —
-   * писать могли с разных аккаунтов, но загрузка всегда чья-то.
-   */
   private async leadFunnel(range: DayRange): Promise<Map<string, LeadCounts>> {
     const rows = await this.prisma.phoneNumber.findMany({
       where: { insertedAt: { gte: range.start, lt: range.end } },
@@ -461,10 +448,6 @@ export class StatsService {
     return out;
   }
 
-  /**
-   * Кто за какой чат отвечает: чат → аккаунт → менеджер. Считается один раз на запрос,
-   * иначе разрез по менеджерам потребовал бы запроса на каждую строку расхода.
-   */
   private async chatOwners(): Promise<{
     manager: (chatId: bigint | number | null) => string;
     titles: Map<string, string>;

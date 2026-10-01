@@ -167,7 +167,6 @@ export class VoicerAutomationService {
     });
   }
 
-  /** Recording order and parked reply commit together; retries cannot create another task. */
   async enqueue(chatId: number, delivery: ReplyDelivery): Promise<boolean> {
     if (
       !delivery.voice ||

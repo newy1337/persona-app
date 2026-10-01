@@ -25,7 +25,6 @@ import {
   variableErrors,
 } from 'src/brain/nastya/config/variables';
 
-/** Колонка-документ каждой секции; ключи — как в модели Prisma. */
 const COLUMN: Record<PersonaSection, keyof Persona> = {
   persona: 'persona',
   goals: 'goals',
@@ -38,10 +37,8 @@ const COLUMN: Record<PersonaSection, keyof Persona> = {
 };
 
 const MAX_SECTION_BYTES = 512 * 1024;
-/** Шапка файла личности: по ней видно, что это за файл и от какой версии формата. */
 export const PERSONA_FILE_KIND = 'nastya.persona';
 export const PERSONA_FILE_VERSION = 1;
-/** Больше не храним: старее вряд ли понадобится, а база не резиновая. */
 const KEEP_VERSIONS = 20;
 
 const parse = (text: string | null | undefined): any => {
@@ -53,7 +50,6 @@ const parse = (text: string | null | undefined): any => {
   }
 };
 
-/** Латинский slug из имени: «Лена Морозова» → lena-morozova. */
 function slugify(name: string): string {
   const map: Record<string, string> = {
     а: 'a',
@@ -101,7 +97,6 @@ function slugify(name: string): string {
   return s.length >= 2 ? s : `persona-${Date.now().toString(36)}`;
 }
 
-/** Пара цифр, чтобы в списке было видно наполненную личность и пустую. */
 function summary(row: Persona, accounts = 0) {
   const card = parse(row.persona) ?? {};
   const prompts = parse(row.prompts) ?? {};
@@ -118,7 +113,6 @@ function summary(row: Persona, accounts = 0) {
     storylines: Array.isArray((parse(row.storylines) ?? {}).lines)
       ? parse(row.storylines).lines.length
       : 0,
-    /** Сколько текстов оператор увёл от того, что лежит в коде. */
     edited_prompts: PROMPT_KEYS.filter(
       (k) =>
         typeof prompts[k] === 'string' &&
@@ -129,14 +123,6 @@ function summary(row: Persona, accounts = 0) {
   };
 }
 
-/**
- * Личности панели: список, документы посекционно, история версий.
- *
- * Секция сохраняется целиком, прежний документ уходит в историю — откатиться
- * можно всегда. Форму документов проверяет движок, здесь только JSON и размер:
- * поле, о котором знает движок и не знает панель, иначе терялось бы при
- * каждом сохранении.
- */
 @Injectable()
 export class PersonasService {
   constructor(
@@ -144,11 +130,6 @@ export class PersonasService {
     private clock: ClockService,
   ) {}
 
-  /**
-   * Отметка правки строго больше прежней. Движок кэширует разобранную личность по
-   * `updated_at` в секундах: две правки за одну секунду (переменная и сразу цели)
-   * иначе дали бы ту же отметку — и бот читал бы старую версию до следующей правки.
-   */
   private nextStamp(row: Pick<Persona, 'updatedAt'>): number {
     return Math.max(this.clock.ts(), row.updatedAt + 1);
   }
@@ -186,7 +167,6 @@ export class PersonasService {
     };
   }
 
-  /** Личность целиком — для редактора. */
   async get(id: number) {
     const row = await this.mustExist(id);
     const accounts = await this.accountsBySlug();
@@ -202,7 +182,6 @@ export class PersonasService {
         rhythm: mergeRhythm(parse(row.rhythm) ?? {}),
         variables: parse(row.variables) ?? {},
       },
-      /** Что реально уйдёт в модель: заполненное оператором поверх умолчаний. */
       effective_prompts: mergePrompts(parse(row.prompts) ?? {}),
     };
   }
@@ -216,14 +195,12 @@ export class PersonasService {
     return this.insert(slug, dto.name, src);
   }
 
-  /** Копия личности: те же документы под новым именем, аккаунты остаются у оригинала. */
   async duplicate(id: number) {
     const src = await this.mustExist(id);
     const name = `${src.name} (копия)`;
     return this.insert(await this.freeSlug(`${src.slug}-copy`), name, src);
   }
 
-  /** `lena-copy`, `lena-copy-2`, … — чтобы копировать можно было не задумываясь. */
   private async freeSlug(base: string): Promise<string> {
     const head = base.slice(0, 28);
     for (let n = 1; n < 100; n += 1) {
@@ -291,10 +268,6 @@ export class PersonasService {
     return this.get(id);
   }
 
-  /**
-   * Проверка документа секции. Одна на всё: и на сохранение из редактора, и на
-   * загрузку файла — иначе через файл можно было бы положить то, что редактор не пустит.
-   */
   private sectionText(section: PersonaSection, data: unknown): string {
     if (data === null || data === undefined)
       throw new BadRequestException(`пустой документ «${section}»`);
@@ -331,7 +304,6 @@ export class PersonasService {
     return text;
   }
 
-  /** Замена документа целиком: прежний уходит в историю. */
   async putSection(
     id: number,
     section: string,
@@ -375,7 +347,6 @@ export class PersonasService {
     return { id, section, saved: true, bytes: text.length };
   }
 
-  /** Чужой ключ в промптах — это опечатка оператора, а не новый текст модели. */
   private assertPrompts(data: Record<string, unknown>): void {
     const known = new Set<string>(PROMPT_KEYS);
     for (const [key, value] of Object.entries(data)) {
@@ -447,7 +418,6 @@ export class PersonasService {
     };
   }
 
-  /** Откат — обычное сохранение старого документа: текущий тоже ляжет в историю. */
   async restoreVersion(
     id: number,
     section: string,
@@ -486,7 +456,6 @@ export class PersonasService {
     return this.list();
   }
 
-  /** Удаление — только если личностью никто не говорит: аккаунты переназначают руками. */
   async remove(id: number) {
     const row = await this.mustExist(id);
     if (row.isDefault)
@@ -504,13 +473,6 @@ export class PersonasService {
     return { removed: true, id };
   }
 
-  /**
-   * Личность одним документом: шапка плюс все секции.
-   *
-   * Отдаётся то, что лежит в базе, — файл обязан совпадать с тем, чем говорит бот.
-   * Имя, идентификатор и аккаунты в файл не едут: это про эту личность на этом
-   * сервере, а документы — про то, как она разговаривает.
-   */
   async exportBundle(id: number) {
     const row = await this.mustExist(id);
     const full = await this.get(id);
@@ -523,17 +485,6 @@ export class PersonasService {
     };
   }
 
-  /**
-   * Загрузка файла в существующую личность.
-   *
-   * Сначала проверяются ВСЕ секции, потом пишутся одной транзакцией: половина
-   * загруженной личности — это личность, которой никто не писал, и починить её
-   * можно только руками. Каждая изменённая секция кладёт прежний документ в свою
-   * историю, так что откат — обычной кнопкой «Вернуть».
-   *
-   * Секции, которых в файле нет, не трогаются: частичный файл — это правка части,
-   * а не приказ стереть остальное.
-   */
   async importBundle(
     id: number,
     sections: Record<string, unknown>,
@@ -595,17 +546,14 @@ export class PersonasService {
     };
   }
 
-  /** Встроенные переменные: их значение берётся из самой личности. */
   builtinVariables() {
     return { builtins: BUILTIN_VARIABLES };
   }
 
-  /** Ритм по умолчанию: цифры из описания оператора, кнопка «Как по умолчанию». */
   rhythmDefaults() {
     return { defaults: DEFAULT_RHYTHM };
   }
 
-  /** Тексты из кода и подписи к ним: кнопка «текст из кода» в редакторе промптов. */
   promptDefaults() {
     return {
       keys: PROMPT_KEYS,

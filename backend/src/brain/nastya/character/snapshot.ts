@@ -32,13 +32,7 @@ const MAX_CALLBACK_CANDIDATES = 6;
 const DEFAULT_DISCLOSURE =
   'Раскрывайся по ходу взаимного разговора, не пересказывай всю биографию.';
 
-/**
- * Сколько её приветствие считается «этим разговором». Написала «Привет, это Настя»
- * полчаса назад — второе «привет» звучит как бот. Ответ на следующий день может
- * начинаться с приветствия заново.
- */
 const GREETED_WINDOW_SECONDS = 3 * 3600;
-/** Род персонажа и собеседника — из документа личности: у мужской личности формы свои. */
 export function greetingNote(
   gender: Gender = 'female',
   oneQuestionOnly = true,
@@ -57,12 +51,6 @@ export function greetingNote(
   );
 }
 
-/**
- * Everything the judge and the author need about this turn.
- *
- * Building it has side effects on `state.character`: storyline progress and
- * the storyline cursor advance here, because they are a function of the date.
- */
 export function buildRuntimeSnapshot(
   config: CharacterConfig,
   state: ConversationState,
@@ -166,7 +154,6 @@ export function buildRuntimeSnapshot(
   };
 }
 
-/** Её последнее сообщение моложе окна — значит, в этом разговоре она уже поздоровалась. */
 export function greeting(
   state: ConversationState,
   nowTs: number,
@@ -187,7 +174,6 @@ export function greeting(
   };
 }
 
-/** Active memories that are due and were not already recalled today. */
 function callbackCandidates(
   memories: readonly Memory[],
   today: string,

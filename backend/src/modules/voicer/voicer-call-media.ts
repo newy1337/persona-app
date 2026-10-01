@@ -2,7 +2,6 @@ import { fork, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import { join } from 'path';
 
-/** Native library faults end this call, not the application process. */
 export class CallMedia extends EventEmitter {
   private child: ChildProcess;
   private sequence = 0;

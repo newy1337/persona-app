@@ -19,12 +19,6 @@ import { TakeoverReason } from 'src/domain/pause';
 import { VoicerDeliveryService } from '../voicer/voicer-delivery.service';
 import { KIND_LABEL, kindForFile } from 'src/domain/attachments';
 
-/**
- * Delivers what people queued: manual replies from the panel and relayed
- * operator text. Claim BEFORE send — a duplicate message to the client is
- * worse than a lost one. Every delivered line is appended to history under
- * the operator's name and told to the brain so it remembers saying it.
- */
 @Injectable()
 export class RelayWorker implements OnModuleInit {
   private readonly log = new Logger(RelayWorker.name);
@@ -192,11 +186,6 @@ export class RelayWorker implements OnModuleInit {
     }
   }
 
-  /**
-   * Одна строка очереди. Реакция — не сообщение: своей строки в ленте не даёт,
-   * а помечает чужую. Вложение уходит файлом и запоминается вместе с путём,
-   * чтобы панель показала ровно то, что увидел собеседник.
-   */
   private async deliverMedia(
     chatId: number,
     row: {

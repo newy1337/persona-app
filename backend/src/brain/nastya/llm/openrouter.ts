@@ -1,31 +1,12 @@
 import { checkCancelled, cancellableSleep } from 'src/shared/cancellation';
 import type Anthropic from '@anthropic-ai/sdk';
 
-/**
- * Claude через OpenRouter с интерфейсом SDK Anthropic.
- *
- * Движок, судьи, генератор и разбор фото зовут `client.messages.create(...)` в формате
- * Messages API. Этот клиент принимает тот же запрос, переводит его в формат
- * OpenRouter (`/chat/completions`) и возвращает ответ в форме Anthropic — вместе
- * с учётом токенов кеша. Поэтому переключение провайдера не трогает ни промпты,
- * ни разбор ответов, ни статистику.
- *
- * Что сохраняется:
- *  · кеш промпта — `cache_control` (в том числе `ttl: "1h"`) OpenRouter передаёт Claude как есть;
- *  · думание — `thinking` + `output_config.effort` → `reasoning.effort`;
- *  · картинки — base64-блок → `image_url` с data URL;
- *  · один провайдер (по умолчанию Anthropic): у Bedrock/Vertex свой кеш, и прыжки
- *    между ними превращали бы каждое чтение кеша в дорогую запись.
- */
-
 export interface OpenRouterOptions {
   apiKey: string;
   baseUrl?: string;
-  /** Провайдеры по порядку; пусто — OpenRouter выбирает сам (кеш будет промахиваться). */
   providers?: string[];
   timeoutMs?: number;
   maxRetries?: number;
-  /** Для рейтинга приложений OpenRouter: необязательно. */
   referer?: string;
   title?: string;
   fetch?: typeof fetch;
@@ -52,7 +33,6 @@ export class OpenRouterError extends Error {
   }
 }
 
-/** `claude-sonnet-5` → `anthropic/claude-sonnet-5`; уже с префиксом — как есть. */
 export function openRouterModel(model: string): string {
   return model.includes('/') ? model : `anthropic/${model}`;
 }
@@ -89,7 +69,6 @@ function convertContent(
   return parts;
 }
 
-/** Запрос Messages API → тело `/chat/completions` OpenRouter. */
 export function toOpenRouterBody(
   params: Params,
   providers: string[] = [],
@@ -132,7 +111,6 @@ const STOP_REASON: Record<string, Anthropic.Message['stop_reason']> = {
   tool_calls: 'tool_use',
 };
 
-/** Ответ OpenRouter → форма `Anthropic.Message`, которую читают движок и учёт расходов. */
 export function fromOpenRouterResponse(
   json: any,
   params: Params,
@@ -180,7 +158,6 @@ export function fromOpenRouterResponse(
   } as Anthropic.Message;
 }
 
-/** Клиент с `messages.create` как у `new Anthropic()`: подставляется вместо него. */
 export function createOpenRouterClient(options: OpenRouterOptions): Anthropic {
   const baseUrl = (options.baseUrl || 'https://openrouter.ai/api/v1').replace(
     /\/+$/,

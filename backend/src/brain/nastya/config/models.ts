@@ -1,26 +1,15 @@
-/**
- * Every model call goes to the Anthropic API directly: prompt caching only
- * works there, and it is what makes the judges affordable. There is no
- * speech-to-text in the stack: voice notes are acknowledged, not transcribed.
- */
 export const GENERATOR_MODEL = 'claude-sonnet-5';
 export const OPUS_5 = 'claude-opus-5';
 export const OPUS_5_5 = 'claude-opus-5.5';
-/** Модель судей по умолчанию; меняется переменной JUDGE_MODEL. */
 export const JUDGE_MODEL = OPUS_5;
 export const VISION_MODEL = 'claude-sonnet-5';
 
-/** Модели, которыми разрешено ставить судей. */
 export const JUDGE_MODELS: readonly string[] = [
   OPUS_5,
   OPUS_5_5,
   GENERATOR_MODEL,
 ];
 
-/**
- * Модель судей из настройки. Неизвестное имя — ошибка, а не молчаливый откат:
- * судьи решают ход разговора, и подмена модели осталась бы незамеченной.
- */
 export function resolveJudgeModel(value = ''): string {
   const raw = String(value).trim();
   if (!raw) return JUDGE_MODEL;
@@ -43,7 +32,6 @@ export const MODEL_OPTIONS: ReadonlyArray<
 
 const MODEL_IDS = new Set(MODEL_OPTIONS.map(([id]) => id));
 
-/** Falls back to the default generator; an unrecognised id is a caller bug. */
 export function resolveModel(value = ''): string {
   const model = value || GENERATOR_MODEL;
   if (!MODEL_IDS.has(model))

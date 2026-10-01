@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import styles from './ConversationPage.module.scss';
 
-/**
- * Заметка менеджера о диалоге. Для людей: в промпт не уходит, поэтому здесь можно
- * писать служебное — «обещал перезвонить в пятницу», «не писать по утрам».
- * Сохраняется по кнопке, чтобы случайная правка не улетела на сервер.
- */
 
 const when = (ts) => (ts ? new Date(ts * 1000).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
 

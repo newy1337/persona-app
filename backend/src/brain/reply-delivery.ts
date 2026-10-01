@@ -19,7 +19,6 @@ export interface PreparedReply {
   generatedAt?: number;
 }
 
-/** Durable outbox. This state is private until Telegram acknowledges each part. */
 export interface ReplyDelivery extends PreparedReply {
   id: string;
   parts: Array<{ text: string; randomId: string; dispatchedAt?: number }>;
@@ -27,7 +26,6 @@ export interface ReplyDelivery extends PreparedReply {
   preparedAt: number;
 }
 
-/** Telegram long, generated once per part and persisted for ordinary reply retries. */
 export function deliveryRandomId(): string {
   return (
     randomBytes(8).readBigUInt64BE() & ((1n << 63n) - 1n) || 1n
@@ -48,7 +46,6 @@ export function prepareDelivery(
   };
 }
 
-/** Compare the persisted state, not the speculative draft's projected slots/events. */
 export function stateFingerprint(state: ConversationState): string {
   return createHash('sha256')
     .update(JSON.stringify({ ...state, history_cursor: undefined }))

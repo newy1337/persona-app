@@ -2,12 +2,6 @@ import { useMemo, useState } from 'react';
 import s from '../../styles/AdminPage.module.scss';
 import p from './Stats.module.scss';
 
-/**
- * Расход и работа по учётным записям менеджеров за выбранный период.
- *
- * Дни показываются теми же столбцами, что и итог: разворот читается как
- * продолжение строки, а не как отдельная таблица со своими колонками.
- */
 
 const money = (x) => (x >= 1 ? `$${x.toFixed(2)}` : `$${(x ?? 0).toFixed(4)}`);
 const num = (x) => (x ?? 0).toLocaleString('ru-RU');
@@ -26,7 +20,6 @@ const COLUMNS = [
   { id: 'messages_out', title: 'Сообщений', hint: 'Исходящие и входящие' },
 ];
 
-/** Ячейки строки — одни и те же для менеджера и для его дня. */
 function Cells({ row, share }) {
   return (
     <>

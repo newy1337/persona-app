@@ -8,17 +8,8 @@ import { fillText, variablesNote } from '../config/variables';
 
 export type Effort = 'low' | 'medium' | 'high';
 
-/** Сколько живёт кеш неизменной части промпта. */
 export const CACHE_TTL = '1h' as const;
 
-/**
- * A prompt split at its stability boundary.
- *
- * `stable` is byte-identical across chats and turns (rules, persona, catalogs)
- * and carries the cache breakpoint; `volatile` is this turn's state and comes
- * after it. Anything that changes per turn must never leak into `stable` —
- * one changed byte and the whole cache entry is rewritten instead of read.
- */
 export interface SplitPrompt {
   stable: string;
   volatile?: string;
@@ -29,7 +20,6 @@ export interface TextRequest {
   system: SplitPrompt;
   messages: Anthropic.MessageParam[];
   maxTokens: number;
-  /** Adaptive thinking at this effort; `off` disables thinking (chat lines, not analysis). */
   effort: Effort | 'off';
   stage: string;
 }
@@ -39,20 +29,10 @@ export interface LlmDeps {
   client: Anthropic;
   usageDb: UsageDb;
   logger: Logger;
-  /**
-   * Переменные диалога (`{city}`, `{site}`): в кешируемом тексте они скобками, значения
-   * идут строкой после кеша, а в ответе модели скобки, если проскочат, заменяются.
-   */
   variables?: Record<string, string>;
-  /** Кто обслужил вызов (`anthropic`, `openrouter`) — для учёта расходов. */
   provider?: string;
 }
 
-/**
- * One text completion through the Anthropic API with prompt caching on the
- * stable system block. Returns the concatenated text blocks; a truncated or
- * refused answer is an error, never a half-reply.
- */
 export async function completeText(
   deps: LlmDeps,
   req: TextRequest,

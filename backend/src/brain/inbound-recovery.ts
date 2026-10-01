@@ -1,7 +1,6 @@
 import type { StoredMessage } from 'src/shared/history.service';
 import type { InboundTurn, InboundMedia } from './reply-brain.port';
 
-/** Restore the exact input, including media; rows saved without a payload are rebuilt from their columns. */
 export function restoredTurn(
   message: StoredMessage,
   accountId: number,

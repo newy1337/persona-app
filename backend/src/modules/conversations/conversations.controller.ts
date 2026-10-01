@@ -43,10 +43,6 @@ import { kindForFile } from 'src/domain/attachments';
 import type { Request } from 'express';
 import { Req, UnprocessableEntityException } from '@nestjs/common';
 
-/**
- * Per-chat reads and mutations. Ownership is checked on EVERY `:chatId`
- * route; collection routes are admin-only (managers have /api/manager/*).
- */
 @ApiTags('Conversations')
 @ApiBearerAuth()
 @Auth()
@@ -61,10 +57,6 @@ export class ConversationsController {
     private readonly chatExport: ChatExportService,
   ) {}
 
-  /**
-   * Файл вложения сырым телом: base64 в JSON раздул бы 50 МБ до 67, а
-   * multipart потянул бы ещё одну зависимость ради одной ручки.
-   */
   @ApiOperation({
     summary: 'Загрузить файл для отправки: сырое тело, имя в query',
   })

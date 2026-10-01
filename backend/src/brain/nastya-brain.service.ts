@@ -145,40 +145,22 @@ import {
 
 const INITIATIVE_RETENTION_DAYS = 14;
 const FALLBACK_REACTION = '\u{1F44D}';
-/** Ответ на «и тебе» после её прощания. */
 const FAREWELL_REACTION = '\u{1F970}';
-/**
- * Appended to a voice note's placeholder: the model must not invent what was said.
- * Голосовое отмечено прослушанным (она «слушала» его длительность), но расшифровки
- * в стеке нет — поэтому не «не могу послушать», а «не разобрала».
- */
 const VOICE_UNHEARD_NOTE =
   '\n[Голосовое сообщение: расшифровки нет, что в нём сказано — неизвестно. Не выдумывай содержание; по-человечески скажи, что не получилось толком разобрать, и попроси написать текстом.]';
-/** После прослушивания голосового — пара секунд, прежде чем начать отвечать. */
 const LISTEN_PAD_SECONDS = 5;
-/** Паузы повторов при сбое генерации/доставки; далее — последняя пауза. */
 const REPLY_RETRY_DELAYS_S = [60, 180, 600, 1800];
-/** Ответ ждёт аккаунт не в сети — проверяем снова через столько. */
 const OFFLINE_RECHECK_SECONDS = 60;
-/** Сколько аккаунтов отвечают одновременно. */
 const REPLY_LANES = 6;
-/** Очередь длиннее — пишем в лог: столько просроченных ответов уже видно собеседникам. */
 const QUEUE_ALERT = 15;
-/** Прогноз старше этого не показываем даже из кеша — считаем заново. */
 const FORECAST_STALE_SECONDS = 300;
-/** Сколько прогнозов пересчитывается в фоне одновременно. */
 const FORECAST_REFRESH_LANES = 3;
 
-/** Сколько секунд слушать голосовое хода. */
 const listenSeconds = (turn: InboundTurn): number =>
   turn.media?.kind === 'voice'
     ? Math.max(1, Math.round(Number(turn.media.duration) || 0))
     : 0;
 
-/**
- * Поле карточки лида → тема знакомства. Имена тем у личности свои, но эти —
- * общие для карточки: город у Насти называется `location`, работа — `work`.
- */
 const FACT_TO_SLOT: Record<string, string> = {
   site: 'dating_site',
   name: 'name',
@@ -199,7 +181,6 @@ const MEDIA_LABELS: Record<string, string> = {
   document: 'Файл',
 };
 
-/** Serialises work per chat so two quick messages do not race on one state. */
 class ChatLocks {
   private readonly tails = new Map<number, Promise<unknown>>();
   get size(): number {
@@ -218,14 +199,6 @@ class ChatLocks {
   }
 }
 
-/**
- * Nastya's mind behind the `ReplyBrain` seam.
- *
- * The turn: store the inbound → gates (emergency stop, pause, refusal lock)
- * → hidden judge → fold the decision into the character state → draft →
- * final judge → gates again → send → store the reply and mirror the lead
- * card into the panel's facts.
- */
 @Injectable()
 export class NastyaBrainService implements ReplyBrain {
   private readonly log = new Logger(NastyaBrainService.name);
@@ -254,7 +227,6 @@ export class NastyaBrainService implements ReplyBrain {
     @Optional() private prisma?: PrismaService,
   ) {}
 
-  /** `variables` — значения `{city}`/`{site}` этого диалога: в промпте они скобками ради кеша. */
   private judgeDeps(
     scope: UsageScope = {},
     variables: Record<string, string> = {},
@@ -487,10 +459,6 @@ export class NastyaBrainService implements ReplyBrain {
     if (dueAt <= this.clock.ts()) await this.respondLocked(chatId);
   }
 
-  /**
-   * Речь голосового или кружка → текст. Сбой не мешает ходу: голосовое остаётся
-   * «не разобрала», кружок — реакцией, как было без расшифровки.
-   */
   private async transcribeTurn(turn: InboundTurn): Promise<void> {
     const media = turn.media;
     if (
@@ -531,10 +499,6 @@ export class NastyaBrainService implements ReplyBrain {
     }
   }
 
-  /**
-   * Клиент, которого убрали в архив как неактивного, написал снова: чат возвращается
-   * на дашборд в «Ждут менеджера». Бот не отвечает сам — менеджер решает, вести ли дальше.
-   */
   private async returnFromArchive(chatId: number): Promise<void> {
     const facts = await this.history.getLeadFacts(chatId);
     if (!facts[HIDDEN_FROM_DASHBOARD_KEY] || !facts[ARCHIVED_AT_KEY]) return;
@@ -558,20 +522,9 @@ export class NastyaBrainService implements ReplyBrain {
     );
   }
 
-  /** Отложенные ответы, у которых наступил срок. Зовётся планировщиком. */
-  /** Чаты, где ответ прямо сейчас генерируется или отправляется (для прогноза в панели). */
   private readonly composing = new Set<number>();
-  /** Сколько раз подряд упала генерация ответа в чате. */
   private readonly replyFailures = new Map<number, number>();
 
-  /**
-   * Разбирает очередь наступивших ответов. Аккаунты идут параллельно, чаты одного
-   * аккаунта — по очереди: два ответа с одного номера в одну секунду выглядят машинно.
-   *
-   * По одному чату за раз очередь не успевала таять: ответ стоит секунд двадцать на
-   * генерацию плюс набор текста, и на два десятка чатов проход растягивался на
-   * полчаса — собеседники ждали, а панель всё это время обещала ответ вот-вот.
-   */
   async runDueReplies(): Promise<number> {
     for (const turn of await this.history.unprocessedInbound()) {
       try {
@@ -625,7 +578,6 @@ export class NastyaBrainService implements ReplyBrain {
     }
   }
 
-  /** One chat lock covers preparation/delivery; receipt cancellation bypasses that lock. */
   private async respondLocked(chatId: number): Promise<boolean> {
     return this.withReply(chatId, (signal) =>
       this.respondCurrent(chatId, signal),
@@ -966,7 +918,6 @@ export class NastyaBrainService implements ReplyBrain {
     }
   }
 
-  /** A date change must not break an active conversation after the first bubble. */
   private async refreshContinuation(
     pending: ScheduledReply,
     draft: ReplyDelivery,
@@ -1058,10 +1009,6 @@ export class NastyaBrainService implements ReplyBrain {
       await this.schedule.restore(pending, this.clock.ts(), 'continuation');
   }
 
-  /**
-   * Собеседник удалил сообщения. Отвеченные остаются в памяти как было, а те,
-   * что ждут ответа, из очереди убираются: на удалённое она не отвечает.
-   */
   async handleDeleted(accountId: number, messageIds: number[]): Promise<void> {
     const byChat = await this.history.markDeleted(accountId, messageIds);
     for (const [chatId, ids] of byChat) {
@@ -1129,12 +1076,6 @@ export class NastyaBrainService implements ReplyBrain {
     }
   }
 
-  /**
-   * Отправка реплики частями: каждая часть пишется в историю сразу, как ушла, — со своим
-   * временем и id в Telegram. Раньше все части записывались после последней одним
-   * временем: в панели ответ появлялся пачкой, а галочек «прочитано» не было вовсе.
-   * Если отправка оборвалась на середине, ушедшие части всё равно остаются в истории.
-   */
   private async deliverParts(
     chatId: number,
     parts: string[],
@@ -1180,11 +1121,6 @@ export class NastyaBrainService implements ReplyBrain {
       throw new Error('Transport did not acknowledge every reply part');
   }
 
-  /**
-   * Человек просит голосовое, фото, кружок или видео. Бот этого не шлёт, а отговорка
-   * модели выглядит подозрительно — чат уходит менеджеру: бот замолкает, в очереди
-   * «Ждут менеджера» появляется причина, его сообщение остаётся в памяти бота.
-   */
   private async handOverMediaRequest(
     chatId: number,
     kind: string,
@@ -1213,11 +1149,6 @@ export class NastyaBrainService implements ReplyBrain {
     { at: number; value: NextBotAction }
   >();
 
-  /**
-   * Что бот сделает в чате дальше, если собеседник ничего не напишет: ответит через N минут,
-   * напишет утром, спросит «куда пропал» или будет ждать. Для панели; в списке диалогов
-   * кешируется на полминуты — там десятки строк и опрос каждые 5 секунд.
-   */
   async nextAction(chatId: number, maxAgeSeconds = 0): Promise<NextBotAction> {
     const nowTs = this.clock.ts();
     const cached = this.nextActionCache.get(chatId);
@@ -1232,7 +1163,6 @@ export class NastyaBrainService implements ReplyBrain {
     return this.computeNextAction(chatId, nowTs);
   }
 
-  /** Сколько прогнозов пересчитывается в фоне одновременно: остальные ждут очереди. */
   private readonly refreshing = new Set<number>();
   private refreshQueue: number[] = [];
 
@@ -1330,11 +1260,6 @@ export class NastyaBrainService implements ReplyBrain {
     return value;
   }
 
-  /**
-   * Чат вернули боту. Если последним писал собеседник и ему никто не ответил (бот отдал
-   * чат менеджеру или тот не успел), бот отвечает на эти сообщения как на обычные — по
-   * ритму. Раньше они так и висели: бот отвечает только на новые входящие.
-   */
   async answerAfterResume(chatId: number): Promise<boolean> {
     await this.locks.run(chatId, () => this.state.reconcile(chatId));
     if (this.gate.stopped || !this.persona.ready) return false;
@@ -1509,7 +1434,6 @@ export class NastyaBrainService implements ReplyBrain {
     return turnTime(own, other, this.clock.now());
   }
 
-  /** Ответ на ход; `null` — отвечать будет менеджер (просьба голосового, фото, кружка). */
   private async generateReply(
     chatId: number,
     userText: string,
@@ -1737,7 +1661,6 @@ export class NastyaBrainService implements ReplyBrain {
     character.self_intro_shared = true;
   }
 
-  /** The panel's lead card: slots and stage the engine learned, in the panel's vocabulary. */
   private async mirrorLeadFacts(
     chatId: number,
     state: ConversationState,
@@ -1904,10 +1827,6 @@ export class NastyaBrainService implements ReplyBrain {
     });
   }
 
-  /**
-   * Правка нашего сообщения из панели. Только текст (у вложений — нет), только то, что
-   * ушло в Telegram. Telegram сам откажет, если сообщение слишком старое, — ошибка словами.
-   */
   async editOwnMessage(
     chatId: number,
     messageId: number,
@@ -1972,7 +1891,6 @@ export class NastyaBrainService implements ReplyBrain {
     return { id: row.id, text: clean, edited_at: ts };
   }
 
-  /** Память бота: прошлый текст сообщения заменяется новым — бот помнит, что сказано на самом деле. */
   async noteEdited(
     chatId: number,
     role: 'user' | 'assistant',
@@ -2034,13 +1952,6 @@ export class NastyaBrainService implements ReplyBrain {
     });
   }
 
-  /**
-   * First message to a lead from the pool: one fixed line, no model call.
-   * The lead card goes into the character's slots so that, once the person
-   * answers, the persona already knows their name, city and age and where
-   * they met (`dating_site` → `met_on_dating_site` in the prompt).
-   */
-  /** Что мозг держит между ходами: сторож памяти смотрит, не растёт ли это без меры. */
   cacheSizes(): Record<string, number> {
     return {
       замки: this.locks.size,
@@ -2129,7 +2040,6 @@ export class NastyaBrainService implements ReplyBrain {
     });
   }
 
-  /** One policy for reactive replies, outreach, initiative and rituals, checked again before dispatch. */
   private async automationBlock(
     chatId: number,
     accountId: number,
@@ -2158,7 +2068,6 @@ export class NastyaBrainService implements ReplyBrain {
     return null;
   }
 
-  /** Сообщение дойдёт: аккаунт в сети и собеседник нас не заблокировал. Иначе и генерировать незачем. */
   private async canReach(chatId: number, accountId: number): Promise<boolean> {
     if (this.transport.isOnline && !this.transport.isOnline(accountId))
       return false;
@@ -2291,10 +2200,6 @@ export class NastyaBrainService implements ReplyBrain {
     });
   }
 
-  /**
-   * Сообщение без повода: генерация, финальный судья, повторная проверка и отправка.
-   * Общее для инициативы, утра и прощания — отличаются подсказкой и тем, что записать.
-   */
   private async sendUnprompted(
     chatId: number,
     accountId: number,
@@ -2303,10 +2208,8 @@ export class NastyaBrainService implements ReplyBrain {
     judgment: Partial<Judgment>,
     opts: {
       author: string;
-      /** Больше частей не шлёт: лишние строки склеиваются в одно сообщение. */
       maxBubbles?: number;
       beforeDispatch?: () => Promise<void>;
-      /** Перепроверка после генерации: собеседник мог написать, пока модели думали. */
       stillDue: (latest: ConversationState) => boolean;
       record: (latest: ConversationState, ts: number) => void;
     },
@@ -2519,11 +2422,6 @@ export class NastyaBrainService implements ReplyBrain {
     });
   }
 
-  /**
-   * Утро и прощание по окнам ритма личности. Зовётся раз в минуту.
-   *
-   * Слушается общего выключателя инициативы: это тоже сообщения без повода.
-   */
   async runRituals(): Promise<number> {
     const settings = await this.settings.get();
     if (
@@ -2670,7 +2568,6 @@ export class NastyaBrainService implements ReplyBrain {
 
 const RHYTHM_RETENTION_DAYS = 14;
 
-/** Отметки утр и прощаний старше двух недель больше ничего не решают. */
 function pruneRhythm(rhythm: RhythmState, today: string): void {
   const keepFrom = shiftDate(today, -RHYTHM_RETENTION_DAYS);
   const keep = <T extends string>(

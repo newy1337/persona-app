@@ -112,21 +112,16 @@ export interface ConversationState {
   judge_review: Partial<JudgeReview>;
   memories: Memory[];
   initiative: InitiativeState;
-  /** Incremental reconciliation with the delivered panel transcript, including manual conversations. */
   history_cursor?: number;
-  /** Explicit restart: keep the panel transcript, but exclude its earlier messages from the new conversation. */
   history_reset?: { after_id: number; at: number };
   persona_events?: import('../memory/persona-events').PersonaEvent[];
   telegram_control_revision?: number;
-  /** Ритм: какие утра и прощания уже случились и кем. */
   rhythm?: RhythmState;
 }
 
 export interface RhythmState {
-  /** День (YYYY-MM-DD в поясе ритма) → кто: она написала сама или он был первым. */
   morning?: Record<string, 'sent' | 'user'>;
   goodnight?: Record<string, 'sent' | 'user' | 'skipped'>;
-  /** Когда в последний раз прощались на ночь — утренний ответ после этого не «после молчания». */
   last_goodnight_ts?: number;
 }
 
@@ -163,7 +158,6 @@ export interface Judgment {
   target_slot: string;
   response_kind: ResponseKind;
   guidance: string;
-  /** Человек просит прислать голосовое, фото, кружок или видео — отвечает менеджер, не бот. */
   media_request?: MediaRequest;
   persona_event_updates?: import('../memory/persona-events').PersonaEventUpdate[];
 }
@@ -258,9 +252,7 @@ export interface RuntimeSnapshot {
     intro_due: boolean;
     met_on_dating_site: string;
     ira_goal: string;
-    /** Она уже поздоровалась в этом разговоре (первым сообщением или недавним ответом). */
     already_greeted: boolean;
-    /** Подсказка словами для судьи и автора; пусто — здороваться можно. */
     greeting_note: string;
   };
   goal_plan: GoalPlan;
@@ -278,7 +270,6 @@ export interface RuntimeSnapshot {
 }
 
 export interface CharacterConfig {
-  /** Same explicit per-persona timezone used by the rhythm scheduler. */
   timeZone?: string;
   persona: Record<string, any>;
   day: Record<string, any>;

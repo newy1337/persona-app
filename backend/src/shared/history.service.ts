@@ -17,17 +17,12 @@ export interface StoredMessage {
   author: string;
   source_message_id: number | null;
   source_modality: string;
-  /** id в Telegram: на него отвечают и на него ставят реакцию. */
   tg_msg_id: number | null;
-  /** Вложение хода: вид и файл. */
   media_kind: string | null;
   file_path: string | null;
   reply_to: number | null;
-  /** Наша реакция на это сообщение собеседника. */
   reaction: string | null;
-  /** Удалено в Telegram: бот его больше не читает. */
   deleted_at: number | null;
-  /** Изменено в Telegram: когда. */
   edited_at: number | null;
   inbound_payload?: string | null;
 }
@@ -39,9 +34,7 @@ export interface AppendMessage {
   author?: string;
   sourceMessageId?: number | null;
   modality?: string;
-  /** id в Telegram: по нему отвечают и ставят реакции. */
   tgMsgId?: number | null;
-  /** Вложение: вид и файл — чтобы панель показала то же, что видит собеседник. */
   mediaKind?: string | null;
   filePath?: string | null;
   replyTo?: number | null;
@@ -67,10 +60,6 @@ const row = (m: any): StoredMessage => ({
   source_modality: m.sourceModality,
 });
 
-/**
- * Conversation history, pinned facts and typed pause: the one data layer both
- * the panel and the brain read and write, so there is no second writer.
- */
 @Injectable()
 export class HistoryService {
   constructor(
@@ -101,11 +90,6 @@ export class HistoryService {
     });
   }
 
-  /**
-   * Чат, в котором ещё никто не писал, переходит аккаунту, который пишет сейчас.
-   * Нужно, когда лида отдали от ограниченного аккаунта: тот успел найти человека, но
-   * не написал. Чат с перепиской не трогаем — у него есть настоящий владелец.
-   */
   async takeOverEmptyChat(chatId: number, accountId: number): Promise<void> {
     const id = toChatId(chatId);
     const contact = await this.prisma.contact.findUnique({
@@ -120,14 +104,6 @@ export class HistoryService {
     });
   }
 
-  /**
-   * Стереть всё, что панель и бот знают о чате: переписку, память бота, карточку,
-   * очередь ответов, события, рубрику, передачу аналитику, медиа. Нужно, когда лида
-   * удаляют: добавленный снова, он начнёт знакомство с нуля. Расходы на модели
-   * (`model_usage`) остаются — это уже потраченные деньги. В самом Telegram
-   * сообщения у собеседника остаются: удалить их панель не может.
-   * Возвращает пути файлов входящих медиа — их удаляет вызывающий.
-   */
   async wipeChat(
     chatId: number,
   ): Promise<{ messages: number; files: string[] }> {
@@ -156,11 +132,6 @@ export class HistoryService {
     };
   }
 
-  /**
-   * Отметки о прочтении из Telegram. Только растут: апдейты приходят не по порядку,
-   * а догон при подключении может принести старое значение.
-   * `outbox` — собеседник прочитал наши; `inbox` — наш аккаунт прочитал его.
-   */
   async markTelegramRead(
     chatId: number,
     side: 'outbox' | 'inbox',
@@ -177,7 +148,6 @@ export class HistoryService {
     }
   }
 
-  /** Менеджер открыл переписку в панели: всё, что пришло до этого, он видел. */
   async markManagerSeen(chatId: number, ts: number): Promise<void> {
     await this.prisma.contact.updateMany({
       where: {
@@ -188,7 +158,6 @@ export class HistoryService {
     });
   }
 
-  /** Статус собеседника из Telegram: «в сети», «был в сети в …», «недавно». */
   async saveClientPresence(
     chatId: number,
     presence: ClientPresence,
@@ -204,7 +173,6 @@ export class HistoryService {
     });
   }
 
-  /** Собеседник заблокировал нас (`ts`) или снова пишет / сообщение дошло (`null`). */
   async setBlockedByClient(chatId: number, ts: number | null): Promise<void> {
     await this.prisma.contact.updateMany({
       where: {
@@ -215,11 +183,6 @@ export class HistoryService {
     });
   }
 
-  /**
-   * Собеседник почистил переписку: за последние 2 минуты разом удалено 5+ сообщений,
-   * и живых в чате почти не осталось. Одиночные удаления и автоудаление по таймеру
-   * (по одному раз в сутки) сюда не попадают.
-   */
   async detectClearedByClient(chatId: number, nowTs: number): Promise<boolean> {
     const id = toChatId(chatId);
     const [justDeleted, alive] = await Promise.all([
@@ -236,7 +199,6 @@ export class HistoryService {
     return true;
   }
 
-  /** Собеседник снова пишет — «почистил переписку» больше не про сейчас. */
   async clearClearedByClient(chatId: number): Promise<void> {
     await this.prisma.contact.updateMany({
       where: { chatId: toChatId(chatId), clearedByClientAt: { not: null } },
@@ -252,7 +214,6 @@ export class HistoryService {
     return Boolean(c?.blockedByClientAt);
   }
 
-  /** Статус аккаунта и почему он потерян (бан, конец сессии) — для прогноза в чате. */
   async accountState(accountId: number): Promise<{
     status: string;
     reason: string | null;
@@ -267,7 +228,6 @@ export class HistoryService {
       : null;
   }
 
-  /** Как собеседник выглядит в Telegram: был в сети и не заблокировал ли нас. */
   async clientTelegramState(
     chatId: number,
     nowTs: number,
@@ -288,7 +248,6 @@ export class HistoryService {
     return clientTelegramView(c, nowTs);
   }
 
-  /** Самый новый tg id среди сообщений собеседника — до него «прочитано», когда аккаунт открыл чат. */
   async latestClientTgId(chatId: number): Promise<number> {
     const row = await this.prisma.message.findFirst({
       where: {
@@ -323,8 +282,6 @@ export class HistoryService {
     return c?.accountId ?? null;
   }
 
-  /** Appends a turn. A user message with a known source id is idempotent. */
-  /** Файл, скачанный позже самого сообщения (догрузка кружков и видео), — к его строке. */
   async attachClientFile(
     chatId: number,
     sourceMessageId: number,
@@ -342,10 +299,6 @@ export class HistoryService {
     });
   }
 
-  /**
-   * Сообщение изменили: новый текст и отметка «изменено». Возвращает прежний текст и
-   * роль — чтобы поправить память бота; null — такой строки нет или текст не менялся.
-   */
   async editMessageText(
     chatId: number,
     where: { id?: number; tgMsgId?: number },
@@ -387,7 +340,6 @@ export class HistoryService {
     });
   }
 
-  /** Сообщение собеседника с этим tg id уже записано (повторная доставка, догон). */
   async hasClientMessage(
     chatId: number,
     sourceMessageId: number,
@@ -400,7 +352,6 @@ export class HistoryService {
     );
   }
 
-  /** Old messages stay available to the panel and deduplication after an explicit restart. */
   private async conversationWindow(chatId: number) {
     const row = await this.prisma.brainState.findUnique({
       where: { chatId: toChatId(chatId) },
@@ -529,11 +480,6 @@ export class HistoryService {
     return row(created);
   }
 
-  /**
-   * Опорные моменты для ритма, строго раньше `beforeTs`: его первое и последнее
-   * сообщение, её последнее. По ним считается задержка ответа и решается, пора
-   * ли писать утро или прощание.
-   */
   async rhythmMarks(
     chatId: number,
     beforeTs: number,
@@ -571,11 +517,6 @@ export class HistoryService {
     };
   }
 
-  /**
-   * Сообщения, удалённые в Telegram. У личных чатов id сообщения уникален в
-   * пределах аккаунта, а чата в событии нет — поэтому ищем среди чатов этого аккаунта.
-   * Возвращает затронутые чаты и id их сообщений.
-   */
   async markDeleted(
     accountId: number,
     tgMsgIds: number[],
@@ -608,12 +549,6 @@ export class HistoryService {
     return byChat;
   }
 
-  /** Last `limit` messages, chronological. */
-  /**
-   * Последние сообщения чата по времени, а не по порядку записи: пока бот печатает ответ,
-   * входящие ждут очереди чата и записываются после его частей, хотя написаны раньше.
-   * По id они вставали в ленте ниже ответа («11:33» под «11:34»).
-   */
   async window(chatId: number, limit: number): Promise<StoredMessage[]> {
     const rows = await this.prisma.message.findMany({
       where: { chatId: toChatId(chatId) },
@@ -636,7 +571,6 @@ export class HistoryService {
     return rows.map(row);
   }
 
-  /** Role of the last stored turn; `user` means the client is waiting for an answer. */
   async lastStoredRole(chatId: number): Promise<string | null> {
     const row = await this.prisma.message.findFirst({
       where: { chatId: toChatId(chatId) },
@@ -646,7 +580,6 @@ export class HistoryService {
     return row?.role ?? null;
   }
 
-  /** Highest Telegram message id stored among the client's turns; 0 when none. Drives the offline catch-up. */
   async latestSourceMessageId(chatId: number): Promise<number> {
     const row = await this.prisma.message.findFirst({
       where: {
@@ -685,11 +618,6 @@ export class HistoryService {
     return parseLeadFacts(r?.facts);
   }
 
-  /**
-   * Merges a patch into the blob. Default is first-capture-wins (a captured
-   * fact is not overwritten); `skipIfExists=false` forces the write, and a
-   * `null` value deletes the key.
-   */
   async mergeLeadFacts(
     chatId: number,
     patch: LeadFacts,
@@ -762,7 +690,6 @@ export class HistoryService {
     });
   }
 
-  /** Реакция на сообщение клиента: хранится на его строке, как в Telegram. */
   async setReaction(
     chatId: number,
     tgMsgId: number,
@@ -778,7 +705,6 @@ export class HistoryService {
     return r.count > 0;
   }
 
-  /** Очередь панели: текст, вложение или реакция — отправляет их воркер. */
   async enqueueManualReply(
     chatId: number,
     text: string,
@@ -815,7 +741,6 @@ export class HistoryService {
     });
   }
 
-  /** Atomic claim: only one worker wins a pending row. */
   async claimManualReply(id: number) {
     const candidate = await this.prisma.pendingReply.findUnique({
       where: { id },

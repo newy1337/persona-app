@@ -47,18 +47,10 @@ const PLAN_KEYS = [
   'storyline_id',
 ] as const;
 
-/**
- * Assembles the author's system prompt, split at the cache boundary.
- *
- * `stable`: who she is, how she sounds, the rules — identical for every chat
- * of this persona, so it is what the prompt cache keeps. `volatile`: this
- * turn's context and the judge's decision, which is a hint, not a script.
- */
 export interface CharacterPromptInput {
   config: CharacterConfig;
   runtime: RuntimeSnapshot;
   judgment: Partial<Judgment>;
-  /** Имя личности: подставляется в текст вместо `{name}`. */
   name: string;
   prompts: PersonaPrompts;
   customInstructions?: string;

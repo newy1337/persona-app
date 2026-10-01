@@ -1,14 +1,9 @@
 import s from '../../styles/AdminPage.module.scss';
 import p from './Stats.module.scss';
 
-/**
- * Остаток на ключе OpenRouter. Отдельным блоком наверху: когда деньги кончатся,
- * бот замолчит во всех чатах разом, и узнать об этом лучше заранее.
- */
 
 const money = (x) => (x === null || x === undefined ? '—' : `$${x.toFixed(2)}`);
 
-/** Цвет полосы слева: сколько дней проживёт остаток при нынешнем расходе. */
 const tone = (days) => (days === null || days === undefined ? '' : days < 1.5 ? p.balanceAlarm : days < 4 ? p.balanceWarn : p.balanceCalm);
 
 export default function Balance({ data }) {

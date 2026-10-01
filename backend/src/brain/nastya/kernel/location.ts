@@ -82,14 +82,6 @@ const canonical = (s: string) =>
 type City = [string, string, string, string[], string[]];
 let index: Map<string, City[]>;
 
-/**
- * GeoNames supplies the zone; the language model only extracts the place name.
- *
- * `city-timezones.json.gz` — данные GeoNames (cities500, admin1CodesASCII, выгрузка
- * 21.09.2026): https://www.geonames.org/, лицензия Creative Commons Attribution 4.0
- * (https://creativecommons.org/licenses/by/4.0/). Ссылка на источник обязательна по
- * условиям лицензии, поэтому она живёт рядом с самим чтением файла.
- */
 export function cityPlace(city: string, country = '', region = ''): Place {
   if (!index) {
     index = new Map();
@@ -143,7 +135,6 @@ export function cityPlace(city: string, country = '', region = ''): Place {
   };
 }
 
-/** Exclude examples, relatives' stories and behavioral prompts from residence extraction. */
 export function residenceSource(persona: Record<string, any>): string {
   const keys = [
     'current_location',

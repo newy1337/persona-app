@@ -13,7 +13,6 @@ day_continuity содержит датированные цитаты твоих
 
 export interface DayContinuity {
   timezone: string;
-  /** Quotes are claims made in this conversation, not independently verified events. */
   previous_statements: Array<{ date: string; time: string; text: string }>;
   omitted_statements: number;
 }
@@ -24,7 +23,6 @@ const words = (s: string) =>
 const ACTION =
   /(?:сейчас|сегодня|завтра|вчера|вечером|с утра|уже|собира[юе]|планир|пойду|пойдем|иду|идем|выш[ле]|верну[лс]|закончи|отмени|перен[ео]с|после|спать|ложусь|пилатес|трениров)/iu;
 
-/** Recover a bounded chronology from persisted history, including actions outside the judge's last 16 turns. */
 export function dayContinuity(
   history: readonly Partial<HistoryMessage>[],
   timezone: string,

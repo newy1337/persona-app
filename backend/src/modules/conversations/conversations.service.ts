@@ -46,10 +46,8 @@ import { ManagerAttributionService } from 'src/shared/manager-attribution.servic
 const DETAIL_LIMIT = 500;
 const LIST_LIMIT = 200;
 const EXPORT_MESSAGE_LIMIT = 5000;
-/** Сколько медиа показывает вкладка «Медиа». */
 const GALLERY_LIMIT = 1000;
 const OPERATOR_ACTOR = 'operator:web';
-/** Reason+actor pair kept constant so repeated manual messages stay idempotent. */
 const MANUAL_PAUSE_ACTOR = 'manager:manual_message';
 
 const utc = (ts: number) =>
@@ -58,7 +56,6 @@ const utc = (ts: number) =>
     .replace('T', ' ')
     .replace(/\.\d+Z$/, 'Z');
 
-/** Прочитано ли сообщение в Telegram: наше — собеседником, его — нашим аккаунтом. */
 export function telegramRead(
   m: {
     role: string;
@@ -96,13 +93,6 @@ export class ConversationsService {
     return typeof v === 'number' && Number.isFinite(v) ? v : null;
   }
 
-  /** Frontend `ConversationDetail`. `author` is raw: the UI translates codes. */
-  /**
-   * Отпечаток переписки для опроса из панели: пара дешёвых запросов по индексам
-   * вместо полного `detail`, который собирает всю ленту, карточку и воронку.
-   * Открытый чат опрашивается каждые пару секунд, и полная сборка на каждый тик
-   * съедала процессор сервера — отчего медленно открывались и остальные страницы.
-   */
   async revision(chatId: number) {
     const [marks, pause, scheduled, media, tail] = await Promise.all([
       this.history.telegramReadMarks(chatId),
@@ -291,7 +281,6 @@ export class ConversationsService {
     return this.history.markManagerSeen(chatId, this.clock.ts());
   }
 
-  /** Admin-only cross-chat list (managers use /api/manager/conversations). */
   async list() {
     const rows = await this.prisma.$queryRaw<
       {
@@ -340,11 +329,6 @@ export class ConversationsService {
     };
   }
 
-  /**
-   * Manual reply: queued, not sent. The Telegram worker delivers it from the
-   * owning account and appends it as `operator:web`. With the pause-on-manual
-   * setting on, the chat is taken over so the bot does not answer on top.
-   */
   async manualMessage(chatId: number, text: string, replyTo?: number) {
     const ts = this.clock.ts();
     const replyId = await this.history.enqueueManualReply(chatId, text, ts, {
@@ -357,11 +341,6 @@ export class ConversationsService {
     };
   }
 
-  /**
-   * Вложение из панели: файл (его уже сохранил upload), ссылка или стикер.
-   * Уходит той же очередью, что и текст, — в Telegram пишет один процесс,
-   * иначе порядок сообщений зависел бы от того, кто успел первым.
-   */
   async sendAttachment(
     chatId: number,
     dto: { kind: string; source: string; caption?: string; reply_to?: number },
@@ -391,10 +370,6 @@ export class ConversationsService {
     };
   }
 
-  /**
-   * Все фото и видео чата — для вкладки «Медиа», как в профиле Telegram: и его, и наши,
-   * новые сверху. Только с сохранённым файлом: без файла показывать нечего.
-   */
   async mediaGallery(chatId: number) {
     const rows = await this.prisma.message.findMany({
       where: {
@@ -428,7 +403,6 @@ export class ConversationsService {
     };
   }
 
-  /** Несколько фото и видео одним альбомом (2–10 файлов, как в Telegram). */
   async sendAlbum(
     chatId: number,
     dto: { sources: string[]; caption?: string; reply_to?: number },
@@ -463,7 +437,6 @@ export class ConversationsService {
     };
   }
 
-  /** Реакция на сообщение собеседника: своей строки в ленте не даёт. */
   async reaction(chatId: number, messageId: number, emoji: string) {
     const clean = plainEmoji(emoji.trim());
     if (clean && !isReactionEmoji(clean)) {
@@ -502,7 +475,6 @@ export class ConversationsService {
     return this.pause.pause(chatId, TakeoverReason.HOLD, OPERATOR_ACTOR);
   }
 
-  /** Ответ потерялся (ошибка модели): поставить неотвеченное снова в очередь ответа. */
   answerNow(chatId: number): Promise<boolean> {
     return this.brain.answerAfterResume(chatId);
   }
@@ -512,11 +484,6 @@ export class ConversationsService {
     await this.brain.answerAfterResume(chatId).catch(() => false);
   }
 
-  /**
-   * Архив: чат уходит с дашборда в «Архив», бот в нём больше не пишет — ни ответов,
-   * ни «доброго утра». Вернули из архива — бот снова ведёт, если вёл до архива.
-   * Флаг — в карточке чата, там же, где его фильтрует список.
-   */
   async setHidden(chatId: number, hidden: boolean) {
     if (hidden) {
       const botWasOn = (await this.pause.status(chatId)).status !== 'paused';
@@ -555,11 +522,6 @@ export class ConversationsService {
     return { ok: true, chat_id: chatId, hidden };
   }
 
-  /**
-   * Заметка менеджера о диалоге. Она для людей: в промпт не попадает, чтобы личность
-   * не начала пересказывать служебные пометки вроде «обещал перезвонить в пятницу».
-   * Пустой текст стирает заметку.
-   */
   async setNote(chatId: number, text: string, author: string) {
     const note = text.trim();
     await this.history.ensureContact(chatId);
@@ -612,7 +574,6 @@ export class ConversationsService {
     return { ok: true, chat_id: chatId };
   }
 
-  /** Тема знакомства вручную: «узнали — Омск». Пустое значение снимает отметку. */
   async setSlot(chatId: number, slotId: string, value: string | null) {
     try {
       const r = await this.brain.setSlot(
@@ -626,7 +587,6 @@ export class ConversationsService {
     }
   }
 
-  /** The only exit from a terminal refusal lock; idempotent. */
   async clearRefusalLock(chatId: number) {
     await this.history.mergeLeadFacts(
       chatId,

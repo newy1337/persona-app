@@ -13,7 +13,6 @@ import { normalizeMemoryText } from './text';
 const TEXT_LIMIT = 800;
 const EVIDENCE_LIMIT = 2000;
 
-/** Replacing a memory keeps the superseded wording in its revision history. */
 function reviseMemory(memory: Memory, text: string, today: string): void {
   if (text !== memory.text) {
     (memory.revisions ??= []).push({
@@ -33,12 +32,6 @@ function writeSlot(
   ((state.character ??= {}).slots ??= {})[slotId] = text;
 }
 
-/**
- * Applies the judge's memory updates in place.
- *
- * `remember` merges into an existing record for the same slot (or the same
- * wording), so repeating a fact revises it instead of duplicating it.
- */
 export function recordMemoryUpdates(
   state: ConversationState,
   updates: Array<Partial<MemoryUpdate>>,

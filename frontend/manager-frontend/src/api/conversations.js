@@ -24,12 +24,10 @@ export function getConversationById(chatId) {
   return api.get(`/api/conversations/${chatId}`);
 }
 
-/** Отпечаток переписки: дешёвая проверка, изменилось ли что-нибудь с прошлого раза. */
 export function getConversationRevision(chatId) {
   return api.get(`/api/conversations/${chatId}/revision`);
 }
 
-/** Заметка менеджера о диалоге: пустой текст стирает её. */
 export function setChatNote(chatId, text) {
   return api.put(`/api/conversations/${chatId}/note`, { text });
 }

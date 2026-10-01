@@ -1,4 +1,3 @@
-/** Cancellation is control flow, never a failed delivery to retry unchanged. */
 export class ReplySuperseded extends Error {
   constructor() {
     super('New inbound activity superseded this reply');

@@ -23,12 +23,6 @@ function reactionInstructions(): string {
   );
 }
 
-/**
- * Re-encodes an image to a bounded JPEG data URL.
- *
- * Decoding is capped by byte size and pixel count, and the picture is always
- * re-encoded, so no original metadata travels to the model.
- */
 export async function imageDataUrl(
   data: Buffer,
   preview = false,
@@ -69,7 +63,6 @@ export async function imageDataUrl(
 
 export interface InspectImageInput {
   data: Buffer;
-  /** Инструкция к разбору фото: из личности. Для реакции не используется. */
   instructions: string;
   caption?: string;
   reaction?: boolean;
@@ -83,12 +76,6 @@ export interface InspectImageDeps {
   logger: Logger;
 }
 
-/**
- * Describes a photo, or picks a reaction for a sticker or GIF preview.
- *
- * This runs outside the character's dialogue rules: it observes the picture
- * and never speaks as the character.
- */
 export async function inspectImage(
   input: InspectImageInput,
   deps: InspectImageDeps,

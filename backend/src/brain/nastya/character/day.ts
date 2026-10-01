@@ -1,13 +1,6 @@
 import { createHash } from 'node:crypto';
 import { stripMetadata } from './config';
 
-/**
- * The character's day.
- *
- * A hand-authored `state` wins on the day it is dated for. Otherwise each
- * facet is drawn from its pool by hashing the date, so the day is arbitrary
- * but stable: every turn of the same day sees the same weather and mood.
- */
 export function dayState(
   dayConfig: Record<string, any>,
   today: string,

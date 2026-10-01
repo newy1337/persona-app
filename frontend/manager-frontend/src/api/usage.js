@@ -8,7 +8,6 @@ export function getUsage({ from, to } = {}) {
   return api.get(`/api/stats${qs ? `?${qs}` : ''}`);
 }
 
-/** Разрез по менеджерам грузится отдельно: он нужен, только когда открыли его вкладку. */
 export function getManagerUsage({ from, to } = {}) {
   const p = new URLSearchParams();
   if (from) p.set('from', from);

@@ -1,7 +1,6 @@
 import type { HistoryMessage } from '../kernel/types';
 import { isGoodnightText } from './rhythm';
 
-/** The window never creates a reason. Only the latest, recent user turn may supply a closing cue. */
 export function goodnightReason(
   history: readonly Partial<HistoryMessage>[],
   nowTs: number,

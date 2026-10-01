@@ -1,4 +1,3 @@
-/** Isolated native media process. No Telegram session or API credentials are passed here. */
 import {
   NTgCalls,
   MediaSource,

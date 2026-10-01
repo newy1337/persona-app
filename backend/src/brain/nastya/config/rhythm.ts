@@ -1,72 +1,37 @@
 import { DEFAULT_TYPING, type TypingStyle } from 'src/domain/typing';
 
-/**
- * Ритм личности: когда она пишет сама и как быстро отвечает.
- *
- * Документ лежит в секции `rhythm` личности и правится в панели. Здесь —
- * форма, умолчания и проверка. Всё незаполненное или кривое берётся из
- * умолчаний: сломанное поле не должно превращать задержку в ноль или в сутки.
- *
- * Время окон — «часы на стене» в `timezone`, минуты задержек — реальные.
- */
-
 export interface TimeWindow {
   enabled: boolean;
-  /** "07:00" — начало окна. */
   from: string;
-  /** "11:00" — конец окна; "00:00" значит полночь, конец суток. */
   to: string;
 }
 
 export interface Rhythm {
-  /** Часовой пояс окон, IANA: "Europe/Moscow". */
   timezone: string;
   timezone_mode?: 'manual' | 'bio';
   reply_delay: {
     enabled: boolean;
-    /** Сколько минут от первого сообщения собеседника она отвечает быстро. */
     warmup_minutes: number;
     warmup_min_minutes: number;
     warmup_max_minutes: number;
-    /** Обычная задержка после разогрева. */
     min_minutes: number;
     max_minutes: number;
-    /**
-     * Поток сообщений: ответ ждёт, пока он замолчит на столько секунд, и уходит
-     * одним на всё сразу. Ноль — отвечать в срок, не дожидаясь паузы.
-     */
     burst_seconds: number;
   };
   after_silence: {
     enabled: boolean;
-    /** Собеседник не отвечал на её сообщение дольше этого — отвечает с долгой задержкой. */
     silence_hours: number;
     min_hours: number;
     max_hours: number;
   };
-  /** Утреннее сообщение: одно в день, в случайный момент окна. */
   morning: TimeWindow;
-  /** Окно возможного прощания: только при поводе из разговора, не обязательная отправка. */
   goodnight: TimeWindow;
-  /** Не писать утро и прощание тем, кто молчит дольше этого. */
   skip_if_silent_days: number;
-  /**
-   * Сколько сообщений без повода (утро, прощание, «куда пропал») она пишет подряд,
-   * пока он не ответит. 0 — сама не пишет, пока он молчит.
-   */
   max_unanswered: number;
-  /**
-   * Старые сообщения: пришли, пока аккаунт был не в сети, или остались без ответа.
-   * Ответ на них — не как на свежее: позже, не ночью и с оглядкой на паузу.
-   */
-  /** «Печатает…» перед каждой частью ответа: скорость набора и паузы (как в persona-chat). */
   typing: TypingStyle;
   late_messages: {
-    /** Отвечать ли на старые вообще. */
     enabled: boolean;
-    /** Старше скольких часов сообщение считается старым. */
     stale_after_hours: number;
-    /** Старше скольких дней — не отвечать совсем. */
     max_age_days: number;
   };
 }
@@ -98,7 +63,6 @@ export const DEFAULT_RHYTHM: Rhythm = {
 
 const CLOCK_RX = /^([01]?\d|2[0-3]):([0-5]\d)$/;
 
-/** "07:30" → 450; кривое — null. */
 export function clockMinutes(value: unknown): number | null {
   const m = CLOCK_RX.exec(String(value ?? '').trim());
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;
@@ -144,12 +108,10 @@ function window(value: unknown, fallback: TimeWindow): TimeWindow {
   };
 }
 
-/** min > max — меняем местами: оператор ввёл диапазон задом наперёд, а не хотел ноль. */
 function range(lo: number, hi: number): [number, number] {
   return lo <= hi ? [lo, hi] : [hi, lo];
 }
 
-/** Документ личности поверх умолчаний; вызывается на каждое чтение, дёшево. */
 export function mergeRhythm(doc: unknown): Rhythm {
   const d = obj(doc);
   const rd = obj(d.reply_delay);
@@ -242,11 +204,6 @@ export function mergeRhythm(doc: unknown): Rhythm {
   };
 }
 
-/**
- * Проверка документа перед сохранением: список ошибок человеческим языком.
- * Движок кривое и так заменит умолчанием, но оператор должен узнать об опечатке
- * сразу, а не через неделю, когда бот ответит мгновенно.
- */
 export function rhythmErrors(doc: unknown): string[] {
   const errors: string[] = [];
   const d = obj(doc);

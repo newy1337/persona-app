@@ -28,7 +28,6 @@ import { proxyLabel } from 'src/domain/proxy';
 
 const HEARTBEAT_ALIVE_S = 120;
 
-/** Public shape of an account: never the session, never proxy credentials. */
 export interface TgAccountSummary {
   id: number;
   phone_e164: string;
@@ -36,13 +35,9 @@ export interface TgAccountSummary {
   status: string;
   needs_proxy_setup: boolean;
   proxy_geo: string | null;
-  /** «socks5 1.2.3.4:1080 · user» — какой прокси стоит, без пароля и секрета. */
   proxy_label: string | null;
-  /** Telegram ограничил аккаунт до этого времени (unix): новых лидов не берёт. null — не ограничен. */
   flood_until: number | null;
-  /** Сколько диалогов ведёт аккаунт: при смене личности все они продолжатся от новой. */
   chats: number;
-  /** Имя личности — подпись в таблице. */
   persona_name: string | null;
   flood_reason: string | null;
   last_login_at: number | null;
@@ -51,13 +46,9 @@ export interface TgAccountSummary {
   daily_msg_quota: number | null;
   purpose: string;
   username: string | null;
-  /** Имя профиля в Telegram. */
   display_name: string | null;
-  /** Фото профиля аккаунта; null — нет или ещё не подключался. */
   avatar_url: string | null;
-  /** Когда Telegram заблокировал аккаунт или завершил сессию; null — не терялся. */
   lost_at: number | null;
-  /** Что случилось словами: «Telegram заблокировал аккаунт», «сессия завершена…». */
   lost_reason: string | null;
   online: boolean;
   has_session: boolean;
@@ -156,7 +147,6 @@ export class TgAccountsService {
     );
   }
 
-  /** Личность должна существовать и быть включена — иначе аккаунту некем говорить. */
   private async assertPersona(slug: string): Promise<void> {
     const persona = await this.prisma.persona.findUnique({
       where: { slug },
@@ -168,12 +158,6 @@ export class TgAccountsService {
       throw new UnprocessableEntityException(`личность «${slug}» выключена`);
   }
 
-  /**
-   * Правка аккаунта. Смена личности действует со следующего сообщения во всех его
-   * диалогах. Лиды, которых аккаунт взял под другую личность, но ещё не написал,
-   * отпускаются — их напишет аккаунт нужной личности.
-   */
-  /** Имя и ник аккаунта в самом Telegram. */
   async updateProfile(id: number, dto: UpdateTgProfileDto) {
     await this.get(id);
     const username =
@@ -195,7 +179,6 @@ export class TgAccountsService {
     return this.summary(await this.get(id));
   }
 
-  /** Фото профиля: любая картинка → JPEG до 1280 px, Telegram сам сделает круг. */
   async setAvatar(id: number, body: Buffer) {
     await this.get(id);
     if (!Buffer.isBuffer(body) || body.length === 0)
@@ -327,11 +310,6 @@ export class TgAccountsService {
     }
   }
 
-  /**
-   * Новый прокси начинает работать сразу: подключённый аккаунт переподключается через
-   * него. Не подключился — это видно по `online` и `reconnect_error`, старый прокси не
-   * возвращаем: оператор сохранил новый намеренно.
-   */
   async setProxy(id: number, proxy: ProxyConfigDto) {
     await this.get(id);
     const clean = {
@@ -364,10 +342,6 @@ export class TgAccountsService {
     };
   }
 
-  /**
-   * Поднять аккаунт руками: оператору есть что нажать, когда тот выпал из сети —
-   * ждать сторожа не нужно, а ошибка подключения возвращается словами.
-   */
   async reconnect(id: number) {
     const account = await this.get(id);
     if (!account.sessionEncrypted)
@@ -393,7 +367,6 @@ export class TgAccountsService {
     };
   }
 
-  /** «Был в сети» у аккаунта: читается из самого Telegram, пока аккаунт в сети. */
   async privacy(id: number) {
     await this.get(id);
     try {
@@ -414,7 +387,6 @@ export class TgAccountsService {
     }
   }
 
-  /** Снять метку ограничения вручную: оператор знает, что аккаунт снова в порядке. */
   async clearFlood(id: number) {
     await this.get(id);
     const updated = await this.prisma.tgAccount.update({
@@ -447,11 +419,6 @@ export class TgAccountsService {
     return this.summary(await this.get(id));
   }
 
-  /**
-   * Removes the account. Chats are NOT deleted: their owner is cleared, the
-   * transcript stays. An ownerless chat is invisible to managers, and the
-   * owner can be written back later.
-   */
   async remove(id: number) {
     await this.get(id);
     await this.telegram.disconnect(id);
@@ -463,7 +430,6 @@ export class TgAccountsService {
     return { deleted: true, orphaned_chats: orphaned.count };
   }
 
-  /** Top-bar snapshot: accounts with a heartbeat dot and a few live counters. */
   async liveState() {
     const now = this.clock.ts();
     const accounts = await this.prisma.tgAccount.findMany({

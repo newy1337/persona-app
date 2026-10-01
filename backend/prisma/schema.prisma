@@ -1,6 +1,3 @@
-// Physical table and column names follow the Chutter operator DB so the manager
-// read-model can stay a near-verbatim SQL port. Telegram ids do not fit a
-// 32-bit Int, hence BigInt on every chat_id / telegram_user_id.
 
 generator client {
   provider = "prisma-client-js"
@@ -11,9 +8,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ---------------------------------------------------------------------------
-// Panel users, roles, audit
-// ---------------------------------------------------------------------------
 
 model DashboardUser {
   id           Int     @id @default(autoincrement())
@@ -38,8 +32,6 @@ model DashboardUser {
   @@map("dashboard_users")
 }
 
-/// Which Telegram accounts a manager owns. UNIQUE on the account: one account
-/// belongs to exactly one manager; reassignment moves it.
 model ManagerAccount {
   userId      Int @map("user_id")
   tgAccountId Int @unique @map("tg_account_id")
@@ -68,39 +60,21 @@ model DashboardAuditLog {
   @@map("dashboard_audit_log")
 }
 
-// ---------------------------------------------------------------------------
-// Telegram client accounts (MTProto userbots)
-// ---------------------------------------------------------------------------
 
-/// Личность: то, что раньше лежало в data/personas/<slug>/*.json, плюс тексты
-/// промптов. Документы хранятся как есть, включая авторские заметки «_...»:
-/// движок читает их той же формой, редактор показывает их подсказками.
-/// Одна личность может стоять на нескольких аккаунтах (tg_accounts.persona_id).
 model Persona {
   id         Int     @id @default(autoincrement())
-  /// латинский идентификатор: он же persona_id аккаунта
   slug       String  @unique
-  /// имя в разговоре: подставляется в промпт вместо прежней константы
   name       String
   isDefault  Boolean @default(false) @map("is_default")
   enabled    Boolean @default(true)
-  /// persona.json: карточка, биография, манера, примеры
   persona    String  @default("{}")
-  /// goals.json: этапы знакомства, слоты, темп
   goals      String  @default("{}")
-  /// storylines.json: сюжетные линии и прошлые эпизоды
   storylines String  @default("{}")
-  /// day.json: пул состояний дня
   dayConfig  String  @default("{}") @map("day_config")
-  /// beats.json: рубрика сценария; пусто — выводится из storylines
   beats      String? 
-  /// тексты промптов; пустые ключи берутся из кода
   prompts    String  @default("{}")
-  /// ритм: задержки ответов, утреннее сообщение и прощание (config/rhythm.ts)
   rhythm     String  @default("{}")
-  /// переменные: {site} в любом документе → значение отсюда (config/variables.ts)
   variables  String  @default("{}")
-  /// заметки оператора, модели не видны
   notes      String?
   createdAt  Int     @map("created_at")
   updatedAt  Int     @map("updated_at")
@@ -110,12 +84,9 @@ model Persona {
   @@map("personas")
 }
 
-/// История секций: при сохранении прежний документ откладывается сюда, и
-/// откатиться на несколько шагов назад можно всегда.
 model PersonaVersion {
   id        Int     @id @default(autoincrement())
   personaId Int     @map("persona_id")
-  /// persona | goals | storylines | dayConfig | beats | prompts
   section   String
   data      String
   savedBy   String? @map("saved_by")
@@ -132,7 +103,6 @@ model TgAccount {
   id                   Int     @id @default(autoincrement())
   phoneE164            String  @unique @map("phone_e164")
   personaId            String  @map("persona_id")
-  /// GramJS StringSession, encrypted at rest (AES-256-GCM, key from env).
   sessionEncrypted     String? @map("session_encrypted")
   proxyConfigEncrypted String? @map("proxy_config_encrypted")
   status               String  @default("unauthorized")
@@ -148,11 +118,8 @@ model TgAccount {
   purpose              String  @default("prod")
   telegramUserId       BigInt? @map("telegram_user_id")
   username             String?
-  /// имя аккаунта в Telegram (имя и фамилия профиля) — подпись во вкладке «Аккаунты»
   displayName          String? @map("display_name")
-  /// Telegram ограничил аккаунт (flood / лимит импорта контактов): до этого времени новых лидов не берёт
   floodUntil           Int?    @map("flood_until")
-  /// что именно ограничено — словами, для панели
   floodReason          String? @map("flood_reason")
 
   manager  ManagerAccount?
@@ -162,11 +129,7 @@ model TgAccount {
   @@map("tg_accounts")
 }
 
-// ---------------------------------------------------------------------------
-// Conversations
-// ---------------------------------------------------------------------------
 
-/// One row per client chat. Pause is typed: state + reason + actor + until.
 model Contact {
   chatId      BigInt  @id @map("chat_id")
   accountId   Int?    @map("account_id")
@@ -176,25 +139,15 @@ model Contact {
   pausedUntil Int?    @map("paused_until")
   pausedTs    Int?    @map("paused_ts")
   createdAt   Int     @default(0) @map("created_at")
-  /// собеседник прочитал наши сообщения до этого tg id включительно (галочки в Telegram)
   readOutboxMaxId Int? @map("read_outbox_max_id")
-  /// наш аккаунт прочитал сообщения собеседника до этого tg id включительно
   readInboxMaxId  Int? @map("read_inbox_max_id")
-  /// статус собеседника в Telegram: online | offline | recently | last_week | last_month | hidden
   clientStatus    String? @map("client_status")
-  /// online — до какого времени в сети; offline — когда был в сети последний раз
   clientStatusAt  Int?    @map("client_status_at")
-  /// когда статус узнали
   clientStatusSeenAt Int? @map("client_status_seen_at")
-  /// собеседник заблокировал наш аккаунт (Telegram ответил USER_IS_BLOCKED); снимается, когда он снова пишет
   blockedByClientAt Int? @map("blocked_by_client_at")
-  /// когда переписку последний раз открывали в панели: новые сообщения клиента — те, что пришли после
   managerSeenTs   Int?    @map("manager_seen_ts")
-  /// собеседник почистил переписку (удалил почти всё разом); снимается, когда он снова пишет
   clearedByClientAt Int?  @map("cleared_by_client_at")
-  /// заметка менеджера об этом диалоге: только для людей, модели не показывается
   note            String? @map("note")
-  /// кто и когда правил заметку последним — подпись под ней в панели
   noteBy          String? @map("note_by")
   noteAt          Int?    @map("note_at")
 
@@ -210,38 +163,26 @@ model Message {
   ts              Int
   role            String
   text            String
-  /// Who wrote the turn: `llm`, `operator:<id>`, `reengage`, `initiative`.
   author          String  @default("llm")
   sourceMessageId Int?    @map("source_message_id")
   sourceModality  String  @default("text") @map("source_modality")
-  /// id сообщения в Telegram: у входящих совпадает с source_message_id, у
-  /// исходящих приходит от Telegram — по нему отвечают и ставят реакции
   tgMsgId         Int?    @map("tg_msg_id")
-  /// photo | video | animation | voice | video_note | document | sticker — пусто у текста
   mediaKind       String? @map("media_kind")
-  /// файл вложения: путь в uploads/, ссылка или file_id стикера
   filePath        String? @map("file_path")
-  /// tg id сообщения, на которое это ответ
   replyTo         Int?    @map("reply_to")
-  /// эмодзи, которым ответили НА это сообщение (наша реакция на реплику клиента)
   reaction        String?
-  /// собеседник удалил сообщение в Telegram: бот его не читает, панель показывает зачёркнутым
   deletedAt       Int?    @map("deleted_at")
-  /// сообщение изменили в Telegram (мы из панели или собеседник у себя) — когда
   editedAt        Int?    @map("edited_at")
   processedAt     Int?    @map("processed_at")
   inboundPayload  String? @map("inbound_payload")
 
   @@index([chatId, id], map: "idx_messages_chat")
-  /// Лента чата читается в порядке времени: без индекса это сортировка всей выборки.
   @@index([chatId, ts, id], map: "idx_messages_chat_ts")
   @@index([processedAt, role], map: "idx_messages_unprocessed")
   @@unique([chatId, sourceMessageId], map: "uq_messages_chat_source_message")
   @@map("messages")
 }
 
-/// Lead card and panel-facing facts as one JSON blob per chat (SSOT for
-/// funnel_stage, name/age/city, hidden flag and the brain's public mirror).
 model LeadFacts {
   chatId BigInt @id @map("chat_id")
   facts  String @default("{}")
@@ -249,7 +190,6 @@ model LeadFacts {
   @@map("pinned_facts")
 }
 
-/// The brain's private conversation state (character, memories, judge).
 model BrainState {
   chatId    BigInt @id @map("chat_id")
   stateJson String @map("state_json")
@@ -258,23 +198,14 @@ model BrainState {
   @@map("brain_state")
 }
 
-/// Отложенный ответ бота: входящие ждут своей очереди по ритму личности.
-/// Одна строка на чат — всё, что он написал за время ожидания, уходит в один ответ.
-/// Живёт в базе, а не в памяти процесса: рестарт не должен терять ответы.
 model ReplySchedule {
-  /// Prepared reply and acknowledged part count; never exposed as conversation memory.
   delivery String?
   chatId    BigInt @id @map("chat_id")
   accountId Int    @map("account_id")
-  /// когда отвечать, unix-секунды
   dueAt     Int    @map("due_at")
-  /// срок, назначенный первым сообщением: поток сообщений сдвигает dueAt, но не дальше baseDueAt + предел
   baseDueAt Int    @default(0) @map("base_due_at")
-  /// когда она «открыла» чат: прочитала и начала слушать голосовые; пусто — ещё не открывала
   openedAt  Int?   @map("opened_at")
-  /// warmup | normal | after_silence | off — почему столько ждать (для панели)
   reason    String
-  /// входящие, накопленные за ожидание: JSON-массив InboundTurn + подписанный текст
   turns     String @default("[]")
   createdAt Int    @map("created_at")
 
@@ -282,14 +213,10 @@ model ReplySchedule {
   @@map("reply_schedule")
 }
 
-// ---------------------------------------------------------------------------
-// Operator queues (durable, atomic claim)
-// ---------------------------------------------------------------------------
 
 model PendingReply {
   id        Int    @id @default(autoincrement())
   chatId    BigInt @map("chat_id")
-  /// текст сообщения или подпись к вложению; у реакции — сам эмодзи
   text      String
   source    String @default("manual")
   accountId Int?   @map("account_id")
@@ -297,11 +224,8 @@ model PendingReply {
   retryAt   Int?   @map("retry_at")
   delivery  String?
   status    String @default("pending")
-  /// text | photo | video | animation | voice | video_note | document | sticker | reaction
   kind      String @default("text")
-  /// вложение: путь в uploads/, https-ссылка или file_id стикера
   filePath  String? @map("file_path")
-  /// tg id сообщения, на которое отвечаем (у реакции — на которое ставим)
   replyTo   Int?    @map("reply_to")
   createdTs Int    @map("created_ts")
   sentTs    Int?   @map("sent_ts")
@@ -328,10 +252,6 @@ model PendingAdminAction {
   @@map("pending_admin_actions")
 }
 
-/// Voice requests live here (kind='voice'), as in Chutter.
-// ---------------------------------------------------------------------------
-// Scenario beats, lead handoff, funnel events
-// ---------------------------------------------------------------------------
 
 model BeatDelivery {
   personaId String  @map("persona_id")
@@ -383,12 +303,7 @@ model FunnelEvent {
   @@map("funnel_events")
 }
 
-// ---------------------------------------------------------------------------
-// Media ledgers
-// ---------------------------------------------------------------------------
 
-/// Outbound media the persona sent: `[media:<kind>]` placeholders in messages
-/// resolve to a file by nearest `shown_ts`.
 model MediaShown {
   chatId  BigInt @map("chat_id")
   path    String
@@ -399,7 +314,6 @@ model MediaShown {
   @@map("media_shown")
 }
 
-/// Inbound media saved from the client (photo/voice/video), keyed by message ts.
 model InboundMedia {
   id      Int    @id @default(autoincrement())
   chatId  BigInt @map("chat_id")
@@ -412,22 +326,14 @@ model InboundMedia {
   @@map("inbound_media")
 }
 
-// ---------------------------------------------------------------------------
-// Lead registry (profile fallbacks for the card) and settings
-// ---------------------------------------------------------------------------
 
-/// Lead pool for outreach: a phone number or a @username the persona will write to first.
-/// Exactly one of phone_e164 / username_key is set (enforced by the service).
-/// status: pending → queued → assigned (resolved to a Telegram user) → contacted → replied; dead = unreachable.
 model PhoneNumber {
   id                Int     @id @default(autoincrement())
   phoneE164         String? @unique @map("phone_e164")
-  /// Lower-cased username without '@' — the lookup key when the lead came in as @username.
   usernameKey       String? @unique @map("username_key")
   firstName         String? @map("first_name")
   city              String?
   age               Int?
-  /// сайт знакомств, где лайкнули друг друга: `{site}` в текстах этого диалога
   site              String?
   gender            String?
   telegramUserId    BigInt? @map("telegram_user_id")
@@ -436,7 +342,6 @@ model PhoneNumber {
   insertedAt        Int     @map("inserted_at")
   status            String  @default("pending")
   assignedAccountId Int?    @map("assigned_account_id")
-  /// явный выбор при добавлении; null — прежний автоматический подбор
   preferredAccountId Int?   @map("preferred_account_id")
   assignedAt        Int?    @map("assigned_at")
   firstContactAt    Int?    @map("first_contact_at")
@@ -444,11 +349,8 @@ model PhoneNumber {
   nextAttemptAt     Int?    @map("next_attempt_at")
   lastError         String? @map("last_error")
   notes             String?
-  /// не брать этим аккаунтом: на нём был флуд или менеджер нажал «написать с другого»
   avoidAccountId    Int?    @map("avoid_account_id")
-  /// какой личностью писать (slug): рассылка берёт только аккаунты этой личности; пусто — любой
   personaId         String? @map("persona_id")
-  /// кто из пользователей панели добавил лида: менеджер видит только своих, рассылка пишет им только с его аккаунтов
   ownerUserId       Int?    @map("owner_user_id")
 
   @@index([telegramUserId], map: "idx_phone_telegram_user")
@@ -474,19 +376,14 @@ model ModelUsage {
   id                       Int    @id @default(autoincrement())
   createdAt                Int    @map("created_at")
   chatId                   BigInt? @map("chat_id")
-  /// slug личности, которой шёл вызов
   personaId                String? @map("persona_id")
   provider                 String
   model                    String
   stage                    String
-  /// весь промпт: свежие токены + чтение кеша + запись кеша
   inputTokens              Int?   @map("input_tokens")
   outputTokens             Int?   @map("output_tokens")
-  /// прочитано из кеша (дешёвые токены)
   cachedTokens             Int?   @map("cached_tokens")
-  /// записано в кеш (дороже входа) — без него цену задним числом не пересчитать
   cacheWriteTokens         Int?   @map("cache_write_tokens")
-  /// из них — в часовой кеш: запись ×2 от входа вместо ×1,25 (пятиминутный); null — старые строки, всё пятиминутное
   cacheWrite1hTokens       Int?   @map("cache_write_1h_tokens")
   providerEstimatedCostUsd Float? @map("provider_estimated_cost_usd")
   elapsedMs                Int?   @map("elapsed_ms")
@@ -495,7 +392,6 @@ model ModelUsage {
   @@map("model_usage")
 }
 
-/// Настройки панели ключ → JSON: таблица цен и прочее на вырост.
 model Setting {
   key       String @id
   value     String @default("{}")
@@ -505,7 +401,6 @@ model Setting {
 }
 
 
-// Human voice production: assignments are snapshotted at task creation.
 model VoicerProfile {
   userId Int @id @map("user_id")
   telegramId BigInt? @unique @map("telegram_id")
@@ -543,8 +438,6 @@ model VoiceTask {
   contactLabel String @map("contact_label")
   contactRef String @default("") @map("contact_ref")
   chatId BigInt? @map("chat_id")
-  /// An admin may share an unassigned account's chat through this task only.
-  /// These snapshots never assign the Telegram account to the task manager.
   chatGrantAccountId Int? @map("chat_grant_account_id")
   chatGrantedById Int? @map("chat_granted_by_id")
   personaSlug String @map("persona_slug")
@@ -632,7 +525,6 @@ model VoicerBotState {
   @@map("voicer_bot_state")
 }
 
-/// A browser call belongs to one assigned task, never an arbitrary client-supplied peer.
 model VoiceCall {
   id String @id
   taskId Int @map("task_id")

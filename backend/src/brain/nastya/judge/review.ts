@@ -40,7 +40,6 @@ const REVIEW_STATE_KEYS = [
 
 export interface ReviewReplyInput {
   timeRepair?: boolean;
-  /** Текст промпта проверяющего судьи: из личности. */
   prompt: string;
   persona: Record<string, unknown>;
   runtime: RuntimeSnapshot;
@@ -56,12 +55,6 @@ export interface ReviewResult extends JudgeReview {
   unanswered_question_ids?: string[];
 }
 
-/**
- * The final judge: approves the draft or returns a minimally corrected one.
- *
- * A rejection without both a concrete issue and a replacement is refused, so
- * the pipeline can never silently drop an answer.
- */
 export async function reviewReply(
   input: ReviewReplyInput,
   deps: JudgeDeps,

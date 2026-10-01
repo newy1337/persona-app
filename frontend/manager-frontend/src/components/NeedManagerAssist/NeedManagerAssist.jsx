@@ -25,7 +25,6 @@ function ShowDropdown({ value, onChange, onClose }) {
   );
 }
 
-/** Чаты на ручном режиме показываем, только когда менеджер сам их попросил. */
 const MANUAL_KEY = 'nastya_queue_manual_mode';
 
 const readManualFlag = () => {

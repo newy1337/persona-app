@@ -31,11 +31,6 @@ import {
   validatePersonaEvents,
 } from '../memory/persona-events';
 
-/**
- * Правило из кода, а не из личности: промпты личностей уже сохранены в базе, и новое
- * поле туда само не попадёт. Бот не шлёт голосовые, фото и кружки — такую просьбу
- * должен увидеть менеджер, а не получить отговорку от модели.
- */
 export const MEDIA_REQUEST_RULE = `ДОПОЛНИТЕЛЬНОЕ ПОЛЕ JSON "media_request": "voice" | "photo" | "video_note" | "video" | "".
 Заполняй, только если в последнем сообщении человек просит персонажа (того, от чьего имени идёт переписка) прислать что-то из этого:
 голосовое («запиши голосовое», «хочу услышать голос», «скинь войс»), своё фото или селфи
@@ -54,7 +49,6 @@ export const AUTO_VOICE_RULE = `Дополнительное поле JSON "voic
 Если voice_availability отсутствует или available=false, send=false. media_request распознавай независимо: наличие просьбы не обязывает voice_reply.send=true.`;
 
 export interface JudgeDialogueInput {
-  /** Текст промпта судьи: из личности. */
   prompt: string;
   runtime: RuntimeSnapshot;
   history: readonly Partial<HistoryMessage>[];
@@ -62,12 +56,6 @@ export interface JudgeDialogueInput {
   customInstructions?: string;
 }
 
-/**
- * The hidden judge: reads the turn and decides what the reply should achieve.
- *
- * It never writes the reply. Its output is validated against the ids this turn
- * actually offers before anything acts on it.
- */
 export async function judgeDialogue(
   input: JudgeDialogueInput,
   deps: JudgeDeps,

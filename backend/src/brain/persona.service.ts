@@ -41,7 +41,6 @@ import { completeText } from './nastya/llm/anthropic';
 import { resolveModel } from './nastya/config/models';
 import { parseJsonObject } from './nastya/judge/transport';
 
-/** Секции личности: одна секция — один документ, одна запись в истории. */
 export const PERSONA_SECTIONS = [
   'persona',
   'goals',
@@ -54,7 +53,6 @@ export const PERSONA_SECTIONS = [
 ] as const;
 export type PersonaSection = (typeof PERSONA_SECTIONS)[number];
 
-/** Личность, готовая к работе: документы разобраны, тексты дополнены умолчаниями. */
 export interface LoadedPersona {
   enabled?: boolean;
   locationIssue?: string;
@@ -63,22 +61,12 @@ export interface LoadedPersona {
   name: string;
   config: CharacterConfig;
   prompts: PersonaPrompts;
-  /** Когда писать самой и как быстро отвечать: документ личности поверх умолчаний. */
   rhythm: Rhythm;
-  /**
-   * Значения переменных плюс встроенная `name`. В документы выше подставлены все,
-   * кроме переменных диалога (`{city}`, `{site}`): те остаются скобками, чтобы текст
-   * личности был одинаковым у всех чатов и кеш промпта читался. Модели значения
-   * уходят через `LlmDeps.variables`; текст, который идёт в Telegram без модели,
-   * заполняется `fillText(…, variables)`.
-   */
   variables: Record<string, string>;
-  /** beats.json личности; `null` — рубрику выводим из сюжетов. */
   beats: Record<string, unknown>[] | null;
   updatedAt: number;
 }
 
-/** Разобранные документы личности до подстановки — из них собираются версии для диалогов. */
 interface RawPersona {
   id: number;
   slug: string;
@@ -93,13 +81,10 @@ interface RawPersona {
   prompts: PersonaPrompts;
   rhythm: Rhythm;
   beats: Record<string, unknown>[] | null;
-  /** Переменные с вкладки личности. */
   variables: Record<string, string>;
-  /** Готовые версии по набору значений: у диалогов с одним городом и сайтом — одна. */
   views: Map<string, LoadedPersona>;
 }
 
-/** Больше разных наборов переменных на личность не держим: лиды из тысячи городов не должны съесть память. */
 const MAX_VIEWS = 300;
 
 const json = (text: string | null | undefined): Record<string, any> => {
@@ -114,27 +99,13 @@ const json = (text: string | null | undefined): Record<string, any> => {
   }
 };
 
-/**
- * Личности и клиент модели — то, чем движок параметризован.
- *
- * Личности живут в базе (таблица `personas`) и правятся в панели; папка
- * `PERSONAS_DIR` нужна только один раз — при первом старте на пустой таблице
- * из неё импортируются готовые JSON. Разбор документов кэшируется и
- * обновляется сам: перед выдачей сверяется `updated_at`, поэтому правка в
- * панели действует со следующего же хода, без перезапуска.
- */
 @Injectable()
 export class PersonaService implements OnModuleInit {
   private readonly log = new Logger(PersonaService.name);
   private readonly cache = new Map<string, RawPersona>();
 
-  /** Через кого идут вызовы модели — пишется в учёт расходов. */
   readonly provider = appConfig.llmProvider;
 
-  /**
-   * Judges, generator and vision — one client, one prompt cache. OpenRouter подставляется
-   * клиентом с тем же `messages.create`: промпты, кеш и разбор ответов не меняются.
-   */
   readonly anthropic: Anthropic =
     appConfig.llmProvider === 'openrouter'
       ? createOpenRouterClient({
@@ -207,7 +178,6 @@ export class PersonaService implements OnModuleInit {
     return this.locations.resolve('interlocutor', source);
   }
 
-  /** Whether the key needed for a reply is present. */
   get ready(): boolean {
     return Boolean(
       appConfig.llmProvider === 'openrouter'
@@ -226,12 +196,6 @@ export class PersonaService implements OnModuleInit {
     await this.fillPrompts();
   }
 
-  /**
-   * Тексты промптов лежат у личности целиком, а не «пусто — значит из кода»:
-   * оператор правит то, что видит. Личностям, заведённым до этого (импорт,
-   * старые копии), недостающие тексты дописываем один раз — молча, без записи
-   * в историю: подставить умолчание не правка, а то же самое другими словами.
-   */
   private async fillPrompts(): Promise<void> {
     const rows = await this.prisma.persona.findMany({
       select: { id: true, slug: true, prompts: true, rhythm: true },
@@ -268,11 +232,6 @@ export class PersonaService implements OnModuleInit {
     }
   }
 
-  /**
-   * Первый старт на пустой таблице: каждая папка с `persona.json` под
-   * `PERSONAS_DIR` становится личностью. Дальше файлы не читаются — источник
-   * правды база, иначе правка в панели молча терялась бы при перезапуске.
-   */
   private async seedFromFiles(): Promise<void> {
     if ((await this.prisma.persona.count()) > 0) return;
     const root = appConfig.personasDir;
@@ -322,7 +281,6 @@ export class PersonaService implements OnModuleInit {
     }
   }
 
-  /** Разбор дорогой (сотни КБ JSON), сверка `updated_at` — нет: кэш всегда свежий. */
   private raw(row: {
     id: number;
     slug: string;
@@ -362,12 +320,6 @@ export class PersonaService implements OnModuleInit {
     return raw;
   }
 
-  /**
-   * Личность с подставленными переменными. Порядок: значения диалога (город и сайт
-   * лида) → вкладка «Переменные» личности → встроенная `{name}`. Дальше движок читает
-   * готовый текст и про `{site}` не знает; правка личности меняет updated_at — версии
-   * пересоберутся со следующего хода.
-   */
   private materialise(
     row: Parameters<PersonaService['raw']>[0] & { enabled?: boolean },
     chat: Record<string, string> = {},

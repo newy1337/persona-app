@@ -11,14 +11,6 @@ import {
 } from '../domain/pause';
 import { MEDIA_REQUEST_KEY } from '../domain/lead-facts';
 
-/**
- * The single writer of the typed pause. Panel, operator API and the brain
- * all go through here, so there is one emitter of pause events and no
- * split-brain between a column and the funnel log.
- *
- * Idempotent: pausing with the same reason and actor, or resuming an active
- * chat, is a no-op without an event.
- */
 @Injectable()
 export class PauseService {
   constructor(
@@ -99,7 +91,6 @@ export class PauseService {
     return this.history.getPause(chatId);
   }
 
-  /** Remove only this call's pause. A newer manager pause or another call wins. */
   async resumeAfterCall(chatId: number, callId: string): Promise<boolean> {
     const ts = this.clock.ts();
     const changed = await this.prisma.$transaction(async (tx) => {
@@ -133,7 +124,6 @@ export class PauseService {
     return changed;
   }
 
-  /** Lifts pauses whose `until` has passed (persona_away and refusal ceilings). */
   async autoResumeDue(): Promise<number> {
     const now = this.clock.ts();
     const due = await this.prisma.contact.findMany({

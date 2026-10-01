@@ -1,7 +1,6 @@
 import type { StoredMessage } from 'src/shared/history.service';
 import type { ConversationState, HistoryMessage } from '../kernel/types';
 
-/** Reconcile actual delivered messages. Stable IDs make repeated text and replay safe. */
 export function reconcileTranscript(
   state: ConversationState,
   rows: StoredMessage[],

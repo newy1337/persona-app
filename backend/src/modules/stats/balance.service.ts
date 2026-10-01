@@ -2,22 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { appConfig } from 'src/config/app.config';
 import { ClockService } from 'src/shared/clock.service';
 
-/** Ответ OpenRouter не меняется каждую секунду, а панель опрашивает часто. */
 const CACHE_SECONDS = 60;
-/** Дольше этого не ждём: баланс — справка, из-за неё страница стоять не должна. */
 const TIMEOUT_MS = 8_000;
 
 export interface OpenRouterBalance {
-  /** Сколько куплено всего, долларов. */
   total: number | null;
-  /** Сколько потрачено за всё время. */
   spent: number | null;
-  /** Остаток — то, ради чего сюда смотрят. */
   left: number | null;
   today: number | null;
   week: number | null;
   month: number | null;
-  /** На сколько дней хватит при сегодняшнем расходе; null — считать не из чего. */
   days_left: number | null;
   checked_at: number;
   error: string | null;
@@ -28,12 +22,6 @@ const money = (value: unknown): number | null => {
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
 };
 
-/**
- * Баланс ключа OpenRouter для панели.
- *
- * Ключ остаётся на сервере: наружу уходят только деньги. Ответ держим минуту —
- * страница статистики обновляется чаще, чем меняется баланс.
- */
 @Injectable()
 export class BalanceService {
   private readonly log = new Logger(BalanceService.name);

@@ -4,18 +4,10 @@ import type { Rhythm } from '../config/rhythm';
 import { initiativeIsDue, unansweredUnprompted } from './initiative';
 import { ritualSlot, staleness, type RitualKind } from './rhythm';
 
-/** Чаты, где последнее движение старше этого, бот сам не трогает. */
 export const ACTIVE_CHAT_DAYS = 30;
-/** Утреннее сообщение — не раньше чем через столько после последнего сообщения в чате. */
 export const MORNING_QUIET_BEFORE_SECONDS = 3 * 3600;
-/** Прощание — не раньше чем через столько после последнего сообщения. */
 export const GOODNIGHT_QUIET_BEFORE_SECONDS = 20 * 60;
 
-/**
- * Что бот сделает в этом чате дальше, если собеседник больше ничего не напишет.
- * Для панели: «ответит через 12 мин», «напишет „доброе утро“ завтра в 08:40»,
- * «сам не напишет — ждёт ответа».
- */
 export type NextBotAction =
   | { kind: 'stopped' }
   | { kind: 'no_model' }
@@ -40,18 +32,13 @@ export interface ForecastInput {
   stopped: boolean;
   ready: boolean;
   hasAccount: boolean;
-  /** Аккаунт чата в сети; false — ответы и сообщения ждут, пока он подключится. */
   accountOnline?: boolean;
-  /** Telegram заблокировал аккаунт (`banned`) или завершил его сессию (`unauthorized`). */
   accountLost?: 'banned' | 'unauthorized' | null;
-  /** Собеседник заблокировал наш аккаунт. */
   blockedByClient?: boolean;
   paused: boolean;
   refused: boolean;
   schedule: { dueAt: number; reason: string } | null;
-  /** Ответ прямо сейчас готовится или отправляется: из очереди он уже забран. */
   composing?: boolean;
-  /** Opt-in conversation policy: do not promise an unsolicited message over an unanswered question. */
   unansweredQuestion?: boolean;
   lastRole: string | null;
   lastUserTs: number | null;
@@ -67,11 +54,6 @@ export interface ForecastInput {
 const HORIZON_SECONDS = 48 * 3600;
 const STEP_SECONDS = 10 * 60;
 
-/**
- * Прогноз строится теми же проверками, по которым бот решает писать сам (окна утра
- * и прощания, «куда пропал», лимит подряд), прогнанными вперёд по времени — поэтому
- * он не расходится с тем, что бот действительно сделает.
- */
 export function forecastNextAction(input: ForecastInput): NextBotAction {
   const { nowTs, state, rhythm } = input;
   if (input.stopped) return { kind: 'stopped' };

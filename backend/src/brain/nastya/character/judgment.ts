@@ -16,16 +16,8 @@ import { buildRuntimeSnapshot } from './snapshot';
 import { recordPersonaEvents } from '../memory/persona-events';
 
 const SLOT_VALUE_LIMIT = 500;
-/** С какого хода можно задавать анкетный вопрос, если у этапа не сказано иначе: первый ответ — просто разговор. */
 const DEFAULT_FIRST_ASK_TURN = 2;
 
-/**
- * Folds the judge's decision into the conversation and rebuilds the snapshot.
- *
- * The judgment is edited in place when it asks for something the state no
- * longer allows — an unaskable slot, or a second questionnaire question in a
- * row — so the author never receives a plan the rules forbid.
- */
 export function applyJudgment(
   config: CharacterConfig,
   state: ConversationState,
@@ -115,13 +107,6 @@ export function applyJudgment(
   return runtime;
 }
 
-/**
- * Темп анкеты — `pacing` этапа в документе «Цели» личности:
- *  · `first_ask_turn` — с какого хода можно спрашивать (по умолчанию со второго:
- *    на «Приветики» не отвечают «что ищешь тут»);
- *  · `min_turns_between_goals` — сколько ходов между анкетными вопросами;
- *  · `chance_to_skip` — доля ходов, где вопрос пропускается, чтобы разговор не шёл по списку.
- */
 export function pacingAllowsAsk(
   config: CharacterConfig,
   character: NonNullable<ConversationState['character']>,

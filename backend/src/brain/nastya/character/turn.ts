@@ -9,10 +9,6 @@ import { characterDate, daysBetween, parseDate } from '../kernel/clock';
 import { applyGap, spendCoolTurn } from './gap';
 import { buildRuntimeSnapshot } from './snapshot';
 
-/**
- * Opens a turn: counts it, records the day, settles the stage and accounts for
- * any silence since the last visit. Returns the snapshot the judge reads.
- */
 export function prepareTurn(
   config: CharacterConfig,
   state: ConversationState,

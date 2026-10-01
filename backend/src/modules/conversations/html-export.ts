@@ -1,9 +1,3 @@
-/**
- * Переписка одним HTML-файлом: открывается в любом браузере без панели и без
- * интернета — фото, видео, кружки и голосовые вшиты в файл (data: URI).
- * Здесь только разметка; файлы и данные собирает сервис.
- */
-
 export type ExportMediaKind =
   | 'photo'
   | 'sticker'
@@ -16,11 +10,8 @@ export type ExportMediaKind =
 
 export interface ExportMedia {
   kind: ExportMediaKind;
-  /** data: URI файла; null — файла нет (не скачан, удалён, слишком большой). */
   src: string | null;
-  /** Внешняя ссылка (Telegram скачивал сам) — показываем ссылкой. */
   href?: string | null;
-  /** Почему файла нет — подписью вместо него. */
   missing?: string | null;
   name?: string | null;
 }
@@ -30,16 +21,12 @@ export interface ExportMessage {
   ts: number;
   role: 'user' | 'assistant' | string;
   author: string | null;
-  /** Текст без метки вложения («[Голосовое сообщение]»), уже со строками. */
   text: string;
-  /** Метка вложения без файла: «Кружок», «Стикер: 😂». */
   label?: string | null;
-  /** Расшифровка голосового/кружка. */
   transcript?: string | null;
   media?: ExportMedia | null;
   reaction?: string | null;
   deleted?: boolean;
-  /** Галочки: true — прочитано, false — доставлено, null — неизвестно. */
   read?: boolean | null;
 }
 
@@ -59,7 +46,6 @@ export interface ExportChat {
   exportedAt: number;
   exportedBy: string | null;
   messages: ExportMessage[];
-  /** Сколько медиа не вошло целиком (лимит размера). */
   skippedMedia: number;
 }
 
@@ -96,7 +82,6 @@ export function escapeHtml(s: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
-/** Текст с переносами и кликабельными ссылками; всё прочее экранировано. */
 function richText(text: string): string {
   return escapeHtml(text)
     .replace(
@@ -106,7 +91,6 @@ function richText(text: string): string {
     .replace(/\n/g, '<br>');
 }
 
-/** Кто написал: клиент, бот (и по какому поводу) или менеджер. */
 export function authorLabel(role: string, author: string | null): string {
   if (role === 'user') return '';
   const a = author ?? 'llm';

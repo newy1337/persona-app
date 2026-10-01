@@ -50,19 +50,12 @@ import {
 import { VoiceEncoderService } from 'src/modules/media/voice-encoder.service';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-/** Потолок одного запроса к Telegram; загрузка и отправка файлов — дольше. */
 const TG_CALL_TIMEOUT_MS = 60_000;
 const TG_FILE_TIMEOUT_MS = 180_000;
 const TG_TYPING_TIMEOUT_MS = 15_000;
 const CONNECT_STAGGER_MS = 1500;
-/**
- * Сколько показывать «записывает…» перед голосовым или кружком: длина записи, но не
- * меньше 3 с (иначе статус не успеют заметить) и не больше 20 с: отправки из панели идут
- * одной очередью, и долгая «запись» задержала бы сообщения в других чатах.
- */
 export const recordingMs = (seconds: number) =>
   Math.round(Math.min(20, Math.max(3, Number(seconds) || 0)) * 1000);
-/** Какие входящие вложения качаем и с каким расширением: панель показывает их как есть. */
 const INBOUND_EXT: Record<string, string> = {
   photo: 'jpg',
   voice: 'ogg',
@@ -70,7 +63,6 @@ const INBOUND_EXT: Record<string, string> = {
   video: 'mp4',
   animation: 'mp4',
 };
-/** Имя файла, как его назвал отправитель: «договор.pdf». */
 function documentName(doc: unknown): string | null {
   if (!(doc instanceof Api.Document)) return null;
   const attr = doc.attributes.find(
@@ -80,7 +72,6 @@ function documentName(doc: unknown): string | null {
   return name ? name.slice(0, 120) : null;
 }
 
-/** Расширение файла: из его имени, иначе из типа содержимого, иначе «bin». */
 function extensionOf(name: string | null, doc: unknown): string {
   const fromName = name && /.([A-Za-z0-9]{1,8})$/.exec(name)?.[1];
   if (fromName) return fromName.toLowerCase();
@@ -88,18 +79,12 @@ function extensionOf(name: string | null, doc: unknown): string {
   const tail = mime.split('/')[1]?.replace(/[^a-z0-9]/gi, '');
   return tail ? tail.slice(0, 8).toLowerCase() : 'bin';
 }
-/** Видео больше этого не качаем. */
 const INBOUND_MAX_BYTES = 50 * 1024 * 1024;
-/** Сколько дней назад догружаем кружки и видео, пришедшие до того, как их начали качать. */
 const INBOUND_BACKFILL_DAYS = 7;
-/** Статусы «был в сети» обновляем у чатов с перепиской за столько дней. */
 const CLIENT_STATUS_ACTIVE_DAYS = 14;
-/** Закрытие соединения, которое не завершилось за это время, больше не ждём. */
 const DISCONNECT_TIMEOUT_MS = 10_000;
-/** Подключение, не завершившееся за столько секунд, сторож начинает заново. */
 const STALE_CONNECT_SECONDS = 300;
 
-/** Закрыть клиента, не повиснув: зависшее соединение GramJS может не закрываться никогда. */
 async function closeQuietly(client: TelegramClient): Promise<void> {
   await withTimeout(
     client.disconnect(),
@@ -107,12 +92,10 @@ async function closeQuietly(client: TelegramClient): Promise<void> {
     () => new Error('disconnect timeout'),
   ).catch(() => undefined);
 }
-/** Telegram's own service accounts (login codes, notifications, replies): never a person, never answered. */
 const TELEGRAM_SERVICE_IDS = new Set([
   777000, 42777, 333000, 1087968824, 1271266957,
 ]);
 
-/** A real person to talk to: not a bot, not Telegram support/service, not a deleted account. */
 function isConversableUser(
   user: Api.User | null | undefined,
   chatId: number,
@@ -122,7 +105,6 @@ function isConversableUser(
   return !user.bot && !user.support && !user.deleted && !user.self;
 }
 
-/** Действие собеседника из Telegram → что показать в панели; отмена и прочее — ничего. */
 export function typingKind(action: unknown): ClientActivity | null {
   if (action instanceof Api.SendMessageTypingAction) return 'typing';
   if (
@@ -155,13 +137,6 @@ interface LiveAccount {
   telegramUserId: number | null;
 }
 
-/**
- * The fleet of Telegram client accounts (MTProto via GramJS).
- *
- * Every `active` account with a stored session is connected on start and
- * subscribed to private incoming messages, which are normalised and handed
- * to the brain. Outbound goes through the account that owns the chat.
- */
 @Injectable()
 export class TelegramService
   implements OnModuleInit, OnModuleDestroy, OutboundTransport
@@ -183,7 +158,6 @@ export class TelegramService
     private voiceEncoder: VoiceEncoderService,
   ) {}
 
-  /** Internal call bridge only: credentials and client never leave the backend. */
   callClient(accountId: number): TelegramClient {
     const entry = this.live.get(accountId);
     if (!entry?.client.connected)
@@ -235,7 +209,6 @@ export class TelegramService
     return [...this.live.keys()];
   }
 
-  /** Builds a client for a stored session (or a fresh one for the login wizard). */
   buildClient(
     sessionString = '',
     proxy: ClientProxy | null = null,
@@ -255,10 +228,6 @@ export class TelegramService
     );
   }
 
-  /**
-   * Прокси аккаунта для клиента. Кривой конфиг — ошибка, а не подключение напрямую:
-   * аккаунт, который должен ходить через прокси, не должен светить IP сервера.
-   */
   async proxyFor(accountId: number): Promise<ClientProxy | null> {
     const acc = await this.prisma.tgAccount.findUnique({
       where: { id: accountId },
@@ -270,14 +239,8 @@ export class TelegramService
     );
   }
 
-  /** Переподключить аккаунт — например, после смены прокси. */
   private readonly recovering = new Set<number>();
 
-  /**
-   * Запрос к аккаунту с потолком по времени. Не ответил — ошибка вызывающему (воркер
-   * идёт дальше, лид уходит другому аккаунту), а сам аккаунт переподключается в фоне:
-   * зависшее соединение GramJS само не оживает.
-   */
   private async call<T>(
     account: LiveAccount,
     label: string,
@@ -320,17 +283,10 @@ export class TelegramService
     await this.connect(accountId);
   }
 
-  /** Аккаунты, отключённые намеренно (перелогин, выключение): сторож их не поднимает. */
   private readonly held = new Set<number>();
-  /** Подключение идёт прямо сейчас — второе параллельно не начинаем. */
   private readonly connecting = new Map<number, { seq: number; at: number }>();
   private connectSeq = 0;
 
-  /**
-   * Идёт ли подключение. Попытка, висящая дольше `STALE_CONNECT_SECONDS`, считается
-   * брошенной: 23.09 аккаунт #28 выпал вместе с прокси-пулом, его попытка застряла,
-   * и сторож молча пропускал аккаунт — чаты ждали ответа до перезапуска сервера.
-   */
   private busyConnecting(accountId: number): boolean {
     const attempt = this.connecting.get(accountId);
     if (!attempt) return false;
@@ -342,16 +298,10 @@ export class TelegramService
     return false;
   }
 
-  /** Снять намеренное отключение: сторож снова отвечает за аккаунт. */
   release(accountId: number): void {
     this.held.delete(accountId);
   }
 
-  /**
-   * Сторож: активный аккаунт с сессией, который выпал из сети, подключается заново.
-   * 16.09 аккаунт #18 потерял соединение, переподключение зависло на закрытии старого,
-   * и аккаунт до перезапуска сервера молчал — ответы в его чатах не уходили.
-   */
   @Cron(CronExpression.EVERY_MINUTE)
   async reviveOffline(): Promise<void> {
     if (!this.configured || this.stopping) return;

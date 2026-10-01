@@ -20,7 +20,6 @@ persona — ты; interlocutor — собеседник. Это разные ч�
 Утро 05–11, день 12–16, вечер 17–22, ночь 23–04. Приветствие и предположения о сне собеседника сверяй с его часами. Прошлое, планы и время цитируемого сообщения отличай от текущего момента. Старые ошибочные реплики о времени не повторяй и не оправдывай выдуманной разницей.
 Часы — служебные данные: не перечисляй их без повода, не упоминай time_context, сервер и настройки.`;
 
-/** Форматтеры пояса строятся долго, а поясов немного — держим по одному на пояс. */
 const localFormatters = new Map<string, Intl.DateTimeFormat>();
 function localFormatter(timeZone: string): Intl.DateTimeFormat {
   let f = localFormatters.get(timeZone);
@@ -98,7 +97,6 @@ export function turnTime(
   };
 }
 
-/** Only explicit present-time claims; eating late, future plans and reported speech are not clock claims. */
 export function timeClaimIssues(text: string, ctx?: TurnTime): string[] {
   if (!ctx) return [];
   const issues: string[] = [];

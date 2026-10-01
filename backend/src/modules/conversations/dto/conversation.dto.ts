@@ -36,7 +36,6 @@ export class SetStageDto {
   stage: string;
 }
 
-/** Заметка менеджера о диалоге: пустая строка стирает её. */
 export class ChatNoteDto {
   @ApiProperty({ example: 'Просил не писать до пятницы' })
   @IsString()

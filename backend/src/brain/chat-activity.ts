@@ -1,6 +1,5 @@
 import { ReplySuperseded } from 'src/shared/cancellation';
 
-/** Receipt is registered BEFORE waiting for the chat lock or downloading media. */
 export class ChatActivity {
   private readonly incoming = new Map<number, Map<string, number>>();
   private readonly active = new Map<number, AbortController>();
