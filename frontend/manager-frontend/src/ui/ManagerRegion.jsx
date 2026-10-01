@@ -114,7 +114,7 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
     h('div', { className: `${s.formFull} ${s.actions}` }, button('Отмена', onCancel, { className: s.btn, disabled: busy }), h('button', { type: 'submit', className: s.btnPrimary, disabled: busy || !valid }, busy ? 'Добавляем…' : 'Добавить')));
 }
 
-export function LeadsTable({ rows, query, status, selected, onToggle, onSelectVisible, onClearSelection, onChat, onQueue, onUnqueue, onReassign, onDelete, onPersonaChange, personas, helpers }) {
+export function LeadsTable({ ready = true, rows, query, status, selected, onToggle, onSelectVisible, onClearSelection, onChat, onQueue, onUnqueue, onReassign, onDelete, onPersonaChange, personas, helpers }) {
   const { PersonaSelect, statusLabels, statusClasses, date } = helpers;
   const busy = ux.useActions().pending.some(key => key.includes('/api/leads'));
   const allSelected = rows.length > 0 && rows.every(row => selected.has(row.id));
@@ -126,7 +126,7 @@ export function LeadsTable({ rows, query, status, selected, onToggle, onSelectVi
       h('label', { className: 'mr-lead-select-all' }, h('input', { type: 'checkbox', checked: allSelected, disabled: rows.length === 0, ref: input => { if (input) input.indeterminate = someSelected && !allSelected; }, onChange: e => onSelectVisible(e.target.checked) }), 'Выбрать показанные'),
       h('span', { className: 'mr-dialog-muted', role: 'status' }, selected.size ? `Выбрано: ${selected.size}` : `Показано: ${rows.length}`),
       selected.size > 0 && action('Снять выделение', onClearSelection, 'mr-lead-clear')),
-    rows.length === 0 ? h('div', { className: 'mr-lead-empty' }, query || status ? 'По этим условиям лидов нет. Измените поиск или фильтр.' : 'Лидов пока нет. Добавьте контакт или импортируйте список.') :
+    rows.length === 0 ? h('div', { className: 'mr-lead-empty' }, !ready ? 'Загружаем лидов…' : query || status ? 'По этим условиям лидов нет. Измените поиск или фильтр.' : 'Лидов пока нет. Добавьте контакт или импортируйте список.') :
       h('table', { className: 'mr-dialog-table mr-leads-table', 'aria-label': 'Лиды' },
         h('thead', null, h('tr', null, ['Лид и контакт', 'Менеджер / регион', 'Личность', 'Статус', 'Действия'].map((title, i) => h('th', { key: title, scope: 'col', style: { width: ['27%', '22%', '18%', '19%', '14%'][i] } }, title)))),
         h('tbody', null, rows.map(row => {

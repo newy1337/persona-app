@@ -60,6 +60,16 @@ const row = (m: any): StoredMessage => ({
   source_modality: m.sourceModality,
 });
 
+const MEDIA_LABELS: Record<string, string> = {
+  photo: 'Фото',
+  sticker: 'Стикер',
+  animation: 'GIF',
+  video: 'Видео',
+  video_note: 'Кружок',
+  voice: 'Голосовое сообщение',
+  document: 'Файл',
+};
+
 @Injectable()
 export class HistoryService {
   constructor(
@@ -296,6 +306,24 @@ export class HistoryService {
         filePath: null,
       },
       data: { mediaKind: kind, filePath: path },
+    });
+  }
+
+  /** Метку «[вложение: …]» ставит разбор, когда файл не скачался; после докачки она лишняя. */
+  async relabelPlaceholder(
+    chatId: number,
+    sourceMessageId: number,
+    kind: string,
+  ): Promise<void> {
+    const label = MEDIA_LABELS[kind] ?? 'Вложение';
+    await this.prisma.message.updateMany({
+      where: {
+        chatId: toChatId(chatId),
+        sourceMessageId,
+        role: 'user',
+        text: { startsWith: '[вложение:' },
+      },
+      data: { text: `[${label}]` },
     });
   }
 

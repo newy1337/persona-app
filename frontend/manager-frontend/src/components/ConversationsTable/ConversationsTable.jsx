@@ -1,4 +1,5 @@
 import { DialogTable } from '../../ui/ManagerRegion';
+import TableSkeleton from '../TableSkeleton/TableSkeleton';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './ConversationsTable.module.scss';
@@ -47,6 +48,7 @@ export function newLabel(n) {
 }
 
 function ConversationsTable({
+  ready = true,
   rows = [],
   query = '',
   headFilters = { lead: '', account: '' },
@@ -167,12 +169,14 @@ function ConversationsTable({
         </div>
       </div>
 
-      <DialogTable rows={visible} totalRows={rows.length} archived={showHidden}
+      {!ready && rows.length === 0 && <TableSkeleton rows={8} label="Загружаем диалоги…" />}
+
+      {(ready || rows.length > 0) && <DialogTable rows={visible} totalRows={rows.length} archived={showHidden}
         sort={sort} onSort={handleSort} setSort={setSort}
         onOpen={id => navigate(`/conversation/${id}`)} onHide={onHide}
         helpers={{ Avatar: ClientAvatar, Stage: StatusBadge, isNew: waitsForManager,
           unreadLabel: newLabel, presence: presenceLabel, nextAction: nextActionLabel,
-          time: fmtTime, date: fmtDate, accountLost: accountLostLabel, typingLabels: ACTIVITY_LABEL }} />
+          time: fmtTime, date: fmtDate, accountLost: accountLostLabel, typingLabels: ACTIVITY_LABEL }} />}
 
       {pages > 1 && (
         <nav className={styles.pager} aria-label="Страницы диалогов">

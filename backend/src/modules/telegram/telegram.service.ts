@@ -1328,6 +1328,8 @@ export class TelegramService
           { text: { startsWith: '[Кружок]' } },
           { text: { startsWith: '[Видео]' } },
           { text: { startsWith: '[GIF]' } },
+          // Загрузка сорвалась на входящем: в ленте осталась метка без файла.
+          { text: { startsWith: '[вложение:' } },
         ],
       },
       select: { chatId: true, ts: true, sourceMessageId: true },
@@ -1355,6 +1357,11 @@ export class TelegramService
             row.sourceMessageId!,
             media.kind,
             media.path,
+          );
+          await this.history.relabelPlaceholder(
+            chatId,
+            row.sourceMessageId!,
+            media.kind,
           );
           saved += 1;
         }

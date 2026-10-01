@@ -1,6 +1,7 @@
 import { CreateLeadForm, LeadsTable } from '../../ui/ManagerRegion';
 import { PanelUX } from '../../ui/PanelUX';
 import { useCallback, useEffect, useState } from 'react';
+import TableSkeleton from '../../components/TableSkeleton/TableSkeleton';
 import { Link, useNavigate } from 'react-router-dom';
 import Header from '../../components/Header/Header';
 import {
@@ -177,6 +178,7 @@ export default function Leads() {
   const [selected, setSelected] = useState(() => new Set());
   const [deleting, setDeleting] = useState(null);
   const [personas, setPersonas] = useState([]);
+  const [ready, setReady] = useState(false);
 
   const loadPersonas = useCallback(() => {
     getLeadPersonas().then((r) => setPersonas(r.items ?? [])).catch(() => setPersonas([]));
@@ -185,7 +187,8 @@ export default function Leads() {
   const load = useCallback(() => {
     Promise.all([getLeads({ status, q }), getOutreachStatus().catch(() => null)])
       .then(([d, o]) => { setData(d); setOutreach(o); })
-      .catch((e) => setError(e.detail || e.message));
+      .catch((e) => setError(e.detail || e.message))
+      .finally(() => setReady(true));
   }, [status, q]);
 
   useEffect(() => {
@@ -267,7 +270,7 @@ export default function Leads() {
             <input className={s.field} placeholder="поиск: телефон, @username, имя, город" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 240 }} />
           </div>
 
-          <LeadsTable rows={data.items} query={q} status={status} selected={selected}
+          <LeadsTable ready={ready} rows={data.items} query={q} status={status} selected={selected}
             onToggle={toggle} onSelectVisible={checked => setSelected(previous => {
               const next = new Set(previous);
               for (const row of data.items) { if (checked) next.add(row.id); else next.delete(row.id); }

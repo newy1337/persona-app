@@ -33,6 +33,7 @@ function Dashboard() {
   const [headFilters, setHeadFilters] = useState({ lead: '', account: '' });
   const [dateFilter, setDateFilter] = useState('');
   const [showHidden, setShowHidden] = useState(false);
+  const [ready, setReady] = useState(false);
 
   const load = useCallback(() => {
     Promise.all([
@@ -47,7 +48,8 @@ function Dashboard() {
         setRows(all);
         setStats(STAT_TILES.map((t) => ({ id: t.key, label: t.label, color: t.color, value: String(raw?.[t.key] ?? '—') })));
       })
-      .catch((e) => setError(e.detail || e.message));
+      .catch((e) => setError(e.detail || e.message))
+      .finally(() => setReady(true));
   }, [showHidden]);
 
   const toggleHidden = useCallback(
@@ -95,6 +97,7 @@ function Dashboard() {
           <LiveConversations agents={liveAgents} query={query} headFilters={headFilters} dateFilter={dateFilter} />
           <StatsBar stats={stats} dateFilter={dateFilter} onDateFilterChange={setDateFilter} />
           <ConversationsTable
+            ready={ready}
             rows={rows}
             query={query}
             headFilters={headFilters}
