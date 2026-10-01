@@ -467,3 +467,42 @@
 .filters { min-width:0; max-width:100%; }
 .filterPill { max-width:100%; height:auto; min-height:26px; white-space:normal; overflow-wrap:anywhere; text-align:left; line-height:16px; padding:4px 10px; }
 .badge { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px 0 4px;
+}
+
+.pagerButton {
+  height: 26px;
+  padding: 0 12px;
+  font-family: $font-mono;
+  font-size: 11px;
+  color: $text-secondary;
+  border-radius: 6px;
+  border: 1px solid $border-subtle;
+  background: $bg-elevated;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+
+  &:hover:not(:disabled) {
+    color: $text-primary;
+    border-color: $border-color;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+.pagerLabel {
+  font-family: $font-mono;
+  font-size: 11px;
+  color: $text-secondary;
+  min-width: 128px;
+  text-align: center;
+}

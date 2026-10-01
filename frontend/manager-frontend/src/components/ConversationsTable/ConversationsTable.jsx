@@ -1,5 +1,5 @@
 import { DialogTable } from '../../ui/ManagerRegion';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './ConversationsTable.module.scss';
 import { stageColors, stageFilters } from '../../data/stages';
@@ -15,6 +15,10 @@ function fmtDate(ts) {
 import ClientAvatar, { ACTIVITY_LABEL } from '../ClientAvatar/ClientAvatar';
 import { accountLostLabel, presenceLabel } from '../../utils/telegramStatus';
 import { nextActionLabel } from '../../utils/scenario';
+
+// Двести строк в DOM и их перерисовка каждые десять секунд — лишняя работа:
+// менеджер смотрит верх списка, а не весь он сразу.
+const PAGE_SIZE = 50;
 
 function StatusBadge({ stage }) {
   if (!stage?.title) {
@@ -53,6 +57,7 @@ function ConversationsTable({
 }) {
   const [activeFilter, setActiveFilter] = useState(null);
   const [onlyNew, setOnlyNew] = useState(false);
+  const [page, setPage] = useState(1);
   const newCount = rows.filter(waitsForManager).length;
   const [sort, setSort] = useState({ col: null, dir: 'asc' });
   const navigate = useNavigate();
@@ -91,6 +96,20 @@ function ConversationsTable({
       return 0;
     })
     : filtered;
+
+  const pages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  // Условия отбора сменились — показываем сначала, иначе можно застрять на
+  // странице, которой больше нет.
+  useEffect(() => {
+    setPage(1);
+    // Зависимости — только значения: объект фильтров пересоздаётся на каждой
+    // отрисовке, и по нему страница сбрасывалась бы сразу после переключения.
+  }, [query, headFilters.lead, headFilters.account, dateFilter, activeFilter, onlyNew, showHidden]);
+  const current = Math.min(page, pages);
+  const visible = useMemo(
+    () => sorted.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE),
+    [sorted, current],
+  );
 
   return (
     <section className={styles.section}>
@@ -146,12 +165,34 @@ function ConversationsTable({
         </div>
       </div>
 
-      <DialogTable rows={sorted} totalRows={rows.length} archived={showHidden}
+      <DialogTable rows={visible} totalRows={rows.length} archived={showHidden}
         sort={sort} onSort={handleSort} setSort={setSort}
         onOpen={id => navigate(`/conversation/${id}`)} onHide={onHide}
         helpers={{ Avatar: ClientAvatar, Stage: StatusBadge, isNew: waitsForManager,
           unreadLabel: newLabel, presence: presenceLabel, nextAction: nextActionLabel,
           time: fmtTime, date: fmtDate, accountLost: accountLostLabel, typingLabels: ACTIVITY_LABEL }} />
+
+      {pages > 1 && (
+        <nav className={styles.pager} aria-label="Страницы диалогов">
+          <button
+            className={styles.pagerButton}
+            onClick={() => setPage(current - 1)}
+            disabled={current === 1}
+          >
+            Назад
+          </button>
+          <span className={styles.pagerLabel} role="status">
+            {(current - 1) * PAGE_SIZE + 1}–{Math.min(current * PAGE_SIZE, sorted.length)} из {sorted.length}
+          </span>
+          <button
+            className={styles.pagerButton}
+            onClick={() => setPage(current + 1)}
+            disabled={current === pages}
+          >
+            Вперёд
+          </button>
+        </nav>
+      )}
     </section>
   );
 }
