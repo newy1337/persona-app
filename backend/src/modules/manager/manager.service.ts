@@ -33,6 +33,9 @@ import {
 
 export const ACTIVE_WINDOW_S = 24 * 3600;
 
+/** Предел выдачи списка: панель фильтрует и листает на своей стороне. */
+const CONVERSATIONS_LIMIT = 1000;
+
 export interface StageView {
   id: string;
   title: string;
@@ -233,11 +236,21 @@ export class ManagerService {
     };
   }
 
+  /** Сколько диалогов всего: срез в списке не должен выглядеть как весь список. */
+  async conversationsTotal(accounts: number[] | null): Promise<number> {
+    const rows = await this.prisma.$queryRaw<{ n: bigint | number }[]>(
+      Prisma.sql`SELECT COUNT(*) AS n FROM contacts c
+        LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
+        WHERE 1 = 1 ${this.scopeSql(accounts)} ${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL}`,
+    );
+    return Number(rows[0]?.n ?? 0);
+  }
+
   async conversations(
     accounts: number[] | null,
     opts: { limit?: number; includeHidden?: boolean } = {},
   ): Promise<ManagerChatRow[]> {
-    const limit = opts.limit ?? 200;
+    const limit = opts.limit ?? CONVERSATIONS_LIMIT;
     const visible = opts.includeHidden
       ? HAS_CLIENT_SQL
       : Prisma.sql`${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL}`;

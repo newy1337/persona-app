@@ -1,7 +1,13 @@
 import { api, ApiError, authHeaders } from './client';
 
 export function getConversations() {
-  return api.get('/api/manager/conversations').then((r) => r.items ?? []);
+  return api.get('/api/manager/conversations').then((r) => {
+    const items = r.items ?? [];
+    // Сервер отдаёт срез: сколько всего — отдельным числом, иначе панель выдаёт
+    // часть списка за весь список.
+    items.total = r.total ?? items.length;
+    return items;
+  });
 }
 
 export function getHiddenConversations() {

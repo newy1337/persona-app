@@ -76,3 +76,19 @@ describe('пагинация списка диалогов', () => {
     expect(host.textContent).toContain('ВСЕГО: 120');
   });
 });
+
+describe('честный счётчик', () => {
+  it('когда список урезан, в заголовке видно и общее число, и срез', async () => {
+    const list = rows(120);
+    list.total = 378;
+    await act(async () => root.render(<ConversationsTable rows={list} />));
+    expect(host.textContent).toContain('ВСЕГО: 378');
+    expect(host.textContent).toContain('показаны последние 120');
+  });
+
+  it('без урезания лишнего не пишем', async () => {
+    await draw(30);
+    expect(host.textContent).toContain('ВСЕГО: 30');
+    expect(host.textContent).not.toContain('показаны последние');
+  });
+});

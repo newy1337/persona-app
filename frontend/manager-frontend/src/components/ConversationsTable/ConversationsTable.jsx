@@ -97,6 +97,8 @@ function ConversationsTable({
     })
     : filtered;
 
+  const total = rows.total ?? rows.length;
+  const truncated = total > rows.length;
   const pages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   // Условия отбора сменились — показываем сначала, иначе можно застрять на
   // странице, которой больше нет.
@@ -123,7 +125,7 @@ function ConversationsTable({
             title={activeFilter ? 'Reset filter' : undefined}
           >
             {filtered.length === rows.length
-              ? `ВСЕГО: ${rows.length}`
+              ? `ВСЕГО: ${total}${truncated ? ` · показаны последние ${rows.length}` : ''}`
               : `НАЙДЕНО: ${filtered.length} из ${rows.length}`}
           </button>
         </div>
