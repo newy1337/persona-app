@@ -19,6 +19,25 @@ import { TakeoverReason } from 'src/domain/pause';
 import { VoicerDeliveryService } from '../voicer/voicer-delivery.service';
 import { KIND_LABEL, kindForFile } from 'src/domain/attachments';
 
+/**
+ * Одна строка на диалог — самая старая. Тик идёт каждые пять секунд, и если
+ * брать все застрявшие сообщения, номер в тексте причины меняется от тика к
+ * тику: защита от повторов в pause.pause сравнивает текст целиком и не
+ * срабатывает, а в базу каждые пять секунд уходит новое состояние паузы и новое
+ * событие воронки. На продакшне так набежало 206 тысяч событий по одному чату.
+ */
+export function oldestPerChat<T extends { id: number; chatId: bigint | number }>(
+  rows: T[],
+): T[] {
+  const best = new Map<string, T>();
+  for (const row of rows) {
+    const key = String(row.chatId);
+    const seen = best.get(key);
+    if (!seen || row.id < seen.id) best.set(key, row);
+  }
+  return [...best.values()];
+}
+
 @Injectable()
 export class RelayWorker implements OnModuleInit {
   private readonly log = new Logger(RelayWorker.name);
@@ -44,7 +63,7 @@ export class RelayWorker implements OnModuleInit {
     this.running = true;
     try {
       await this.history.recoverManualReplies();
-      for (const row of await this.history.manualReviewRows()) {
+      for (const row of oldestPerChat(await this.history.manualReviewRows())) {
         await this.pause.pause(
           Number(row.chatId),
           TakeoverReason.HOLD,
