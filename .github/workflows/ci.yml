@@ -148,10 +148,18 @@ jobs:
           FIRST_LINE="$(printf '%s' "$MESSAGE" | head -n1)"
           TEXT="$(printf '%s\n%s @ %s by %s\n%s\nchecks: %s · deploy: %s\n%s' \
             "$TITLE" "$REPO" "${SHA:0:7}" "$ACTOR" "$FIRST_LINE" "$CHECKS" "$DEPLOY" "$RUN_URL")"
-          RESPONSE="$(curl -sS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-            --data-urlencode "chat_id=${CHAT_ID}" \
-            --data-urlencode "text=${TEXT}" \
-            --data-urlencode "disable_web_page_preview=true")"
+          send() {
+            curl -sS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+              --data-urlencode "chat_id=$1" \
+              --data-urlencode "text=${TEXT}" \
+              --data-urlencode "disable_web_page_preview=true"
+          }
+          RESPONSE="$(send "$CHAT_ID")"
+          NEW_ID="$(printf '%s' "$RESPONSE" | sed -nE 's/.*"migrate_to_chat_id":(-?[0-9]+).*/\1/p')"
+          if [ -n "$NEW_ID" ]; then
+            echo "::warning::chat migrated to $NEW_ID, update the TG_NOTIFY_CHAT_ID secret"
+            RESPONSE="$(send "$NEW_ID")"
+          fi
           if printf '%s' "$RESPONSE" | grep -q '"ok":true'; then
             echo "sent"
           else
