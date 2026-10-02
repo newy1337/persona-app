@@ -378,7 +378,10 @@ export class NastyaBrainService implements ReplyBrain {
     if (this.gate.stopped) return this.markReadSafe(chatId, turn.accountId);
     if ((await this.pause.status(chatId)).status === 'paused')
       return this.markReadSafe(chatId, turn.accountId);
-    const trigger = matchTrigger(text, await this.settings.handoffTriggers());
+    const trigger = matchTrigger(
+      text,
+      (await this.settings.get()).handoff_triggers ?? [],
+    );
     if (trigger) {
       await this.handOverByTrigger(chatId, trigger, turn.ts);
       return this.markReadSafe(chatId, turn.accountId);

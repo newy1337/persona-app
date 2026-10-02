@@ -38,11 +38,6 @@ export class SettingsService {
     };
   }
 
-  /** Только список стоп-фраз — мозгу остальное не нужно. */
-  async handoffTriggers(): Promise<string[]> {
-    return (await this.get()).handoff_triggers;
-  }
-
   private parseExtra(raw: string | null | undefined): {
     prompt: string;
     pauseOnManual: boolean;
