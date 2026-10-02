@@ -455,8 +455,8 @@ function ConversationPage() {
     try {
       await setAiModeApi(id, !aiActive);
       load();
-    } catch (e) {
-      setError(e.detail || e.message);
+    } catch {
+      // причину уже показала всплывашка action-store; дублировать строкой не нужно
     } finally {
       setBusy(false);
     }
