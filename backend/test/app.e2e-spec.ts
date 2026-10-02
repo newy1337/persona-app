@@ -1887,10 +1887,13 @@ describe('Manager panel API (e2e)', () => {
       const create = jest
         .spyOn(persona.anthropic.messages, 'create')
         .mockImplementation((async (body: any) => {
+          const system = body.system[0].text;
           calls.push(
-            body.system[0].text.includes('media_request')
+            system.includes('media_request')
               ? 'judge_plan'
-              : 'other',
+              : system.includes('местонахождение')
+                ? 'time_location'
+                : 'other',
           );
           return {
             content: [
@@ -1912,7 +1915,11 @@ describe('Manager panel API (e2e)', () => {
       create.mockRestore();
       ready.mockRestore();
       expect(reply).toBeNull();
-      expect(calls).toEqual(['judge_plan']);
+      // Определение города для часов кешируется на неделю; дорогие этапы —
+      // генератор и проверка — не вызываются вовсе.
+      expect(calls.filter((c) => c !== 'time_location')).toEqual([
+        'judge_plan',
+      ]);
 
       const detail = await request(app.getHttpServer())
         .get(`/api/conversations/${chatId}`)
@@ -2362,7 +2369,7 @@ describe('Manager panel API (e2e)', () => {
       await app.get(TelegramService)['history'].wipeChat(chatId);
     });
 
-    it('архив: бот выключается; вернули — снова ведёт; клиент написал сам — чат возвращается к менеджеру', async () => {
+    it('архив: бот выключается; вернули — снова ведёт; клиент написал сам — чат остаётся в архиве', async () => {
       const h = { Authorization: `Bearer ${token}` };
       const prisma = app.get(PrismaService);
       const brain = app.get(REPLY_BRAIN_TOKEN) as any;
@@ -2424,7 +2431,8 @@ describe('Manager panel API (e2e)', () => {
       expect(d.archived).toBe(false);
       expect(d.is_paused).toBe(false);
 
-      // Снова в архив, и клиент пишет сам: чат на дашборде, бот молчит, ждёт менеджера.
+      // Снова в архив, и клиент пишет сам: сообщение сохраняется, но чат
+      // остаётся в архиве и бот молчит — менеджер убрал его сознательно.
       await request(app.getHttpServer())
         .post(`/api/conversations/${chatId}/hide`)
         .set(h)
@@ -2438,13 +2446,25 @@ describe('Manager panel API (e2e)', () => {
         media: null,
       });
       d = await status();
-      expect(d.archived).toBe(false);
+      expect(d.archived).toBe(true);
       expect(d.is_paused).toBe(true);
+      expect(
+        d.messages.some((m: { content: string }) => m.content === 'я вернулся'),
+      ).toBe(true);
+      const dashboard = await request(app.getHttpServer())
+        .get('/api/manager/conversations')
+        .set(h)
+        .expect(200);
+      expect(
+        dashboard.body.items.find((x) => x.chat_id === chatId),
+      ).toBeUndefined();
       const queue = await request(app.getHttpServer())
         .get('/api/manager/queue')
         .set(h)
         .expect(200);
-      expect(queue.body.items.find((x) => x.chat_id === chatId)).toBeTruthy();
+      expect(
+        queue.body.items.find((x) => x.chat_id === chatId),
+      ).toBeUndefined();
 
       await app.get(TelegramService)['history'].wipeChat(chatId);
       await request(app.getHttpServer())

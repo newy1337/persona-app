@@ -121,6 +121,12 @@ export class BrainStateService {
         own.panel_message_id = message.id;
         own.telegram_message_id = tgMsgId;
       }
+      // Свой ответ уже разобран тем ходом, который его и сочинил: отмечаем
+      // это сразу, иначе догоняющий разбор платил бы за него второй раз.
+      state.persona_memory_cursor = Math.max(
+        state.persona_memory_cursor ?? 0,
+        message.id,
+      );
       if (delivery) delivery.basisState = stateFingerprint(state);
       const stateJson = JSON.stringify(state);
       await tx.brainState.upsert({
