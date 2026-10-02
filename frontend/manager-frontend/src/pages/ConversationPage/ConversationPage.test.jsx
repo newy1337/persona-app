@@ -633,7 +633,7 @@ describe('ConversationPage: лента — дата, разбивка, гало�
     expect(row.querySelector('a').getAttribute('href')).toBe('https://t.me/nastya_tg');
   });
 
-  it('без привязанного аккаунта строка «Пишет» показывает прочерк', async () => {
+  it('без привязанного аккаунта строка «Аккаунт» показывает прочерк', async () => {
     withMessages(msgs);
     await renderPage();
     expect(container.querySelector('[data-testid="writing-account"]').textContent).toContain('—');

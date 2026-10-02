@@ -91,7 +91,7 @@ import {
   MenuIcon,
   ChevronPrevIcon,
   ChevronNextIcon,
-  UserAvatarIcon,
+  AccountIcon,
 } from '../../assets/icons';
 
 export const TOGGLE_COOLDOWN_MS = 2000;
@@ -761,7 +761,7 @@ function ConversationPage() {
                     ) : '—')}
                   </span>
                   <span className={styles.metaRow} data-testid="writing-account">
-                    <span className={styles.metaIcon}><UserAvatarIcon />Пишет</span>
+                    <span className={styles.metaIcon}><AccountIcon />Аккаунт</span>
                     {data.account ? (
                       <span title={`Аккаунт Telegram, с которого ${data.persona_name || data.account.persona_id || 'личность'} ведёт этот чат`}>
                         {data.account.display_name || data.persona_name || data.account.persona_id}

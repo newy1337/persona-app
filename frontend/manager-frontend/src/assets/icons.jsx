@@ -7,6 +7,17 @@ export function AgeIcon() {
   );
 }
 
+export function AccountIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none">
+      <path d="M1.5 3.5C1.5 2.94772 1.94772 2.5 2.5 2.5H9.5C10.0523 2.5 10.5 2.94772 10.5 3.5V8.5C10.5 9.05228 10.0523 9.5 9.5 9.5H2.5C1.94772 9.5 1.5 9.05228 1.5 8.5V3.5Z" stroke="#3D4A63" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4.25 6C4.80228 6 5.25 5.55228 5.25 5C5.25 4.44772 4.80228 4 4.25 4C3.69772 4 3.25 4.44772 3.25 5C3.25 5.55228 3.69772 6 4.25 6Z" stroke="#3D4A63" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M2.9 8C2.9 7.2 3.5 6.8 4.25 6.8C5 6.8 5.6 7.2 5.6 8" stroke="#3D4A63" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7 4.75H9M7 6.75H8.5" stroke="#3D4A63" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function FamilyIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none">
