@@ -56,7 +56,10 @@ export class ManagerController {
       const cutoff = this.clock.ts() - ACTIVE_WINDOW_S;
       rows = rows.filter((r) => r.last_message_ts >= cutoff);
     }
-    return { items: rows, total: await this.manager.conversationsTotal(accounts) };
+    return {
+      items: rows,
+      total: await this.manager.conversationsTotal(accounts),
+    };
   }
 
   @ApiOperation({ summary: 'Stat tiles over my accounts' })

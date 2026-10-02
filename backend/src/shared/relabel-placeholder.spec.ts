@@ -4,7 +4,14 @@ describe('замена метки после докачки вложения', (
   const service = () => {
     const calls: any[] = [];
     const svc: any = Object.create(HistoryService.prototype);
-    svc.prisma = { message: { updateMany: async (args: any) => { calls.push(args); return { count: 1 }; } } };
+    svc.prisma = {
+      message: {
+        updateMany: async (args: any) => {
+          calls.push(args);
+          return { count: 1 };
+        },
+      },
+    };
     return { svc, calls };
   };
 

@@ -26,9 +26,9 @@ import { KIND_LABEL, kindForFile } from 'src/domain/attachments';
  * срабатывает, а в базу каждые пять секунд уходит новое состояние паузы и новое
  * событие воронки. На продакшне так набежало 206 тысяч событий по одному чату.
  */
-export function oldestPerChat<T extends { id: number; chatId: bigint | number }>(
-  rows: T[],
-): T[] {
+export function oldestPerChat<
+  T extends { id: number; chatId: bigint | number },
+>(rows: T[]): T[] {
   const best = new Map<string, T>();
   for (const row of rows) {
     const key = String(row.chatId);
