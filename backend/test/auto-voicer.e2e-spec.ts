@@ -204,6 +204,12 @@ describe('automatic voicer: real brain, outbox and a migrated database; offline 
       forChat: async () => loaded,
       forAccount: async () => loaded,
       interlocutorLocation: async () => cityPlace('Madrid', 'ES'),
+      personaPlace: async (p: any) => ({
+        status: 'resolved',
+        city: '',
+        country: '',
+        timezone: p.rhythm.timezone,
+      }),
     };
     pause = {
       status: async () => ({ status: 'active' }),

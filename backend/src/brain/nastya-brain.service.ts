@@ -91,6 +91,7 @@ import {
   latestPersonaMessageId,
 } from './nastya/memory/persona-catchup';
 import type { JudgeDeps } from './nastya/judge/transport';
+import { unknownPlace } from './nastya/kernel/location';
 import { reviewReply } from './nastya/judge/review';
 import { generateDraft } from './nastya/llm/generate';
 import {
@@ -1474,11 +1475,21 @@ export class NastyaBrainService implements ReplyBrain {
           : (persona.variables.interlocutor_city ?? persona.variables.city)) ||
         '',
     );
+    // Часовой пояс известен всегда; город — лишь подсказка, чтобы модель не
+    // искала его в биографии, где мест упомянуто несколько. Поэтому сбой
+    // определения места не должен срывать ответ: часы останутся, город нет.
+    const ownByTimezone = {
+      status: 'resolved' as const,
+      city: '',
+      country: '',
+      timezone: persona.rhythm.timezone,
+    };
     const [other, own] = await Promise.all([
-      this.persona.interlocutorLocation(location),
-      // Без названия города модель додумывает его по биографии, где мест
-      // упомянуто несколько, и путается в собственных часах.
-      this.persona.personaPlace(persona),
+      this.persona.interlocutorLocation(location).catch(() => unknownPlace()),
+      this.persona.personaPlace?.(persona).catch((e: unknown) => {
+        this.log.warn(`persona location failed: ${String(e)}`);
+        return ownByTimezone;
+      }) ?? Promise.resolve(ownByTimezone),
     ]);
     return turnTime(own, other, this.clock.now());
   }

@@ -137,6 +137,12 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
       forChat: async () => loaded,
       forAccount: async () => loaded,
       interlocutorLocation: async () => cityPlace('Madrid', 'ES'),
+      personaPlace: async (p: any) => ({
+        status: 'resolved',
+        city: '',
+        country: '',
+        timezone: p.rhythm.timezone,
+      }),
     };
     pause = {
       status: async () => ({ status: 'active' }),
