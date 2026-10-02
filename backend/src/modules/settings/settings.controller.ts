@@ -17,6 +17,8 @@ import {
 import {
   IsBoolean,
   IsInt,
+  ArrayMaxSize,
+  IsArray,
   IsOptional,
   IsString,
   Matches,
@@ -24,6 +26,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { MAX_TRIGGERS, MAX_TRIGGER_LENGTH } from 'src/domain/handoff-triggers';
 import { SettingsService } from './settings.service';
 import { Auth } from 'src/decorators/auth.decorator';
 import { Roles } from 'src/decorators/roles.decorator';
@@ -61,6 +64,16 @@ export class UpdateSettingsDto {
   @IsOptional()
   @IsBoolean()
   pause_on_manual_message?: boolean;
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'стоп-фразы клиента: бот замолкает, чат уходит менеджеру',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_TRIGGERS)
+  @IsString({ each: true })
+  @MaxLength(MAX_TRIGGER_LENGTH, { each: true })
+  handoff_triggers?: string[];
 }
 
 @ApiTags('Settings')

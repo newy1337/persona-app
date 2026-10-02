@@ -46,7 +46,12 @@ import {
 import { datingSiteOf, leadSlots } from 'src/domain/outreach-opener';
 import { fillText } from './nastya/config/variables';
 import type { TypingStyle } from 'src/domain/typing';
-import { MEDIA_REQUEST_KEY, MEDIA_REQUEST_LABELS } from 'src/domain/lead-facts';
+import {
+  HANDOFF_TRIGGER_KEY,
+  MEDIA_REQUEST_KEY,
+  MEDIA_REQUEST_LABELS,
+} from 'src/domain/lead-facts';
+import { matchTrigger } from 'src/domain/handoff-triggers';
 import { mentionsMedia } from 'src/domain/media-request';
 import { TakeoverReason } from 'src/domain/pause';
 import {
@@ -373,6 +378,11 @@ export class NastyaBrainService implements ReplyBrain {
     if (this.gate.stopped) return this.markReadSafe(chatId, turn.accountId);
     if ((await this.pause.status(chatId)).status === 'paused')
       return this.markReadSafe(chatId, turn.accountId);
+    const trigger = matchTrigger(text, await this.settings.handoffTriggers());
+    if (trigger) {
+      await this.handOverByTrigger(chatId, trigger, turn.ts);
+      return this.markReadSafe(chatId, turn.accountId);
+    }
     const facts = await this.history.getLeadFacts(chatId);
     if (facts[REFUSAL_LOCK_KEY])
       return this.markReadSafe(chatId, turn.accountId);
@@ -1144,6 +1154,29 @@ export class NastyaBrainService implements ReplyBrain {
     );
     await this.funnel.emit(chatId, 'media_requested', ts, { kind });
     this.log.log(`chat=${chatId}: ${label} — handed over to a manager`);
+  }
+
+  /** Клиент написал стоп-фразу из настроек: бот замолкает, чат — менеджеру. */
+  private async handOverByTrigger(
+    chatId: number,
+    phrase: string,
+    ts: number,
+  ): Promise<void> {
+    await this.history.mergeLeadFacts(
+      chatId,
+      { [HANDOFF_TRIGGER_KEY]: { phrase, ts } },
+      false,
+    );
+    await this.pause.pause(
+      chatId,
+      TakeoverReason.MANUAL_TAKEOVER,
+      'bot:trigger',
+      { reasonText: `клиент написал «${phrase}» — ответьте сами` },
+    );
+    await this.funnel.emit(chatId, 'trigger_handoff', ts, { phrase });
+    this.log.log(
+      `chat=${chatId}: trigger «${phrase}» — handed over to a manager`,
+    );
   }
 
   private readonly nextActionCache = new Map<

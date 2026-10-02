@@ -9,7 +9,7 @@ import {
   PauseState,
   TakeoverReason,
 } from '../domain/pause';
-import { MEDIA_REQUEST_KEY } from '../domain/lead-facts';
+import { HANDOFF_TRIGGER_KEY, MEDIA_REQUEST_KEY } from '../domain/lead-facts';
 
 @Injectable()
 export class PauseService {
@@ -82,7 +82,7 @@ export class PauseService {
     await this.funnel.emit(chatId, 'conversation_resumed', ts, { actor });
     await this.history.mergeLeadFacts(
       chatId,
-      { [MEDIA_REQUEST_KEY]: null },
+      { [MEDIA_REQUEST_KEY]: null, [HANDOFF_TRIGGER_KEY]: null },
       false,
     );
   }

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
+import { normalizeTriggers } from 'src/domain/handoff-triggers';
 
 export interface AppSettingsView {
   initiative_enabled: boolean;
@@ -9,6 +10,8 @@ export interface AppSettingsView {
   quiet_end: string;
   custom_prompt: string;
   pause_on_manual_message: boolean;
+  /** стоп-фразы клиента: бот замолкает, чат уходит менеджеру */
+  handoff_triggers: string[];
 }
 
 const clamp = (v: number, lo: number, hi: number) =>
@@ -31,24 +34,32 @@ export class SettingsService {
       quiet_end: row?.quietEnd ?? '08:00',
       custom_prompt: extra.prompt,
       pause_on_manual_message: extra.pauseOnManual,
+      handoff_triggers: extra.triggers,
     };
+  }
+
+  /** Только список стоп-фраз — мозгу остальное не нужно. */
+  async handoffTriggers(): Promise<string[]> {
+    return (await this.get()).handoff_triggers;
   }
 
   private parseExtra(raw: string | null | undefined): {
     prompt: string;
     pauseOnManual: boolean;
+    triggers: string[];
   } {
-    if (!raw) return { prompt: '', pauseOnManual: false };
+    if (!raw) return { prompt: '', pauseOnManual: false, triggers: [] };
     try {
       const data = JSON.parse(raw);
       if (data && typeof data === 'object' && 'prompt' in data) {
         return {
           prompt: String(data.prompt ?? ''),
           pauseOnManual: Boolean(data.pause_on_manual_message),
+          triggers: normalizeTriggers(data.handoff_triggers),
         };
       }
     } catch {}
-    return { prompt: raw, pauseOnManual: false };
+    return { prompt: raw, pauseOnManual: false, triggers: [] };
   }
 
   async update(patch: Partial<AppSettingsView>): Promise<AppSettingsView> {
@@ -62,6 +73,7 @@ export class SettingsService {
       customPrompt: JSON.stringify({
         prompt: next.custom_prompt,
         pause_on_manual_message: next.pause_on_manual_message,
+        handoff_triggers: normalizeTriggers(next.handoff_triggers),
       }),
       updatedAt: this.clock.ts(),
     };

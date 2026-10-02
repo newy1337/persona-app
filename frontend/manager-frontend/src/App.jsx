@@ -8,6 +8,7 @@ import Managers from './pages/Managers/Managers';
 import Leads from './pages/Leads/Leads';
 import Personas from './pages/Personas/Personas';
 import Stats from './pages/Stats/Stats';
+import Settings from './pages/Settings/Settings';
 import Login from './pages/Login/Login';
 import { api, getToken } from './api/client';
 import './App.scss';
@@ -42,6 +43,7 @@ function App() {
       <Route path="/managers" element={admin ? <Managers /> : <Navigate to={home} replace />} />
       <Route path="/personas" element={admin ? <Personas /> : <Navigate to={home} replace />} />
       <Route path="/stats" element={admin ? <Stats /> : <Navigate to={home} replace />} />
+      <Route path="/settings" element={admin ? <Settings /> : <Navigate to={home} replace />} />
       <Route path="*" element={<Navigate to={home} replace />} />
     </Routes>
   );

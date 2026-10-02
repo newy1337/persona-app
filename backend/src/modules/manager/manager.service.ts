@@ -11,6 +11,7 @@ import {
   intOrNull,
   parseLeadFacts,
   LeadFacts,
+  HANDOFF_TRIGGER_KEY,
   MEDIA_REQUEST_KEY,
   PITCH_PHASE_KEY,
 } from 'src/domain/lead-facts';
@@ -344,6 +345,7 @@ export class ManagerService {
     ) {
       const media = facts[MEDIA_REQUEST_KEY] as { kind?: string } | undefined;
       if (media?.kind) return [`media_${media.kind}`, n(r.paused_ts)];
+      if (facts[HANDOFF_TRIGGER_KEY]) return ['trigger_phrase', n(r.paused_ts)];
       return [pausedBeforeKeyMove(facts) ?? 'manual_takeover', n(r.paused_ts)];
     }
     if (

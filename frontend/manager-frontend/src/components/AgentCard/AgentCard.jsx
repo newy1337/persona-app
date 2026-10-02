@@ -24,6 +24,7 @@ const REASON_LABEL = {
   media_photo: 'Просит фото',
   media_video_note: 'Просит кружок',
   media_video: 'Просит видео',
+  trigger_phrase: 'Стоп-фраза клиента',
   manual_mode: 'Ручной режим',
 };
 

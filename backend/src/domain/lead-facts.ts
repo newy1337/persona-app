@@ -51,6 +51,8 @@ const MIRRORED_INTERNAL_KEYS: Record<string, string> = {
 };
 
 export const MEDIA_REQUEST_KEY = '_media_request';
+/** клиент написал стоп-фразу из настроек: {phrase, ts} — пока менеджер не вернёт бота */
+export const HANDOFF_TRIGGER_KEY = '_handoff_trigger';
 
 export const MEDIA_REQUEST_LABELS: Record<string, string> = {
   voice: 'просит голосовое',
