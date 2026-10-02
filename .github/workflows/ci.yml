@@ -16,10 +16,13 @@ env:
   NODE_VERSION: 22
 
 jobs:
-  checks:
-    name: checks
+  backend:
+    name: backend
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
 
     services:
       db:
@@ -38,62 +41,64 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
-
       - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: |
-            backend/package-lock.json
-            frontend/manager-frontend/package-lock.json
-
-      - name: backend · install
-        working-directory: backend
+          cache-dependency-path: backend/package-lock.json
+      - name: install
         run: npm ci --no-audit --no-fund
-
-      - name: backend · lint
-        working-directory: backend
+      - name: lint
         run: npx eslint "{src,test}/**/*.ts"
-
-      - name: backend · unit tests
-        working-directory: backend
-        run: npx jest --ci
-
-      - name: backend · build
-        working-directory: backend
+      - name: build
         run: npm run build
-
-      - name: backend · e2e tests
-        working-directory: backend
+      - name: unit tests
+        run: npx jest --ci
+      - name: e2e tests
         env:
           TEST_DATABASE_URL: postgresql://nastya:nastya@127.0.0.1:5436/nastya_test
         run: npx jest --ci --config ./test/jest-e2e.json
 
-      - name: frontend · install
+  frontend:
+    name: frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
         working-directory: frontend/manager-frontend
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/manager-frontend/package-lock.json
+      - name: install
         run: npm ci --no-audit --no-fund
-
-      - name: frontend · lint
-        working-directory: frontend/manager-frontend
+      - name: lint
         run: npm run lint
-
-      - name: frontend · tests
-        working-directory: frontend/manager-frontend
+      - name: tests
         run: npx vitest run
-
-      - name: frontend · build
-        working-directory: frontend/manager-frontend
+      - name: build
         run: npm run build
 
-      - name: docker · build images
+  images:
+    name: images
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: docker compose build
         env:
           POSTGRES_PASSWORD: ci
         run: docker compose build --quiet
 
   deploy:
     name: deploy
-    needs: checks
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    needs: [backend, frontend, images]
+    if: always() && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && needs.backend.result == 'success' && needs.frontend.result == 'success' && (needs.images.result == 'success' || needs.images.result == 'skipped')
     runs-on:
       - self-hosted
       - ${{ github.ref == 'refs/heads/main' && 'persona' || 'persona-dev' }}
@@ -118,7 +123,7 @@ jobs:
 
   notify:
     name: notify
-    needs: [checks, deploy]
+    needs: [backend, frontend, images, deploy]
     if: always() && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -128,7 +133,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.TG_NOTIFY_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TG_NOTIFY_CHAT_ID }}
-          CHECKS: ${{ needs.checks.result }}
+          CHECKS: ${{ (needs.backend.result == 'success' && needs.frontend.result == 'success' && (needs.images.result == 'success' || needs.images.result == 'skipped')) && 'success' || 'failure' }}
           DEPLOY: ${{ needs.deploy.result }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
