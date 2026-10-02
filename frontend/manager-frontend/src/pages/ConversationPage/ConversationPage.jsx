@@ -91,6 +91,7 @@ import {
   MenuIcon,
   ChevronPrevIcon,
   ChevronNextIcon,
+  UserAvatarIcon,
 } from '../../assets/icons';
 
 export const TOGGLE_COOLDOWN_MS = 2000;
@@ -758,6 +759,17 @@ function ConversationPage() {
                         @{data.client_username}
                       </a>
                     ) : '—')}
+                  </span>
+                  <span className={styles.metaRow} data-testid="writing-account">
+                    <span className={styles.metaIcon}><UserAvatarIcon />Пишет</span>
+                    {data.account ? (
+                      <span title={`Аккаунт Telegram, с которого ${data.persona_name || data.account.persona_id || 'личность'} ведёт этот чат`}>
+                        {data.account.display_name || data.persona_name || data.account.persona_id}
+                        {data.account.username ? (
+                          <> · <a href={`https://t.me/${data.account.username}`} target="_blank" rel="noreferrer">@{data.account.username}</a></>
+                        ) : data.account.phone ? ` · ${data.account.phone}` : ''}
+                      </span>
+                    ) : '—'}
                   </span>
                   <span className={styles.metaRow}>
                     <span className={styles.metaIcon}><FamilyIcon />Семья</span>

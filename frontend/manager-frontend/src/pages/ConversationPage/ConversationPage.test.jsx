@@ -613,6 +613,32 @@ describe('ConversationPage: лента — дата, разбивка, гало�
     expect(vi.mocked(getPauseStatus)).not.toHaveBeenCalled();
   });
 
+  it('в карточке видно, с какого аккаунта Telegram личность пишет клиенту', async () => {
+    vi.mocked(getConversationById).mockResolvedValueOnce({
+      chat_id: 111,
+      persona_id: 'nastya',
+      persona_name: 'Настя',
+      account: { id: 7, username: 'nastya_tg', display_name: 'Настя К.', phone: '+79990000000', persona_id: 'nastya' },
+      is_paused: false,
+      funnel_stage: 'rapport',
+      pinned_facts: {},
+      first_seen: T1,
+      messages: msgs,
+      funnel_events: [],
+    });
+    await renderPage();
+    const row = container.querySelector('[data-testid="writing-account"]');
+    expect(row.textContent).toContain('Настя К.');
+    expect(row.textContent).toContain('@nastya_tg');
+    expect(row.querySelector('a').getAttribute('href')).toBe('https://t.me/nastya_tg');
+  });
+
+  it('без привязанного аккаунта строка «Пишет» показывает прочерк', async () => {
+    withMessages(msgs);
+    await renderPage();
+    expect(container.querySelector('[data-testid="writing-account"]').textContent).toContain('—');
+  });
+
   it('роут молчит — карточка живёт дальше, просто без «почему»', async () => {
     withMessages(msgs, { paused: true });
     vi.mocked(getPauseStatus).mockRejectedValueOnce(new Error('503'));

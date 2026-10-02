@@ -158,7 +158,11 @@ export class ConversationsService {
         : this.prisma.tgAccount.findUnique({
             where: { id: owner },
             select: {
+              id: true,
               username: true,
+              displayName: true,
+              phoneE164: true,
+              personaId: true,
               status: true,
               bannedAt: true,
               banReason: true,
@@ -186,6 +190,17 @@ export class ConversationsService {
         read,
       ),
       ...managers.forAccount(owner),
+      persona_name: persona.name,
+      // с какого Telegram-аккаунта личность пишет этому клиенту
+      account: account
+        ? {
+            id: account.id,
+            username: account.username ?? null,
+            display_name: account.displayName ?? null,
+            phone: account.phoneE164,
+            persona_id: account.personaId,
+          }
+        : null,
       goals: fillVariables(
         goalProgress(persona.config.goals, state.character),
         persona.variables,
