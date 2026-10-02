@@ -25,6 +25,7 @@ import {
   HIDDEN_FROM_DASHBOARD_KEY,
   ARCHIVED_AT_KEY,
   ARCHIVED_BOT_ON_KEY,
+  HANDOFF_TRIGGER_KEY,
   LeadFacts,
   publicLeadFacts,
   REFUSAL_LOCK_KEY,
@@ -534,8 +535,33 @@ export class ConversationsService {
   }
 
   async resumeChat(chatId: number) {
+    await this.assertTriggerAnswered(chatId);
     await this.pause.resume(chatId, OPERATOR_ACTOR);
     await this.brain.answerAfterResume(chatId).catch(() => false);
+  }
+
+  /**
+   * После стоп-фразы бота нельзя включить, пока менеджер сам не ответил лиду:
+   * иначе бот при возобновлении снова прочтёт ту же фразу и снова замолчит.
+   */
+  private async assertTriggerAnswered(chatId: number): Promise<void> {
+    const facts = await this.history.getLeadFacts(chatId);
+    const trigger = facts[HANDOFF_TRIGGER_KEY] as { ts?: number } | undefined;
+    if (!trigger) return;
+    const answered = await this.prisma.message.findFirst({
+      where: {
+        chatId: toChatId(chatId),
+        role: 'assistant',
+        author: { startsWith: 'operator' },
+        deletedAt: null,
+        ts: { gte: Number(trigger.ts ?? 0) },
+      },
+      select: { id: true },
+    });
+    if (answered) return;
+    throw new UnprocessableEntityException(
+      'Сработал триггер: режим Авто приостановлен, пока вы не ответите лиду',
+    );
   }
 
   async setHidden(chatId: number, hidden: boolean) {

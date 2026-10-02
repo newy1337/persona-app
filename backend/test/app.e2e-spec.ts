@@ -23,6 +23,7 @@ useTestDatabase('app');
 
 import { AppModule } from './../src/app.module';
 import { PrismaService } from './../src/prisma.service';
+import { HistoryService } from './../src/shared/history.service';
 import { PROMPT_KEYS } from './../src/brain/nastya/config/prompts';
 import { DEFAULT_RHYTHM } from './../src/brain/nastya/config/rhythm';
 import {
@@ -486,6 +487,54 @@ describe('Manager panel API (e2e)', () => {
       .post('/api/conversations/424242/resume')
       .set(h)
       .expect(200);
+  });
+
+  it('после стоп-фразы бот включается только после ответа менеджера', async () => {
+    const h = { Authorization: `Bearer ${token}` };
+    const prisma = app.get(PrismaService);
+    const history = app.get(HistoryService);
+    const chatId = 424242;
+    const ts = Math.floor(Date.now() / 1000);
+    await history.mergeLeadFacts(
+      chatId,
+      { _handoff_trigger: { phrase: 'менеджер', ts } },
+      false,
+    );
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${chatId}/pause`)
+      .set(h)
+      .expect(200);
+    const refused = await request(app.getHttpServer())
+      .post(`/api/conversations/${chatId}/resume`)
+      .set(h)
+      .expect(422);
+    expect(refused.body.message).toContain('Сработал триггер');
+    expect(
+      (
+        await request(app.getHttpServer())
+          .get(`/api/operator/status/${chatId}`)
+          .set(h)
+      ).body.status,
+    ).toBe('paused');
+
+    await prisma.message.create({
+      data: {
+        chatId: BigInt(chatId),
+        ts: ts + 1,
+        role: 'assistant',
+        text: 'Сейчас подключусь',
+        author: 'operator:web',
+      },
+    });
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${chatId}/resume`)
+      .set(h)
+      .expect(200);
+    const facts = await history.getLeadFacts(chatId);
+    expect(facts._handoff_trigger).toBeUndefined();
+    await prisma.message.deleteMany({
+      where: { chatId: BigInt(chatId), author: 'operator:web', ts: ts + 1 },
+    });
   });
 
   it('pause/resume are idempotent and visible in operator status', async () => {
