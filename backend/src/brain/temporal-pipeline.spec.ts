@@ -51,6 +51,12 @@ function setup(zone = 'Asia/Bangkok') {
       interlocutorLocation: jest.fn(async (city) =>
         cityPlace(city, city === 'Madrid' ? 'ES' : 'JP'),
       ),
+      personaPlace: jest.fn(async (loaded: any) => ({
+        status: 'resolved',
+        city: '',
+        country: '',
+        timezone: loaded.rhythm.timezone,
+      })),
     },
     state: {
       reconcile: async () => state,

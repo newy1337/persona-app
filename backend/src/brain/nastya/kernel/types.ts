@@ -115,6 +115,8 @@ export interface ConversationState {
   history_cursor?: number;
   history_reset?: { after_id: number; at: number };
   persona_events?: import('../memory/persona-events').PersonaEvent[];
+  /** До какой реплики от имени персоны её слова уже разобраны в persona_events. */
+  persona_memory_cursor?: number;
   telegram_control_revision?: number;
   rhythm?: RhythmState;
 }

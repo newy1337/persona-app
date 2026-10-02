@@ -138,13 +138,21 @@ export function recordPersonaEvents(
   updates: PersonaEventUpdate[],
   timezone: string,
   nowTs: number,
+  /**
+   * Реплики, из которых разрешено брать цитаты. По умолчанию — те же, что
+   * ушли судье в обычном ходе; догоняющий разбор передаёт свой список, иначе
+   * давние слова менеджера не прошли бы проверку источника.
+   */
+  knownSources?: PersonaStatement[],
 ): void {
-  const sources = personaStatements(
-    state.history,
-    timezone,
-    nowTs,
-    updates.map((u) => u.text).join(' '),
-  );
+  const sources =
+    knownSources ??
+    personaStatements(
+      state.history,
+      timezone,
+      nowTs,
+      updates.map((u) => u.text).join(' '),
+    );
   const events = (state.persona_events ??= []);
   for (const update of validatePersonaEvents(updates, sources, events)) {
     const source = sources.find((s) => s.id === update.source_id)!;

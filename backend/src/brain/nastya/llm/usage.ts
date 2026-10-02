@@ -31,7 +31,9 @@ const ANTHROPIC_PRICES: Record<
   [input: number, output: number, cacheRead: number, cacheWrite: number]
 > = {
   'claude-opus-5': [5, 25, 0.5, 6.25],
+  'claude-opus-5.5': [4, 20, 0.4, 5],
   'claude-sonnet-5': [2, 10, 0.2, 2.5],
+  'claude-sonnet-5.5': [2, 10, 0.2, 2.5],
   'claude-haiku-4-5': [1, 5, 0.1, 1.25],
 };
 

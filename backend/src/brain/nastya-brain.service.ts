@@ -36,10 +36,7 @@ import {
   DEFAULT_FUNNEL_STAGE,
 } from 'src/domain/funnel';
 import {
-  ARCHIVED_AT_KEY,
-  ARCHIVED_BOT_ON_KEY,
   FIRST_CONTACT_TS_KEY,
-  HIDDEN_FROM_DASHBOARD_KEY,
   LeadFacts,
   REFUSAL_LOCK_KEY,
 } from 'src/domain/lead-facts';
@@ -89,6 +86,11 @@ import {
   normalizeReply,
 } from './nastya/character/reply';
 import { judgeDialogue } from './nastya/judge/plan';
+import {
+  catchUpPersonaMemory,
+  latestPersonaMessageId,
+} from './nastya/memory/persona-catchup';
+import type { JudgeDeps } from './nastya/judge/transport';
 import { reviewReply } from './nastya/judge/review';
 import { generateDraft } from './nastya/llm/generate';
 import {
@@ -366,7 +368,6 @@ export class NastyaBrainService implements ReplyBrain {
         'Пришло новое сообщение — нужен актуальный ответ',
       );
     await this.invalidateReply(chatId);
-    if (stored) await this.returnFromArchive(chatId);
     if (stored)
       await this.funnel.emit(chatId, 'message_in', turn.ts, {
         chars: text.length,
@@ -376,15 +377,17 @@ export class NastyaBrainService implements ReplyBrain {
     const state = await this.state.reconcile(chatId);
 
     if (this.gate.stopped) return this.markReadSafe(chatId, turn.accountId);
-    if ((await this.pause.status(chatId)).status === 'paused')
-      return this.markReadSafe(chatId, turn.accountId);
+    // Чат на менеджере: галочку «прочитано» ставит он сам, когда откроет
+    // переписку. Иначе собеседник видит, что его прочли, а ответа нет.
+    if ((await this.pause.status(chatId)).status === 'paused') return;
     const trigger = matchTrigger(
       text,
       (await this.settings.get()).handoff_triggers ?? [],
     );
     if (trigger) {
+      // Стоп-фраза уводит чат на менеджера — читать за него тоже не надо.
       await this.handOverByTrigger(chatId, trigger, turn.ts);
-      return this.markReadSafe(chatId, turn.accountId);
+      return;
     }
     const facts = await this.history.getLeadFacts(chatId);
     if (facts[REFUSAL_LOCK_KEY])
@@ -513,29 +516,6 @@ export class NastyaBrainService implements ReplyBrain {
     }
   }
 
-  private async returnFromArchive(chatId: number): Promise<void> {
-    const facts = await this.history.getLeadFacts(chatId);
-    if (!facts[HIDDEN_FROM_DASHBOARD_KEY] || !facts[ARCHIVED_AT_KEY]) return;
-    await this.history.mergeLeadFacts(
-      chatId,
-      {
-        [HIDDEN_FROM_DASHBOARD_KEY]: null,
-        [ARCHIVED_AT_KEY]: null,
-        [ARCHIVED_BOT_ON_KEY]: null,
-      },
-      false,
-    );
-    await this.pause.pause(
-      chatId,
-      TakeoverReason.MANUAL_TAKEOVER,
-      'system:archive',
-      { reasonText: 'клиент вернулся из архива' },
-    );
-    this.log.log(
-      `chat=${chatId}: client wrote from the archive — back on the dashboard, waiting for a manager`,
-    );
-  }
-
   private readonly composing = new Set<number>();
   private readonly replyFailures = new Map<number, number>();
 
@@ -618,7 +598,9 @@ export class NastyaBrainService implements ReplyBrain {
       if (blocked === 'persona')
         await this.schedule.defer(chatId, now + 60, 'persona_disabled');
       else await this.schedule.drop(chatId);
-      await this.markReadSafe(chatId, pending.accountId);
+      // Чат успели забрать на менеджера — отметку о прочтении оставляем ему.
+      if (blocked !== 'paused')
+        await this.markReadSafe(chatId, pending.accountId);
       return false;
     }
     if (
@@ -1045,6 +1027,36 @@ export class NastyaBrainService implements ReplyBrain {
     }
   }
 
+  /**
+   * Пока чат вёл менеджер, обычный разбор не работал: бот не сочинял, а
+   * значит, и не запоминал ни своих прежних слов, ни того, что написал за него
+   * менеджер. Догоняем это одним проходом перед тем, как снова заговорить.
+   * Сбой разбора не должен мешать ответу — он не критичен для текущего хода.
+   */
+  private async catchUpPersonaMemory(
+    chatId: number,
+    state: ConversationState,
+    timezone: string,
+    deps: JudgeDeps,
+  ): Promise<void> {
+    try {
+      const result = await catchUpPersonaMemory(
+        state,
+        deps,
+        timezone,
+        this.clock.ts(),
+      );
+      if (result.statements)
+        this.log.log(
+          `chat=${chatId}: caught up on ${result.statements} own message(s) from manual mode, +${result.events} remembered`,
+        );
+    } catch (e) {
+      this.log.warn(
+        `chat=${chatId}: persona memory catch-up failed: ${e?.message ?? e}`,
+      );
+    }
+  }
+
   private async markReadSafe(
     chatId: number,
     accountId: number | null,
@@ -1462,13 +1474,12 @@ export class NastyaBrainService implements ReplyBrain {
           : (persona.variables.interlocutor_city ?? persona.variables.city)) ||
         '',
     );
-    const other = await this.persona.interlocutorLocation(location);
-    const own = {
-      status: 'resolved' as const,
-      city: '',
-      country: '',
-      timezone: persona.rhythm.timezone,
-    };
+    const [other, own] = await Promise.all([
+      this.persona.interlocutorLocation(location),
+      // Без названия города модель додумывает его по биографии, где мест
+      // упомянуто несколько, и путается в собственных часах.
+      this.persona.personaPlace(persona),
+    ]);
     return turnTime(own, other, this.clock.now());
   }
 
@@ -1531,6 +1542,12 @@ export class NastyaBrainService implements ReplyBrain {
     const calls = this.prisma
       ? await callContext(this.prisma, chatId, state.history_reset?.at)
       : [];
+    await this.catchUpPersonaMemory(
+      chatId,
+      state,
+      config.timeZone ?? 'UTC',
+      this.judgeDeps(scope, variables, signal, loaded),
+    );
     let runtime = prepareTurn(config, state, fullText, today, this.clock.ts());
     runtime.call_context = calls;
     runtime.time_context = await this.timeContext(loaded, state);
@@ -1574,6 +1591,8 @@ export class NastyaBrainService implements ReplyBrain {
       Math.random,
       this.clock.ts(),
     );
+    // Обычный ход разобрал свои реплики сам — догонять их больше не нужно.
+    state.persona_memory_cursor = latestPersonaMessageId(state);
     runtime.call_context = calls;
     for (const memory of state.memories) {
       const previous = baseState.memories.find((m) => m.id === memory.id);

@@ -1,4 +1,5 @@
 export const GENERATOR_MODEL = 'claude-sonnet-5';
+export const SONNET_5_5 = 'claude-sonnet-5.5';
 export const OPUS_5 = 'claude-opus-5';
 export const OPUS_5_5 = 'claude-opus-5.5';
 export const JUDGE_MODEL = OPUS_5;
@@ -8,6 +9,7 @@ export const JUDGE_MODELS: readonly string[] = [
   OPUS_5,
   OPUS_5_5,
   GENERATOR_MODEL,
+  SONNET_5_5,
 ];
 
 export function resolveJudgeModel(value = ''): string {
@@ -26,6 +28,7 @@ export const MODEL_OPTIONS: ReadonlyArray<
   readonly [id: string, label: string]
 > = [
   [GENERATOR_MODEL, 'Claude Sonnet 5'],
+  [SONNET_5_5, 'Claude Sonnet 5.5'],
   [OPUS_5, 'Claude Opus 5'],
   [OPUS_5_5, 'Claude Opus 5.5'],
 ];
@@ -78,6 +81,7 @@ export const STAGE_LABELS: Readonly<Record<string, string>> = {
   judge_plan: 'Анализ диалога',
   judge_review: 'Проверка ответа',
   judge: 'Судья',
+  persona_memory: 'Память о своих словах',
   media_photo: 'Просмотр фото',
   media_reaction: 'Реакция на GIF',
   interlocutor_info: 'Информация про собеседника',

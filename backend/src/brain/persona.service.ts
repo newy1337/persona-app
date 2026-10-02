@@ -36,7 +36,7 @@ import {
   LocationResolver,
   LOCATION_RULES,
 } from './nastya/kernel/location-resolver';
-import { type Place } from './nastya/kernel/location';
+import { type Place, unknownPlace } from './nastya/kernel/location';
 import { completeText } from './nastya/llm/anthropic';
 import { resolveModel } from './nastya/config/models';
 import { parseJsonObject } from './nastya/judge/transport';
@@ -65,6 +65,8 @@ export interface LoadedPersona {
   variables: Record<string, string>;
   beats: Record<string, unknown>[] | null;
   updatedAt: number;
+  /** Биография как она лежит в базе — ключ кеша определения места. */
+  personaSource: string;
   /** пусто — модель из окружения */
   generatorModel?: string | null;
   judgeModel?: string | null;
@@ -179,6 +181,30 @@ export class PersonaService implements OnModuleInit {
 
   async interlocutorLocation(source: string): Promise<Place> {
     return this.locations.resolve('interlocutor', source);
+  }
+
+  /**
+   * Где личность находится сейчас — для её собственных часов. Часовой пояс
+   * берём настроенный: при режиме «по биографии» он уже из неё и выведен, при
+   * ручном — так решил оператор, и выдумывать за него город другого пояса
+   * нельзя. Город нужен, чтобы модель не гадала по биографии, в каком из
+   * упомянутых там мест персонаж сейчас.
+   */
+  async personaPlace(persona: LoadedPersona): Promise<Place> {
+    const timezone = persona.rhythm.timezone;
+    const blank: Place = {
+      status: 'resolved',
+      city: '',
+      country: '',
+      timezone,
+    };
+    if (!persona.personaSource) return blank;
+    const place = await this.locations
+      .resolve('persona', persona.personaSource)
+      .catch(() => unknownPlace());
+    return place.status === 'resolved' && place.timezone === timezone
+      ? { ...place, timezone }
+      : blank;
   }
 
   get ready(): boolean {
@@ -361,6 +387,7 @@ export class PersonaService implements OnModuleInit {
       variables,
       beats: raw.beats ? fill(raw.beats) : null,
       updatedAt: raw.updatedAt,
+      personaSource: row.persona,
     };
     if (raw.views.size >= MAX_VIEWS) raw.views.clear();
     raw.views.set(key, loaded);

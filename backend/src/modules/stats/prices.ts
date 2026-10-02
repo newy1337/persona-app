@@ -48,6 +48,12 @@ export const DEFAULT_PRICES: PriceTable = {
       cache_write: 2.5,
       cache_read: 0.2,
     },
+    'claude-sonnet-5.5': {
+      input: 2,
+      output: 10,
+      cache_write: 2.5,
+      cache_read: 0.2,
+    },
     'claude-haiku-4-5': {
       input: 1,
       output: 5,
@@ -64,6 +70,7 @@ export const DEFAULT_PRICES: PriceTable = {
   families: {
     'opus-5.5': 'claude-opus-5.5',
     opus: 'claude-opus-5',
+    'sonnet-5.5': 'claude-sonnet-5.5',
     sonnet: 'claude-sonnet-5',
     haiku: 'claude-haiku-4-5',
   },

@@ -295,8 +295,30 @@ export class ConversationsService {
     return this.brain.editOwnMessage(chatId, messageId, text);
   }
 
-  markSeen(chatId: number): Promise<void> {
-    return this.history.markManagerSeen(chatId, this.clock.ts());
+  /**
+   * Менеджер открыл переписку. Пока чат на нём, бот не ставит отметку о
+   * прочтении — её ставим здесь, и только когда есть что читать, иначе
+   * опрос страницы дёргал бы Telegram на каждом обновлении.
+   */
+  async markSeen(chatId: number): Promise<void> {
+    if (await this.hasUnreadFromClient(chatId))
+      await this.telegram.markRead(chatId).catch(() => undefined);
+    await this.history.markManagerSeen(chatId, this.clock.ts());
+  }
+
+  private async hasUnreadFromClient(chatId: number): Promise<boolean> {
+    const id = toChatId(chatId);
+    const contact = await this.prisma.contact.findUnique({
+      where: { chatId: id },
+      select: { managerSeenTs: true },
+    });
+    if (!contact) return false;
+    const last = await this.prisma.message.findFirst({
+      where: { chatId: id, role: 'user', deletedAt: null },
+      orderBy: { ts: 'desc' },
+      select: { ts: true },
+    });
+    return (last?.ts ?? 0) > (contact.managerSeenTs ?? 0);
   }
 
   async list() {
