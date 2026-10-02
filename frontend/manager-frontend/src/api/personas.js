@@ -16,6 +16,10 @@ export function getRhythmDefaults() {
   return api.get('/api/personas/rhythm/defaults');
 }
 
+export function getModelOptions() {
+  return api.get('/api/personas/models/options');
+}
+
 export function createPersona(body) {
   return api.post('/api/personas', body);
 }

@@ -65,6 +65,9 @@ export interface LoadedPersona {
   variables: Record<string, string>;
   beats: Record<string, unknown>[] | null;
   updatedAt: number;
+  /** пусто — модель из окружения */
+  generatorModel?: string | null;
+  judgeModel?: string | null;
 }
 
 interface RawPersona {
@@ -321,7 +324,11 @@ export class PersonaService implements OnModuleInit {
   }
 
   private materialise(
-    row: Parameters<PersonaService['raw']>[0] & { enabled?: boolean },
+    row: Parameters<PersonaService['raw']>[0] & {
+      enabled?: boolean;
+      generatorModel?: string | null;
+      judgeModel?: string | null;
+    },
     chat: Record<string, string> = {},
   ): LoadedPersona {
     const raw = this.raw(row);
@@ -330,8 +337,13 @@ export class PersonaService implements OnModuleInit {
     const key = JSON.stringify(
       Object.entries(shared).sort(([a], [b]) => a.localeCompare(b)),
     );
+    const models = {
+      generatorModel: row.generatorModel ?? null,
+      judgeModel: row.judgeModel ?? null,
+    };
     const ready = raw.views.get(key);
-    if (ready) return { ...ready, variables, enabled: row.enabled !== false };
+    if (ready)
+      return { ...ready, ...models, variables, enabled: row.enabled !== false };
     const fill = <T>(doc: T): T => fillVariables(doc, shared);
     const loaded: LoadedPersona = {
       id: raw.id,
@@ -352,7 +364,7 @@ export class PersonaService implements OnModuleInit {
     };
     if (raw.views.size >= MAX_VIEWS) raw.views.clear();
     raw.views.set(key, loaded);
-    return { ...loaded, variables, enabled: row.enabled !== false };
+    return { ...loaded, ...models, variables, enabled: row.enabled !== false };
   }
 
   /** Город и сайт лида из карточки диалога — переменные `{city}` и `{site}` этого чата. */

@@ -76,6 +76,8 @@ model Persona {
   rhythm     String  @default("{}")
   variables  String  @default("{}")
   notes      String?
+  generatorModel String? @map("generator_model")
+  judgeModel     String? @map("judge_model")
   createdAt  Int     @map("created_at")
   updatedAt  Int     @map("updated_at")
 

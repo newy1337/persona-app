@@ -352,3 +352,30 @@
 
 /* Restored panel readability and responsive controls. */
 .promptHint, .groupHint, .fieldHint, .rhythmLabel, .rhythmHint { color:#b3c1d8; font-size:13px; line-height:1.5; }
+
+.modelRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  margin: 12px 0 4px;
+}
+
+.modelField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 240px;
+}
+
+.modelLabel {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+.modelHint {
+  font-size: 12px;
+  opacity: 0.6;
+}

@@ -60,6 +60,14 @@ export class PersonasController {
     return this.personas.rhythmDefaults();
   }
 
+  @ApiOperation({
+    summary: 'Доступные модели генератора и судей, и что берётся по умолчанию',
+  })
+  @Get('models/options')
+  modelOptions() {
+    return this.personas.modelOptions();
+  }
+
   @ApiOperation({ summary: 'Личность целиком, с документами' })
   @Get(':id')
   get(@Param('id', ParseIntPipe) id: number) {

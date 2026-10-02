@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
 
 permissions:
@@ -93,14 +93,16 @@ jobs:
   deploy:
     name: deploy
     needs: checks
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, persona]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    runs-on:
+      - self-hosted
+      - ${{ github.ref == 'refs/heads/main' && 'persona' || 'persona-dev' }}
     timeout-minutes: 30
     environment:
-      name: production
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
       url: ${{ vars.PANEL_URL }}
     concurrency:
-      group: deploy-production
+      group: deploy-${{ github.ref_name }}
       cancel-in-progress: false
 
     steps:
@@ -117,7 +119,7 @@ jobs:
   notify:
     name: notify
     needs: [checks, deploy]
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: always() && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -131,6 +133,7 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
           ACTOR: ${{ github.actor }}
+          BRANCH: ${{ github.ref_name }}
           MESSAGE: ${{ github.event.head_commit.message }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -139,11 +142,11 @@ jobs:
             exit 0
           fi
           if [ "$DEPLOY" = "success" ]; then
-            TITLE="✅ Деплой прошёл"
+            TITLE="✅ Деплой прошёл ($BRANCH)"
           elif [ "$CHECKS" != "success" ]; then
             TITLE="❌ Проверки упали, деплоя не было"
           else
-            TITLE="🔥 Деплой упал ($DEPLOY)"
+            TITLE="🔥 Деплой упал ($BRANCH, $DEPLOY)"
           fi
           FIRST_LINE="$(printf '%s' "$MESSAGE" | head -n1)"
           TEXT="$(printf '%s\n%s @ %s by %s\n%s\nchecks: %s · deploy: %s\n%s' \

@@ -1,7 +1,6 @@
 import { CreateLeadForm, LeadsTable } from '../../ui/ManagerRegion';
 import { PanelUX } from '../../ui/PanelUX';
 import { useCallback, useEffect, useState } from 'react';
-import TableSkeleton from '../../components/TableSkeleton/TableSkeleton';
 import { Link, useNavigate } from 'react-router-dom';
 import Header from '../../components/Header/Header';
 import {

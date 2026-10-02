@@ -39,6 +39,39 @@ export function resolveModel(value = ''): string {
   return model;
 }
 
+export const JUDGE_MODEL_OPTIONS: ReadonlyArray<
+  readonly [id: string, label: string]
+> = MODEL_OPTIONS.filter(([id]) => JUDGE_MODELS.includes(id));
+
+export interface PersonaModels {
+  generatorModel?: string | null;
+  judgeModel?: string | null;
+}
+
+/** Модель генератора: личность → окружение → умолчание из кода. */
+export function generatorModelFor(
+  persona: PersonaModels | null | undefined,
+  envValue = '',
+): string {
+  return resolveModel(persona?.generatorModel || envValue);
+}
+
+/** Модель судей: личность → окружение → умолчание из кода. */
+export function judgeModelFor(
+  persona: PersonaModels | null | undefined,
+  envValue = '',
+): string {
+  return resolveJudgeModel(persona?.judgeModel || envValue);
+}
+
+export function isGeneratorModel(value: unknown): value is string {
+  return typeof value === 'string' && MODEL_IDS.has(value);
+}
+
+export function isJudgeModel(value: unknown): value is string {
+  return typeof value === 'string' && JUDGE_MODELS.includes(value);
+}
+
 export const STAGE_LABELS: Readonly<Record<string, string>> = {
   time_location: 'Определение города для местного времени',
   generator: 'Ответ Насти',

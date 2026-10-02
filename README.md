@@ -121,7 +121,7 @@ cd backend && npm run test:e2e
 | Шаг | Где | Что делает |
 |---|---|---|
 | `checks` | GitHub | Бэкенд: eslint, unit, сборка, e2e на PostgreSQL. Панель: oxlint, vitest, сборка. Плюс `docker compose build`. |
-| `deploy` | runner на сервере | Только push в `main`. Переключает репозиторий на коммит и запускает `deploy/deploy.sh`. |
+| `deploy` | runner на сервере | Push в `main` едет на прод (runner с меткой `persona`), push в `dev` — на дев-сервер (метка `persona-dev`). Переключает репозиторий на коммит и запускает `deploy/deploy.sh`. |
 | `notify` | GitHub | Пишет итог в Telegram. Без токена шаг молча пропускается. |
 
 `deploy/deploy.sh` делает снимок базы в `backups/`, собирает образы, перезапускает
@@ -141,7 +141,8 @@ cd /srv/persona-app && cp .env.example .env   # и заполнить
 Деплой выполняет self-hosted runner GitHub Actions, который стоит на том же
 сервере. В репозитории: Settings → Actions → Runners → New self-hosted runner,
 Linux. GitHub покажет команды скачивания и регистрации; при регистрации добавьте
-метку `persona` — по ней workflow выбирает этот runner:
+метку `persona` для прода или `persona-dev` для дев-сервера — по ней workflow
+выбирает runner:
 
 ```bash
 ./config.sh --url https://github.com/newy1337/persona-app --token <из страницы> --labels persona --unattended

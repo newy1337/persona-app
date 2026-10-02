@@ -72,7 +72,7 @@ import type {
   Judgment,
   RhythmState,
 } from './nastya/kernel/types';
-import { resolveModel } from './nastya/config/models';
+import { generatorModelFor, type PersonaModels } from './nastya/config/models';
 import { stripMetadata } from './nastya/character/config';
 import { prepareTurn } from './nastya/character/turn';
 import { applyJudgment } from './nastya/character/judgment';
@@ -119,7 +119,7 @@ import {
   unansweredUnprompted,
 } from './nastya/dialogue/initiative';
 import { personaGender, voiceOf } from './nastya/character/gender';
-import { resolveJudgeModel } from './nastya/config/models';
+import { judgeModelFor } from './nastya/config/models';
 import {
   ACTIVE_CHAT_DAYS,
   GOODNIGHT_QUIET_BEFORE_SECONDS,
@@ -231,11 +231,12 @@ export class NastyaBrainService implements ReplyBrain {
     scope: UsageScope = {},
     variables: Record<string, string> = {},
     signal?: AbortSignal,
+    persona?: PersonaModels | null,
   ) {
     return {
       ...this.llmDeps(scope, variables, signal),
       effort: appConfig.judgeEffort,
-      model: resolveJudgeModel(appConfig.judgeModel),
+      model: judgeModelFor(persona, appConfig.judgeModel),
     };
   }
 
@@ -971,6 +972,7 @@ export class NastyaBrainService implements ReplyBrain {
         { chatId, personaId: persona.slug },
         persona.variables,
         signal,
+        persona,
       ),
     );
     checkCancelled(signal);
@@ -1450,7 +1452,7 @@ export class NastyaBrainService implements ReplyBrain {
     const loaded = await this.persona.forChat(chatId);
     const { config, name, prompts, slug, variables } = loaded;
     const scope: UsageScope = { chatId, personaId: slug };
-    const model = resolveModel(appConfig.generatorModel);
+    const model = generatorModelFor(loaded, appConfig.generatorModel);
     const today = characterDate(this.clock.now(), config.timeZone);
     const gender = personaGender(config.persona);
     const customInstructions = [
@@ -1506,7 +1508,7 @@ export class NastyaBrainService implements ReplyBrain {
         userText: fullText,
         customInstructions,
       },
-      this.judgeDeps(scope, variables, signal),
+      this.judgeDeps(scope, variables, signal, loaded),
     );
     checkCancelled(signal);
     if (
@@ -1595,7 +1597,7 @@ export class NastyaBrainService implements ReplyBrain {
         userText: fullText,
         draft,
       },
-      this.judgeDeps(scope, variables, signal),
+      this.judgeDeps(scope, variables, signal, loaded),
     );
     checkCancelled(signal);
     stageQuestionReview(
@@ -2220,7 +2222,7 @@ export class NastyaBrainService implements ReplyBrain {
       const scope: UsageScope = { chatId, personaId: slug };
       const today = characterDate(this.clock.now(), config.timeZone);
       const state = await this.state.reconcile(chatId);
-      const model = resolveModel(appConfig.generatorModel);
+      const model = generatorModelFor(persona, appConfig.generatorModel);
       const runtime = buildRuntimeSnapshot(
         config,
         state,
@@ -2289,7 +2291,7 @@ export class NastyaBrainService implements ReplyBrain {
           userText: '',
           draft,
         },
-        this.judgeDeps(scope, variables, signal),
+        this.judgeDeps(scope, variables, signal, persona),
       );
       const reply =
         ['goodnight', 'initiative', 'after_call'].includes(opts.author) &&

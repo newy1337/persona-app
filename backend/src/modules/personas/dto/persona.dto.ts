@@ -9,6 +9,7 @@ import {
   Matches,
   MaxLength,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { PERSONA_SECTIONS } from 'src/brain/persona.service';
 
@@ -55,6 +56,26 @@ export class UpdatePersonaDto {
   @IsString()
   @MaxLength(4000)
   notes?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'модель генератора; null — из окружения',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  generator_model?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'модель судей; null — из окружения',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  judge_model?: string | null;
 }
 
 export class PutSectionDto {

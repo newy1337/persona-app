@@ -24,6 +24,15 @@ import {
   BUILTIN_VARIABLES,
   variableErrors,
 } from 'src/brain/nastya/config/variables';
+import {
+  JUDGE_MODEL_OPTIONS,
+  MODEL_OPTIONS,
+  generatorModelFor,
+  isGeneratorModel,
+  isJudgeModel,
+  judgeModelFor,
+} from 'src/brain/nastya/config/models';
+import { appConfig } from 'src/config/app.config';
 
 const COLUMN: Record<PersonaSection, keyof Persona> = {
   persona: 'persona',
@@ -107,6 +116,8 @@ function summary(row: Persona, accounts = 0) {
     is_default: row.isDefault,
     enabled: row.enabled,
     notes: row.notes,
+    generator_model: row.generatorModel ?? null,
+    judge_model: row.judgeModel ?? null,
     accounts,
     card_lines: Array.isArray(card.card) ? card.card.length : 0,
     examples: Array.isArray(card.chat_examples) ? card.chat_examples.length : 0,
@@ -244,9 +255,27 @@ export class PersonasService {
       slug?: string;
       enabled?: boolean;
       notes?: string | null;
+      generator_model?: string | null;
+      judge_model?: string | null;
     },
   ) {
     const row = await this.mustExist(id);
+    const { generator_model, judge_model, ...rest } = dto;
+    const data: Record<string, unknown> = { ...rest };
+    if (generator_model !== undefined) {
+      if (generator_model !== null && !isGeneratorModel(generator_model))
+        throw new UnprocessableEntityException(
+          `неизвестная модель генератора «${generator_model}»`,
+        );
+      data.generatorModel = generator_model;
+    }
+    if (judge_model !== undefined) {
+      if (judge_model !== null && !isJudgeModel(judge_model))
+        throw new UnprocessableEntityException(
+          `неизвестная модель судей «${judge_model}»`,
+        );
+      data.judgeModel = judge_model;
+    }
     if (dto.slug && dto.slug !== row.slug) {
       if (await this.prisma.persona.findUnique({ where: { slug: dto.slug } })) {
         throw new ConflictException(`идентификатор «${dto.slug}» уже занят`);
@@ -263,9 +292,20 @@ export class PersonasService {
     }
     await this.prisma.persona.update({
       where: { id },
-      data: { ...dto, updatedAt: this.nextStamp(row) },
+      data: { ...data, updatedAt: this.nextStamp(row) },
     });
     return this.get(id);
+  }
+
+  modelOptions() {
+    return {
+      generator: MODEL_OPTIONS.map(([id, label]) => ({ id, label })),
+      judge: JUDGE_MODEL_OPTIONS.map(([id, label]) => ({ id, label })),
+      defaults: {
+        generator: generatorModelFor(null, appConfig.generatorModel),
+        judge: judgeModelFor(null, appConfig.judgeModel),
+      },
+    };
   }
 
   private sectionText(section: PersonaSection, data: unknown): string {

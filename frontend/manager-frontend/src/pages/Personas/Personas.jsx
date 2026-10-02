@@ -8,6 +8,7 @@ import {
   exportPersona,
   getPersona,
   getPersonas,
+  getModelOptions,
   getPromptDefaults,
   importPersona,
   setDefaultPersona,
@@ -86,11 +87,32 @@ function CreateForm({ personas, onDone, onCancel }) {
 
 const SECTION_KEYS = TABS.map((t) => t.key);
 
+function ModelSelect({ label, hint, value, options, fallback, onChange }) {
+  const fallbackLabel = options.find((o) => o.id === fallback)?.label ?? fallback;
+  return (
+    <label className={p.modelField}>
+      <span className={p.modelLabel}>{label}</span>
+      <select
+        className={s.select}
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value || null)}
+      >
+        <option value="">по умолчанию — {fallbackLabel}</option>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>{o.label}</option>
+        ))}
+      </select>
+      <span className={p.modelHint}>{hint}</span>
+    </label>
+  );
+}
+
 export default function Personas() {
   const [items, setItems] = useState([]);
   const [selected, setSelected] = useState(null);
   const [persona, setPersona] = useState(null);
   const [defaults, setDefaults] = useState(null);
+  const [models, setModels] = useState(null);
   const [tab, setTab] = useState('prompts');
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -114,9 +136,10 @@ export default function Personas() {
   }, []);
 
   useEffect(() => {
-    Promise.all([loadList(), getPromptDefaults()])
-      .then(([list, d]) => {
+    Promise.all([loadList(), getPromptDefaults(), getModelOptions().catch(() => null)])
+      .then(([list, d, m]) => {
         setDefaults(d);
+        setModels(m);
         if (list.length) setSelected((cur) => cur ?? list[0].id);
       })
       .catch((e) => setError(e.detail || e.message));
@@ -311,6 +334,27 @@ export default function Personas() {
                       {!persona.is_default && <button className={s.btnSmDanger} onClick={remove}>Удалить</button>}
                     </div>
                   </div>
+
+                  {models && (
+                    <div className={p.modelRow}>
+                      <ModelSelect
+                        label="Модель ответов"
+                        hint="пишет реплики клиенту"
+                        value={persona.generator_model}
+                        options={models.generator}
+                        fallback={models.defaults.generator}
+                        onChange={(v) => run(() => updatePersona(persona.id, { generator_model: v }))}
+                      />
+                      <ModelSelect
+                        label="Модель судей"
+                        hint="план диалога и проверка ответа — два вызова на реплику"
+                        value={persona.judge_model}
+                        options={models.judge}
+                        fallback={models.defaults.judge}
+                        onChange={(v) => run(() => updatePersona(persona.id, { judge_model: v }))}
+                      />
+                    </div>
+                  )}
 
                   <div className={p.tabs}>
                     {TABS.map((t) => (
