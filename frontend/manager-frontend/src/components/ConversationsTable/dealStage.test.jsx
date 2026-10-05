@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, test } from 'vitest';
 import React, { act } from 'react';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -45,4 +45,17 @@ describe('этап сделки в таблице диалогов', () => {
     await act(async () => root.render(<ConversationsTable rows={[row({})]} />));
     expect(host.querySelector('[data-testid="deal-stage"]')).toBeNull();
   });
+});
+
+test('с обработчиком в строке появляется селект этапа, у пустого — подпись «Нужно указать этап»', async () => {
+  const onDealStage = vi.fn();
+  await act(async () => root.render(<ConversationsTable rows={[row({})]} onDealStage={onDealStage} />));
+  const select = host.querySelector('[data-testid="deal-stage"] select');
+  expect(select.value).toBe('');
+  expect(select.options[0].textContent).toBe('Нужно указать этап');
+  await act(async () => {
+    select.value = 'soglas';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  expect(onDealStage).toHaveBeenCalledWith(1, 'soglas', expect.objectContaining({ chat_id: 1 }));
 });

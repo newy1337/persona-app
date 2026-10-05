@@ -5,7 +5,7 @@ import s from '../styles/AdminPage.module.scss';
 import { getAccounts as loadAccounts } from '../api/accounts';
 import { PanelUX as ux } from './PanelUX';
 import { VoiceBotLink } from '../pages/VoiceWork/VoiceBotLink';
-import { dealStageLabel } from '../data/dealStages';
+import { DEAL_STAGES, dealStageLabel } from '../data/dealStages';
 
 const h = React.createElement;
 const { useState, useEffect, useCallback } = React;
@@ -23,7 +23,7 @@ export function Attribution({ value, compact = false, as: Tag = 'div' }) {
     h('span', null, h('span', { className: 'mr-caption' }, 'Регион: '), value.region_code || 'не задан'));
 }
 
-export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, onOpen, onHide, helpers }) {
+export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, onOpen, onHide, onDealStage = null, helpers }) {
   const { Avatar, Stage, isNew, unreadLabel, presence, nextAction, time, date, accountLost, typingLabels } = helpers;
   const sortOptions = [
     ['', 'По умолчанию'], ['name:asc', 'Имя: А → Я'], ['name:desc', 'Имя: Я → А'],
@@ -60,7 +60,13 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, 
             row.account_lost && h('div', { className: 'mr-dialog-warning' }, accountLost(row.account_lost, { short: true }))),
           h('td', { className: 'mr-dialog-status', 'data-label': 'Стадия и режим' },
             h(Stage, { stage: row.stage }),
-            row.deal_stage && h('div', { className: 'mr-dialog-deal', 'data-testid': 'deal-stage', title: row.deal_note || undefined }, h('span', { className: 'mr-caption' }, 'Этап: '), dealStageLabel(row.deal_stage), row.deal_note ? ` · ${row.deal_note}` : ''),
+            onDealStage
+              ? h('div', { className: `mr-dialog-deal ${row.deal_stage ? '' : 'mr-dialog-deal-missing'}`, 'data-testid': 'deal-stage', title: row.deal_note || undefined, onClick: e => e.stopPropagation() },
+                  h('select', { className: 'mr-dialog-deal-select', 'aria-label': `Этап сделки: ${row.name || row.chat_id}`, value: row.deal_stage || '', onChange: e => { const stage = e.target.value; if (stage) onDealStage(row.chat_id, stage, row); } },
+                    h('option', { value: '' }, row.deal_stage ? '— не задан' : 'Нужно указать этап'),
+                    DEAL_STAGES.map(st => h('option', { key: st.id, value: st.id }, st.label))),
+                  row.deal_stage === 'archive' && row.deal_note ? h('span', { className: 'mr-dialog-deal-note' }, row.deal_note) : null)
+              : row.deal_stage && h('div', { className: 'mr-dialog-deal', 'data-testid': 'deal-stage', title: row.deal_note || undefined }, h('span', { className: 'mr-caption' }, 'Этап: '), dealStageLabel(row.deal_stage), row.deal_note ? ` · ${row.deal_note}` : ''),
             h('div', { className: `mr-dialog-mode ${row.is_paused ? 'mr-dialog-manual' : 'mr-dialog-online'}` }, row.is_paused ? fresh ? 'Менеджер · ждёт ответа' : 'Ведёт менеджер' : 'Ведёт бот'),
             next && h('div', { className: 'mr-dialog-muted', title: nextAction(row.next_bot_action)?.text }, next.text)),
           h('td', { className: 'mr-dialog-last', 'data-label': 'Последнее сообщение' }, h('span', { className: 'mr-dialog-time' }, time(row.last_message_ts)), h('span', { className: 'mr-dialog-muted' }, date(row.last_message_ts))),

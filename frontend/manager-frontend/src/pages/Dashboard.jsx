@@ -13,6 +13,8 @@ import {
 } from '../api/conversations';
 import { getStats } from '../api/stats';
 import { liveRows } from '../utils/chat';
+import { moscowDay } from '../utils/panelTime';
+import { rememberReminder, shouldRemind } from '../utils/stageReminder';
 
 const STAT_TILES = [
   { key: 'need_manager', label: 'Ждут менеджера', color: '#00D4FF' },
@@ -52,6 +54,35 @@ function Dashboard() {
       .catch((e) => setError(e.detail || e.message))
       .finally(() => setReady(true));
   }, [showHidden]);
+
+  const changeDealStage = useCallback(
+    (chatId, stage, row) => {
+      let note = '';
+      if (stage === 'archive') {
+        note = window.prompt('Почему в архив?', row?.deal_note || '');
+        if (note == null || !note.trim()) return;
+        note = note.trim();
+      }
+      setDealStage(chatId, stage, note)
+        .then(load)
+        .catch((e) => {
+          setError(e.detail || e.message);
+          load();
+        });
+    },
+    [load],
+  );
+
+  const [reminder, setReminder] = useState(null);
+  useEffect(() => {
+    if (!ready || showHidden) return;
+    const r = shouldRemind(rows, moscowDay());
+    setReminder(r.show ? r : null);
+  }, [rows, ready, showHidden]);
+  const dismissReminder = () => {
+    if (reminder) rememberReminder(reminder.signature, moscowDay());
+    setReminder(null);
+  };
 
   const toggleHidden = useCallback(
     (chatId, hidden) => {
@@ -102,6 +133,12 @@ function Dashboard() {
       <main className="main">
         <div className="container">
           {error && <div className="loadError">Не удалось загрузить: {error}</div>}
+          {reminder && (
+            <div className="stageReminder" role="status" data-testid="stage-reminder">
+              <span>В {reminder.count} {reminder.count === 1 ? 'диалоге' : reminder.count < 5 ? 'диалогах' : 'диалогах'} не указан этап — выберите его в колонке «Стадия и режим».</span>
+              <button type="button" onClick={dismissReminder} aria-label="Скрыть напоминание">Понятно</button>
+            </div>
+          )}
           <NeedManagerAssist agents={managerAgents} query={query} headFilters={headFilters} dateFilter={dateFilter} />
           <LiveConversations agents={liveAgents} query={query} headFilters={headFilters} dateFilter={dateFilter} />
           <StatsBar stats={stats} dateFilter={dateFilter} onDateFilterChange={setDateFilter} />
@@ -114,6 +151,7 @@ function Dashboard() {
             showHidden={showHidden}
             onToggleShowHidden={setShowHidden}
             onHide={toggleHidden}
+            onDealStage={changeDealStage}
           />
         </div>
       </main>

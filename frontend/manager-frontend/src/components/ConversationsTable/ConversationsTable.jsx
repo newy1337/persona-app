@@ -56,6 +56,7 @@ function ConversationsTable({
   showHidden = false,
   onToggleShowHidden = null,
   onHide = null,
+  onDealStage = null,
 }) {
   const [activeFilter, setActiveFilter] = useState(null);
   const [onlyNew, setOnlyNew] = useState(false);
@@ -173,7 +174,7 @@ function ConversationsTable({
 
       {(ready || rows.length > 0) && <DialogTable rows={visible} totalRows={rows.length} archived={showHidden}
         sort={sort} onSort={handleSort} setSort={setSort}
-        onOpen={id => navigate(`/conversation/${id}`)} onHide={onHide}
+        onOpen={id => navigate(`/conversation/${id}`)} onHide={onHide} onDealStage={onDealStage}
         helpers={{ Avatar: ClientAvatar, Stage: StatusBadge, isNew: waitsForManager,
           unreadLabel: newLabel, presence: presenceLabel, nextAction: nextActionLabel,
           time: fmtTime, date: fmtDate, accountLost: accountLostLabel, typingLabels: ACTIVITY_LABEL }} />}

@@ -38,3 +38,28 @@
     padding: 0 104px;
   }
 }
+
+.stageReminder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 4px;
+  padding: 10px 14px;
+  border: 1px solid #8a5a1f;
+  border-radius: 10px;
+  background: rgba(138, 90, 31, 0.14);
+  color: #fbf1e3;
+  font-size: 13px;
+
+  button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+}
