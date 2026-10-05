@@ -53,6 +53,14 @@ export class StatsController {
     return this.stats.byManager({ from, to });
   }
 
+  @ApiOperation({ summary: 'Этапы сделки по дням: сколько чатов вошло в этап' })
+  @ApiQuery({ name: 'from', required: false, example: '2026-09-01' })
+  @ApiQuery({ name: 'to', required: false, example: '2026-09-10' })
+  @Get('stages')
+  stages(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.stats.dealStages({ from, to });
+  }
+
   @ApiOperation({ summary: 'Расход одного чата' })
   @Get('chat/:chatId')
   forChat(

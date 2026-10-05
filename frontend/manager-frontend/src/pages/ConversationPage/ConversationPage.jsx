@@ -59,6 +59,7 @@ import {
   setConversationHidden,
   getPauseStatus,
   pinFact,
+  setDealStage,
   setAiMode as setAiModeApi,
   setSlot,
   sendAttachment,
@@ -92,7 +93,9 @@ import {
   ChevronPrevIcon,
   ChevronNextIcon,
   AccountIcon,
+  StatusIcon,
 } from '../../assets/icons';
+import { DEAL_STAGES } from '../../data/dealStages';
 
 export const TOGGLE_COOLDOWN_MS = 2000;
 const JUMP_SHOW_PX = 400;
@@ -729,6 +732,43 @@ function ConversationPage() {
                   )}
                 </div>
                 <div className={styles.agentMeta}>
+                  <span className={styles.metaRow} data-testid="deal-stage">
+                    <span className={styles.metaIcon}><StatusIcon color="currentColor" />Этап</span>
+                    <span className={styles.dealStage}>
+                      <select
+                        className={styles.dealSelect}
+                        aria-label="Этап сделки"
+                        value={pins.deal_stage || ''}
+                        disabled={busy}
+                        onChange={async (e) => {
+                          const stage = e.target.value;
+                          if (!stage) return;
+                          let note = '';
+                          if (stage === 'archive') {
+                            note = window.prompt('Почему в архив?', pins.deal_note || '');
+                            if (note == null || !note.trim()) return;
+                          }
+                          setBusy(true);
+                          try {
+                            await setDealStage(id, stage, note);
+                            load();
+                          } catch {
+                            // всплывашка action-store уже показала причину
+                          } finally {
+                            setBusy(false);
+                          }
+                        }}
+                      >
+                        <option value="">— не задан</option>
+                        {DEAL_STAGES.map((st) => (
+                          <option key={st.id} value={st.id}>{st.label}</option>
+                        ))}
+                      </select>
+                      {pins.deal_stage === 'archive' && pins.deal_note && (
+                        <span className={styles.dealNote} title="Причина архива">{pins.deal_note}</span>
+                      )}
+                    </span>
+                  </span>
                   <span className={styles.metaRow}>
                     <span className={styles.metaIcon}><AgeIcon />Возраст</span>
                     <EditableValue

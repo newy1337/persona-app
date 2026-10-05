@@ -44,6 +44,14 @@ import {
 import { UploadsService } from '../media/uploads.service';
 import { SettingsService } from '../settings/settings.service';
 import { accountLostOf } from 'src/domain/tg-status';
+import {
+  DEAL_NOTE_KEY,
+  DEAL_STAGE_EVENT,
+  DEAL_STAGE_KEY,
+  DEAL_STAGE_TS_KEY,
+  DealStage,
+  dealNoteError,
+} from 'src/domain/deal-stage';
 import { ManagerAttributionService } from 'src/shared/manager-attribution.service';
 
 const DETAIL_LIMIT = 500;
@@ -637,6 +645,39 @@ export class ConversationsService {
       actor: OPERATOR_ACTOR,
     });
     return { ok: true, chat_id: chatId };
+  }
+
+  async setDealStage(
+    chatId: number,
+    stage: DealStage,
+    rawNote: string,
+    by: string,
+  ) {
+    const note = rawNote.trim();
+    const error = dealNoteError(stage, note);
+    if (error) throw new UnprocessableEntityException(error);
+    const facts = await this.history.getLeadFacts(chatId);
+    const from = (facts[DEAL_STAGE_KEY] as string | undefined) ?? null;
+    const prevNote = (facts[DEAL_NOTE_KEY] as string | undefined) ?? '';
+    if (from === stage && prevNote === note)
+      return { ok: true, chat_id: chatId, stage, note };
+    const ts = this.clock.ts();
+    await this.history.mergeLeadFacts(
+      chatId,
+      {
+        [DEAL_STAGE_KEY]: stage,
+        [DEAL_NOTE_KEY]: note || null,
+        [DEAL_STAGE_TS_KEY]: ts,
+      },
+      false,
+    );
+    await this.funnel.emit(chatId, DEAL_STAGE_EVENT, ts, {
+      from,
+      to: stage,
+      note,
+      by,
+    });
+    return { ok: true, chat_id: chatId, stage, note };
   }
 
   async pinFact(chatId: number, key: string, value: string) {

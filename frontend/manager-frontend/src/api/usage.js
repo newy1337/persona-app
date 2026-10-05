@@ -16,6 +16,14 @@ export function getManagerUsage({ from, to } = {}) {
   return api.get(`/api/stats/managers${qs ? `?${qs}` : ''}`);
 }
 
+export function getDealStages({ from, to } = {}) {
+  const p = new URLSearchParams();
+  if (from) p.set('from', from);
+  if (to) p.set('to', to);
+  const qs = p.toString();
+  return api.get(`/api/stats/stages${qs ? `?${qs}` : ''}`);
+}
+
 export function getBalance() {
   return api.get('/api/stats/balance');
 }

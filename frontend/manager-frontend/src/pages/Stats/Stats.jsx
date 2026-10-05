@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/Header/Header';
-import { getUsage, getManagerUsage, getBalance } from '../../api/usage';
+import { getUsage, getManagerUsage, getBalance, getDealStages } from '../../api/usage';
 import DailyChart from './DailyChart';
 import DateRangePicker, { mskToday, addDays } from '../../components/DateRangePicker/DateRangePicker';
 import PricesEditor from './PricesEditor';
 import ManagersTable from './ManagersTable';
+import StagesTable from './StagesTable';
 import Balance from './Balance';
 import s from '../../styles/AdminPage.module.scss';
 import p from './Stats.module.scss';
@@ -70,6 +71,7 @@ export default function Stats() {
   const [managers, setManagers] = useState(null);
   const [managersLoading, setManagersLoading] = useState(false);
   const [balance, setBalance] = useState(null);
+  const [stages, setStages] = useState(null);
 
   const load = useCallback(() => {
     getUsage({ from: range.from, to: range.to })
@@ -85,6 +87,18 @@ export default function Stats() {
     const timer = setInterval(() => document.visibilityState === 'visible' && pull(), 60000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (tab !== 'stages') return undefined;
+    let alive = true;
+    setStages(null);
+    getDealStages({ from: range.from, to: range.to })
+      .then((r) => alive && setStages(r))
+      .catch((e) => alive && setError(e.detail || e.message));
+    return () => {
+      alive = false;
+    };
+  }, [tab, range]);
 
   useEffect(() => {
     if (tab !== 'managers') return undefined;
@@ -138,7 +152,7 @@ export default function Stats() {
           {showPrices && <PricesEditor onChanged={load} onError={setError} />}
 
           <div className={p.tabs} role="tablist">
-            {[['overview', 'Обзор'], ['managers', 'По менеджерам']].map(([id, label]) => (
+            {[['overview', 'Обзор'], ['managers', 'По менеджерам'], ['stages', 'Этапы']].map(([id, label]) => (
               <button
                 key={id}
                 role="tab"
@@ -152,7 +166,9 @@ export default function Stats() {
             ))}
           </div>
 
-          {tab === 'managers' ? (
+          {tab === 'stages' ? (
+            stages ? <StagesTable data={stages} /> : <p className={s.empty}>Считаю этапы…</p>
+          ) : tab === 'managers' ? (
             managersLoading || !managers ? (
               <p className={s.empty} data-testid="managers-loading">Считаю по менеджерам…</p>
             ) : (

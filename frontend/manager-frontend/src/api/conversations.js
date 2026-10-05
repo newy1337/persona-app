@@ -121,6 +121,10 @@ export function sendAttachment(chatId, { kind, source, caption, replyTo }) {
   });
 }
 
+export function setDealStage(chatId, stage, note) {
+  return api.post(`/api/conversations/${chatId}/deal-stage`, { stage, note: note || undefined });
+}
+
 export function pinFact(chatId, key, value) {
   return api.post(`/api/conversations/${chatId}/pin-fact`, { key, value: String(value ?? '') });
 }

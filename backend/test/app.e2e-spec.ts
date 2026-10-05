@@ -392,6 +392,59 @@ describe('Manager panel API (e2e)', () => {
     });
   });
 
+  it('этап сделки: ставится руками, архив требует причину, статистика считает по дням', async () => {
+    const h = { Authorization: `Bearer ${token}` };
+    const chatId = 424242;
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${chatId}/deal-stage`)
+      .set(h)
+      .send({ stage: 'soglas' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${chatId}/deal-stage`)
+      .set(h)
+      .send({ stage: 'archive' })
+      .expect(422);
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${chatId}/deal-stage`)
+      .set(h)
+      .send({ stage: 'nope' })
+      .expect(400);
+    const card = await request(app.getHttpServer())
+      .get(`/api/conversations/${chatId}`)
+      .set(h)
+      .expect(200);
+    expect(card.body.pinned_facts.deal_stage).toBe('soglas');
+
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${chatId}/deal-stage`)
+      .set(h)
+      .send({ stage: 'lead' })
+      .expect(200);
+    const stats = await request(app.getHttpServer())
+      .get('/api/stats/stages')
+      .set(h)
+      .expect(200);
+    expect(stats.body.totals).toMatchObject({ soglas: 1, lead: 1 });
+    expect(stats.body.current).toMatchObject({ soglas: 0, lead: 1 });
+    expect(stats.body.days.length).toBe(1);
+    expect(stats.body.days[0].counts.lead).toBe(1);
+
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${chatId}/deal-stage`)
+      .set(h)
+      .send({ stage: 'archive', note: 'перестал отвечать' })
+      .expect(200);
+    const after = await request(app.getHttpServer())
+      .get(`/api/conversations/${chatId}`)
+      .set(h)
+      .expect(200);
+    expect(after.body.pinned_facts).toMatchObject({
+      deal_stage: 'archive',
+      deal_note: 'перестал отвечать',
+    });
+  });
+
   it('расход по менеджерам: чат без закреплённого аккаунта попадает в строку «без менеджера»', async () => {
     const h = { Authorization: `Bearer ${token}` };
     const stats = await request(app.getHttpServer())

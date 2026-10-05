@@ -20,6 +20,11 @@ import {
 } from './prices';
 import { dayKey, resolveRange, type DayRange } from './range';
 import { normalizeModel } from './prices';
+import {
+  DEAL_STAGES,
+  DEAL_STAGE_EVENT,
+  DEAL_STAGE_LABELS,
+} from 'src/domain/deal-stage';
 
 const TOP_CHATS = 12;
 const NO_MANAGER = '—';
@@ -154,6 +159,64 @@ export class StatsService {
     private prisma: PrismaService,
     private clock: ClockService,
   ) {}
+
+  /**
+   * Этапы сделки по дням: сколько чатов за день перешло в каждый этап. Чат,
+   * который в один день дважды попал в тот же этап, считается один раз.
+   * «Сейчас» — сколько чатов стоит в этапе прямо сейчас.
+   */
+  async dealStages(query: { from?: string; to?: string }) {
+    const range = resolveRange(query, this.clock.ts());
+    const events = await this.prisma.funnelEvent.findMany({
+      where: {
+        eventType: DEAL_STAGE_EVENT,
+        chatId: { not: null },
+        ts: { gte: range.start, lt: range.end },
+      },
+      select: { chatId: true, eventMeta: true, ts: true },
+      orderBy: { ts: 'asc' },
+    });
+    const zero = () => Object.fromEntries(DEAL_STAGES.map((s) => [s, 0]));
+    const byDay = new Map<string, Record<string, number>>(
+      range.days.map((d) => [d, zero()]),
+    );
+    const seen = new Set<string>();
+    const totals = zero();
+    for (const e of events) {
+      let to = '';
+      try {
+        to = String(JSON.parse(e.eventMeta ?? '{}').to ?? '');
+      } catch {
+        continue;
+      }
+      if (!(to in totals)) continue;
+      const day = dayKey(e.ts);
+      const key = `${day}:${to}:${String(e.chatId)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const row = byDay.get(day);
+      if (!row) continue;
+      row[to] += 1;
+      totals[to] += 1;
+    }
+    const current = zero();
+    const rows = await this.prisma.$queryRaw<{ stage: string; n: bigint }[]>`
+      SELECT facts::jsonb->>'deal_stage' AS stage, COUNT(*) AS n
+      FROM pinned_facts
+      WHERE facts::jsonb->>'deal_stage' IS NOT NULL
+      GROUP BY 1`;
+    for (const r of rows)
+      if (r.stage in current) current[r.stage] = Number(r.n);
+    return {
+      range: { from: range.from, to: range.to },
+      stages: DEAL_STAGES.map((id) => ({ id, label: DEAL_STAGE_LABELS[id] })),
+      days: range.days
+        .map((day) => ({ day, counts: byDay.get(day)! }))
+        .filter((d) => Object.values(d.counts).some((n) => n > 0)),
+      totals,
+      current,
+    };
+  }
 
   async prices(): Promise<PriceTable> {
     const row = await this.prisma.setting.findUnique({

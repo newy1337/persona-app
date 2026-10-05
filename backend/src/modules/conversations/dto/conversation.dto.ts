@@ -12,6 +12,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { DEAL_STAGES, DealStage, MAX_DEAL_NOTE } from 'src/domain/deal-stage';
 
 export class ManualMessageDto {
   @ApiProperty()
@@ -34,6 +35,18 @@ export class SetStageDto {
   @MinLength(1)
   @MaxLength(32)
   stage: string;
+}
+
+export class SetDealStageDto {
+  @ApiProperty({ enum: DEAL_STAGES })
+  @IsIn(DEAL_STAGES as readonly string[])
+  stage: DealStage;
+
+  @ApiPropertyOptional({ description: 'причина — обязательна для архива' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_DEAL_NOTE)
+  note?: string;
 }
 
 export class ChatNoteDto {

@@ -31,6 +31,7 @@ import {
   PinFactDto,
   SetSlotDto,
   SetStageDto,
+  SetDealStageDto,
 } from './dto/conversation.dto';
 import {
   ListenedDto,
@@ -468,6 +469,35 @@ export class ConversationsController {
         resource: `chat:${chatId}`,
       },
       () => this.conversations.setStage(chatId, dto.stage),
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Этап сделки (вброс / предлога / соглас / лид / архив)',
+  })
+  @Post(':chatId/deal-stage')
+  @HttpCode(200)
+  @UsePipes(ValidationPipe)
+  async setDealStage(
+    @Param('chatId', ParseIntPipe) chatId: number,
+    @Body() dto: SetDealStageDto,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    await this.scope.requireChatOwned(user, chatId);
+    return this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'conversation.deal_stage',
+        resource: `chat:${chatId}`,
+        payload: dto,
+      },
+      () =>
+        this.conversations.setDealStage(
+          chatId,
+          dto.stage,
+          dto.note ?? '',
+          user.username,
+        ),
     );
   }
 

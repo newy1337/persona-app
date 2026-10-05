@@ -1634,3 +1634,26 @@
   color: $status-red;
   font-size: 12px;
 }
+
+.dealStage {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dealSelect {
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+
+.dealNote {
+  font-size: 12px;
+  opacity: 0.7;
+  white-space: pre-wrap;
+}
