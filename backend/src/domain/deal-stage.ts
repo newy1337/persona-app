@@ -25,8 +25,27 @@ export const DEAL_STAGE_LABELS: Readonly<Record<DealStage, string>> = {
 export const DEAL_STAGE_KEY = 'deal_stage';
 export const DEAL_NOTE_KEY = 'deal_note';
 export const DEAL_STAGE_TS_KEY = 'deal_stage_ts';
+/** когда чат впервые дошёл до каждого этапа воронки: {vbros: ts, ...} — назад не откатывается */
+export const DEAL_REACHED_KEY = 'deal_reached';
 export const DEAL_STAGE_EVENT = 'deal_stage_set';
+/** чат впервые дошёл до этапа — по этим событиям считается статистика */
+export const DEAL_REACHED_EVENT = 'deal_stage_reached';
 export const MAX_DEAL_NOTE = 500;
+
+/** Этапы воронки по порядку; архив стоит отдельно и в воронку не входит. */
+export const FUNNEL_STAGES: readonly DealStage[] = DEAL_STAGES.filter(
+  (s) => s !== 'archive',
+);
+
+/**
+ * Какие этапы считаются пройденными при выставлении этапа: все до него
+ * включительно. Менеджер может перепрыгнуть со «вброса» на «лид» — предлога
+ * и соглас тоже пройдены. Архив ничего не проходит.
+ */
+export function stagesReachedBy(stage: DealStage): DealStage[] {
+  const idx = FUNNEL_STAGES.indexOf(stage);
+  return idx < 0 ? [] : FUNNEL_STAGES.slice(0, idx + 1);
+}
 
 export function isDealStage(value: unknown): value is DealStage {
   return (

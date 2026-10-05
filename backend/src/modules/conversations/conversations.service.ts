@@ -46,11 +46,14 @@ import { SettingsService } from '../settings/settings.service';
 import { accountLostOf } from 'src/domain/tg-status';
 import {
   DEAL_NOTE_KEY,
+  DEAL_REACHED_EVENT,
+  DEAL_REACHED_KEY,
   DEAL_STAGE_EVENT,
   DEAL_STAGE_KEY,
   DEAL_STAGE_TS_KEY,
   DealStage,
   dealNoteError,
+  stagesReachedBy,
 } from 'src/domain/deal-stage';
 import { ManagerAttributionService } from 'src/shared/manager-attribution.service';
 
@@ -674,12 +677,24 @@ export class ConversationsService {
     if (from === stage && prevNote === note)
       return { ok: true, chat_id: chatId, stage, note };
     const ts = this.clock.ts();
+    // Пройденные этапы копятся и назад не откатываются: статистика считает чат
+    // в каждом этапе один раз, в день, когда он туда впервые дошёл.
+    const reachedBefore =
+      (facts[DEAL_REACHED_KEY] as Record<string, number> | undefined) ?? {};
+    const reached = { ...reachedBefore };
+    const newlyReached: DealStage[] = [];
+    for (const s of stagesReachedBy(stage)) {
+      if (reached[s]) continue;
+      reached[s] = ts;
+      newlyReached.push(s);
+    }
     await this.history.mergeLeadFacts(
       chatId,
       {
         [DEAL_STAGE_KEY]: stage,
         [DEAL_NOTE_KEY]: note || null,
         [DEAL_STAGE_TS_KEY]: ts,
+        [DEAL_REACHED_KEY]: reached,
       },
       false,
     );
@@ -689,6 +704,8 @@ export class ConversationsService {
       note,
       by,
     });
+    for (const s of newlyReached)
+      await this.funnel.emit(chatId, DEAL_REACHED_EVENT, ts, { stage: s, by });
     // Этап «Архив» — это и есть архив: чат уходит с дашборда, бот замолкает.
     if (stage === 'archive' && !facts[HIDDEN_FROM_DASHBOARD_KEY])
       await this.setHidden(chatId, true);

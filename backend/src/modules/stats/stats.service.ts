@@ -21,6 +21,7 @@ import {
 import { dayKey, resolveRange, type DayRange } from './range';
 import { normalizeModel } from './prices';
 import {
+  DEAL_REACHED_EVENT,
   DEAL_STAGES,
   DEAL_STAGE_EVENT,
   DEAL_STAGE_LABELS,
@@ -164,52 +165,34 @@ export class StatsService {
   ) {}
 
   /**
-   * Этапы сделки по дням: сколько чатов за день перешло в каждый этап. Чат,
-   * который в один день дважды попал в тот же этап, считается один раз.
-   * «Сейчас» — сколько чатов стоит в этапе прямо сейчас.
+   * Этапы сделки по дням. Этапы воронки: чат засчитывается в этап один раз —
+   * в день, когда впервые до него дошёл; пройденные этапы остаются, откат
+   * назад ничего не снимает. Архив отдельно: по дням — сколько чатов
+   * отправили в архив, «всего» — сколько чатов в архиве сейчас.
    */
   async dealStages(query: { from?: string; to?: string }) {
     const range = resolveRange(query, this.clock.ts());
-    const events = await this.prisma.funnelEvent.findMany({
-      where: {
-        eventType: DEAL_STAGE_EVENT,
-        chatId: { not: null },
-        ts: { gte: range.start, lt: range.end },
-      },
-      select: { chatId: true, eventMeta: true, ts: true },
-      orderBy: { ts: 'asc' },
-    });
-    const zero = zeroStages;
+    const moves = await this.stageEvents(range);
     const byDay = new Map<string, Record<string, number>>(
-      range.days.map((d) => [d, zero()]),
+      range.days.map((d) => [d, zeroStages()]),
     );
-    const seen = new Set<string>();
-    const totals = zero();
-    for (const e of events) {
-      let to = '';
-      try {
-        to = String(JSON.parse(e.eventMeta ?? '{}').to ?? '');
-      } catch {
-        continue;
-      }
-      if (!(to in totals)) continue;
-      const day = dayKey(e.ts);
-      const key = `${day}:${to}:${String(e.chatId)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const row = byDay.get(day);
+    const totals = zeroStages();
+    for (const m of moves) {
+      const row = byDay.get(m.day);
       if (!row) continue;
-      row[to] += 1;
-      totals[to] += 1;
+      row[m.stage] += 1;
+      totals[m.stage] += 1;
     }
-    const current = zero();
+    const reached = zeroStages();
     const rows = await this.prisma.$queryRaw<{ stage: string; n: bigint }[]>`
-      SELECT facts::jsonb->>'deal_stage' AS stage, COUNT(*) AS n
-      FROM pinned_facts
-      WHERE facts::jsonb->>'deal_stage' IS NOT NULL
+      SELECT k.stage, COUNT(*) AS n
+      FROM pinned_facts p, jsonb_object_keys(COALESCE(p.facts::jsonb->'deal_reached', '{}'::jsonb)) AS k(stage)
       GROUP BY 1`;
     for (const r of rows)
-      if (r.stage in current) current[r.stage] = Number(r.n);
+      if (r.stage in reached) reached[r.stage] = Number(r.n);
+    const archived = await this.prisma.$queryRaw<{ n: bigint }[]>`
+      SELECT COUNT(*) AS n FROM pinned_facts WHERE facts::jsonb->>'deal_stage' = 'archive'`;
+    reached.archive = Number(archived[0]?.n ?? 0);
     return {
       range: { from: range.from, to: range.to },
       stages: DEAL_STAGES.map((id) => ({ id, label: DEAL_STAGE_LABELS[id] })),
@@ -217,8 +200,50 @@ export class StatsService {
         .map((day) => ({ day, counts: byDay.get(day)! }))
         .filter((d) => Object.values(d.counts).some((n) => n > 0)),
       totals,
-      current,
+      reached,
     };
+  }
+
+  /**
+   * События за период в виде (день, этап, чат): воронка — по первому
+   * достижению этапа, архив — по отправке в архив, не чаще раза в день на чат.
+   */
+  private async stageEvents(
+    range: DayRange,
+  ): Promise<{ day: string; stage: string; chatId: bigint }[]> {
+    const events = await this.prisma.funnelEvent.findMany({
+      where: {
+        eventType: { in: [DEAL_REACHED_EVENT, DEAL_STAGE_EVENT] },
+        chatId: { not: null },
+        ts: { gte: range.start, lt: range.end },
+      },
+      select: { chatId: true, eventType: true, eventMeta: true, ts: true },
+      orderBy: { ts: 'asc' },
+    });
+    const out: { day: string; stage: string; chatId: bigint }[] = [];
+    const seen = new Set<string>();
+    for (const e of events) {
+      let meta: Record<string, unknown> = {};
+      try {
+        meta = JSON.parse(e.eventMeta ?? '{}');
+      } catch {
+        continue;
+      }
+      const stage =
+        e.eventType === DEAL_REACHED_EVENT
+          ? String(meta.stage ?? '')
+          : meta.to === 'archive'
+            ? 'archive'
+            : '';
+      if (!stage || !(DEAL_STAGES as readonly string[]).includes(stage))
+        continue;
+      const day = dayKey(e.ts);
+      const key = `${stage}:${String(e.chatId)}:${stage === 'archive' ? day : ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ day, stage, chatId: e.chatId! });
+    }
+    return out;
   }
 
   async prices(): Promise<PriceTable> {
@@ -520,7 +545,7 @@ export class StatsService {
     return out;
   }
 
-  /** Переходы по этапам сделки за период, по менеджеру чата: итог и по дням. */
+  /** Этапы за период по менеджеру чата: итог и по дням, той же логикой, что и общая таблица. */
   private async stageMoves(
     range: DayRange,
     owners: { manager: (chatId: bigint | number | null) => string },
@@ -533,14 +558,6 @@ export class StatsService {
       }
     >
   > {
-    const events = await this.prisma.funnelEvent.findMany({
-      where: {
-        eventType: DEAL_STAGE_EVENT,
-        chatId: { not: null },
-        ts: { gte: range.start, lt: range.end },
-      },
-      select: { chatId: true, eventMeta: true, ts: true },
-    });
     const out = new Map<
       string,
       {
@@ -548,26 +565,14 @@ export class StatsService {
         byDay: Map<string, Record<string, number>>;
       }
     >();
-    const seen = new Set<string>();
-    for (const e of events) {
-      let to = '';
-      try {
-        to = String(JSON.parse(e.eventMeta ?? '{}').to ?? '');
-      } catch {
-        continue;
-      }
-      if (!(DEAL_STAGES as readonly string[]).includes(to)) continue;
-      const day = dayKey(e.ts);
-      const dedupe = `${day}:${to}:${String(e.chatId)}`;
-      if (seen.has(dedupe)) continue;
-      seen.add(dedupe);
-      const manager = owners.manager(e.chatId);
+    for (const m of await this.stageEvents(range)) {
+      const manager = owners.manager(m.chatId);
       if (!out.has(manager))
         out.set(manager, { total: zeroStages(), byDay: new Map() });
       const row = out.get(manager)!;
-      row.total[to] += 1;
-      if (!row.byDay.has(day)) row.byDay.set(day, zeroStages());
-      row.byDay.get(day)![to] += 1;
+      row.total[m.stage] += 1;
+      if (!row.byDay.has(m.day)) row.byDay.set(m.day, zeroStages());
+      row.byDay.get(m.day)![m.stage] += 1;
     }
     return out;
   }

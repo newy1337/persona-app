@@ -425,10 +425,33 @@ describe('Manager panel API (e2e)', () => {
       .get('/api/stats/stages')
       .set(h)
       .expect(200);
-    expect(stats.body.totals).toMatchObject({ soglas: 1, lead: 1 });
-    expect(stats.body.current).toMatchObject({ soglas: 0, lead: 1 });
+    // соглас → лид: вброс и предлога пройдены по пути, каждый этап — один раз
+    expect(stats.body.totals).toMatchObject({
+      vbros: 1,
+      predloga: 1,
+      soglas: 1,
+      lead: 1,
+      archive: 0,
+    });
+    expect(stats.body.reached).toMatchObject({
+      soglas: 1,
+      lead: 1,
+      archive: 0,
+    });
     expect(stats.body.days.length).toBe(1);
     expect(stats.body.days[0].counts.lead).toBe(1);
+
+    // откат назад ничего не снимает и второй раз не считает
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${chatId}/deal-stage`)
+      .set(h)
+      .send({ stage: 'vbros' })
+      .expect(200);
+    const again = await request(app.getHttpServer())
+      .get('/api/stats/stages')
+      .set(h)
+      .expect(200);
+    expect(again.body.totals).toMatchObject({ vbros: 1, lead: 1 });
 
     await request(app.getHttpServer())
       .post(`/api/conversations/${chatId}/deal-stage`)
@@ -463,7 +486,12 @@ describe('Manager panel API (e2e)', () => {
     const none = managers.body.by_manager.find(
       (r: any) => r.manager_id === null,
     );
-    expect(none.stages).toMatchObject({ soglas: 1, lead: 1, archive: 1 });
+    expect(none.stages).toMatchObject({
+      vbros: 1,
+      soglas: 1,
+      lead: 1,
+      archive: 1,
+    });
   });
 
   it('расход по менеджерам: чат без закреплённого аккаунта попадает в строку «без менеджера»', async () => {

@@ -1,4 +1,4 @@
-import { dealNoteError, isDealStage } from './deal-stage';
+import { dealNoteError, isDealStage, stagesReachedBy } from './deal-stage';
 
 describe('этап сделки', () => {
   it('знает свои этапы и отвергает чужие', () => {
@@ -6,6 +6,17 @@ describe('этап сделки', () => {
     expect(isDealStage('deposit')).toBe(true);
     expect(isDealStage('cold')).toBe(false);
     expect(isDealStage(null)).toBe(false);
+  });
+
+  it('этап тянет за собой все предыдущие, архив — ничего', () => {
+    expect(stagesReachedBy('vbros')).toEqual(['vbros']);
+    expect(stagesReachedBy('lead')).toEqual([
+      'vbros',
+      'predloga',
+      'soglas',
+      'lead',
+    ]);
+    expect(stagesReachedBy('archive')).toEqual([]);
   });
 
   it('архив требует причину, остальные нет', () => {

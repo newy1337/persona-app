@@ -18,7 +18,7 @@ describe('таблица этапов по дням', () => {
             stages: [{ id: 'soglas', label: 'Соглас' }, { id: 'lead', label: 'Лид' }],
             days: [{ day: '2026-10-05', counts: { soglas: 4, lead: 1 } }],
             totals: { soglas: 4, lead: 1 },
-            current: { soglas: 3, lead: 1 },
+            reached: { soglas: 3, lead: 1 },
           }}
         />,
       );
@@ -27,7 +27,7 @@ describe('таблица этапов по дням', () => {
     expect(text).toContain('05.10');
     expect(text).toContain('Соглас');
     expect(text).toContain('За период');
-    expect(text).toContain('Сейчас');
+    expect(text).toContain('Всего');
     expect(container.querySelectorAll('tbody tr').length).toBe(1);
     root.unmount();
     container.remove();
