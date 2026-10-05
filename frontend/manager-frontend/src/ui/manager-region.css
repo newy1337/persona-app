@@ -287,3 +287,5 @@
 .mr-leads .mr-lead-sender{display:block;min-width:0;width:100%;grid-column:1/-1}
 .mr-lead-sender label,.mr-lead-sender select{width:100%;min-width:0;max-width:100%}
 .mr-lead-sender p{margin:8px 0 0;line-height:1.45}
+
+.mr-dialog-deal{font-size:11px;margin-top:5px;color:#dfe7f3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}

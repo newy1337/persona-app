@@ -5,6 +5,7 @@ import s from '../styles/AdminPage.module.scss';
 import { getAccounts as loadAccounts } from '../api/accounts';
 import { PanelUX as ux } from './PanelUX';
 import { VoiceBotLink } from '../pages/VoiceWork/VoiceBotLink';
+import { dealStageLabel } from '../data/dealStages';
 
 const h = React.createElement;
 const { useState, useEffect, useCallback } = React;
@@ -59,6 +60,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, 
             row.account_lost && h('div', { className: 'mr-dialog-warning' }, accountLost(row.account_lost, { short: true }))),
           h('td', { className: 'mr-dialog-status', 'data-label': 'Стадия и режим' },
             h(Stage, { stage: row.stage }),
+            row.deal_stage && h('div', { className: 'mr-dialog-deal', 'data-testid': 'deal-stage', title: row.deal_note || undefined }, h('span', { className: 'mr-caption' }, 'Этап: '), dealStageLabel(row.deal_stage), row.deal_note ? ` · ${row.deal_note}` : ''),
             h('div', { className: `mr-dialog-mode ${row.is_paused ? 'mr-dialog-manual' : 'mr-dialog-online'}` }, row.is_paused ? fresh ? 'Менеджер · ждёт ответа' : 'Ведёт менеджер' : 'Ведёт бот'),
             next && h('div', { className: 'mr-dialog-muted', title: nextAction(row.next_bot_action)?.text }, next.text)),
           h('td', { className: 'mr-dialog-last', 'data-label': 'Последнее сообщение' }, h('span', { className: 'mr-dialog-time' }, time(row.last_message_ts)), h('span', { className: 'mr-dialog-muted' }, date(row.last_message_ts))),

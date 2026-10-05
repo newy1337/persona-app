@@ -51,6 +51,7 @@ export interface ManagerChatRow extends ManagerAttribution {
   name: string | null;
   /** этап сделки, выставленный менеджером; null — не задан */
   deal_stage: string | null;
+  deal_note: string | null;
   age: number | null;
   city: string | null;
   phone: string | null;
@@ -201,6 +202,7 @@ export class ManagerService {
       account_username: r.account_username || null,
       name: (facts['name'] as string) ?? null,
       deal_stage: (facts['deal_stage'] as string) ?? null,
+      deal_note: (facts['deal_note'] as string) ?? null,
       age: intOrNull(facts['age']),
       city: (facts['city'] as string) || r.profile_city || null,
       phone:
