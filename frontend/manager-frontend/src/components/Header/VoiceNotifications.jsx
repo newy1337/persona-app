@@ -4,7 +4,7 @@ import { api } from '../../api/client';
 import { PanelUX } from '../../ui/PanelUX';
 import s from '../../styles/AdminPage.module.scss';
 import v from './VoiceNotifications.module.scss';
-import { loadDismissed, normalizeQueue, pruneDismissed, queueKey, queueText, saveDismissed } from './queueNotices';
+import { BANNER_MS, loadDismissed, loadShown, normalizeQueue, pruneDismissed, queueKey, queueText, saveDismissed, saveShown } from './queueNotices';
 
 const normalize = data => ({ items: Array.isArray(data?.items) ? data.items : [], unread: Number(data?.unread) || 0 });
 const waitingLabel = since => {
@@ -19,6 +19,7 @@ export default function VoiceNotifications({ userId }) {
   const [dismissed, setDismissed] = useState(null);
   const [queue, setQueue] = useState([]);
   const [closed, setClosed] = useState(() => loadDismissed());
+  const [shown, setShown] = useState(() => loadShown());
   const [permission, setPermission] = useState(() => (pushSupported() ? Notification.permission : 'unsupported'));
   const seen = useRef(null);
   const locked = useRef(false);
@@ -29,13 +30,22 @@ export default function VoiceNotifications({ userId }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
+  const markShown = useCallback(item => {
+    setShown(prev => {
+      if (prev.has(queueKey(item))) return prev;
+      const next = new Set(prev); next.add(queueKey(item)); saveShown(next);
+      return next;
+    });
+  }, []);
+
   const closeQueue = useCallback(item => {
+    markShown(item);
     setClosed(prev => {
       const next = { ...prev, [queueKey(item)]: Math.floor(Date.now() / 1000) };
       saveDismissed(next);
       return next;
     });
-  }, []);
+  }, [markShown]);
 
   const openChat = useCallback(item => {
     closeQueue(item);
@@ -100,7 +110,14 @@ export default function VoiceNotifications({ userId }) {
 
   const pendingQueue = queue.filter(item => !closed[queueKey(item)]);
   const unread = data.unread + pendingQueue.length;
-  const latestQueue = pendingQueue[0] ?? null;
+  // Баннер показывается один раз на несколько секунд и «улетает» в колокольчик:
+  // там чат остаётся непрочитанным, пока его не откроют или не закроют.
+  const latestQueue = pendingQueue.find(item => !shown.has(queueKey(item))) ?? null;
+  useEffect(() => {
+    if (!latestQueue || open) return undefined;
+    const timer = setTimeout(() => markShown(latestQueue), BANNER_MS);
+    return () => clearTimeout(timer);
+  }, [latestQueue, open, markShown]);
   const latest = data.items.find(item => !item.readAt);
   useEffect(() => {
     if (!latest || latest.id === dismissed || open) return;

@@ -5,6 +5,9 @@
 import { REASON_LABEL } from '../AgentCard/AgentCard';
 
 export const STORAGE_KEY = 'nastya_queue_dismissed';
+/** Баннеры, которые уже показывались в этой вкладке: второй раз не всплывают, живут в колокольчике. */
+export const SHOWN_KEY = 'nastya_queue_banner_shown';
+export const BANNER_MS = 3000;
 export const MAX_AGE_S = 7 * 86400;
 
 export const queueKey = (item) => `q:${item.chat_id}:${item.waiting_since ?? 0}`;
@@ -46,4 +49,22 @@ export function pruneDismissed(map, items, nowS = Date.now() / 1000) {
 export function normalizeQueue(data) {
   const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
   return items.filter((i) => i && Number.isFinite(Number(i.chat_id)));
+}
+
+export function loadShown(storage = globalThis.sessionStorage) {
+  try {
+    const raw = storage?.getItem(SHOWN_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(list) ? list : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function saveShown(set, storage = globalThis.sessionStorage) {
+  try {
+    storage?.setItem(SHOWN_KEY, JSON.stringify([...set].slice(-500)));
+  } catch {
+    // без sessionStorage баннер просто покажется ещё раз после перехода по страницам
+  }
 }
