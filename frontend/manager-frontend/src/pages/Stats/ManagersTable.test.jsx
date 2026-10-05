@@ -132,6 +132,6 @@ describe('итог и сортировка', () => {
     expect(day.textContent).toContain('28.09');
     expect(day.textContent).toContain('$5.00');
     expect(day.textContent).toContain('20');
-    expect(day.querySelectorAll('td').length).toBe(8);
+    expect(day.querySelectorAll('td').length).toBe(9);
   });
 });

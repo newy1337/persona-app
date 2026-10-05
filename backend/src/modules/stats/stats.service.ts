@@ -26,6 +26,9 @@ import {
   DEAL_STAGE_LABELS,
 } from 'src/domain/deal-stage';
 
+const zeroStages = (): Record<string, number> =>
+  Object.fromEntries(DEAL_STAGES.map((s) => [s, 0]));
+
 const TOP_CHATS = 12;
 const NO_MANAGER = '—';
 
@@ -176,7 +179,7 @@ export class StatsService {
       select: { chatId: true, eventMeta: true, ts: true },
       orderBy: { ts: 'asc' },
     });
-    const zero = () => Object.fromEntries(DEAL_STAGES.map((s) => [s, 0]));
+    const zero = zeroStages;
     const byDay = new Map<string, Record<string, number>>(
       range.days.map((d) => [d, zero()]),
     );
@@ -413,10 +416,12 @@ export class StatsService {
 
     const messages = await this.messages(range, owners);
     const leads = await this.leadFunnel(range);
+    const stages = await this.stageMoves(range, owners);
     const ids = new Set([
       ...spend.keys(),
       ...messages.byManager.keys(),
       ...leads.keys(),
+      ...stages.keys(),
     ]);
     return {
       range: { from: range.from, to: range.to, days: range.days },
@@ -438,12 +443,15 @@ export class StatsService {
             leads_valid: leads.get(id)?.valid ?? 0,
             leads_replied: leads.get(id)?.replied ?? 0,
             active_chats: talk?.chats.size ?? 0,
+            stages: stages.get(id)?.total ?? zeroStages(),
             days: range.days
               .map((day) => {
                 const talkDay = talk?.byDay.get(day);
                 const leadDay = leads.get(id)?.byDay.get(day);
+                const stageDay = stages.get(id)?.byDay.get(day);
                 return {
                   day,
+                  stages: stageDay ?? zeroStages(),
                   ...view(days.get(day) ?? bucket()),
                   messages_in: talkDay?.in ?? 0,
                   messages_out: talkDay?.out ?? 0,
@@ -461,7 +469,8 @@ export class StatsService {
                   d.calls ||
                   d.messages_in ||
                   d.messages_out ||
-                  d.leads_uploaded,
+                  d.leads_uploaded ||
+                  Object.values(d.stages).some((n) => n > 0),
               ),
           };
         })
@@ -507,6 +516,58 @@ export class StatsService {
         counts.replied += 1;
         day.replied += 1;
       }
+    }
+    return out;
+  }
+
+  /** Переходы по этапам сделки за период, по менеджеру чата: итог и по дням. */
+  private async stageMoves(
+    range: DayRange,
+    owners: { manager: (chatId: bigint | number | null) => string },
+  ): Promise<
+    Map<
+      string,
+      {
+        total: Record<string, number>;
+        byDay: Map<string, Record<string, number>>;
+      }
+    >
+  > {
+    const events = await this.prisma.funnelEvent.findMany({
+      where: {
+        eventType: DEAL_STAGE_EVENT,
+        chatId: { not: null },
+        ts: { gte: range.start, lt: range.end },
+      },
+      select: { chatId: true, eventMeta: true, ts: true },
+    });
+    const out = new Map<
+      string,
+      {
+        total: Record<string, number>;
+        byDay: Map<string, Record<string, number>>;
+      }
+    >();
+    const seen = new Set<string>();
+    for (const e of events) {
+      let to = '';
+      try {
+        to = String(JSON.parse(e.eventMeta ?? '{}').to ?? '');
+      } catch {
+        continue;
+      }
+      if (!(DEAL_STAGES as readonly string[]).includes(to)) continue;
+      const day = dayKey(e.ts);
+      const dedupe = `${day}:${to}:${String(e.chatId)}`;
+      if (seen.has(dedupe)) continue;
+      seen.add(dedupe);
+      const manager = owners.manager(e.chatId);
+      if (!out.has(manager))
+        out.set(manager, { total: zeroStages(), byDay: new Map() });
+      const row = out.get(manager)!;
+      row.total[to] += 1;
+      if (!row.byDay.has(day)) row.byDay.set(day, zeroStages());
+      row.byDay.get(day)![to] += 1;
     }
     return out;
   }

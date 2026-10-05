@@ -1091,7 +1091,12 @@ function ConversationPage() {
                 setBusy(true);
                 setError(null);
                 try {
-                  await setConversationHidden(id, !data.archived);
+                  if (data.archived) await setConversationHidden(id, false);
+                  else {
+                    const note = window.prompt('Почему в архив?', pins.deal_note || '');
+                    if (note == null || !note.trim()) return;
+                    await setDealStage(id, 'archive', note.trim());
+                  }
                   load();
                 } catch (e) {
                   setError(e.detail || e.message);

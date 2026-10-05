@@ -443,6 +443,27 @@ describe('Manager panel API (e2e)', () => {
       deal_stage: 'archive',
       deal_note: 'перестал отвечать',
     });
+    expect(after.body.archived).toBe(true);
+
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${chatId}/unhide`)
+      .set(h)
+      .expect(200);
+    const back = await request(app.getHttpServer())
+      .get(`/api/conversations/${chatId}`)
+      .set(h)
+      .expect(200);
+    expect(back.body.archived).toBe(false);
+    expect(back.body.pinned_facts.deal_stage).toBeUndefined();
+
+    const managers = await request(app.getHttpServer())
+      .get('/api/stats/managers')
+      .set(h)
+      .expect(200);
+    const none = managers.body.by_manager.find(
+      (r: any) => r.manager_id === null,
+    );
+    expect(none.stages).toMatchObject({ soglas: 1, lead: 1, archive: 1 });
   });
 
   it('расход по менеджерам: чат без закреплённого аккаунта попадает в строку «без менеджера»', async () => {
@@ -460,9 +481,16 @@ describe('Manager panel API (e2e)', () => {
       });
       // Дни без единого события в строку не попадают.
       for (const day of row.days)
-        expect(day.calls + day.messages_in + day.messages_out).toBeGreaterThan(
-          0,
-        );
+        expect(
+          day.calls +
+            day.messages_in +
+            day.messages_out +
+            day.leads_uploaded +
+            Object.values(day.stages as Record<string, number>).reduce(
+              (a, b) => a + b,
+              0,
+            ),
+        ).toBeGreaterThan(0);
     }
     if (stats.body.by_manager.length) {
       expect(

@@ -28,6 +28,7 @@ vi.mock('../../api/conversations', () => ({
   sendAlbum: vi.fn(async () => ({ ok: true })),
   getMediaGallery: vi.fn(async () => []),
   setConversationHidden: vi.fn(async () => ({ ok: true })),
+  setDealStage: vi.fn(async () => ({ ok: true })),
   downloadChatHtml: vi.fn(async () => 'x.html'),
   getConversationRevision: vi.fn(async () => ({ revision: '1.0.0', last_message_ts: 1000, is_paused: false })),
   getConversationById: vi.fn(async () => ({
@@ -68,7 +69,7 @@ vi.mock('../../api/client', () => ({
 }));
 
 import ConversationPage, { TOGGLE_COOLDOWN_MS } from './ConversationPage';
-import { getConversationById, getInboundMedia, getPauseStatus, sendAlbum, sendAttachment, getMediaGallery, setConversationHidden } from '../../api/conversations';
+import { getConversationById, getInboundMedia, getPauseStatus, sendAlbum, sendAttachment, getMediaGallery, setConversationHidden, setDealStage } from '../../api/conversations';
 
 let container = null;
 let root = null;
@@ -1010,12 +1011,30 @@ describe('несколько фото, «Медиа», архив и «вниз�
     expect(sendAttachment).toHaveBeenCalledWith('111', expect.objectContaining({ kind: 'video_note', source: '/tmp/clip.mp4' }));
   });
 
-  it('«В архив» из чата', async () => {
+  it('«В архив» из чата спрашивает причину и ставит этап «Архив»', async () => {
     await renderPage();
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('  не отвечает ');
     await act(async () => {
       container.querySelector('[data-testid="archive-toggle"]').click();
       await vi.advanceTimersByTimeAsync(10);
     });
-    expect(setConversationHidden).toHaveBeenCalledWith('111', true);
+    expect(prompt).toHaveBeenCalled();
+    expect(setDealStage).toHaveBeenCalledWith('111', 'archive', 'не отвечает');
+    expect(setConversationHidden).not.toHaveBeenCalled();
+    prompt.mockRestore();
+  });
+
+  it('«В архив» без причины отменяется', async () => {
+    vi.mocked(setDealStage).mockClear();
+    vi.mocked(setConversationHidden).mockClear();
+    await renderPage();
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('');
+    await act(async () => {
+      container.querySelector('[data-testid="archive-toggle"]').click();
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(setDealStage).not.toHaveBeenCalled();
+    expect(setConversationHidden).not.toHaveBeenCalled();
+    prompt.mockRestore();
   });
 });

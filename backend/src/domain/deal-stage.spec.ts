@@ -3,6 +3,7 @@ import { dealNoteError, isDealStage } from './deal-stage';
 describe('этап сделки', () => {
   it('знает свои этапы и отвергает чужие', () => {
     expect(isDealStage('soglas')).toBe(true);
+    expect(isDealStage('deposit')).toBe(true);
     expect(isDealStage('cold')).toBe(false);
     expect(isDealStage(null)).toBe(false);
   });

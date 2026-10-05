@@ -591,15 +591,27 @@ export class ConversationsService {
       await this.replySchedule.drop(chatId);
     } else {
       const facts = await this.history.getLeadFacts(chatId);
+      // Вернули из архива — этап «Архив» больше не правда; менеджер выставит новый.
+      const wasArchiveStage = facts[DEAL_STAGE_KEY] === 'archive';
       await this.history.mergeLeadFacts(
         chatId,
         {
           [HIDDEN_FROM_DASHBOARD_KEY]: null,
           [ARCHIVED_AT_KEY]: null,
           [ARCHIVED_BOT_ON_KEY]: null,
+          ...(wasArchiveStage
+            ? { [DEAL_STAGE_KEY]: null, [DEAL_NOTE_KEY]: null }
+            : {}),
         },
         false,
       );
+      if (wasArchiveStage)
+        await this.funnel.emit(chatId, DEAL_STAGE_EVENT, this.clock.ts(), {
+          from: 'archive',
+          to: null,
+          note: '',
+          by: OPERATOR_ACTOR,
+        });
       const pause = await this.history.getPause(chatId);
       if (
         facts[ARCHIVED_BOT_ON_KEY] &&
@@ -677,6 +689,9 @@ export class ConversationsService {
       note,
       by,
     });
+    // Этап «Архив» — это и есть архив: чат уходит с дашборда, бот замолкает.
+    if (stage === 'archive' && !facts[HIDDEN_FROM_DASHBOARD_KEY])
+      await this.setHidden(chatId, true);
     return { ok: true, chat_id: chatId, stage, note };
   }
 

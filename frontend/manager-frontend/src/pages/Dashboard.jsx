@@ -9,6 +9,7 @@ import {
   getHiddenConversations,
   getNeedManagerAssist,
   setConversationHidden,
+  setDealStage,
 } from '../api/conversations';
 import { getStats } from '../api/stats';
 import { liveRows } from '../utils/chat';
@@ -54,8 +55,16 @@ function Dashboard() {
 
   const toggleHidden = useCallback(
     (chatId, hidden) => {
+      let request;
+      if (hidden) {
+        const note = window.prompt('Почему в архив?', '');
+        if (note == null || !note.trim()) return;
+        request = setDealStage(chatId, 'archive', note.trim());
+      } else {
+        request = setConversationHidden(chatId, false);
+      }
       setRows((prev) => prev.filter((r) => r.chat_id !== chatId));
-      setConversationHidden(chatId, hidden)
+      request
         .then(load)
         .catch((e) => {
           setError(e.detail || e.message);

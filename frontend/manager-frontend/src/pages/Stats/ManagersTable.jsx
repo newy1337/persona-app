@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import s from '../../styles/AdminPage.module.scss';
 import p from './Stats.module.scss';
+import { DEAL_STAGES } from '../../data/dealStages';
 
 
 const money = (x) => (x >= 1 ? `$${x.toFixed(2)}` : `$${(x ?? 0).toFixed(4)}`);
@@ -18,7 +19,19 @@ const COLUMNS = [
   { id: 'leads_replied', title: 'Ответили', hint: 'Из загруженных ответили на первое сообщение' },
   { id: 'active_chats', title: 'Переписок', hint: 'Диалоги, где собеседник писал в этот период' },
   { id: 'messages_out', title: 'Сообщений', hint: 'Исходящие и входящие' },
+  { id: 'stages_total', title: 'Этапы', hint: 'Сколько чатов менеджера перешло в этап за период' },
 ];
+
+const stagesTotal = (st) => DEAL_STAGES.reduce((n, s) => n + (st?.[s.id] ?? 0), 0);
+function StagesCell({ stages }) {
+  const parts = DEAL_STAGES.filter((s) => stages?.[s.id]).map((s) => `${s.label.toLowerCase()} ${stages[s.id]}`);
+  const title = DEAL_STAGES.map((s) => `${s.label}: ${stages?.[s.id] ?? 0}`).join('\n');
+  return (
+    <td className={p.numCell} title={title} data-testid="stages-cell">
+      {parts.length ? parts.join(' · ') : <span className={s.muted}>—</span>}
+    </td>
+  );
+}
 
 function Cells({ row, share }) {
   return (
@@ -57,6 +70,7 @@ function Cells({ row, share }) {
         {num(row.messages_out)} ↑<span className={s.muted}> / {num(row.messages_in)} ↓</span>
         {row.manual_share > 0 && <span className={s.muted}> · руками {pct(row.manual_share)}</span>}
       </td>
+      <StagesCell stages={row.stages} />
     </>
   );
 }
@@ -65,7 +79,8 @@ export default function ManagersTable({ rows }) {
   const [open, setOpen] = useState(() => new Set());
   const [sort, setSort] = useState('cost_usd');
 
-  const sorted = useMemo(() => [...(rows ?? [])].sort((a, b) => (b[sort] ?? 0) - (a[sort] ?? 0)), [rows, sort]);
+  const metric = (r, key) => (key === 'stages_total' ? stagesTotal(r.stages) : r[key] ?? 0);
+  const sorted = useMemo(() => [...(rows ?? [])].sort((a, b) => metric(b, sort) - metric(a, sort)), [rows, sort]);
   const total = useMemo(
     () =>
       (rows ?? []).reduce(
@@ -74,12 +89,14 @@ export default function ManagersTable({ rows }) {
             acc[key] += r[key] ?? 0;
           }
           for (const key of ['input', 'output', 'cache_read', 'cache_write']) acc.tokens[key] += r.tokens?.[key] ?? 0;
+          for (const st of DEAL_STAGES) acc.stages[st.id] += r.stages?.[st.id] ?? 0;
           return acc;
         },
         {
           cost_usd: 0, calls: 0, leads_uploaded: 0, leads_valid: 0, leads_replied: 0,
           active_chats: 0, messages_in: 0, messages_out: 0, manual_share: 0,
           tokens: { input: 0, output: 0, cache_read: 0, cache_write: 0 },
+          stages: Object.fromEntries(DEAL_STAGES.map((st) => [st.id, 0])),
         },
       ),
     [rows],

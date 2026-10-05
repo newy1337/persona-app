@@ -3,6 +3,7 @@ export const DEAL_STAGES = [
   { id: 'predloga', label: 'Предлога' },
   { id: 'soglas', label: 'Соглас' },
   { id: 'lead', label: 'Лид' },
+  { id: 'deposit', label: 'Депозит' },
   { id: 'archive', label: 'Архив' },
 ];
 

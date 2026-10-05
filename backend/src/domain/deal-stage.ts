@@ -8,6 +8,7 @@ export const DEAL_STAGES = [
   'predloga',
   'soglas',
   'lead',
+  'deposit',
   'archive',
 ] as const;
 export type DealStage = (typeof DEAL_STAGES)[number];
@@ -17,6 +18,7 @@ export const DEAL_STAGE_LABELS: Readonly<Record<DealStage, string>> = {
   predloga: 'Предлога',
   soglas: 'Соглас',
   lead: 'Лид',
+  deposit: 'Депозит',
   archive: 'Архив',
 };
 
