@@ -88,15 +88,23 @@ export default function Stats() {
     return () => clearInterval(timer);
   }, []);
 
+  // Вкладки «Этапы» и «По менеджерам» живые: цифры меняются от действий в других
+  // вкладках браузера, поэтому опрашиваем раз в 30 секунд и при возврате на страницу.
   useEffect(() => {
     if (tab !== 'stages') return undefined;
     let alive = true;
     setStages(null);
-    getDealStages({ from: range.from, to: range.to })
+    const pull = () => getDealStages({ from: range.from, to: range.to })
       .then((r) => alive && setStages(r))
       .catch((e) => alive && setError(e.detail || e.message));
+    pull();
+    const onVisible = () => document.visibilityState === 'visible' && pull();
+    const timer = setInterval(onVisible, 30000);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       alive = false;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [tab, range]);
 
@@ -104,12 +112,18 @@ export default function Stats() {
     if (tab !== 'managers') return undefined;
     let alive = true;
     setManagersLoading(true);
-    getManagerUsage({ from: range.from, to: range.to })
+    const pull = () => getManagerUsage({ from: range.from, to: range.to })
       .then((r) => alive && setManagers(r.by_manager ?? []))
       .catch((e) => alive && setError(e.detail || e.message))
       .finally(() => alive && setManagersLoading(false));
+    pull();
+    const onVisible = () => document.visibilityState === 'visible' && pull();
+    const timer = setInterval(onVisible, 30000);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       alive = false;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [tab, range]);
 

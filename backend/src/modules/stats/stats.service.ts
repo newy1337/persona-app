@@ -595,8 +595,7 @@ export class StatsService {
       contacts.map((c) => [String(c.chatId), c.accountId]),
     );
     const titles = new Map<string, string>([[NO_MANAGER, 'Без менеджера']]);
-    for (const [, id] of managerByAccount)
-      titles.set(id, userById.get(Number(id)) ?? `#${id}`);
+    for (const [id, username] of userById) titles.set(String(id), username);
     return {
       manager: (chatId) => {
         if (chatId === null || chatId === undefined) return NO_MANAGER;
