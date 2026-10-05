@@ -8,3 +8,8 @@
 .unread { border-color: #438e88; background: #142c2d; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 @media (max-width: 640px) { .banner { right: 16px; bottom: 16px; } }
+
+.bannerQueue { border-color: #8a5a1f; background: #2b2113; color: #fbf1e3; }
+.more { color: #d9c7a8; }
+.groupTitle { margin: 4px 0 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #b2bfd3; }
+.pushRow { margin: 0; padding: 12px 14px; border: 1px dashed #36445a; border-radius: 10px; line-height: 1.6; }

@@ -12,7 +12,7 @@ function waitingFor(ts) {
   return hours < 24 ? `${Math.floor(hours)} ч` : `${Math.floor(hours / 24)} д`;
 }
 
-const REASON_LABEL = {
+export const REASON_LABEL = {
   hold_armed: 'Передать аналитика',
   manual_takeover: 'Бот замолчал',
   before_soglas: 'Сейчас соглас',
