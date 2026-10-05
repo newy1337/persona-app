@@ -188,3 +188,47 @@ it('passes persisted plans to the author even beyond the recent quote window', (
   expect(prompt.volatile).toContain('2026-09-21');
   expect(prompt.volatile).toContain('Завтра пойду на пилатес');
 });
+
+describe('цифра, названная собеседнику, остаётся находимой', () => {
+  // Менеджер руками назвал рост; позже собеседник спорит, не повторяя цифру.
+  const told = (text: string, source = 'operator') =>
+    ({
+      history: [
+        historyMessage('assistant', text, at, source),
+        ...Array.from({ length: 12 }, (_, i) =>
+          historyMessage('assistant', `болтовня ${i}`, at + i + 1, 'dialogue'),
+        ),
+      ],
+      persona_events: [],
+    }) as any;
+
+  it('цифра связывает вопрос с репликой, где общих слов нет', () => {
+    const rows = personaStatements(
+      told('у меня 175').history,
+      'Europe/Moscow',
+      at + 1000,
+      'раньше 175 говорила, сейчас другое',
+    );
+    expect(rows.map((r) => r.text)).toContain('у меня 175');
+  });
+
+  it('вопрос без цифры, но про ту же тему, тоже достаёт её', () => {
+    const rows = personaStatements(
+      told('мой рост 175, а у тебя?').history,
+      'Europe/Moscow',
+      at + 1000,
+      'а ты же вот выше писала другой рост',
+    );
+    expect(rows.map((r) => r.text)).toContain('мой рост 175, а у тебя?');
+  });
+
+  it('реплика менеджера отбирается наравне со своими', () => {
+    const rows = personaStatements(
+      told('мой рост 175, а у тебя?').history,
+      'Europe/Moscow',
+      at + 1000,
+      'напомни рост',
+    );
+    expect(rows.find((r) => r.text.includes('175'))?.source).toBe('operator');
+  });
+});

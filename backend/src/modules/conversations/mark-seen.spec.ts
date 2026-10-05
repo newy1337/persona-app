@@ -1,32 +1,24 @@
 import { ConversationsService } from './conversations.service';
 
-describe('отметка о прочтении ставится менеджером, а не ботом', () => {
-  const service = (
-    managerSeenTs: number | null,
-    lastClientTs: number | null,
-  ) => {
+describe('отметку о прочтении ставит менеджер, и только на ручном режиме', () => {
+  const service = ({
+    paused = true,
+    inbox = 0,
+    latest = 0,
+  }: { paused?: boolean; inbox?: number; latest?: number } = {}) => {
     const read: number[] = [];
     const seen: Array<[number, number]> = [];
     const svc: any = Object.create(ConversationsService.prototype);
     Object.assign(svc, {
-      prisma: {
-        contact: {
-          findUnique: async () =>
-            managerSeenTs === null && lastClientTs === null
-              ? null
-              : { managerSeenTs },
-        },
-        message: {
-          findFirst: async () =>
-            lastClientTs === null ? null : { ts: lastClientTs },
-        },
-      },
+      pause: { status: async () => ({ status: paused ? 'paused' : 'active' }) },
       telegram: {
         markRead: async (chatId: number) => {
           read.push(chatId);
         },
       },
       history: {
+        telegramReadMarks: async () => ({ inbox, outbox: null }),
+        latestClientTgId: async () => latest,
         markManagerSeen: async (chatId: number, ts: number) => {
           seen.push([chatId, ts]);
         },
@@ -36,28 +28,39 @@ describe('отметка о прочтении ставится менеджер
     return { svc, read, seen };
   };
 
-  it('открыли чат с новым сообщением — читаем в Telegram и двигаем курсор', async () => {
-    const { svc, read, seen } = service(500, 700);
+  it('ручной режим, есть непрочитанное — читаем в Telegram', async () => {
+    const { svc, read, seen } = service({ inbox: 10, latest: 12 });
     await svc.markSeen(42);
     expect(read).toEqual([42]);
     expect(seen).toEqual([[42, 1_000]]);
   });
 
-  it('читать нечего — Telegram не трогаем, опрос страницы его не дёргает', async () => {
-    const { svc, read, seen } = service(700, 500);
+  it('ведёт бот — присутствие менеджера собеседнику не показываем', async () => {
+    const { svc, read, seen } = service({
+      paused: false,
+      inbox: 10,
+      latest: 12,
+    });
     await svc.markSeen(42);
     expect(read).toEqual([]);
+    // Курсор непрочитанного в панели всё равно двигаем: менеджер их видел.
     expect(seen).toEqual([[42, 1_000]]);
   });
 
-  it('менеджер открывает впервые — прежнего курсора нет, но сообщение есть', async () => {
-    const { svc, read } = service(null, 500);
+  it('в Telegram уже отмечено — повторно не дёргаем на каждом обновлении', async () => {
+    const { svc, read } = service({ inbox: 12, latest: 12 });
     await svc.markSeen(42);
-    expect(read).toEqual([42]);
+    expect(read).toEqual([]);
+  });
+
+  it('сообщений от собеседника ещё нет — читать нечего', async () => {
+    const { svc, read } = service({ inbox: 0, latest: 0 });
+    await svc.markSeen(42);
+    expect(read).toEqual([]);
   });
 
   it('упавший Telegram не ломает открытие переписки', async () => {
-    const { svc, seen } = service(500, 700);
+    const { svc, seen } = service({ inbox: 10, latest: 12 });
     svc.telegram.markRead = async () => {
       throw new Error('аккаунт не в сети');
     };

@@ -297,29 +297,31 @@ export class ConversationsService {
   }
 
   /**
-   * Менеджер открыл переписку. Пока чат на нём, бот не ставит отметку о
-   * прочтении — её ставим здесь, и только когда есть что читать, иначе
-   * опрос страницы дёргал бы Telegram на каждом обновлении.
+   * Менеджер открыл переписку. Отметку о прочтении ставим только когда чат на
+   * ручном режиме: тогда отвечает человек, и галочки — его. Пока ведёт бот,
+   * читает он сам в свой черёд, и присутствие менеджера на странице
+   * собеседнику показывать незачем.
    */
   async markSeen(chatId: number): Promise<void> {
-    if (await this.hasUnreadFromClient(chatId))
+    const manual = (await this.pause.status(chatId)).status === 'paused';
+    if (manual && (await this.hasUnreadFromClient(chatId)))
       await this.telegram.markRead(chatId).catch(() => undefined);
     await this.history.markManagerSeen(chatId, this.clock.ts());
   }
 
+  /**
+   * Сравниваем не со временем просмотра, а с тем, что уже отмечено
+   * прочитанным в самом Telegram. Времена хранятся в секундах, а страница
+   * перечитывается на каждое изменение переписки: при включённом боте
+   * обновления идут часто, и сообщение, пришедшее в ту же секунду, попадало
+   * «не новее» просмотра — галочки не появлялись до ответа бота.
+   */
   private async hasUnreadFromClient(chatId: number): Promise<boolean> {
-    const id = toChatId(chatId);
-    const contact = await this.prisma.contact.findUnique({
-      where: { chatId: id },
-      select: { managerSeenTs: true },
-    });
-    if (!contact) return false;
-    const last = await this.prisma.message.findFirst({
-      where: { chatId: id, role: 'user', deletedAt: null },
-      orderBy: { ts: 'desc' },
-      select: { ts: true },
-    });
-    return (last?.ts ?? 0) > (contact.managerSeenTs ?? 0);
+    const [marks, latest] = await Promise.all([
+      this.history.telegramReadMarks(chatId),
+      this.history.latestClientTgId(chatId),
+    ]);
+    return latest > 0 && latest > (marks.inbox ?? 0);
   }
 
   async list() {
