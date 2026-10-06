@@ -4,6 +4,7 @@ import { PanelUX as ux } from '../../ui/PanelUX';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableCell, TableHead, TableHeader } from '@/components/ui/table';
 
 /**
@@ -36,18 +37,25 @@ function RowButton({ className, ...props }) {
   return <Button type="button" variant="outline" size="sm" className={className} {...props} />;
 }
 
-export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus, onClearFlood, onDelete, helpers }) {
-  const pending = ux.useActions().pending;
-  const [expanded, setExpanded] = useState(null);
-  const { Avatar, statusLabel, date } = helpers;
+// ── Каркас строки ────────────────────────────────────────────────────────────
+// Настоящая строка и строка-заглушка первой загрузки собираются ОДНИМ и тем же
+// каркасом: те же <tr>/<td>, отступы, сетка карточного режима и те же строки
+// текста с их line-height. Высота заглушки поэтому равна высоте строки по
+// построению, а не по подобранному числу. Меняете разметку строки — меняйте
+// её здесь, заглушка подтянется сама.
+const ROW =
+  'transition-colors hover:bg-muted/50 max-[1100px]:mb-3 max-[1100px]:grid max-[1100px]:grid-cols-[minmax(0,1fr)_minmax(120px,0.7fr)] max-[1100px]:gap-x-5 max-[1100px]:gap-y-3.5 max-[1100px]:rounded-lg max-[1100px]:border max-[1100px]:bg-card max-[1100px]:p-4 max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-x-2.5 max-sm:p-3.5';
+const AVATAR_BOX = 'size-9 shrink-0 rounded-full';
+// min-h держит строку текста и тогда, когда она пуста (нет ника и телефон уже в имени).
+const TITLE_LINE = 'min-h-6 text-sm leading-6';
+const SUB_LINE = 'flex min-h-5 flex-wrap text-xs leading-5 text-muted-foreground';
+const ONLINE_LINE = 'inline-flex min-w-[72px] items-center gap-1.5 text-xs leading-5 text-muted-foreground tabular-nums';
+const FLOOD_LINE = 'min-h-4 text-xs leading-4 text-destructive';
 
-  if (!rows.length) {
-    return <p className="text-sm text-muted-foreground">Аккаунтов нет. Добавьте номер, затем войдите — код придёт в Telegram.</p>;
-  }
-
+function Frame({ children, className, tableProps, ...props }) {
   return (
-    <div className="rounded-lg border bg-card max-[1100px]:border-0 max-[1100px]:bg-transparent">
-      <Table aria-label="Telegram-аккаунты" className="table-fixed max-[1100px]:block">
+    <div className={cn('rounded-lg border bg-card max-[1100px]:border-0 max-[1100px]:bg-transparent', className)} {...props}>
+      <Table className="table-fixed max-[1100px]:block" {...tableProps}>
         <TableHeader className="max-[1100px]:hidden">
           <tr className="border-b">
             {COLUMNS.map(([label, width]) => (
@@ -62,7 +70,105 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
             ))}
           </tr>
         </TableHeader>
-        <tbody className="divide-y max-[1100px]:block">
+        <tbody className="divide-y max-[1100px]:block">{children}</tbody>
+      </Table>
+    </div>
+  );
+}
+
+function RowShell({ className, avatar, title, sub, personaTitle, personaSub, personaSubProps, badge, online, flood, actions, ...props }) {
+  return (
+    <tr className={cn(ROW, className)} {...props}>
+      <TableCell className={cn(CELL, 'max-[1100px]:col-start-1 max-[1100px]:row-start-1')}>
+        <div className="flex min-w-0 items-center gap-2.5">
+          {avatar}
+          <div className="min-w-0 flex-1">
+            <div className={cn(TITLE_LINE, 'font-semibold text-foreground')}>{title}</div>
+            <div className={cn(SUB_LINE, 'gap-x-2.5 gap-y-0.5')}>{sub}</div>
+          </div>
+        </div>
+      </TableCell>
+      <TableCell className={cn(CELL, 'max-[1100px]:col-start-1 max-[1100px]:row-start-2 max-sm:col-span-full')}>
+        <div className={cn(TITLE_LINE, 'font-medium')}>{personaTitle}</div>
+        <div className={cn(SUB_LINE, 'items-baseline gap-x-2 gap-y-0.5')} {...personaSubProps}>{personaSub}</div>
+      </TableCell>
+      <TableCell className={cn(CELL, 'max-[1100px]:col-start-2 max-[1100px]:row-start-1 max-[1100px]:justify-self-end max-sm:max-w-[104px]')}>
+        <div className="flex flex-col items-start gap-1 max-[1100px]:items-end">
+          {badge}
+          {online}
+          {flood}
+        </div>
+      </TableCell>
+      <TableCell className={cn(CELL, 'max-[1100px]:col-start-2 max-[1100px]:row-start-2 max-[1100px]:self-end max-sm:col-span-full max-sm:row-start-3')}>
+        <div className="flex flex-wrap items-center justify-end gap-2 max-sm:justify-start">{actions}</div>
+      </TableCell>
+    </tr>
+  );
+}
+
+// Полоска-заглушка внутри строки текста. Обёртка <span> наследует line-height
+// строки, поэтому занимает ровно одну её высоту — и как инлайн, и как
+// flex-элемент; сама полоска ниже строки и выровнена по середине.
+function Bar({ className }) {
+  return (
+    <span>
+      <Skeleton className={cn('inline-block h-3 align-middle', className)} />
+    </span>
+  );
+}
+
+// Заглушка кнопки строки: тот же Button outline/sm (та же высота, рамка и поля) с тем же
+// текстом, только невидимым, — ширина и перенос кнопок совпадают с настоящими.
+function GhostButton({ children }) {
+  return (
+    <Button
+      asChild
+      variant="outline"
+      size="sm"
+      className="pointer-events-none animate-pulse border-transparent bg-accent text-transparent shadow-none select-none dark:border-transparent dark:bg-accent"
+    >
+      <span>{children}</span>
+    </Button>
+  );
+}
+
+/**
+ * Заглушка первой загрузки. Показывается только пока не пришёл первый ответ;
+ * дальше список никогда не подменяется ни ею, ни текстом.
+ */
+export function AccountsTableSkeleton({ rows = 3 }) {
+  return (
+    <Frame role="status" aria-label="Загрузка аккаунтов" tableProps={{ 'aria-hidden': true }}>
+      {Array.from({ length: rows }, (_, i) => (
+        <RowShell
+          key={i}
+          className="hover:bg-transparent"
+          avatar={<Skeleton className={AVATAR_BOX} />}
+          title={<Bar className="h-3.5 w-40 max-w-full" />}
+          sub={<Bar className="w-24" />}
+          personaTitle={<Bar className="h-3.5 w-28 max-w-full" />}
+          personaSub={<Bar className="w-36 max-w-full" />}
+          badge={<Badge variant="secondary" className="w-16 animate-pulse bg-accent">{' '}</Badge>}
+          online={<span className={ONLINE_LINE}><Bar className="w-14" /></span>}
+          flood={<span className={FLOOD_LINE} />}
+          actions={<><GhostButton>Изменить</GhostButton><GhostButton>Пауза</GhostButton><GhostButton>Ещё<ChevronDown /></GhostButton></>}
+        />
+      ))}
+    </Frame>
+  );
+}
+
+export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus, onClearFlood, onDelete, helpers }) {
+  const pending = ux.useActions().pending;
+  const [expanded, setExpanded] = useState(null);
+  const { Avatar, statusLabel, date } = helpers;
+
+  if (!rows.length) {
+    return <p className="text-sm text-muted-foreground">Аккаунтов нет. Добавьте номер, затем войдите — код придёт в Telegram.</p>;
+  }
+
+  return (
+    <Frame tableProps={{ 'aria-label': 'Telegram-аккаунты' }}>
           {rows.map((row) => {
             const busy = pending.some(
               (key) => key.split(':').slice(1).join(':') === `/api/tg-accounts/${row.id}` || key.includes(`/api/tg-accounts/${row.id}/`),
@@ -82,72 +188,68 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
             ];
             return (
               <Fragment key={row.id}>
-                <tr
+                <RowShell
                   data-account-id={row.id}
-                  className={cn(
-                    'transition-colors hover:bg-muted/50',
-                    open && 'bg-muted/50',
-                    'max-[1100px]:mb-3 max-[1100px]:grid max-[1100px]:grid-cols-[minmax(0,1fr)_minmax(120px,0.7fr)] max-[1100px]:gap-x-5 max-[1100px]:gap-y-3.5 max-[1100px]:rounded-lg max-[1100px]:border max-[1100px]:bg-card max-[1100px]:p-4',
-                    'max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-x-2.5 max-sm:p-3.5',
-                    open && 'max-[1100px]:mb-0 max-[1100px]:rounded-b-none',
+                  className={cn(open && 'bg-muted/50 max-[1100px]:mb-0 max-[1100px]:rounded-b-none')}
+                  avatar={(
+                    <Avatar
+                      className={cn('flex items-center justify-center border bg-muted text-[11px] font-bold text-muted-foreground', AVATAR_BOX)}
+                      src={row.avatar_url}
+                      name={name}
+                    />
                   )}
-                >
-                  <TableCell className={cn(CELL, 'max-[1100px]:col-start-1 max-[1100px]:row-start-1')}>
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <Avatar
-                        className="flex size-9 shrink-0 items-center justify-center rounded-full border bg-muted text-[11px] font-bold text-muted-foreground"
-                        src={row.avatar_url}
-                        name={name}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-semibold leading-6 text-foreground">{name}</div>
-                        <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs leading-5 text-muted-foreground">
-                          {row.username && row.display_name && (
-                            <a className="text-primary hover:underline" href={`https://t.me/${row.username}`} target="_blank" rel="noreferrer">
-                              @{row.username}
-                            </a>
-                          )}
-                          {row.username && !row.display_name && (
-                            <a className="text-primary hover:underline" href={`https://t.me/${row.username}`} target="_blank" rel="noreferrer" aria-label={`Профиль ${row.username}`}>
-                              Telegram
-                            </a>
-                          )}
-                          {row.phone_e164 && row.phone_e164 !== name && <span className="font-mono tabular-nums">{row.phone_e164}</span>}
-                        </div>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className={cn(CELL, 'max-[1100px]:col-start-1 max-[1100px]:row-start-2 max-sm:col-span-full')}>
-                    <div className="text-sm font-medium leading-6">
+                  title={name}
+                  sub={(
+                    <>
+                      {row.username && row.display_name && (
+                        <a className="text-primary hover:underline" href={`https://t.me/${row.username}`} target="_blank" rel="noreferrer">
+                          @{row.username}
+                        </a>
+                      )}
+                      {row.username && !row.display_name && (
+                        <a className="text-primary hover:underline" href={`https://t.me/${row.username}`} target="_blank" rel="noreferrer" aria-label={`Профиль ${row.username}`}>
+                          Telegram
+                        </a>
+                      )}
+                      {row.phone_e164 && row.phone_e164 !== name && <span className="font-mono tabular-nums">{row.phone_e164}</span>}
+                    </>
+                  )}
+                  personaTitle={(
+                    <>
                       {row.persona_name || row.persona_id || 'Без личности'}
                       {row.purpose === 'test' && <span className="ml-2 text-xs font-normal text-muted-foreground">Тест</span>}
-                    </div>
-                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs leading-5 text-muted-foreground" data-testid="account-owner">
+                    </>
+                  )}
+                  personaSubProps={{ 'data-testid': 'account-owner' }}
+                  personaSub={(
+                    <>
                       <span className="text-foreground/80" title={row.manager_username ? `Менеджер: ${row.manager_username}` : undefined}>
                         {row.manager_username || 'Без менеджера'}
                       </span>
                       <span className="tabular-nums">{row.region_code ? `Регион ${row.region_code}` : 'Регион не задан'}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className={cn(CELL, 'max-[1100px]:col-start-2 max-[1100px]:row-start-1 max-[1100px]:justify-self-end max-sm:max-w-[104px]')}>
-                    <div className="flex flex-col items-start gap-1 max-[1100px]:items-end">
-                      <Badge variant={lost ? 'destructive' : STATUS_VARIANT[row.status] || 'outline'} title={row.lost_reason || undefined}>
-                        {statusLabel(row)}
-                      </Badge>
-                      <span className="inline-flex min-w-[72px] items-center gap-1.5 text-xs leading-5 text-muted-foreground tabular-nums">
-                        <i aria-hidden className={cn('size-1.5 shrink-0 rounded-full', online ? 'bg-success-foreground' : 'bg-muted-foreground/60')} />
-                        {online ? 'В сети' : 'Не в сети'}
-                      </span>
-                      <span
-                        className="min-h-4 text-xs leading-4 text-destructive"
-                        title={row.flood_until ? `Ограничение Telegram до ${date(row.flood_until)}` : undefined}
-                      >
-                        {row.flood_until ? 'Ограничен' : ''}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell className={cn(CELL, 'max-[1100px]:col-start-2 max-[1100px]:row-start-2 max-[1100px]:self-end max-sm:col-span-full max-sm:row-start-3')}>
-                    <div className="flex flex-wrap items-center justify-end gap-2 max-sm:justify-start">
+                    </>
+                  )}
+                  badge={(
+                    <Badge variant={lost ? 'destructive' : STATUS_VARIANT[row.status] || 'outline'} title={row.lost_reason || undefined}>
+                      {statusLabel(row)}
+                    </Badge>
+                  )}
+                  online={(
+                    <span className={ONLINE_LINE}>
+                      <i aria-hidden className={cn('size-1.5 shrink-0 rounded-full', online ? 'bg-success-foreground' : 'bg-muted-foreground/60')} />
+                      {online ? 'В сети' : 'Не в сети'}
+                    </span>
+                  )}
+                  flood={(
+                    <span
+                      className={FLOOD_LINE}
+                      title={row.flood_until ? `Ограничение Telegram до ${date(row.flood_until)}` : undefined}
+                    >
+                      {row.flood_until ? 'Ограничен' : ''}
+                    </span>
+                  )}
+                  actions={(
+                    <>
                       <RowButton disabled={busy} onClick={() => onEdit(row)}>Изменить</RowButton>
                       {loginNeeded ? (
                         <RowButton disabled={busy} onClick={() => onLogin(row)}>Войти</RowButton>
@@ -167,9 +269,9 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
                         Ещё
                         <ChevronDown aria-hidden className={cn('transition-transform', open && 'rotate-180')} />
                       </RowButton>
-                    </div>
-                  </TableCell>
-                </tr>
+                    </>
+                  )}
+                />
                 {open && (
                   <tr className="bg-muted/30 max-[1100px]:mb-3 max-[1100px]:block max-[1100px]:rounded-b-lg max-[1100px]:border max-[1100px]:border-t-0 max-[1100px]:bg-card">
                     <td colSpan={4} className="p-3 pt-0 whitespace-normal max-[1100px]:block max-[1100px]:p-4 max-[1100px]:pt-0 max-sm:p-3.5 max-sm:pt-0">
@@ -210,8 +312,6 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
               </Fragment>
             );
           })}
-        </tbody>
-      </Table>
-    </div>
+    </Frame>
   );
 }

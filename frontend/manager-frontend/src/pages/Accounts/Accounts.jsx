@@ -10,6 +10,7 @@ import {
   getLiveState,
   setAccountStatus,
 } from '../../api/accounts';
+import { AccountsTableSkeleton } from './AccountsTable';
 import AuthWizard from './AuthWizard';
 import EditAccountDialog from './EditAccountDialog';
 import { getPersonas } from '../../api/personas';
@@ -23,7 +24,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeCheckbox } from '@/components/ui/native-checkbox';
 import { NativeSelect } from '@/components/ui/native-select';
-import { Skeleton } from '@/components/ui/skeleton';
 
 const STATUS_LABEL = {
   unauthorized: 'нет сессии',
@@ -117,31 +117,11 @@ function AddForm({ personas, onDone, onCancel }) {
   );
 }
 
-// Три строки высоты настоящей строки таблицы (аватар size-9 + p-3), пока
-// первый ответ не пришёл. Дальше список никогда не подменяется текстом.
-function TableSkeleton() {
-  return (
-    <div role="status" aria-label="Загрузка аккаунтов" className="rounded-lg border bg-card">
-      <div className="h-10 border-b" />
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="flex h-[69px] items-center gap-2.5 border-b p-3 last:border-b-0">
-          <Skeleton className="size-9 shrink-0 rounded-full" />
-          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-            <Skeleton className="h-3.5 w-40 max-w-full" />
-            <Skeleton className="h-3 w-24 max-w-full" />
-          </div>
-          <Skeleton className="h-5 w-16 rounded-md" />
-          <Skeleton className="ml-auto h-8 w-40 max-w-[40%]" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function Accounts() {
   const [items, setItems] = useState(null);
   const [online, setOnline] = useState({});
   const [error, setError] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [adding, setAdding] = useState(false);
   const [auth, setAuth] = useState(null);
   const [proxyFor, setProxyFor] = useState(null);
@@ -160,15 +140,22 @@ export default function Accounts() {
   }, []);
 
   // При перезапросе прежний список остаётся на месте: ошибка не обнуляет items.
+  // items === null только до первого ОТВЕТА, удачного или нет: если первый
+  // запрос упал, заглушка сменяется ошибкой и пустым состоянием, а не висит
+  // вечно. Повтор — тот же опрос раз в 10 секунд; его успех снимает ошибку.
   const load = useCallback(() => {
     Promise.all([getAccounts(), getLiveState().catch(() => null)])
       .then(([list, state]) => {
         setItems(list);
+        setLoadError(null);
         const map = {};
         for (const a of state?.tg_accounts ?? []) map[a.id] = Boolean(a.alive);
         setOnline(map);
       })
-      .catch((e) => setError(e.detail || e.message));
+      .catch((e) => {
+        setLoadError(e.detail || e.message);
+        setItems((prev) => prev ?? []);
+      });
   }, []);
 
   useEffect(() => {
@@ -204,12 +191,12 @@ export default function Accounts() {
           {adding && <AddForm personas={personas} onDone={() => { setAdding(false); load(); }} onCancel={() => setAdding(false)} />}
           {/* Фиксированный слот под ошибку/уведомление: таблица не прыгает, когда они появляются. */}
           <div className="mb-3 min-h-5 text-sm">
-            {error && <p className="text-destructive">{error}</p>}
+            {(error || loadError) && <p className="text-destructive">{error || loadError}</p>}
             {flash && <p className="text-success-foreground">{flash}</p>}
           </div>
 
           {items === null ? (
-            <TableSkeleton />
+            <AccountsTableSkeleton />
           ) : (
             <AccountsTable rows={items} alive={online} onEdit={setEditing} onLogin={setAuth}
               onProxy={setProxyFor} onStatus={(row, status) => run(() => setAccountStatus(row.id, status, 'operator:web'))}

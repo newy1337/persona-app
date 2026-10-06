@@ -136,16 +136,18 @@ export default function ProxyDialog({ account, onClose }) {
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
           <DialogHeader className="px-6 pt-6 pb-4">
             <DialogTitle className="text-base">Прокси: {account.phone_e164}</DialogTitle>
+          </DialogHeader>
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 [scrollbar-gutter:stable]">
+            {/* Порядок абзацев как в исходном окне: сначала текущий прокси, затем пояснение.
+                account — снимок на время жизни окна, так что условный абзац не прыгает. */}
+            {account.proxy_label && (
+              <p className="text-sm text-muted-foreground">
+                Сейчас: <span className="font-mono text-foreground">{account.proxy_label}</span> — новый заменит его.
+              </p>
+            )}
             <DialogDescription>
               После сохранения аккаунт переподключится через этот прокси. Не подключится — будет видно по статусу «онлайн».
             </DialogDescription>
-          </DialogHeader>
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 [scrollbar-gutter:stable]">
-            <p className="min-h-4 text-xs text-muted-foreground">
-              {account.proxy_label && (
-                <>Сейчас: <span className="font-mono text-foreground">{account.proxy_label}</span> — новый заменит его.</>
-              )}
-            </p>
             <div className="grid grid-cols-2 gap-x-3">
               <ProxyFields value={proxy} onChange={setProxy} autoFocus />
             </div>

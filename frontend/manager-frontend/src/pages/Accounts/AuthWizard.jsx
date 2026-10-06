@@ -134,7 +134,10 @@ export default function AuthWizard({ account, onClose }) {
   }
 
   // Переключение способа бросает начатое задание и начинает новое.
+  // После завершения задания (ok/failed) выбор способа остаётся на месте, чтобы
+  // окно не прыгало, но он инертен: кнопки disabled и сам обработчик молчит.
   async function switchMethod(next) {
+    if (job?.status === 'ok' || job?.status === 'failed') return;
     if (next === method || busy || switchingRef.current === next) return;
     switchingRef.current = next;
     const id = jobRef.current;
