@@ -3,6 +3,7 @@ import { CallPanel } from './CallPanel';
 import { CallBrief } from './CallBrief';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { Download, ExternalLink, LoaderCircle, Play, Plus, Search, Send } from 'lucide-react';
 import Header from '../../components/Header/Header';
 import VoicePlayer from '../../components/VoicePlayer/VoicePlayer';
 import { api, authHeaders } from '../../api/client';
@@ -10,15 +11,34 @@ import { SendVoice, DeliveryStatus } from './SendVoice';
 import { PanelUX } from '../../ui/PanelUX';
 import { VoiceBotLink } from './VoiceBotLink';
 import { TaskChat, TaskChatSelect } from './TaskChat';
-import s from '../../styles/AdminPage.module.scss';
-import v from './VoiceWork.module.scss';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 
 const states = { queued: 'В очереди', in_progress: 'В работе', ready: 'Выполнено', completed: 'Выполнено', cancelled: 'Отменено', delivering: 'Отправляется', sent: 'Отправлено', delivery_error: 'Ошибка отправки', delivery_review: 'Проверить доставку', delivery_closed: 'Проверка закрыта' };
-const stateClass = status => status === 'delivery_error' ? s.badgeBanned : status === 'delivery_review' ? s.badgePaused : ['ready', 'completed', 'sent'].includes(status) ? s.badgeActive : v.tag;
+const stateVariant = status => status === 'delivery_error' ? 'destructive' : status === 'delivery_review' ? 'warning' : ['ready', 'completed', 'sent'].includes(status) ? 'success' : 'outline';
 const modeLabel = task => task.kind === 'call' ? 'Звонок' : task.voiceMode === 'once' ? 'Одноразовое' : 'В библиотеку';
 const errorText = e => PanelUX.readableError(e);
 const date = seconds => new Date(seconds * 1000).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', dateStyle: 'short', timeStyle: 'short' });
 const filename = title => title.replace(/[\\/:*?"<>|]/g, '_') + '.ogg';
+const PAGE = 40;
+
+const muted = 'text-sm text-muted-foreground';
+const caption = 'text-xs text-muted-foreground';
+const warn = 'text-sm text-warning-foreground';
+const errorLine = 'text-sm text-destructive';
+const prose = 'whitespace-pre-wrap leading-relaxed [overflow-wrap:anywhere]';
+const textareaClass = 'min-h-[100px] field-sizing-fixed';
+const cardClass = 'min-h-[260px] min-w-0 gap-3 rounded-lg p-5 [overflow-wrap:anywhere]';
+const gridClass = 'grid gap-4 pb-6 [grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr))]';
 
 async function audioBlob(id) {
   const response = await fetch(`/api/voicer/recordings/${id}/file`, { headers: authHeaders() });
@@ -47,29 +67,29 @@ function CreateTask({ options, context, onClose, onCreated }) {
     } catch (e) { setError(errorText(e)); }
     finally { lock.current = false; setBusy(false); }
   }
-  const field = (key, label, props = {}) => <label className={`${s.label} ${props.full ? v.full : ''}`}>{label}<input className={s.field} value={form[key]} onChange={e => set(key, e.target.value)} disabled={busy} {...Object.fromEntries(Object.entries(props).filter(([k]) => k !== 'full'))} /></label>;
+  const field = (key, label, { full, ...props } = {}) => <Field label={label} className={cn(full && 'sm:col-span-2')}><Input value={form[key]} onChange={e => set(key, e.target.value)} disabled={busy} {...props} /></Field>;
   return <PanelUX.Modal title="Новое задание войсеру" wide busy={busy} onClose={onClose}
-    footer={<><button className={s.btn} disabled={busy} onClick={onClose}>Отмена</button><button className={s.btnPrimary} type="submit" form="voice-task-form" disabled={busy || !manager?.voicer_id}>{busy ? 'Создаём…' : 'Поставить в очередь'}</button></>}>
-    <form id="voice-task-form" onSubmit={submit} className={v.form}>
-      <label className={s.label}>Тип задания<select className={s.select} value={form.kind} onChange={e => set('kind', e.target.value)}><option value="voice">Записать голосовое</option><option value="call">Звонок</option></select></label>
-      {form.kind === 'voice' && <label className={s.label}>Режим голосового<select className={s.select} value={form.voice_mode} disabled={busy} onChange={e => set('voice_mode', e.target.value)}><option value="library">В библиотеку</option><option value="once">Одноразовое — сразу в диалог</option></select></label>}
-      {form.kind === 'voice' && <p className={`${v.notice} ${v.full}`} style={{ margin: 0 }}>{form.voice_mode === 'once' ? 'После записи войсером голосовое автоматически отправится в выбранный диалог. Дополнительное подтверждение менеджера не требуется.' : 'Запись сохранится в библиотеке. Позже её можно выбрать и отправить в любой доступный вам диалог.'}</p>}
-      <label className={s.label}>Менеджер<select className={s.select} value={form.manager_id} onChange={e => setForm(old => ({ ...old, manager_id: e.target.value, chat_id: '' }))} required>{options.managers.map(m => <option key={m.id} value={m.id}>{m.username}{m.region ? ` · ${m.region}` : ''}</option>)}</select></label>
-      <div className={`${v.notice} ${v.full}`} style={{ margin: 0 }}>Войсер: <strong>{manager?.voicer_name || 'не назначен'}</strong>{manager?.voicer_id ? !manager.bot_linked && <span className={v.warning}>Telegram ещё не подключён — задание будет ждать в очереди</span> : <span>Администратор назначает войсера в разделе «Менеджеры»</span>}</div>
+    footer={<><Button type="button" variant="outline" disabled={busy} onClick={onClose}>Отмена</Button><Button type="submit" form="voice-task-form" disabled={busy || !manager?.voicer_id}>{busy && <LoaderCircle className="animate-spin" />}{busy ? 'Создаём…' : 'Поставить в очередь'}</Button></>}>
+    <form id="voice-task-form" onSubmit={submit} className="grid min-w-0 gap-x-4 gap-y-2 sm:grid-cols-2">
+      <Field label="Тип задания"><NativeSelect value={form.kind} onChange={e => set('kind', e.target.value)}><option value="voice">Записать голосовое</option><option value="call">Звонок</option></NativeSelect></Field>
+      {form.kind === 'voice' && <Field label="Режим голосового"><NativeSelect value={form.voice_mode} disabled={busy} onChange={e => set('voice_mode', e.target.value)}><option value="library">В библиотеку</option><option value="once">Одноразовое — сразу в диалог</option></NativeSelect></Field>}
+      {form.kind === 'voice' && <Alert className="sm:col-span-2"><AlertDescription className="min-h-10">{form.voice_mode === 'once' ? 'После записи войсером голосовое автоматически отправится в выбранный диалог. Дополнительное подтверждение менеджера не требуется.' : 'Запись сохранится в библиотеке. Позже её можно выбрать и отправить в любой доступный вам диалог.'}</AlertDescription></Alert>}
+      <Field label="Менеджер"><NativeSelect value={form.manager_id} onChange={e => setForm(old => ({ ...old, manager_id: e.target.value, chat_id: '' }))} required>{options.managers.map(m => <option key={m.id} value={m.id}>{m.username}{m.region ? ` · ${m.region}` : ''}</option>)}</NativeSelect></Field>
+      <Alert className="sm:col-span-2"><AlertDescription className="block min-h-5 text-foreground">Войсер: <strong className="font-medium">{manager?.voicer_name || 'не назначен'}</strong>{manager?.voicer_id ? !manager.bot_linked && <span className={cn(warn, 'block')}>Telegram ещё не подключён — задание будет ждать в очереди</span> : <span className={cn(muted, 'block')}>Администратор назначает войсера в разделе «Менеджеры»</span>}</AlertDescription></Alert>
       {field('title', 'Название записи / задания', { required: true, maxLength: 160, placeholder: 'Сообщения для Димы · Доброе утро', full: true })}
-      <label className={s.label}>Личность<select className={s.select} value={form.persona_slug} onChange={e => setForm(old => ({ ...old, persona_slug: e.target.value, chat_id: '' }))} required>{options.personas.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}</select></label>
+      <Field label="Личность"><NativeSelect value={form.persona_slug} onChange={e => setForm(old => ({ ...old, persona_slug: e.target.value, chat_id: '' }))} required>{options.personas.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}</NativeSelect></Field>
       {field('contact_label', form.kind === 'voice' && form.voice_mode === 'library' ? 'Собеседник (необязательно)' : 'Собеседник', { required: form.kind === 'call', maxLength: 160, placeholder: 'Дима' })}
       {form.kind === 'call' && field('contact_ref', 'Контакт для звонка', { required: form.kind === 'call' && !form.chat_id, maxLength: 200, placeholder: '@username или номер телефона' })}
-      <div className={v.full}><TaskChatSelect managerId={form.manager_id} persona={form.persona_slug} value={form.chat_id} disabled={busy} required={form.kind === 'voice' && form.voice_mode === 'once'} warnMissing={form.kind === 'call'} showChatAccess={form.kind === 'call'}
+      <div className="sm:col-span-2"><TaskChatSelect managerId={form.manager_id} persona={form.persona_slug} value={form.chat_id} disabled={busy} required={form.kind === 'voice' && form.voice_mode === 'once'} warnMissing={form.kind === 'call'} showChatAccess={form.kind === 'call'}
         onChange={(id, item) => setForm(old => ({ ...old, chat_id: id, ...(item ? { contact_label: item.label, contact_ref: item.contact_ref || '' } : {}) }))} /></div>
-      {form.kind === 'voice' && <label className={`${s.label} ${v.full}`}>Текст голосового<textarea className={s.field} value={form.script} onChange={e => set('script', e.target.value)} required maxLength={10000} placeholder="Точный текст, который нужно произнести" /></label>}
+      {form.kind === 'voice' && <Field label="Текст голосового" className="sm:col-span-2"><Textarea className={textareaClass} rows={4} value={form.script} onChange={e => set('script', e.target.value)} disabled={busy} required maxLength={10000} placeholder="Точный текст, который нужно произнести" /></Field>}
       {field('emotion', 'Эмоциональность', { required: form.kind === 'voice', maxLength: 500, placeholder: 'Тепло, с улыбкой, спокойно' })}
       {field('tempo', 'Темп разговора', { required: form.kind === 'call', maxLength: 500, placeholder: 'Неспешно, давать собеседнику договорить' })}
-      <label className={`${s.label} ${v.full}`}>{form.kind === 'call' ? 'Тема звонка и что нужно сделать' : 'Дополнительные указания'}<textarea className={s.field} value={form.instructions} onChange={e => set('instructions', e.target.value)} maxLength={5000} required={form.kind === 'call'} /></label>
-      <label className={s.label}>Приоритет<select className={s.select} value={form.priority} onChange={e => set('priority', e.target.value)}><option value="0">Обычный</option><option value="1">Повышенный</option><option value="2">Срочно</option></select></label>
+      <Field label={form.kind === 'call' ? 'Тема звонка и что нужно сделать' : 'Дополнительные указания'} className="sm:col-span-2"><Textarea className={textareaClass} rows={4} value={form.instructions} onChange={e => set('instructions', e.target.value)} disabled={busy} maxLength={5000} required={form.kind === 'call'} /></Field>
+      <Field label="Приоритет"><NativeSelect value={form.priority} onChange={e => set('priority', e.target.value)}><option value="0">Обычный</option><option value="1">Повышенный</option><option value="2">Срочно</option></NativeSelect></Field>
       {field('due', 'Желаемое время (МСК)', { type: 'datetime-local' })}
-      <p className={`${s.hint} ${v.full}`}>{form.kind === 'call' ? 'Войсер получит полную карточку личности, контакт, тему и темп. Войсер звонит с сайта через Telegram-аккаунт выбранного диалога.' : form.voice_mode === 'once' ? 'Получатель фиксируется при создании задания. Для другого диалога нужно новое задание.' : 'Запись сохранится в библиотеке под этим названием. Отправку собеседнику выбирает менеджер.'}</p>
-      {error && <p className={`${s.error} ${v.full}`} role="alert">{error}</p>}
+      <p className={cn(caption, 'min-h-8 sm:col-span-2')}>{form.kind === 'call' ? 'Войсер получит полную карточку личности, контакт, тему и темп. Войсер звонит с сайта через Telegram-аккаунт выбранного диалога.' : form.voice_mode === 'once' ? 'Получатель фиксируется при создании задания. Для другого диалога нужно новое задание.' : 'Запись сохранится в библиотеке под этим названием. Отправку собеседнику выбирает менеджер.'}</p>
+      {error && <p className={cn(errorLine, 'sm:col-span-2')} role="alert">{error}</p>}
     </form>
   </PanelUX.Modal>;
 }
@@ -102,48 +122,52 @@ function TaskDetail({ task: initial, role, bot, initialView, onClose, onChange }
     } catch (e) { setError(errorText(e)); }
     finally { lock.current = false; setBusy(false); }
   }
-  return <PanelUX.Modal title={`#${task.id} · ${task.title}`} wide busy={busy || calling} onClose={onClose} footer={<button className={s.btn} disabled={busy || calling} onClick={onClose}>Закрыть</button>}>
-    <div className={v.detail}>
-      <div className={s.actions}><span className={stateClass(task.status)}>{states[task.status]}</span><span className={v.tag}>{modeLabel(task)}</span></div>
-      <p>{task.personaName} · {task.contactLabel}<br />Менеджер: {task.managerName} · Войсер: {task.voicerName}</p>
+  const callDone = task.kind === 'call' && task.call?.connectedAt && task.call?.endedAt;
+  const recordingDone = !voice && ['ready', 'completed'].includes(task.status) && task.kind === 'voice';
+  const title = <span className="flex flex-wrap items-center gap-2"><span className="[overflow-wrap:anywhere]"><span className="font-mono tabular-nums">#{task.id}</span> · {task.title}</span><Badge variant={stateVariant(task.status)}>{states[task.status]}</Badge><Badge variant="outline">{modeLabel(task)}</Badge></span>;
+  return <PanelUX.Modal title={title} wide busy={busy || calling} onClose={onClose} footer={<>
+    <Button type="button" variant="outline" disabled={busy || calling} onClick={onClose}>Закрыть</Button>
+    {callDone && <Button type="button" variant="outline" disabled={busy || !note.trim()} onClick={() => action('call_note')}>Дополнить итог звонка</Button>}
+    {voice && task.status === 'in_progress' && <Button type="button" variant="outline" disabled={busy || calling} onClick={() => action('release')}>Вернуть в очередь</Button>}
+    {recordingDone && <Button type="button" variant="outline" disabled={busy || !note.trim()} onClick={() => action('revise')}>На перезапись</Button>}
+    {!voice && ['queued', 'in_progress', 'ready', 'delivery_error'].includes(task.status) && <Button type="button" variant="destructive" disabled={busy} onClick={() => action('cancel')}>Отменить задание</Button>}
+    {voice && task.status === 'queued' && <Button type="button" disabled={busy} onClick={() => action('claim')}>Взять в работу</Button>}
+    {voice && task.status === 'in_progress' && task.kind === 'call' && <Button type="button" disabled={busy || calling || !note.trim()} onClick={() => action('complete')}>Сохранить итог звонка</Button>}
+    {voice && task.status === 'in_progress' && task.kind === 'voice' && bot.username && <Button asChild><a href={`https://t.me/${bot.username}`} target="_blank" rel="noreferrer"><ExternalLink />Записать в Telegram</a></Button>}
+    {!voice && task.status === 'delivery_error' && <Button type="button" disabled={busy} onClick={() => action('retry_delivery')}>Повторить отправку</Button>}
+  </>}>
+    <div className="flex min-h-[200px] flex-col gap-3.5 text-sm">
+      <p className={prose}>{task.personaName} · {task.contactLabel}<br />Менеджер: {task.managerName} · Войсер: {task.voicerName}</p>
       {task.voiceMode === 'once' && <DeliveryStatus delivery={task.delivery} /> }
-      {task.source === 'bot' && <p className={v.notice}>Заявка создана ботом по ситуации в диалоге. После записи голосовое отправится автоматически.{task.autoExpiresAt && ` Актуально до ${date(task.autoExpiresAt)}.`}</p>}
+      {task.source === 'bot' && <Alert><AlertDescription>Заявка создана ботом по ситуации в диалоге. После записи голосовое отправится автоматически.{task.autoExpiresAt && ` Актуально до ${date(task.autoExpiresAt)}.`}</AlertDescription></Alert>}
       {voice && task.kind === 'call' && <CallPanel task={task} onActive={setCalling} />}
       {task.kind === 'call' && <CallBrief task={task} />}
-      {task.contactRef && <p><strong>Контакт:</strong> {task.contactRef}</p>}
-      {canReadChat && <div className={v.toolbar} role="tablist" aria-label="Задание и переписка">
-        <button role="tab" aria-selected={view === 'brief'} className={view === 'brief' ? s.btnPrimary : s.btn} onClick={() => setView('brief')}>Задание и биография</button>
-        <button role="tab" aria-selected={view === 'chat'} className={view === 'chat' ? s.btnPrimary : s.btn} onClick={() => setView('chat')}>Переписка</button>
-      </div>}
+      {task.contactRef && <p className={prose}><strong className="font-medium">Контакт:</strong> {task.contactRef}</p>}
+      {canReadChat && <Tabs value={view} onValueChange={setView} className="gap-0">
+        <TabsList aria-label="Задание и переписка">
+          <TabsTrigger value="brief" onClick={() => setView('brief')}>Задание и биография</TabsTrigger>
+          <TabsTrigger value="chat" onClick={() => setView('chat')}>Переписка</TabsTrigger>
+        </TabsList>
+      </Tabs>}
       {canReadChat && view === 'chat' ? <TaskChat key={`${task.id}-${task.chatId}`} task={task} /> : <>
-      {task.dueAt && <p><strong>Желаемое время:</strong> {date(task.dueAt)} (МСК)</p>}
-      {task.script && <p><strong>Текст:</strong><br />{task.script}</p>}
-      {task.emotion && <p><strong>Эмоциональность:</strong> {task.emotion}</p>}
-      {task.tempo && <p><strong>Темп:</strong> {task.tempo}</p>}
-      {task.instructions && <p><strong>Тема и указания:</strong><br />{task.instructions}</p>}
-      {task.feedback && <p className={v.warning}><strong>На перезапись:</strong> {task.feedback}</p>}
-      {task.outcome && <p><strong>Результат:</strong> {task.outcome}</p>}
-      {task.call?.note && <p><strong>Важное из звонка:</strong> {task.call.note}</p>}
-      <details><summary>Полная карточка личности</summary><p className={s.hint}>Снимок при создании задания. Неуказанные факты требуют уточнения.</p><pre className={v.brief}>{task.biography}</pre></details>
-      {task.chatId && !voice && <Link className={s.btn} to={`/conversation/${task.chatId}`}>Открыть диалог менеджера</Link>}
+      {task.dueAt && <p className={prose}><strong className="font-medium">Желаемое время:</strong> {date(task.dueAt)} (МСК)</p>}
+      {task.script && <p className={prose}><strong className="font-medium">Текст:</strong><br />{task.script}</p>}
+      {task.emotion && <p className={prose}><strong className="font-medium">Эмоциональность:</strong> {task.emotion}</p>}
+      {task.tempo && <p className={prose}><strong className="font-medium">Темп:</strong> {task.tempo}</p>}
+      {task.instructions && <p className={prose}><strong className="font-medium">Тема и указания:</strong><br />{task.instructions}</p>}
+      {task.feedback && <p className={cn(prose, warn)}><strong className="font-medium">На перезапись:</strong> {task.feedback}</p>}
+      {task.outcome && <p className={prose}><strong className="font-medium">Результат:</strong> {task.outcome}</p>}
+      {task.call?.note && <p className={prose}><strong className="font-medium">Важное из звонка:</strong> {task.call.note}</p>}
+      <details><summary className="cursor-pointer py-2 text-primary">Полная карточка личности</summary><p className={caption}>Снимок при создании задания. Неуказанные факты требуют уточнения.</p><pre className="my-2 max-h-[45vh] overflow-y-auto font-sans text-sm leading-7 whitespace-pre-wrap [overflow-wrap:anywhere] [scrollbar-gutter:stable]">{task.biography}</pre></details>
+      {task.chatId && !voice && <Button asChild variant="outline" className="self-start"><Link to={`/conversation/${task.chatId}`}>Открыть диалог менеджера</Link></Button>}
       </>}
-      {!task.chatId && !voice && task.status === 'queued' && <div className={v.chatSelect}>
+      {!task.chatId && !voice && task.status === 'queued' && <div className="flex min-w-0 flex-col gap-2.5">
         <TaskChatSelect managerId={task.managerId} persona={task.personaSlug} value={linkId} onChange={setLinkId} disabled={busy} />
-        <button className={s.btnPrimary} disabled={busy || !linkId} onClick={linkChat}>Привязать диалог</button>
+        <Button type="button" className="self-start" disabled={busy || !linkId} onClick={linkChat}>Привязать диалог</Button>
       </div>}
-      {!voice && ['ready', 'completed'].includes(task.status) && task.kind === 'voice' && <p className={s.hint}>Запись доступна во вкладке «Библиотека».</p>}
-      {((!voice && ['ready', 'completed'].includes(task.status) && task.kind === 'voice') || (voice && task.kind === 'call' && task.status === 'in_progress') || (task.kind === 'call' && task.call?.connectedAt && task.call?.endedAt)) && <label className={s.label}>{task.kind === 'call' ? task.call?.connectedAt && task.call?.endedAt ? 'Важное из звонка (необязательно, для памяти бота)' : 'Если звонка не было — укажите причину' : 'Что изменить при перезаписи'}<textarea className={s.field} value={note} onChange={e => setNote(e.target.value)} maxLength={2000} /></label>}
-      {error && <p className={s.error} role="alert">{error}</p>}
-      <div className={v.actions}>
-        {voice && task.status === 'queued' && <button className={s.btnPrimary} disabled={busy} onClick={() => action('claim')}>Взять в работу</button>}
-        {voice && task.status === 'in_progress' && task.kind === 'call' && <button className={s.btnPrimary} disabled={busy || calling || !note.trim()} onClick={() => action('complete')}>Сохранить итог звонка</button>}
-        {task.kind === 'call' && task.call?.connectedAt && task.call?.endedAt && <button className={s.btn} disabled={busy || !note.trim()} onClick={() => action('call_note')}>Дополнить итог звонка</button>}
-        {voice && task.status === 'in_progress' && task.kind === 'voice' && bot.username && <a className={s.btnPrimary} href={`https://t.me/${bot.username}`} target="_blank" rel="noreferrer">Записать в Telegram</a>}
-        {voice && task.status === 'in_progress' && <button className={s.btn} disabled={busy || calling} onClick={() => action('release')}>Вернуть в очередь</button>}
-        {!voice && task.status === 'delivery_error' && <button className={s.btnPrimary} disabled={busy} onClick={() => action('retry_delivery')}>Повторить отправку</button>}
-        {!voice && ['ready', 'completed'].includes(task.status) && task.kind === 'voice' && <button className={s.btn} disabled={busy || !note.trim()} onClick={() => action('revise')}>На перезапись</button>}
-        {!voice && ['queued', 'in_progress', 'ready', 'delivery_error'].includes(task.status) && <button className={s.btnDanger} disabled={busy} onClick={() => action('cancel')}>Отменить задание</button>}
-      </div>
+      {recordingDone && <p className={caption}>Запись доступна во вкладке «Библиотека».</p>}
+      {(recordingDone || (voice && task.kind === 'call' && task.status === 'in_progress') || callDone) && <Field label={task.kind === 'call' ? callDone ? 'Важное из звонка (необязательно, для памяти бота)' : 'Если звонка не было — укажите причину' : 'Что изменить при перезаписи'}><Textarea className={textareaClass} rows={4} value={note} onChange={e => setNote(e.target.value)} disabled={busy} maxLength={2000} /></Field>}
+      {error && <p className={errorLine} role="alert">{error}</p>}
     </div>
   </PanelUX.Modal>;
 }
@@ -165,25 +189,25 @@ function Recording({ item, role, context, onChange, onOpen }) {
     a.href = fileUrl; a.download = filename(item.title); a.click(); setTimeout(() => URL.revokeObjectURL(fileUrl), 10000);
   }
   const [sending, setSending] = useState(false);
-  return <article className={v.card}>
-    <div className={v.cardTop}><h3>{item.title}</h3><span className={item.current ? s.badgeActive : v.tag}>{item.current ? 'Актуальная' : 'Предыдущая'}</span></div>
-    <p className={v.meta}>{item.task.personaName} · {item.task.contactLabel}<br />{item.task.managerName} → {item.task.voicerName}<br />{date(item.createdAt)} · {item.duration} сек. · Версия {item.revision}</p>
-    {url && <VoicePlayer src={url} />}
+  return <Card className={cardClass}>
+    <div className="flex items-start justify-between gap-2"><h3 className="text-base leading-snug font-medium">{item.title}</h3><Badge variant={item.current ? 'success' : 'outline'}>{item.current ? 'Актуальная' : 'Предыдущая'}</Badge></div>
+    <p className={cn(muted, 'leading-relaxed')}>{item.task.personaName} · {item.task.contactLabel}<br />{item.task.managerName} → {item.task.voicerName}<br /><span className="tabular-nums">{date(item.createdAt)} · {item.duration} сек. · Версия {item.revision}</span></p>
+    <div className="min-h-[42px]">{url && <VoicePlayer src={url} />}</div>
     {item.last_delivery && <DeliveryStatus delivery={item.last_delivery} />}
     {sending && <SendVoice item={item} initialChat={context.get('chat') || ''} onClose={() => setSending(false)} onChange={onChange} />}
-    {editing && <form onSubmit={e => { e.preventDefault(); perform(async () => { await api.put(`/api/voicer/recordings/${item.id}`, { title }); setEditing(false); onChange(); }); }}>
-      <label className={s.label}>Название записи<input className={s.field} value={title} onChange={e => setTitle(e.target.value)} maxLength={160} required /></label>
-      <div className={v.actions}><button className={s.btnPrimary} disabled={busy || !title.trim()}>Сохранить</button><button type="button" className={s.btn} onClick={() => setEditing(false)}>Отмена</button></div>
+    {editing && <form className="flex flex-col gap-2" onSubmit={e => { e.preventDefault(); perform(async () => { await api.put(`/api/voicer/recordings/${item.id}`, { title }); setEditing(false); onChange(); }); }}>
+      <Field label="Название записи"><Input value={title} onChange={e => setTitle(e.target.value)} disabled={busy} maxLength={160} required /></Field>
+      <div className="flex flex-wrap gap-2"><Button type="submit" size="sm" disabled={busy || !title.trim()}>Сохранить</Button><Button type="button" variant="outline" size="sm" onClick={() => setEditing(false)}>Отмена</Button></div>
     </form>}
-    {error && <p className={s.error} role="alert">{error}</p>}
-    <div className={v.actions}>
-      {!url && <button className={s.btnPrimary} disabled={busy} onClick={() => perform(listen)}>Прослушать</button>}
-      <button className={s.btn} disabled={busy} onClick={() => perform(download)}>Скачать</button>
-      {role !== 'voice' && item.current && <button className={s.btnPrimary} disabled={busy} onClick={() => setSending(true)}>Отправить в диалог</button>}
-      {role !== 'voice' && <button className={s.btnSm} disabled={busy} onClick={() => setEditing(!editing)}>Переименовать</button>}
-      <button className={s.btnSm} disabled={busy} onClick={() => onOpen(item.task.id)}>Задание #{item.task.id}</button>
+    {error && <p className={errorLine} role="alert">{error}</p>}
+    <div className="mt-auto flex flex-wrap gap-2 pt-1.5">
+      {!url && <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => perform(listen)}><Play />Прослушать</Button>}
+      <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => perform(download)}><Download />Скачать</Button>
+      {role !== 'voice' && item.current && <Button type="button" size="sm" disabled={busy} onClick={() => setSending(true)}><Send />Отправить в диалог</Button>}
+      {role !== 'voice' && <Button type="button" variant="outline" size="sm" disabled={busy} aria-pressed={editing} onClick={() => setEditing(!editing)}>Переименовать</Button>}
+      <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onOpen(item.task.id)}>Задание #{item.task.id}</Button>
     </div>
-  </article>;
+  </Card>;
 }
 
 export default function VoiceWork() {
@@ -196,7 +220,7 @@ export default function VoiceWork() {
     setCreating(true);
     setContext(previous => { const next = new URLSearchParams(previous); next.delete('compose'); return next; }, { replace: true });
   }, [composeRequested, setContext]);
-  const [items, setItems] = useState([]), [total, setTotal] = useState(0), [page, setPage] = useState(1), [status, setStatus] = useState('active');
+  const [items, setItems] = useState(null), [total, setTotal] = useState(0), [page, setPage] = useState(1), [status, setStatus] = useState('active');
   const [query, setQuery] = useState(''), [search, setSearch] = useState(''), [error, setError] = useState(''), [loading, setLoading] = useState(true);
   const sequence = useRef(0);
   const [detailError, setDetailError] = useState('');
@@ -229,41 +253,48 @@ export default function VoiceWork() {
     setDetail(null); setDetailError('');
     if (requestedTask) { const next = new URLSearchParams(context); next.delete('task'); next.delete('view'); setContext(next, { replace: true }); }
   }
-  const changeTab = next => { setTab(next); setPage(1); setItems([]); setLoading(true); };
+  const changeTab = next => { if (next === tab) return; setTab(next); setPage(1); setItems(null); setLoading(true); };
+  const manager = options && options.role !== 'voice';
+  const pages = Math.max(1, Math.ceil(total / PAGE));
+  const emptyText = tab === 'library' ? 'Записей пока нет. Они появятся после выполнения заданий в Telegram.' : search || status !== 'active' ? 'По выбранным условиям заданий нет.' : 'Очередь пуста. Здесь появятся задания на голосовые и звонки.';
   return <div className="app"><Header /><main className="main"><div className="container">
-    <div className={s.head}><div><h2 className={s.title}>Войсер</h2><p className={v.meta}>Голосовые, звонки и готовые записи</p></div><div className={s.actions}>
-      {context.get('chat') && options?.role !== 'voice' && <Link className={s.btn} to={`/conversation/${context.get('chat')}`}>Вернуться в диалог</Link>}
-      {options && options.role !== 'voice' && <button className={s.btnPrimary} onClick={() => setCreating(true)}>Новое задание</button>}
+    <div className="my-6 flex min-w-0 flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-semibold">Войсер</h2><p className={muted}>Голосовые, звонки и готовые записи</p></div><div className="flex min-h-9 flex-wrap items-center gap-2">
+      {context.get('chat') && options?.role !== 'voice' && <Button asChild variant="outline"><Link to={`/conversation/${context.get('chat')}`}>Вернуться в диалог</Link></Button>}
+      {!options && <Skeleton className="h-9 w-[148px]" />}
+      {manager && <Button type="button" onClick={() => setCreating(true)}><Plus />Новое задание</Button>}
     </div></div>
-    {options?.role === 'voice' && <div className={v.notice}><span>{options.linked ? `Telegram подключён${options.telegram_username ? ': @' + options.telegram_username : ''}` : 'Подключите Telegram, чтобы получать задания и отправлять записи'}</span><VoiceBotLink userId={options.user_id} linked={options.linked} onChange={load} /></div>}
-    {options?.bot.error && <p className={v.warning} role="status">{options.bot.error}</p>}
-    {options && !options.bot.configured && <p className={v.warning}>Бот не настроен. Задания сохраняются, но уведомления пока не отправляются.</p>}
-    <div className={v.toolbar} role="group" aria-label="Раздел озвучки">
-      <button className={`${s.btn} ${tab === 'tasks' ? s.btnSelected : ''}`} aria-pressed={tab === 'tasks'} onClick={() => changeTab('tasks')}>Задания</button>
-      <button className={`${s.btn} ${tab === 'library' ? s.btnSelected : ''}`} aria-pressed={tab === 'library'} onClick={() => changeTab('library')}>Библиотека</button>
-      <input className={s.field} type="search" aria-label="Поиск заданий и записей" placeholder="Поиск по названию" value={query} onChange={e => setQuery(e.target.value)} />
-      {tab === 'tasks' && <select className={s.select} aria-label="Статус заданий" value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="active">Активные</option>{Object.entries(states).filter(([key]) => key !== 'ready').map(([key, label]) => <option key={key} value={key}>{label}</option>)}<option value="all">Все</option></select>}
+    {options?.role === 'voice' && <Alert className="mb-4 min-h-[52px]"><AlertDescription className="flex w-full flex-row flex-wrap items-center justify-between gap-3 text-foreground"><span>{options.linked ? `Telegram подключён${options.telegram_username ? ': @' + options.telegram_username : ''}` : 'Подключите Telegram, чтобы получать задания и отправлять записи'}</span><VoiceBotLink userId={options.user_id} linked={options.linked} onChange={load} /></AlertDescription></Alert>}
+    {options?.bot.error && <Alert variant="warning" className="mb-4 min-h-10" role="status"><AlertDescription>{options.bot.error}</AlertDescription></Alert>}
+    {options && !options.bot.configured && <Alert variant="warning" className="mb-4 min-h-10"><AlertDescription>Бот не настроен. Задания сохраняются, но уведомления пока не отправляются.</AlertDescription></Alert>}
+    <div className="my-4 flex flex-wrap items-center gap-2">
+      <Tabs value={tab} onValueChange={changeTab} className="gap-0">
+        <TabsList className="h-8" aria-label="Раздел озвучки">
+          <TabsTrigger value="tasks" onClick={() => changeTab('tasks')}>Задания</TabsTrigger>
+          <TabsTrigger value="library" onClick={() => changeTab('library')}>Библиотека</TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <div className="relative min-w-0 flex-[1_1_240px]"><Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" /><Input className="h-8 pl-8" type="search" aria-label="Поиск заданий и записей" placeholder="Поиск по названию" value={query} onChange={e => setQuery(e.target.value)} /></div>
+      {tab === 'tasks' && <NativeSelect className="h-8 w-auto" aria-label="Статус заданий" value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="active">Активные</option>{Object.entries(states).filter(([key]) => key !== 'ready').map(([key, label]) => <option key={key} value={key}>{label}</option>)}<option value="all">Все</option></NativeSelect>}
     </div>
-    {error && <div role="alert" className={s.error}>{error} <button className={s.btnSm} onClick={load}>Повторить</button></div>}
-    {detailError && <p role="alert" className={s.error}>{detailError}</p>}
-    {loading ? <p role="status" className={v.meta}>Загружаем…</p> : !items.length ? <div className={v.empty}>{tab === 'library' ? 'Записей пока нет. Они появятся после выполнения заданий в Telegram.' : search || status !== 'active' ? 'По выбранным условиям заданий нет.' : 'Очередь пуста. Здесь появятся задания на голосовые и звонки.'}</div> : <>
-      <p className={v.meta}>Найдено: {total}. {tab === 'tasks' && 'Порядок: приоритет, затем время создания.'}</p>
-      <div className={v.grid}>{items.map(item => tab === 'library' ? <Recording key={item.id} item={item} role={options.role} context={context} onChange={load} onOpen={open} /> : <article key={item.id} className={v.card}>
-        <div className={v.cardTop}><span className={v.tag}>#{item.id} · {modeLabel(item)}</span><span className={stateClass(item.status)}>{states[item.status]}</span></div>
-        {item.source === 'bot' && <span className={v.tag}>Заявка бота</span>}
-        <h3>{item.title}</h3><p className={v.meta}>{item.personaName} · {item.contactLabel}<br />{item.managerName} → {item.voicerName}</p>
-        <p className={v.preview}>{item.script || item.instructions}</p>
-        {item.emotion && <p>Эмоция: {item.emotion}</p>}{item.tempo && <p>Темп: {item.tempo}</p>}
-        {item.feedback && <p className={v.warning}>Перезапись: {item.feedback}</p>}
-        {item.priority > 0 && <span className={v.warning}>{item.priority === 2 ? 'Срочно' : 'Повышенный приоритет'}</span>}
-        <p className={v.meta}>{item.dueAt ? `К ${date(item.dueAt)}` : `Создано ${date(item.createdAt)}`}</p>
+    {error && <Alert variant="destructive" role="alert" className="mb-4"><AlertDescription className="flex w-full flex-row flex-wrap items-center gap-2">{error} <Button type="button" variant="outline" size="sm" onClick={load}>Повторить</Button></AlertDescription></Alert>}
+    {detailError && <p role="alert" className={cn(errorLine, 'mb-4')}>{detailError}</p>}
+    {items === null ? <div role="status" className={gridClass} aria-label="Загружаем…"><span className="sr-only">Загружаем…</span>{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="min-h-[260px] rounded-lg" />)}</div>
+      : !items.length ? <Card className={cn(cardClass, 'items-center justify-center px-6 py-10 text-center', muted)}><p className="leading-relaxed">{emptyText}</p>{manager && tab === 'tasks' && <Button type="button" onClick={() => setCreating(true)}><Plus />Новое задание</Button>}</Card> : <>
+      <p className={cn(caption, 'mb-3 min-h-4')}>Найдено: <span className="tabular-nums">{total}</span>. {tab === 'tasks' && 'Порядок: приоритет, затем время создания.'}</p>
+      <div className={gridClass} aria-busy={loading}>{items.map(item => tab === 'library' ? <Recording key={item.id} item={item} role={options.role} context={context} onChange={load} onOpen={open} /> : <Card key={item.id} className={cardClass}>
+        <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex flex-wrap items-center gap-1.5"><Badge variant="outline" className="tabular-nums">#{item.id} · {modeLabel(item)}</Badge>{item.source === 'bot' && <Badge variant="secondary">Заявка бота</Badge>}{item.priority > 0 && <Badge variant={item.priority === 2 ? 'destructive' : 'warning'}>{item.priority === 2 ? 'Срочно' : 'Повышенный приоритет'}</Badge>}</div><Badge variant={stateVariant(item.status)}>{states[item.status]}</Badge></div>
+        <h3 className="text-base leading-snug font-medium">{item.title}</h3><p className={cn(muted, 'leading-relaxed')}>{item.personaName} · {item.contactLabel}<br />{item.managerName} → {item.voicerName}</p>
+        <p className="line-clamp-3 text-sm leading-relaxed whitespace-pre-wrap">{item.script || item.instructions}</p>
+        {item.emotion && <p className="text-sm">Эмоция: {item.emotion}</p>}{item.tempo && <p className="text-sm">Темп: {item.tempo}</p>}
+        {item.feedback && <p className={warn}>Перезапись: {item.feedback}</p>}
+        <p className={cn(muted, 'min-h-5 tabular-nums')}>{item.dueAt ? `К ${date(item.dueAt)}` : `Создано ${date(item.createdAt)}`}</p>
         {item.voiceMode === 'once' && <DeliveryStatus delivery={item.delivery} />}
-        {item.notifyError ? <p className={v.warning}>{item.notifyError}</p> : <p className={v.meta}>{item.notification === 'sent' ? 'Уведомление доставлено в Telegram' : 'Уведомление ожидает отправки'}</p>}
-        <div className={v.actions}><button className={s.btnPrimary} onClick={() => open(item.id)}>Открыть задание</button></div>
-      </article>)}</div>
-      <div className={v.pager}><button className={s.btn} disabled={page === 1} onClick={() => setPage(n => n - 1)}>Назад</button><span>{page} / {Math.max(1, Math.ceil(total / 40))}</span><button className={s.btn} disabled={page * 40 >= total} onClick={() => setPage(n => n + 1)}>Далее</button></div>
+        {item.notifyError ? <p className={cn(warn, 'min-h-5')}>{item.notifyError}</p> : <p className={cn(muted, 'min-h-5')}>{item.notification === 'sent' ? 'Уведомление доставлено в Telegram' : 'Уведомление ожидает отправки'}</p>}
+        <div className="mt-auto flex flex-wrap gap-2 pt-1.5"><Button type="button" size="sm" onClick={() => open(item.id)}>Открыть задание</Button></div>
+      </Card>)}</div>
+      {pages > 1 && <nav className="mb-6 flex items-center justify-center gap-3" aria-label="Страницы"><Button type="button" variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(n => n - 1)}>Назад</Button><span className={cn(muted, 'min-w-[56px] text-center font-mono tabular-nums')}>{page} / {pages}</span><Button type="button" variant="outline" size="sm" disabled={page * PAGE >= total} onClick={() => setPage(n => n + 1)}>Далее</Button></nav>}
     </>}
-    {creating && options && options.role !== 'voice' && <CreateTask options={options} context={context} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); changeTab('tasks'); setStatus('active'); load(); }} />}
+    {creating && manager && <CreateTask options={options} context={context} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); changeTab('tasks'); setStatus('active'); load(); }} />}
     {detail && <TaskDetail key={detail.id} task={detail} role={options.role} bot={options.bot} initialView={context.get('view')} onClose={closeDetail} onChange={load} />}
   </div></main></div>;
 }

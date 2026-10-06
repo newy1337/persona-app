@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import styles from './VoicePlayer.module.scss';
+import { Pause, Play } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { BARS, fallbackPeaks, fmtClock, peaksFromSamples, seekRatio } from './voiceWave';
 
 const SPEEDS = [1, 1.5, 2];
@@ -78,7 +80,10 @@ export default function VoicePlayer({ src, onListened = null }) {
       : fmtClock(duration);
 
   return (
-    <div className={`${styles.player} ${failed ? styles.failed : ''}`} data-testid="voice-player">
+    <div
+      className={cn('flex h-[42px] w-[260px] max-w-full items-center gap-2.5', failed && 'opacity-80')}
+      data-testid="voice-player"
+    >
       <audio
         ref={audioRef}
         src={src}
@@ -97,27 +102,20 @@ export default function VoicePlayer({ src, onListened = null }) {
         }}
         onError={() => setFailed(true)}
       />
-      <button
+      <Button
         type="button"
-        className={styles.play}
+        size="icon"
+        variant={failed ? 'secondary' : 'default'}
+        className="rounded-full"
         onClick={toggle}
         aria-label={playing ? 'Пауза' : 'Слушать'}
         title={failed ? 'Файл не загрузился' : playing ? 'Пауза' : 'Слушать'}
       >
-        {playing ? (
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <rect x="6" y="5" width="4" height="14" rx="1.2" />
-            <rect x="14" y="5" width="4" height="14" rx="1.2" />
-          </svg>
-        ) : (
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" />
-          </svg>
-        )}
-      </button>
-      <div className={styles.body}>
+        {playing ? <Pause className="fill-current" /> : <Play className="fill-current" />}
+      </Button>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div
-          className={styles.wave}
+          className="flex h-[22px] cursor-pointer items-center gap-0.5"
           ref={waveRef}
           onClick={seek}
           role="slider"
@@ -127,21 +125,35 @@ export default function VoicePlayer({ src, onListened = null }) {
           aria-valuenow={Math.round(current)}
         >
           {peaks.map((h, i) => (
-            <span key={i} className={i < played ? styles.barPlayed : styles.bar} style={{ height: `${Math.round(h * 100)}%` }} />
+            <span
+              key={i}
+              className={cn(
+                'min-h-[3px] min-w-[2px] flex-1 rounded-[2px] transition-colors',
+                i < played ? 'bg-primary' : 'bg-foreground/20',
+              )}
+              style={{ height: `${Math.round(h * 100)}%` }}
+            />
           ))}
         </div>
-        <div className={styles.meta}>
-          <span className={styles.time}>{timeLabel}</span>
-          <button
-            type="button"
-            className={styles.speed}
-            onClick={() => setSpeed((v) => SPEEDS[(SPEEDS.indexOf(v) + 1) % SPEEDS.length])}
-            title="Скорость"
-          >
-            {speed}×
-          </button>
-        </div>
+        <span
+          className={cn(
+            'min-w-[72px] font-mono text-[11px] leading-4 tabular-nums',
+            failed ? 'text-destructive' : 'text-muted-foreground',
+          )}
+        >
+          {timeLabel}
+        </span>
       </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="xs"
+        className="min-w-[44px] font-mono tabular-nums"
+        onClick={() => setSpeed((v) => SPEEDS[(SPEEDS.indexOf(v) + 1) % SPEEDS.length])}
+        title="Скорость"
+      >
+        {speed}×
+      </Button>
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { Mic, MicOff, Phone, PhoneOff } from 'lucide-react';
 import { api } from '../../api/client';
 import { PanelUX } from '../../ui/PanelUX';
-import s from '../../styles/AdminPage.module.scss';
-import v from './VoiceWork.module.scss';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 const labels = { microphone: 'Подключаем микрофон…', connecting: 'Соединяем с Telegram…', ringing: 'Вызываем собеседника…', connected: 'Разговор идёт', ending: 'Завершаем соединение с Telegram…', ended: 'Звонок завершён', missed: 'Нет ответа', busy: 'Занято', failed: 'Не удалось позвонить', interrupted: 'Соединение прервано' };
 export function CallPanel({ task, onActive }) {
   const [state, setState] = useState(''), [reason, setReason] = useState(''), [active, setActive] = useState(false), [muted, setMuted] = useState(false), [seconds, setSeconds] = useState(0);
@@ -61,16 +62,16 @@ export function CallPanel({ task, onActive }) {
   }
   function mute() { const enabled = muted; resources.current?.stream?.getAudioTracks().forEach(t => { t.enabled = enabled; }); setMuted(!muted); }
   if (!active && task.status === 'completed') return null;
-  return <section className={`${v.callPanel} ${active ? v.callActive : ''}`} aria-label="Звонок с сайта">
-    <strong>Звонок с аккаунта диалога</strong>
-    {!active && <p className={s.hint}>После звонка бот включится сам, если менеджер не поставит новую паузу. Итог сохраняется автоматически.</p>}
-    {!task.chatId && <p className={v.warning}>Менеджеру нужно привязать диалог к заданию.</p>}
-    {state && <p role="status">{labels[state] || state}{state === 'connected' && ` · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`}</p>}
-    {reason && <p className={state === 'failed' ? s.error : s.hint}>{reason}</p>}
-    <div className={v.actions}>
-      {!active && <button className={s.btnPrimary} disabled={task.status !== 'in_progress' || !task.chatId} onClick={start}>Позвонить с сайта</button>}
-      {active && <><button className={s.btn} onClick={mute} disabled={!resources.current?.stream}>{muted ? 'Включить микрофон' : 'Выключить микрофон'}</button>
-        <button className={s.btnDanger} onClick={() => { setState('ended'); setReason('Вы завершили звонок'); startAt.current = 0; release(); }}>Завершить вызов</button></>}
+  return <section className={cn('sticky top-0 z-10 flex flex-col gap-3 rounded-lg border bg-card p-4 text-sm text-card-foreground shadow-sm', active && 'border-primary/40')} aria-label="Звонок с сайта">
+    <strong className="font-medium">Звонок с аккаунта диалога</strong>
+    {!active && <p className="text-xs text-muted-foreground">После звонка бот включится сам, если менеджер не поставит новую паузу. Итог сохраняется автоматически.</p>}
+    {!task.chatId && <p className="text-xs text-warning-foreground">Менеджеру нужно привязать диалог к заданию.</p>}
+    <p role="status" className="min-h-5 tabular-nums">{state && <>{labels[state] || state}{state === 'connected' && ` · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`}</>}</p>
+    <p className={cn('min-h-5 text-xs tabular-nums', state === 'failed' ? 'text-destructive' : 'text-muted-foreground')}>{reason}</p>
+    <div className="flex flex-wrap gap-2">
+      {!active && <Button type="button" disabled={task.status !== 'in_progress' || !task.chatId} onClick={start}><Phone />Позвонить с сайта</Button>}
+      {active && <><Button type="button" variant="outline" onClick={mute} disabled={!resources.current?.stream}>{muted ? <Mic /> : <MicOff />}{muted ? 'Включить микрофон' : 'Выключить микрофон'}</Button>
+        <Button type="button" variant="destructive" onClick={() => { setState('ended'); setReason('Вы завершили звонок'); startAt.current = 0; release(); }}><PhoneOff />Завершить вызов</Button></>}
     </div>
   </section>;
 }
