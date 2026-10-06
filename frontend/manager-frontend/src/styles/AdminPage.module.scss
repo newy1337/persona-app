@@ -111,6 +111,18 @@ textarea.field { @include textarea; }
 .stepDone { composes: step; color: $color-green; border-color: rgba($color-green, 0.4); }
 .ok { color: $color-green; }
 
+/* QR для входа: белое поле обязательно — камера не читает код на тёмном. */
+.qr {
+  align-self: center;
+  width: 220px;
+  padding: 10px;
+  background: #fff;
+  border-radius: $radius-md;
+  line-height: 0;
+
+  svg { width: 100%; height: auto; display: block; }
+}
+
 
 /* Restored panel readability and responsive controls. */
 .btn, .btnPrimary, .btnDanger, .btnGhost, .btnSm, .btnSmDanger, .btnSmGhost { min-height:34px; height:auto; font-size:13px; line-height:1.4; padding-top:6px; padding-bottom:6px; }

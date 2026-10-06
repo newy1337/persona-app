@@ -40,6 +40,7 @@ import {
   SetProxyDto,
   SetStatusDto,
   SmsCodeDto,
+  StartAuthDto,
   TwoFaDto,
   UpdateTgAccountDto,
   UpdateTgProfileDto,
@@ -294,18 +295,28 @@ export class TgAccountsController {
     return snap;
   }
 
-  @ApiOperation({ summary: 'Start the login wizard: phone → code → 2FA' })
+  @ApiOperation({
+    summary: 'Start the login wizard: phone → code → 2FA, or scan a QR code',
+  })
   @Post('tg-accounts/:id/auth')
   @HttpCode(200)
+  @UsePipes(ValidationPipe)
   async startAuth(
     @Param('id', ParseIntPipe) id: number,
+    @Body() dto: StartAuthDto,
     @CurrentUser() user: DashboardUser,
   ) {
     await this.own(user, id);
     const userId = user.id;
+    const method = dto.method ?? 'phone';
     return this.audit.wrap(
-      { userId, action: 'tg_account.auth', resource: `tg_account:${id}` },
-      () => this.login.start(id),
+      {
+        userId,
+        action: 'tg_account.auth',
+        resource: `tg_account:${id}`,
+        payload: { method },
+      },
+      () => this.login.start(id, method),
     );
   }
 

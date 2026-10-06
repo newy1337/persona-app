@@ -13,15 +13,26 @@ import { ClockService } from 'src/shared/clock.service';
 import { TelegramService } from './telegram.service';
 import { TelegramClient } from 'telegram';
 import { withTimeout } from 'src/domain/timeout';
+import { toString } from 'qrcode';
 
 export const JOB_PENDING = 'pending';
 export const JOB_NEED_CODE = 'need_code';
+export const JOB_NEED_QR = 'need_qr';
 export const JOB_NEED_2FA = 'need_2fa';
 export const JOB_DONE = 'ok';
 export const JOB_FAILED = 'failed';
 const TERMINAL = new Set([JOB_DONE, JOB_FAILED]);
 const INPUT_TIMEOUT_MS = 300_000;
 const CONNECT_TIMEOUT_MS = 45_000;
+
+/** Ссылка, которую ждёт Telegram в QR: токен в base64url без выравнивания. */
+export const loginLink = (token: Buffer): string =>
+  `tg://login?token=${token.toString('base64url')}`;
+
+/** Картинку рисуем на сервере: токен входа — это ключ, его нельзя отдавать
+ *  чужому генератору QR, а панель тогда обходится без лишней зависимости. */
+export const qrSvg = (text: string): Promise<string> =>
+  toString(text, { type: 'svg', margin: 1, errorCorrectionLevel: 'L' });
 
 export function loginErrorText(e: unknown): string {
   const msg = String((e as Error)?.message ?? e ?? '');
@@ -64,13 +75,18 @@ class Input {
   }
 }
 
+export type LoginMethod = 'phone' | 'qr';
+
 export interface AuthJob {
   job_id: string;
   account_id: number;
   phone: string;
+  method: LoginMethod;
   status: string;
   error: string | null;
   username: string | null;
+  /** Картинка текущего кода и когда он протухнет; Telegram обновляет его сам. */
+  qr: { svg: string; expires_at: number } | null;
   code: Input;
   password: Input;
   cancelled: boolean;
@@ -79,9 +95,12 @@ export interface AuthJob {
 
 const snapshot = (j: AuthJob) => ({
   job_id: j.job_id,
+  method: j.method,
   status: j.status,
   error: j.error,
   username: j.username,
+  qr_svg: j.qr?.svg ?? null,
+  qr_expires_at: j.qr?.expires_at ?? null,
 });
 
 @Injectable()
@@ -113,7 +132,7 @@ export class LoginService {
     return snapshot(this.get(jobId));
   }
 
-  async start(accountId: number) {
+  async start(accountId: number, method: LoginMethod = 'phone') {
     if (!this.telegram.configured) {
       throw new UnprocessableEntityException(
         'TG_API_ID / TG_API_HASH are not configured',
@@ -133,9 +152,11 @@ export class LoginService {
       job_id: randomUUID().replace(/-/g, ''),
       account_id: accountId,
       phone: account.phoneE164,
+      method,
       status: JOB_PENDING,
       error: null,
       username: null,
+      qr: null,
       code: new Input(),
       password: new Input(),
       cancelled: false,
@@ -182,15 +203,32 @@ export class LoginService {
           ),
       );
       if (job.cancelled) throw new Error('отменено оператором');
-      await client.start({
-        phoneNumber: async () => job.phone,
-        phoneCode: async () => this.waitFor(job, job.code, JOB_NEED_CODE),
-        password: async () => this.waitFor(job, job.password, JOB_NEED_2FA),
-        onError: async (err) => {
-          this.log.warn(`auth job ${job.job_id}: ${err?.message ?? err}`);
-          return true;
-        },
-      });
+      const onError = async (err: Error) => {
+        this.log.warn(`auth job ${job.job_id}: ${err?.message ?? err}`);
+        return true;
+      };
+      if (job.method === 'qr') {
+        await client.signInUserWithQrCode(this.telegram.apiCredentials, {
+          // Telegram сам обновляет код, пока его не отсканировали, и зовёт
+          // это на каждый новый токен — просто показываем свежую картинку.
+          qrCode: async ({ token, expires }) => {
+            job.qr = {
+              svg: await qrSvg(loginLink(token)),
+              expires_at: expires,
+            };
+            job.status = JOB_NEED_QR;
+          },
+          password: async () => this.waitFor(job, job.password, JOB_NEED_2FA),
+          onError,
+        });
+      } else {
+        await client.start({
+          phoneNumber: async () => job.phone,
+          phoneCode: async () => this.waitFor(job, job.code, JOB_NEED_CODE),
+          password: async () => this.waitFor(job, job.password, JOB_NEED_2FA),
+          onError,
+        });
+      }
       const me = (await client.getMe()) as Api.User;
       const session = client.session.save() as unknown as string;
       const ts = this.clock.ts();

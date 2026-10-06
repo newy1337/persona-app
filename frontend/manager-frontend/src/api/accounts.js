@@ -33,7 +33,8 @@ export function getLiveState() {
 }
 
 export const authFlow = {
-  start: (accountId) => api.post(`/api/tg-accounts/${accountId}/auth`),
+  start: (accountId, method = 'phone') =>
+    api.post(`/api/tg-accounts/${accountId}/auth`, { method }),
   status: (jobId) => api.get(`/api/tg-accounts/auth/${jobId}`),
   code: (jobId, code) => api.post(`/api/tg-accounts/auth/${jobId}/sms-code`, { code }),
   password: (jobId, password) => api.post(`/api/tg-accounts/auth/${jobId}/2fa`, { password }),

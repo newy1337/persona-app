@@ -2,19 +2,28 @@ import { useEffect, useRef, useState } from 'react';
 import { authFlow } from '../../api/accounts';
 import s from '../../styles/AdminPage.module.scss';
 
-const STEPS = [
-  { key: 'pending', label: 'связь' },
-  { key: 'need_code', label: 'код' },
-  { key: 'need_2fa', label: '2FA' },
-  { key: 'ok', label: 'готово' },
-];
-const ORDER = STEPS.map((x) => x.key);
+const STEPS = {
+  phone: [
+    { key: 'pending', label: 'связь' },
+    { key: 'need_code', label: 'код' },
+    { key: 'need_2fa', label: '2FA' },
+    { key: 'ok', label: 'готово' },
+  ],
+  qr: [
+    { key: 'pending', label: 'связь' },
+    { key: 'need_qr', label: 'сканирование' },
+    { key: 'need_2fa', label: '2FA' },
+    { key: 'ok', label: 'готово' },
+  ],
+};
 
-function StepBar({ status }) {
-  const idx = Math.max(0, ORDER.indexOf(status === 'failed' ? 'pending' : status));
+function StepBar({ method, status }) {
+  const steps = STEPS[method];
+  const order = steps.map((x) => x.key);
+  const idx = Math.max(0, order.indexOf(status === 'failed' ? 'pending' : status));
   return (
     <div className={s.steps}>
-      {STEPS.map((st, i) => (
+      {steps.map((st, i) => (
         <span key={st.key} className={i < idx ? s.stepDone : i === idx ? s.stepActive : s.step}>
           {st.label}
         </span>
@@ -23,7 +32,42 @@ function StepBar({ status }) {
   );
 }
 
+// Картинку рисует сервер: токен входа — это ключ, через чужой генератор его
+// пропускать нельзя, а панель обходится без лишней зависимости.
+function QrCode({ svg }) {
+  if (!svg) return <p className={s.modalText}>Готовим код…</p>;
+  return (
+    <div
+      className={s.qr}
+      data-testid="login-qr"
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
+}
+
+function MethodPicker({ value, onChange, disabled }) {
+  return (
+    <div className={s.actions} role="group" aria-label="Способ входа">
+      {[
+        ['phone', 'По коду из Telegram'],
+        ['qr', 'По QR-коду'],
+      ].map(([key, label]) => (
+        <button
+          key={key}
+          type="button"
+          className={`${s.btnSm} ${value === key ? s.btnSelected : ''}`}
+          disabled={disabled}
+          onClick={() => onChange(key)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function AuthWizard({ account, onClose }) {
+  const [method, setMethod] = useState('phone');
   const [job, setJob] = useState(null);
   const [error, setError] = useState(null);
   const [value, setValue] = useState('');
@@ -33,8 +77,11 @@ export default function AuthWizard({ account, onClose }) {
   useEffect(() => {
     let timer;
     let alive = true;
+    setJob(null);
+    setError(null);
+    setValue('');
     authFlow
-      .start(account.id)
+      .start(account.id, method)
       .then((j) => {
         if (!alive) return;
         jobRef.current = j.job_id;
@@ -55,7 +102,7 @@ export default function AuthWizard({ account, onClose }) {
       alive = false;
       clearInterval(timer);
     };
-  }, [account.id]);
+  }, [account.id, method]);
 
   async function submit(e) {
     e.preventDefault();
@@ -80,17 +127,47 @@ export default function AuthWizard({ account, onClose }) {
     onClose(done);
   }
 
+  // Переключение способа бросает начатое задание и начинает новое.
+  async function switchMethod(next) {
+    if (next === method || busy) return;
+    const id = jobRef.current;
+    if (id && job?.status !== 'ok' && job?.status !== 'failed') {
+      await authFlow.cancel(id).catch(() => {});
+    }
+    jobRef.current = null;
+    setMethod(next);
+  }
+
   const status = job?.status ?? 'pending';
-  const waiting = status === 'pending';
   const done = status === 'ok';
+  const over = done || status === 'failed';
+  // На шагах без поля ввода кнопка «Далее» не нужна: ждём Telegram.
+  const needsInput = status === 'need_code' || status === 'need_2fa';
 
   return (
     <div className={s.overlay} onMouseDown={(e) => e.target === e.currentTarget && close(false)}>
       <form className={s.modal} onSubmit={submit}>
         <h3 className={s.modalTitle}>Вход: {account.phone_e164}</h3>
-        <StepBar status={status} />
+        {!over && <MethodPicker value={method} onChange={switchMethod} disabled={busy} />}
+        <StepBar method={method} status={status} />
 
-        {status === 'pending' && <p className={s.modalText}>Подключаемся к Telegram, ждём отправки кода…</p>}
+        {status === 'pending' && (
+          <p className={s.modalText}>
+            {method === 'qr'
+              ? 'Подключаемся к Telegram, запрашиваем код…'
+              : 'Подключаемся к Telegram, ждём отправки кода…'}
+          </p>
+        )}
+        {status === 'need_qr' && (
+          <>
+            <QrCode svg={job?.qr_svg} />
+            <p className={s.modalText}>
+              В Telegram на телефоне этого аккаунта: Настройки → Устройства → Подключить
+              устройство, и наведите камеру на код. Код сам обновляется, пока его не
+              отсканировали.
+            </p>
+          </>
+        )}
         {status === 'need_code' && (
           <label className={s.label}>
             Код из Telegram / SMS
@@ -112,14 +189,16 @@ export default function AuthWizard({ account, onClose }) {
         {error && <p className={s.error}>{error}</p>}
 
         <div className={s.modalActions}>
-          {done || status === 'failed' ? (
+          {over ? (
             <button type="button" className={s.btnPrimary} onClick={() => close(done)}>Закрыть</button>
           ) : (
             <>
               <button type="button" className={s.btn} onClick={() => close(false)}>Отменить</button>
-              <button type="submit" className={s.btnPrimary} disabled={waiting || busy || !value}>
-                {busy ? 'Отправка…' : 'Далее'}
-              </button>
+              {needsInput && (
+                <button type="submit" className={s.btnPrimary} disabled={busy || !value}>
+                  {busy ? 'Отправка…' : 'Далее'}
+                </button>
+              )}
             </>
           )}
         </div>

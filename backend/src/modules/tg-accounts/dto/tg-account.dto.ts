@@ -133,6 +133,13 @@ export class SetStatusDto {
   reason?: string;
 }
 
+export class StartAuthDto {
+  @ApiPropertyOptional({ enum: ['phone', 'qr'], default: 'phone' })
+  @IsOptional()
+  @IsIn(['phone', 'qr'])
+  method?: 'phone' | 'qr';
+}
+
 export class SmsCodeDto {
   @ApiProperty() @IsString() @MinLength(1) @MaxLength(16) code: string;
 }

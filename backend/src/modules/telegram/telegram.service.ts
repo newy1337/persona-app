@@ -193,6 +193,11 @@ export class TelegramService
     return Boolean(appConfig.tgApiId && appConfig.tgApiHash);
   }
 
+  /** Вход по QR требует те же ключи приложения отдельным аргументом. */
+  get apiCredentials(): { apiId: number; apiHash: string } {
+    return { apiId: appConfig.tgApiId, apiHash: appConfig.tgApiHash };
+  }
+
   onModuleInit(): void {
     if (!this.configured) {
       this.log.warn(
