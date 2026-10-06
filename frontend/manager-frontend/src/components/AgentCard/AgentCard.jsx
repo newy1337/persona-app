@@ -1,8 +1,10 @@
-import { Attribution } from '../../ui/ManagerRegion';
 import { useNavigate } from 'react-router-dom';
-import styles from './AgentCard.module.scss';
-import { StatusIcon, LightningIcon, ClockIcon } from '../../assets/icons';
-import { priorityColor } from '../../data/stages';
+import { Clock, OctagonAlert, Zap } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import { Attribution } from '../Attribution/Attribution';
+import { PRIORITY_COLORS, priorityColor } from '../../data/stages';
 
 function waitingFor(ts) {
   if (!ts) return '—';
@@ -44,64 +46,96 @@ function AgentCard({ agent, showAlert = false }) {
   } = agent;
   const isManager = Boolean(isPaused);
   const navigate = useNavigate();
+  const open = () => navigate(`/conversation/${chatId}`);
+  const onKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      open();
+    }
+  };
+  const reason = showAlert ? REASON_LABEL[queueReason] : null;
+  const urgent = String(queueReason).startsWith('media_');
+  const hot = priorityColor(vbrosPhase) === PRIORITY_COLORS.hot;
 
   return (
-    <div className={styles.card} onClick={() => navigate(`/conversation/${chatId}`)} style={{ cursor: 'pointer' }}>
-      <div className={styles.top}>
-        <div className={styles.info}>
-          <span className={styles.name}>{name || `Чат ${chatId}`}</span>
-          <div className={styles.sub}>
-            {[age ? `${age} лет` : null, city || null].filter(Boolean).length ? (
+    <Card
+      data-testid="agent-card"
+      role="link"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={onKeyDown}
+      className={cn(
+        'agentCard',
+        'min-w-0 cursor-pointer gap-3.5 rounded-lg p-4 shadow-none transition-colors hover:border-foreground/25',
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <span className="truncate text-sm font-semibold">{name || `Чат ${chatId}`}</span>
+          <div className="flex min-h-4 items-center gap-2 overflow-hidden text-xs text-muted-foreground">
+            {age || city ? (
               <>
-                {age ? <span className={styles.subAge}>{age} лет</span> : null}
-                {age && city ? <span className={styles.subDot}>·</span> : null}
-                {city ? <span className={styles.subLocation} title={city}>{city}</span> : null}
+                {age ? <span className="shrink-0">{age} лет</span> : null}
+                {age && city ? <span className="shrink-0">·</span> : null}
+                {city ? <span className="truncate" title={city}>{city}</span> : null}
               </>
             ) : (
-              <span className={styles.subAge}>
+              <span className="truncate">
                 {accountId == null ? 'аккаунт удалён' : accountUsername ? `@${accountUsername}` : 'возраст и город неизвестны'}
               </span>
             )}
           </div>
         </div>
-        {showAlert && vbrosPhase && (
-          <div className={styles.tooltipWrap} title={vbrosPhase ? `Вброс: ${vbrosPhase}` : 'Вброса нет'}>
-            <StatusIcon color={priorityColor(vbrosPhase)} />
-          </div>
-        )}
+        {showAlert && vbrosPhase ? (
+          <span
+            className={cn('shrink-0', hot ? 'text-destructive' : 'text-muted-foreground')}
+            title={`Вброс: ${vbrosPhase}`}
+          >
+            <OctagonAlert className="size-5" />
+          </span>
+        ) : null}
       </div>
 
       <Attribution value={agent} compact />
-      {showAlert && REASON_LABEL[queueReason] && (
-        <span
-          className={`${styles.reason} ${String(queueReason).startsWith('media_') ? styles.reasonUrgent : ''}`}
-          title={REASON_LABEL[queueReason]}
-        >
-          {REASON_LABEL[queueReason]}
-        </span>
+
+      {showAlert && (
+        <div className="-mt-1 flex min-h-5 items-start">
+          {reason && (
+            <Badge
+              variant="outline"
+              title={reason}
+              className={cn(
+                'h-5 max-w-full rounded-full font-medium',
+                urgent && 'border-destructive/35 bg-destructive/10 text-destructive',
+              )}
+            >
+              <span className="truncate">{reason}</span>
+            </Badge>
+          )}
+        </div>
       )}
 
-      <div className={styles.bottom}>
+      <div className="flex items-center justify-between gap-3 border-t pt-2.5">
         {isManager ? (
-          <div className={`${styles.pill} ${styles.pillManager}`}>
-            <span className={styles.pillDot}></span>
-            <LightningIcon />
-            <span>Менеджер</span>
-          </div>
+          <Badge variant="default" className="h-5 rounded-full">
+            <Zap />
+            Менеджер
+          </Badge>
         ) : (
-          <div className={`${styles.pill} ${styles.pillAI}`}>
-            <span className={styles.pillDot}></span>
-            <LightningIcon />
-            <span>Бот</span>
-          </div>
+          <Badge variant="secondary" className="h-5 rounded-full">
+            <Zap />
+            Бот
+          </Badge>
         )}
 
-        <div className={styles.timer}>
-          <ClockIcon />
-          <span className={styles.timerValue}>{waitingFor(waitingSince ?? holdArmedAt)}</span>
-        </div>
+        <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground">
+          <Clock className="size-3.5" />
+          <span className="min-w-[4ch] text-right font-mono text-sm font-medium tabular-nums text-foreground">
+            {waitingFor(waitingSince ?? holdArmedAt)}
+          </span>
+        </span>
       </div>
-    </div>
+    </Card>
   );
 }
 
