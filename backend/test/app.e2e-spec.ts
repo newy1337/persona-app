@@ -4261,9 +4261,13 @@ describe('Manager panel API (e2e)', () => {
       expect(Object.keys(r.body.sections.prompts).sort()).toEqual(
         [...PROMPT_KEYS].sort(),
       );
-      expect(r.body.sections.prompts.opener).toBe('Привет, это Настя с beboo');
+      expect(r.body.sections.prompts.opener).toBe(
+        'Привет, это {name} с {site}',
+      );
       expect(r.body.edited_prompts).toBe(0);
-      expect(r.body.effective_prompts.opener).toBe('Привет, это Настя с beboo');
+      expect(r.body.effective_prompts.opener).toBe(
+        'Привет, это {name} с {site}',
+      );
       expect(r.body.effective_prompts.judge_plan.length).toBeGreaterThan(100);
     });
 
@@ -4332,7 +4336,7 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .expect(200);
       expect(back.body.effective_prompts.opener).toBe(
-        'Привет, это Настя с beboo',
+        'Привет, это {name} с {site}',
       );
     });
 
@@ -4457,7 +4461,7 @@ describe('Manager panel API (e2e)', () => {
       });
       expect(copy.body.sections.persona.name).toBe('Настя');
       expect(copy.body.sections.prompts.opener).toBe(
-        'Привет, это Настя с beboo',
+        'Привет, это {name} с {site}',
       );
 
       // Второй раз — свободный slug, а не 409.
