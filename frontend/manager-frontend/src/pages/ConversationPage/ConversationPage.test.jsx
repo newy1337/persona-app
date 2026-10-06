@@ -69,7 +69,7 @@ vi.mock('../../api/client', () => ({
 }));
 
 import ConversationPage, { TOGGLE_COOLDOWN_MS } from './ConversationPage';
-import { getConversationById, getInboundMedia, getPauseStatus, sendAlbum, sendAttachment, getMediaGallery, setConversationHidden, setDealStage } from '../../api/conversations';
+import { getConversationById, getConversations, getInboundMedia, getPauseStatus, sendAlbum, sendAttachment, getMediaGallery, setConversationHidden, setDealStage } from '../../api/conversations';
 
 let container = null;
 let root = null;
@@ -108,24 +108,114 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('ConversationPage: шапка и навигация по чатам', () => {
-  it('в sub-header стоят стрелки и «К дашборду», позиция 1 из 3', async () => {
+describe('ConversationPage: «К дашборду» и каркас страницы', () => {
+  const PAUSED = { chat_id: 111, is_paused: true, funnel_stage: 'rapport', pinned_facts: {}, first_seen: 1000, messages: [], funnel_events: [] };
+
+  it('перехода между чатами нет: ни стрелок, ни счётчика, ни номера чата; список чатов не запрашивается', async () => {
+    vi.mocked(getConversations).mockClear();
     await renderPage();
-    expect(navButton('Предыдущий чат')).toBeTruthy();
-    expect(navButton('Следующий чат')).toBeTruthy();
-    expect(container.textContent).toContain('К дашборду');
-    expect(container.querySelector('[class*="navCurrent"]')?.textContent).toBe('1');
-    const children = [...container.querySelectorAll('[class*="subHeader"] [class*="container"] > *')];
-    expect(children.findIndex((el) => el.className.includes('backBtn')))
-      .toBeLessThan(children.findIndex((el) => el.className.includes('subNav')));
-    expect(navButton('Предыдущий чат').disabled).toBe(true);
-    expect(navButton('Следующий чат').disabled).toBe(false);
+    expect(navButton('Предыдущий чат')).toBeNull();
+    expect(navButton('Следующий чат')).toBeNull();
+    expect(container.querySelector('[class*="navCurrent"]')).toBeNull();
+    expect(container.querySelector('[class*="subNav"]')).toBeNull();
+    expect(container.querySelector('[class*="subHeader"]')).toBeNull();
+    // «Чат 111» остаётся только именем собеседника без имени — в карточке клиента.
+    expect(container.querySelector('[class*="chatColumn"]').textContent).not.toContain('Чат 111');
+    expect(getConversations).not.toHaveBeenCalled();
   });
 
-  it('стрелка «вправо» ведёт на следующий чат списка', async () => {
+  it('«К дашборду»: на широком экране — первая строка колонки клиента, на узком — первая кнопка строки действий; видна всегда одна', async () => {
     await renderPage();
-    navButton('Следующий чат').click();
-    expect(navigateMock).toHaveBeenCalledWith('/conversation/222');
+    const backs = [...container.querySelectorAll('button[class*="backBtn"]')];
+    expect(backs).toHaveLength(2);
+    const [inSidebar, inToolbar] = backs;
+    expect(inSidebar.textContent).toContain('К дашборду');
+    expect(inToolbar.textContent).toContain('К дашборду');
+
+    const sidebar = container.querySelector('aside[class*="sidebar"]');
+    const top = inSidebar.parentElement;
+    expect(sidebar.firstElementChild).toBe(top);
+    expect(top.className).toContain('h-11');
+    // Одна прячется ниже lg, другая — от lg: одновременно доступна только одна.
+    expect(top.className.split(' ')).toEqual(expect.arrayContaining(['hidden', 'lg:flex']));
+    expect(inToolbar.className.split(' ')).toContain('lg:hidden');
+
+    const toolbarRow = container.querySelector('[class*="chatToolbar"]').firstElementChild;
+    expect(toolbarRow.className).toContain('h-11');
+    expect(toolbarRow.firstElementChild).toBe(inToolbar);
+
+    await act(async () => {
+      inSidebar.click();
+    });
+    expect(navigateMock).toHaveBeenLastCalledWith('/');
+    navigateMock.mockClear();
+    await act(async () => {
+      inToolbar.click();
+    });
+    expect(navigateMock).toHaveBeenLastCalledWith('/');
+  });
+
+  it('страница умещается в экран: сжимается каждый уровень, прокручивается только лента, блок ввода не сжимается', async () => {
+    getConversationById.mockResolvedValueOnce(PAUSED);
+    await renderPage();
+    const classes = (el) => el.className.split(' ');
+    const page = container.firstElementChild;
+    expect(classes(page)).toEqual(expect.arrayContaining(['flex', 'min-h-0', 'flex-1', 'flex-col']));
+
+    const feed = container.querySelector('[class*="messages"]');
+    expect(classes(feed)).toEqual(expect.arrayContaining(['min-h-0', 'flex-1', 'overflow-y-auto']));
+
+    // От ленты вверх до корня страницы: каждый уровень — flex с min-h-0.
+    for (let el = feed.parentElement; el !== page; el = el.parentElement) {
+      expect(classes(el)).toEqual(expect.arrayContaining(['flex', 'min-h-0']));
+    }
+
+    const chat = container.querySelector('[class*="chatColumn"]');
+    expect([...chat.querySelectorAll('[class*="overflow-y-auto"]')]).toEqual([feed]);
+
+    // Строка действий, лента и блок ввода — соседи в одной колонке.
+    const frame = feed.parentElement;
+    expect(classes(frame)).toContain('flex-col');
+    const toolbar = container.querySelector('[class*="chatToolbar"]');
+    const input = container.querySelector('[class*="inputArea"]');
+    expect(toolbar.parentElement).toBe(frame);
+    expect(input.parentElement).toBe(frame);
+    expect(classes(toolbar)).toContain('shrink-0');
+    expect(classes(input)).toContain('shrink-0');
+    expect(input.querySelector('textarea')).toBeTruthy();
+
+    // Колонка клиента прокручивается сама и страницу не растягивает.
+    const sidebar = container.querySelector('aside[class*="sidebar"]');
+    expect(classes(sidebar)).toEqual(expect.arrayContaining(['min-h-0', 'shrink-0']));
+    expect(sidebar.className).toContain('w-[clamp(300px,24vw,380px)]');
+    const body = container.querySelector('[class*="sidebarBody"]');
+    expect(classes(body)).toEqual(expect.arrayContaining(['min-h-0', 'flex-1', 'overflow-y-auto']));
+  });
+
+  it('полоса режима — одна строка 40px: подсказка и «что дальше» в одной обрезаемой строке, полный текст в title', async () => {
+    getConversationById.mockResolvedValueOnce({ ...PAUSED, next_bot_action: { kind: 'none' } });
+    await renderPage();
+    const strip = container.querySelector('[class*="modeStrip"]');
+    expect(strip.className.split(' ')).toContain('h-10');
+    const line = strip.querySelector('[data-testid="mode-status"]');
+    expect(line.className.split(' ')).toContain('truncate');
+    const next = line.querySelector('[data-testid="next-bot-action"]').textContent;
+    expect(next).toBeTruthy();
+    expect(line.textContent).toContain('Чат за тобой');
+    expect(line.getAttribute('title')).toBe(`Чат за тобой. Включи, чтобы вернуть боту · ${next}`);
+  });
+
+  it('лента: колонка сообщений по центру (max-w-3xl), строка под пузырём не переносится', async () => {
+    getConversationById.mockResolvedValueOnce({
+      ...PAUSED,
+      messages: [{ id: 1, tg_msg_id: 10, ts: 1000, role: 'user', author: 'llm', content: 'привет' }],
+    });
+    await renderPage();
+    const row = container.querySelector('[class*="msgRow"]');
+    expect(row.className.split(' ')).toEqual(expect.arrayContaining(['mx-auto', 'w-full', 'max-w-3xl']));
+    const meta = row.querySelector('[class*="msgMeta"]');
+    expect(meta.className.split(' ')).toEqual(expect.arrayContaining(['h-7', 'whitespace-nowrap']));
+    expect(meta.className).not.toContain('flex-wrap');
   });
 });
 
@@ -159,10 +249,49 @@ describe('ConversationPage: «Сценарий» — один список, ба
     ],
   };
 
-  async function renderWithBeats() {
+  // Сценарий по умолчанию свёрнут; тесты списка открывают его сохранённым выбором.
+  beforeEach(() => {
+    window.localStorage.setItem('panel_chat_scenario_open', '1');
+  });
+
+  async function renderWithBeats({ open = true } = {}) {
+    if (!open) window.localStorage.removeItem('panel_chat_scenario_open');
     getBeatsMock.mockResolvedValue(PAYLOAD);
     await renderPage();
   }
+
+  const scenarioToggle = () => container.querySelector('button[class*="scenarioToggle"]');
+
+  it('по умолчанию свёрнут: видна только шапка со счётчиком; клик раскрывает и запоминает выбор', async () => {
+    await renderWithBeats({ open: false });
+    const toggle = scenarioToggle();
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.textContent).toContain('Сценарий');
+    expect(toggle.textContent).toContain('3 / 5');
+    expect(container.querySelectorAll('[class*="beatRow"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[class*="telemetryRow"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[class*="dayProgressLabel"]')).toHaveLength(0);
+
+    await act(async () => {
+      toggle.click();
+    });
+    expect(scenarioToggle().getAttribute('aria-expanded')).toBe('true');
+    expect(window.localStorage.getItem('panel_chat_scenario_open')).toBe('1');
+    expect(rowIds()).toEqual(['B2', 'B3', 'B10', 'B12', 'B20']);
+
+    await act(async () => {
+      scenarioToggle().click();
+    });
+    expect(scenarioToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(window.localStorage.getItem('panel_chat_scenario_open')).toBe('0');
+    expect(container.querySelectorAll('[class*="beatRow"]')).toHaveLength(0);
+  });
+
+  it('сохранённый выбор «открыт» раскрывает сценарий сразу', async () => {
+    await renderWithBeats();
+    expect(scenarioToggle().getAttribute('aria-expanded')).toBe('true');
+    expect(rowIds().length).toBeGreaterThan(0);
+  });
 
   const beatRows = () =>
     [...container.querySelectorAll('[class*="beatRow"]')].filter(
@@ -416,6 +545,7 @@ describe('ConversationPage: чат — разбивка ходов и галоч
   });
 
   it('улика-путь рисуется миниатюрой с подписью «кадр отправлен», а не сырым путём', async () => {
+    window.localStorage.setItem('panel_chat_scenario_open', '1');
     getBeatsMock.mockResolvedValue({
       total: 1,
       delivered: 1,
@@ -537,7 +667,7 @@ describe('ConversationPage: лента — дата, разбивка, гало�
   it('кнопка «Голосовое» открывает выбор аудио, а не отправку текста войсеру', async () => {
     withMessages(msgs, { paused: true });
     await renderPage();
-    const voice = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('Голосовое'));
+    const voice = navButton('Голосовое');
     expect(voice).toBeTruthy();
     expect(container.textContent).not.toContain('Войсеру');
     const input = container.querySelector('input[type="file"][accept*="audio"]');

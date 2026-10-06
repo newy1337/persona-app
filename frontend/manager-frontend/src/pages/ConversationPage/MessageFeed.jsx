@@ -26,9 +26,11 @@ const NOTE_BOX = 'block aspect-square w-[240px] max-w-full shrink-0 overflow-hid
 const MEDIA_ITEM = 'mediaItem block size-full object-contain';
 const NOTE_ITEM = 'mediaItem videoNote block size-full object-cover';
 
-const ROW = 'msgRow flex w-full items-end gap-2';
+// Колонка сообщений стоит по центру ленты и не шире max-w-3xl: на широком экране
+// собеседник и бот не разъезжаются по краям. Пузырь — не шире ~75% колонки.
+const ROW = 'msgRow mx-auto flex w-full max-w-3xl shrink-0 items-end gap-2';
 const INNER = 'flex min-w-0 flex-1 items-end gap-2.5';
-const CONTENT = 'flex max-w-[724px] min-w-0 flex-col gap-1';
+const CONTENT = 'flex max-w-[88%] min-w-0 flex-col gap-1 sm:max-w-[75%]';
 const AVATAR = 'clientAvatar size-8 shrink-0 rounded-full border text-[10px]';
 const BUBBLE = 'flex min-w-0 flex-col gap-2 rounded-xl border px-3.5 py-2.5 text-sm leading-relaxed [overflow-wrap:anywhere]';
 // Пузыри нейтральные: собеседник — серая подложка, наши (бот и менеджер) —
@@ -264,9 +266,9 @@ function MessageFeed({
                     <span className="inline-flex w-fit items-center gap-1 rounded-full bg-background/60 px-2 text-sm">{msg.reaction}</span>
                   )}
                 </div>
-                {/* min-h-7 = высота кнопок строки: строка не меняет рост, когда
-                    у сообщения появляется tg id и вместе с ним кнопки. */}
-                <span className="flex min-h-7 flex-wrap items-center gap-1.5">
+                {/* Всегда одна строка h-7 (высота её кнопок): она не меняет рост,
+                    когда у сообщения появляется tg id и вместе с ним кнопки. */}
+                <span className="msgMeta flex h-7 items-center gap-1.5 whitespace-nowrap">
                   {tgMark && (
                     <span
                       className={cn(

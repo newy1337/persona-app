@@ -41,7 +41,7 @@ export default function ChatNote({ note, noteBy, noteAt, onSave }) {
 
   if (!open) {
     return (
-      <section className={cn(block, 'px-2.5 py-2')}>
+      <section className={cn(block, 'p-1.5')}>
         <Button
           variant="ghost"
           size="sm"
@@ -57,7 +57,7 @@ export default function ChatNote({ note, noteBy, noteAt, onSave }) {
   }
 
   return (
-    <section className={cn(block, 'flex flex-col gap-3 px-5 py-4')}>
+    <section className={cn(block, 'flex flex-col gap-2.5 p-3')}>
       <div className="flex min-h-5 items-center justify-between gap-2">
         <h3 className="text-sm font-medium">Заметка</h3>
         {noteAt && (
@@ -68,11 +68,11 @@ export default function ChatNote({ note, noteBy, noteAt, onSave }) {
       </div>
       <div className="flex flex-col gap-2">
         <Textarea
-          className="min-h-[88px] resize-y [field-sizing:fixed]"
+          className="min-h-[68px] resize-y [field-sizing:fixed]"
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Что помнить про этот диалог. Бот это не читает."
-          rows={4}
+          rows={3}
           maxLength={4000}
           data-testid="note-text"
         />

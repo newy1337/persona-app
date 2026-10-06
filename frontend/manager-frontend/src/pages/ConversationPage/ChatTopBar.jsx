@@ -1,6 +1,7 @@
 import {
   Archive,
   ArchiveRestore,
+  ArrowLeft,
   AudioLines,
   Ban,
   ChevronDown,
@@ -14,6 +15,7 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { IconAction } from '@/components/IconAction/IconAction';
 import { SearchInput } from '@/components/SearchInput/SearchInput';
@@ -26,10 +28,12 @@ import {
   setDealStage,
 } from '../../api/conversations';
 
-// Одна строка высотой 48px: все элементы в ней — 32px. Те же классы собирают
-// скелетон первой загрузки.
-const BAR = 'shrink-0 border-b bg-background';
-const BAR_ROW = 'flex h-12 items-center gap-1 px-3';
+// Единственная строка над лентой, 44px: действия слева, поиск справа, все
+// элементы — 32px. На широком экране она стоит вровень со строкой «К дашборду»
+// в колонке клиента; на узком (колонка — выдвижная) кнопка «назад» живёт здесь.
+// Те же классы собирают скелетон первой загрузки.
+const BAR = 'chatToolbar shrink-0 border-b bg-background';
+const BAR_ROW = 'flex h-11 items-center gap-1 px-3';
 const BANNER = 'mx-4 mt-2 w-auto shrink-0';
 
 const Spinner = (props) => <LoaderCircle {...props} className="animate-spin" />;
@@ -83,6 +87,12 @@ function ChatTopBar({
     <>
       <div className={BAR}>
         <div className={BAR_ROW}>
+          {/* lg:hidden = display:none на широком экране: там доступна только
+              такая же кнопка в колонке клиента. На телефоне остаётся стрелка. */}
+          <Button variant="ghost" size="sm" className="backBtn shrink-0 lg:hidden" onClick={() => navigate('/')}>
+            <ArrowLeft aria-hidden="true" />
+            <span className="max-sm:sr-only">К дашборду</span>
+          </Button>
           <IconAction
             icon={PanelLeft}
             label="Карточка клиента"

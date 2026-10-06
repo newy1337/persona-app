@@ -1,15 +1,12 @@
-import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { IconAction } from '@/components/IconAction/IconAction';
 import { useRouteBusy } from '@/components/AppLayout/routeBusy';
 import { PanelUX } from '../../ui/PanelUX';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { stageColors } from '../../data/stages';
 import MediaGallery from '../../components/MediaGallery/MediaGallery';
-import Sidebar, { SIDEBAR, SECTION } from './Sidebar';
+import Sidebar, { SIDEBAR, SIDEBAR_TOP, SIDEBAR_BODY, SECTION, META_ROW } from './Sidebar';
 import ChatTopBar, { ChatTopBarSkeleton } from './ChatTopBar';
 import MessageFeed from './MessageFeed';
 import InputArea, { InputAreaSkeleton } from './InputArea';
@@ -33,7 +30,6 @@ import {
   getConversationById,
   getConversationRevision,
   getBeats,
-  getConversations,
   getInboundMedia,
   editMessage,
   sendAlbum,
@@ -53,13 +49,16 @@ const MAX_ALBUM = 10;
 
 // Каркас страницы. Те же классы собирают и готовую страницу, и скелетон первой
 // загрузки — поэтому высоты полос совпадают по построению.
-/* Каркас (AppLayout) держит экранную высоту; страница занимает всё под шапкой. */
-const PAGE = 'flex min-h-0 flex-1 flex-col bg-background';
-const SUB_HEADER = 'shrink-0 border-b bg-background';
-const SUB_ROW = 'container flex h-12 items-center gap-1';
+/* Каркас (AppLayout: .app h-dvh overflow-hidden -> main.main min-h-0) держит
+   экранную высоту; страница занимает всё под шапкой и сама не прокручивается.
+   Цепочка сверху вниз: PAGE -> BODY -> BODY_ROW -> колонка клиента | CHAT ->
+   CHAT_FRAME -> строка действий (shrink-0), лента (flex-1, единственная
+   прокрутка), блок ввода (shrink-0). У каждого уровня, который должен
+   сжиматься, стоит min-h-0, и ни один не добавляет высоту снаружи. */
+const PAGE = 'conversationPage flex min-h-0 flex-1 flex-col overflow-hidden bg-background';
 const BODY = 'flex min-h-0 flex-1';
-const BODY_ROW = 'container flex min-h-0';
-const CHAT = 'flex min-w-0 flex-1 flex-col';
+const BODY_ROW = 'container flex min-h-0 flex-1';
+const CHAT = 'chatColumn flex min-h-0 min-w-0 flex-1 flex-col';
 // Карточка клиента и переписка — один блок в общей рамке с одной линией между ними.
 const CHAT_FRAME = 'flex min-h-0 flex-1 flex-col border-r bg-background max-lg:border-l';
 
@@ -76,20 +75,17 @@ const SKELETON_META = ['w-24', 'w-32', 'w-10', 'w-20', 'w-28', 'w-36', 'w-16'];
 /** Первая загрузка: колонка карточки, лента и блок ввода из тех же классов, что у готовой страницы. */
 function PageSkeleton() {
   return (
-    <>
-      <div className={SUB_HEADER}>
-        <div className={SUB_ROW}>
-          <Skeleton className="mr-auto h-8 w-32" />
-          <Skeleton className="h-8 w-[136px]" />
-        </div>
-      </div>
-      <div className={BODY} role="status" aria-busy="true">
-        <div className={BODY_ROW}>
-          <span className="sr-only">Загрузка…</span>
-          <div className={`hidden lg:flex ${SIDEBAR}`}>
+    <div className={BODY} role="status" aria-busy="true">
+      <div className={BODY_ROW}>
+        <span className="sr-only">Загрузка…</span>
+        <div className={`hidden lg:flex ${SIDEBAR}`}>
+          <div className={SIDEBAR_TOP}>
+            <Skeleton className="h-8 w-32" />
+          </div>
+          <div className={SIDEBAR_BODY}>
             <div className={SECTION}>
-              <div className="flex items-center gap-3">
-                <Skeleton className="size-12 rounded-full" />
+              <div className="flex items-center gap-2.5">
+                <Skeleton className="size-10 rounded-full" />
                 <div className="flex flex-col gap-1.5">
                   <Skeleton className="h-4 w-36" />
                   <Skeleton className="h-3 w-24" />
@@ -97,8 +93,8 @@ function PageSkeleton() {
               </div>
               <div className="flex flex-col">
                 {SKELETON_META.map((w, i) => (
-                  <div key={i} className="grid min-h-7 grid-cols-[88px_minmax(0,1fr)] items-center gap-3">
-                    <Skeleton className="h-3 w-14" />
+                  <div key={i} className={META_ROW}>
+                    <Skeleton className="h-3 w-12" />
                     <Skeleton className={`h-3.5 ${w}`} />
                   </div>
                 ))}
@@ -110,26 +106,25 @@ function PageSkeleton() {
             </div>
             <div className={SECTION}>
               <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-28 w-full" />
-            </div>
-          </div>
-          <div className={CHAT}>
-            <div className={CHAT_FRAME}>
-              <ChatTopBarSkeleton />
-              <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-hidden px-4 pt-12 pb-4 md:px-6">
-                {SKELETON_BUBBLES.map(([side, size], i) => (
-                  <div key={i} className={`flex flex-col gap-1 ${side}`}>
-                    <Skeleton className={`rounded-xl ${size}`} />
-                    <Skeleton className="my-2 h-3 w-12" />
-                  </div>
-                ))}
-              </div>
-              <InputAreaSkeleton />
             </div>
           </div>
         </div>
+        <div className={CHAT}>
+          <div className={CHAT_FRAME}>
+            <ChatTopBarSkeleton />
+            <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-hidden px-4 pt-12 pb-4 md:px-6">
+              {SKELETON_BUBBLES.map(([side, size], i) => (
+                <div key={i} className={`mx-auto flex w-full max-w-3xl flex-col gap-1 ${side}`}>
+                  <Skeleton className={`rounded-xl ${size}`} />
+                  <Skeleton className="my-2 h-3 w-12" />
+                </div>
+              ))}
+            </div>
+            <InputAreaSkeleton />
+          </div>
+        </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -145,7 +140,6 @@ function ConversationPage() {
   const [beatsFailedFor, setBeatsFailedFor] = useState(null);
   const [inboundMedia, setInboundMedia] = useState([]);
 
-  const [chats, setChats] = useState(null);
   const [stickyDate, setStickyDate] = useState('');
   const [readUpTo, setReadUpTo] = useState(() => loadReadCursor(id));
   const [draft, setDraft] = useState('');
@@ -237,16 +231,6 @@ function ConversationPage() {
   }, [sidebarOpen]);
 
   useEffect(load, [load]);
-
-  useEffect(() => {
-    getConversations()
-      .then((rows) => {
-        setChats(rows);
-      })
-      .catch(() => {
-        setChats([]);
-      });
-  }, [id]);
 
   const revision = useRef(null);
   useEffect(() => {
@@ -620,46 +604,8 @@ function ConversationPage() {
   const stage = data.goals?.stage;
   const cfg = stage?.title ? { ...stageColors(stage.index), label: stage.title } : {};
 
-  const chatIds = chats ? chats.map((c) => c.chat_id) : [];
-  const idx = chatIds.indexOf(Number(id));
-  const goPrev = () => {
-    if (idx > 0) navigate(`/conversation/${chatIds[idx - 1]}`);
-  };
-  const goNext = () => {
-    if (idx !== -1 && idx < chatIds.length - 1) navigate(`/conversation/${chatIds[idx + 1]}`);
-  };
-
   return (
     <div className={PAGE}>
-      <div className={`subHeader ${SUB_HEADER}`}>
-        <div className={SUB_ROW}>
-          <Button variant="ghost" size="sm" className="backBtn mr-auto -ml-2.5" onClick={() => navigate('/')}>
-            <ArrowLeft aria-hidden="true" />
-            К дашборду
-          </Button>
-          <div className="subNav flex items-center">
-            <IconAction
-              icon={ChevronLeft}
-              label="Предыдущий чат"
-              onClick={goPrev}
-              disabled={idx <= 0}
-            />
-            <span className="min-w-[56px] px-1 text-center text-xs tabular-nums text-muted-foreground">
-              <span className="navCurrent font-medium text-foreground">{idx >= 0 ? idx + 1 : '—'}</span> / {chatIds.length || '—'}
-            </span>
-            <IconAction
-              icon={ChevronRight}
-              label="Следующий чат"
-              onClick={goNext}
-              disabled={idx === -1 || idx >= chatIds.length - 1}
-            />
-          </div>
-          <span className="ml-2 text-xs whitespace-nowrap text-muted-foreground max-sm:hidden">
-            Чат <span className="font-mono tabular-nums">{data.chat_id}</span>
-          </span>
-        </div>
-      </div>
-
       <div className={BODY}>
         <div className={BODY_ROW}>
           {/* Затемнение z-40, выдвижная карточка (Sidebar) — z-50: она всегда поверх. */}
@@ -688,6 +634,7 @@ function ConversationPage() {
             scrollToMessage={scrollToMessage}
             sidebarOpen={sidebarOpen}
             onClose={() => setSidebarOpen(false)}
+            onBack={() => navigate('/')}
           />
 
           <div className={CHAT}>

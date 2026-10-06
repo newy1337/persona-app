@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react';
 import { CirclePlay, Mic, Paperclip, Send, Smile, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -16,28 +17,23 @@ const NEXT_DOT = {
   warn: 'bg-warning-foreground',
 };
 
-// Полоса режима: строка 32px (тумблер, подпись, подсказка или ошибка) и две
-// зарезервированные строки по 16px — «что дальше» и причина паузы. Те же классы
+// Блок ввода не сжимается: ленте достаётся всё, что осталось над ним.
+const AREA = 'inputArea shrink-0 border-t bg-background';
+// Полоса режима — одна строка 40px: тумблер, подпись и одна обрезаемая строка
+// (подсказка · что дальше · почему молчит); полный текст — в title. Те же классы
 // собирают скелетон первой загрузки — высоты совпадают по построению.
-const STRIP = 'flex flex-col gap-0.5 px-4 py-2';
-const STRIP_ROW = 'flex h-8 min-w-0 items-center gap-3';
-const STRIP_LINE = 'flex h-4 min-w-0 items-center gap-x-3 text-xs leading-4';
+const STRIP = 'modeStrip flex h-10 min-w-0 items-center gap-3 px-4';
 const DOT = 'size-1.5 shrink-0 rounded-full';
+const SEP = ' · ';
 
 /** Первая загрузка: полоса режима тех же размеров, что у готовой страницы. */
 export function InputAreaSkeleton() {
   return (
-    <div className="shrink-0 border-t bg-background">
+    <div className={AREA}>
       <div className={STRIP}>
-        <div className={STRIP_ROW}>
-          <Skeleton className="h-[1.15rem] w-8 rounded-full" />
-          <Skeleton className="h-4 w-28" />
-          <Skeleton className="h-3 w-56 max-w-full max-sm:hidden" />
-        </div>
-        <div className={STRIP_LINE}>
-          <Skeleton className="h-3 w-40" />
-        </div>
-        <div className={STRIP_LINE} />
+        <Skeleton className="h-[1.15rem] w-8 rounded-full" />
+        <Skeleton className="h-4 w-28" />
+        <Skeleton className="h-3 w-56 max-w-full max-sm:hidden" />
       </div>
     </div>
   );
@@ -75,99 +71,107 @@ function InputArea({
 }) {
   const attach = attachments[0] ?? null;
   const nextAction = nextActionLabel(data.next_bot_action);
+  const hint = aiActive
+    ? 'Диалог ведёт бот. Выключи, чтобы забрать чат себе'
+    : 'Чат за тобой. Включи, чтобы вернуть боту';
+  const pauseText = pauseLabel ? `Почему молчит: ${pauseLabel}${pauseDetail ? ` — ${pauseDetail}` : ''}` : '';
+  const status = [hint, nextAction?.text, pauseText].filter(Boolean).join(SEP);
+
+  // Поле растёт вместе с текстом: от одной строки до max-h (около шести), дальше
+  // прокручивается внутри себя. Высоту считаем сами — так одинаково во всех браузерах.
+  const field = useRef(null);
+  useLayoutEffect(() => {
+    const el = field.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    if (el.scrollHeight) el.style.height = `${el.scrollHeight}px`;
+  }, [draft, aiActive]);
+
   return (
-    <div className="shrink-0 border-t bg-background">
+    <div className={AREA}>
       <div className={STRIP}>
-        <div className={STRIP_ROW}>
-          <Switch
-            className="aiToggle"
-            checked={aiActive}
-            onClick={toggleAi}
-            disabled={busy}
-            aria-label="Бот отвечает"
-          />
-          {/* Текст подписи проверяют тесты (заглавными); на экране — строчными. */}
-          <span className="flex shrink-0 items-center gap-1.5 text-sm font-medium lowercase">
-            <span className={cn(DOT, aiActive ? 'bg-success-foreground' : 'bg-warning-foreground')} aria-hidden="true" />
-            {aiActive ? 'БОТ ОТВЕЧАЕТ' : 'РУЧНОЙ РЕЖИМ'}
+        <Switch
+          className="aiToggle"
+          checked={aiActive}
+          onClick={toggleAi}
+          disabled={busy}
+          aria-label="Бот отвечает"
+        />
+        {/* Текст подписи проверяют тесты (заглавными); на экране — строчными. */}
+        <span className="flex shrink-0 items-center gap-1.5 text-sm font-medium lowercase">
+          <span className={cn(DOT, aiActive ? 'bg-success-foreground' : 'bg-warning-foreground')} aria-hidden="true" />
+          {aiActive ? 'БОТ ОТВЕЧАЕТ' : 'РУЧНОЙ РЕЖИМ'}
+        </span>
+        {/* Ошибка отправки занимает место строки состояния: высота полосы не
+            меняется, лента не прыгает и последние сообщения ничем не закрыты. */}
+        {error ? (
+          <span className="flex min-w-0 flex-1 items-center justify-end gap-1" data-testid="input-error">
+            <span role="alert" title={error} className="line-clamp-2 min-w-0 text-xs leading-4 text-destructive [overflow-wrap:anywhere]">
+              {error}
+            </span>
+            <IconAction icon={X} label="Скрыть ошибку" size="icon-xs" onClick={() => setError(null)} />
           </span>
-          {/* Ошибка отправки занимает место подсказки: высота полосы не меняется,
-              лента не прыгает и последние сообщения ничем не закрыты. */}
-          {error ? (
-            <span className="flex min-w-0 flex-1 items-center justify-end gap-1" data-testid="input-error">
-              <span role="alert" title={error} className="line-clamp-2 min-w-0 text-xs leading-4 text-destructive [overflow-wrap:anywhere]">
-                {error}
-              </span>
-              <IconAction icon={X} label="Скрыть ошибку" size="icon-xs" onClick={() => setError(null)} />
-            </span>
-          ) : (
-            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-              {aiActive
-                ? 'Диалог ведёт бот. Выключи, чтобы забрать чат себе'
-                : 'Чат за тобой. Включи, чтобы вернуть боту'}
-            </span>
-          )}
-        </div>
-        {/* Обе строки зарезервированы всегда: появление «что дальше» и причины
-            паузы не меняет высоту блока. Текст, который не влез, обрезается. */}
-        <div className={STRIP_LINE}>
-          {nextAction && (
-            <span className="flex min-w-0 items-center gap-1.5">
-              <span className={cn(DOT, NEXT_DOT[nextAction.tone] || NEXT_DOT.wait)} aria-hidden="true" />
-              <span className="min-w-0 truncate text-muted-foreground" title={nextAction.text} data-testid="next-bot-action">
-                {nextAction.text}
-              </span>
-              {data.next_bot_action?.kind === 'no_reply' && data.next_bot_action?.why === 'not_scheduled' && (
-                <Button
-                  type="button"
-                  variant="link"
-                  size="xs"
-                  className="h-4 shrink-0 px-0"
-                  disabled={busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    try {
-                      await answerNow(id);
-                      load();
-                    } catch (e) {
-                      setError(e.detail || e.message);
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  Ответить сейчас
-                </Button>
-              )}
-            </span>
-          )}
-        </div>
-        <div className={STRIP_LINE}>
-          {pauseLabel && (
-            <span className="min-w-0 truncate" data-testid="pause-reason" title={pauseReasonRaw}>
-              Почему молчит: {pauseLabel}
-              {pauseDetail && (
-                <span className="text-muted-foreground"> — {pauseDetail}</span>
-              )}
-            </span>
-          )}
-        </div>
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={status} data-testid="mode-status">
+            {hint}
+            {nextAction && (
+              <>
+                {SEP}
+                <span
+                  className={cn(DOT, 'mr-1.5 inline-block align-middle', NEXT_DOT[nextAction.tone] || NEXT_DOT.wait)}
+                  aria-hidden="true"
+                />
+                <span data-testid="next-bot-action">{nextAction.text}</span>
+              </>
+            )}
+            {pauseLabel && (
+              <>
+                {SEP}
+                <span data-testid="pause-reason" title={pauseReasonRaw}>
+                  <span className="text-foreground">Почему молчит: {pauseLabel}</span>
+                  {pauseDetail && <> — {pauseDetail}</>}
+                </span>
+              </>
+            )}
+          </span>
+        )}
+        {data.next_bot_action?.kind === 'no_reply' && data.next_bot_action?.why === 'not_scheduled' && (
+          <Button
+            type="button"
+            variant="link"
+            size="xs"
+            className="shrink-0 px-0"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await answerNow(id);
+                load();
+              } catch (e) {
+                setError(e.detail || e.message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Ответить сейчас
+          </Button>
+        )}
       </div>
 
       {!aiActive && (
-        <div className="mx-4 mb-4 rounded-lg border bg-card transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
-          {/* Высота фиксирована: плашки ответа и вложений отнимают место у поля
-              ввода, а не у ленты. */}
-          <div className="flex h-32 flex-col overflow-hidden rounded-t-lg">
+        <div className="px-4 pb-3">
+          {/* Рамка той же ширины, что колонка сообщений. Кольцо фокуса — на всём блоке. */}
+          <div className="composer mx-auto w-full max-w-3xl rounded-lg border transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
             {reply && (
-              <div className="flex h-9 shrink-0 items-center gap-2.5 border-b bg-muted/40 pr-1 pl-3 text-xs text-muted-foreground">
+              <div className="flex h-9 items-center gap-2.5 rounded-t-lg border-b bg-muted/40 pr-1 pl-3 text-xs text-muted-foreground">
                 <span className="shrink-0">Ответ на:</span>
                 <span className="min-w-0 flex-1 truncate text-foreground">{reply.text.slice(0, 120)}</span>
                 <IconAction icon={X} label="Не отвечать" size="icon-xs" onClick={() => setReply(null)} />
               </div>
             )}
             {attachments.length === 1 && (
-              <div className="flex h-14 shrink-0 items-center gap-2.5 border-b pr-1 pl-3 text-xs">
+              <div className="flex h-14 items-center gap-2.5 border-b pr-1 pl-3 text-xs">
                 {attach.preview && !attach.isVideo && <img className="size-10 shrink-0 rounded-md bg-muted object-cover" src={attach.preview} alt="" />}
                 {attach.preview && attach.isVideo && <video className="size-10 shrink-0 rounded-md bg-muted object-cover" src={attach.preview} muted />}
                 <span className="min-w-0 flex-1 truncate">{attach.name}</span>
@@ -177,7 +181,7 @@ function InputArea({
               </div>
             )}
             {attachments.length > 1 && (
-              <div className="flex h-14 shrink-0 items-center gap-2.5 border-b pr-1 pl-3 text-xs" data-testid="album-bar">
+              <div className="flex h-14 items-center gap-2.5 border-b pr-1 pl-3 text-xs" data-testid="album-bar">
                 <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto [scrollbar-width:none]">
                   {attachments.map((a, i) => (
                     <span key={a.path} className="relative size-10 flex-none overflow-hidden rounded-md bg-muted" title={a.name}>
@@ -204,14 +208,88 @@ function InputArea({
                 <IconAction icon={X} label="Убрать все" size="icon-xs" onClick={() => setAttachments([])} />
               </div>
             )}
-            <div className="flex min-h-0 flex-1">
+            {/* Одна строка: вложения, поле и «Отправить». Поле растёт вверх, кнопки
+                остаются у нижнего края. */}
+            <div className="flex items-end gap-1 p-1">
+              <div className="flex shrink-0 items-center">
+                <input
+                  type="file"
+                  ref={fileInput}
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => { pickFiles(e.target.files); e.target.value = ''; }}
+                />
+                <IconAction
+                  icon={Paperclip}
+                  label="Прикрепить файлы"
+                  hint="Прикрепить файлы: фото, видео, гиф, голосовое или документ. Несколько фото и видео уйдут альбомом"
+                  disabled={busy}
+                  onClick={() => fileInput.current?.click()}
+                />
+                <span className="relative inline-flex">
+                  <IconAction
+                    icon={Smile}
+                    label="Эмодзи"
+                    aria-expanded={emojiOpen}
+                    onClick={() => setEmojiOpen((v) => !v)}
+                  />
+                  {emojiOpen && (
+                    <EmojiPicker
+                      onPick={(emoji) => setDraft((d) => d + emoji)}
+                      onClose={() => setEmojiOpen(false)}
+                    />
+                  )}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="px-2 text-xs text-muted-foreground hover:text-foreground"
+                  title="Гифка по ссылке"
+                  disabled={busy}
+                  onClick={sendGifLink}
+                >
+                  GIF
+                </Button>
+                <input
+                  type="file"
+                  ref={voiceInput}
+                  accept="audio/*,.mp3,.m4a,.ogg,.oga,.wav,.opus"
+                  style={{ display: 'none' }}
+                  onChange={(e) => { sendVoiceFile(e.target.files?.[0]); e.target.value = ''; }}
+                />
+                <IconAction
+                  icon={Mic}
+                  label="Голосовое"
+                  hint="Выбрать аудиофайл — уйдёт голосовым (mp3, m4a, wav, ogg)"
+                  disabled={busy}
+                  onClick={() => voiceInput.current?.click()}
+                />
+                <input
+                  type="file"
+                  ref={roundInput}
+                  accept="video/*,.mp4,.mov,.webm,.mkv"
+                  style={{ display: 'none' }}
+                  onChange={(e) => { sendRoundFile(e.target.files?.[0]); e.target.value = ''; }}
+                />
+                <IconAction
+                  icon={CirclePlay}
+                  label="Кружком"
+                  hint="Выбрать видео — уйдёт кружком: сервер обрежет его в квадрат и до минуты"
+                  disabled={busy}
+                  data-testid="send-round"
+                  onClick={() => roundInput.current?.click()}
+                />
+              </div>
               {/* Своего кольца у поля нет: фокус показывает рамка всего блока (focus-within). */}
               <Textarea
-                className="h-full min-h-0 resize-none rounded-none border-0 bg-transparent shadow-none field-sizing-fixed [field-sizing:fixed] focus-visible:ring-0 dark:bg-transparent"
-                rows={2}
+                ref={field}
+                className="max-h-[132px] min-h-8 min-w-0 flex-1 resize-none rounded-none border-0 bg-transparent px-1.5 py-1.5 text-sm leading-5 shadow-none field-sizing-fixed [field-sizing:fixed] focus-visible:ring-0 dark:bg-transparent"
+                rows={1}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                placeholder="Сообщение… (Enter — отправить, Shift+Enter — перенос строки)"
+                placeholder="Сообщение…"
+                title="Enter — отправить, Shift+Enter — перенос строки"
                 aria-label="Сообщение"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -220,93 +298,15 @@ function InputArea({
                   }
                 }}
               />
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-2 border-t p-2">
-            <div className="flex items-center gap-0.5">
-              <input
-                type="file"
-                ref={fileInput}
-                multiple
-                style={{ display: 'none' }}
-                onChange={(e) => { pickFiles(e.target.files); e.target.value = ''; }}
-              />
-              <IconAction
-                icon={Paperclip}
-                label="Прикрепить файлы"
-                hint="Прикрепить файлы: фото, видео, гиф, голосовое или документ. Несколько фото и видео уйдут альбомом"
-                disabled={busy}
-                onClick={() => fileInput.current?.click()}
-              />
-              <span className="relative inline-flex">
-                <IconAction
-                  icon={Smile}
-                  label="Эмодзи"
-                  aria-expanded={emojiOpen}
-                  onClick={() => setEmojiOpen((v) => !v)}
-                />
-                {emojiOpen && (
-                  <EmojiPicker
-                    onPick={(emoji) => setDraft((d) => d + emoji)}
-                    onClose={() => setEmojiOpen(false)}
-                  />
-                )}
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="px-2 text-xs text-muted-foreground hover:text-foreground"
-                title="Гифка по ссылке"
-                disabled={busy}
-                onClick={sendGifLink}
-              >
-                GIF
-              </Button>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="file"
-                ref={voiceInput}
-                accept="audio/*,.mp3,.m4a,.ogg,.oga,.wav,.opus"
-                style={{ display: 'none' }}
-                onChange={(e) => { sendVoiceFile(e.target.files?.[0]); e.target.value = ''; }}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => voiceInput.current?.click()}
-                disabled={busy}
-                title="Выбрать аудиофайл — уйдёт голосовым (mp3, m4a, wav, ogg)"
-              >
-                <Mic aria-hidden="true" /> Голосовое
-              </Button>
-              <input
-                type="file"
-                ref={roundInput}
-                accept="video/*,.mp4,.mov,.webm,.mkv"
-                style={{ display: 'none' }}
-                onChange={(e) => { sendRoundFile(e.target.files?.[0]); e.target.value = ''; }}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => roundInput.current?.click()}
-                disabled={busy}
-                data-testid="send-round"
-                title="Выбрать видео — уйдёт кружком: сервер обрежет его в квадрат и до минуты"
-              >
-                <CirclePlay aria-hidden="true" /> Кружком
-              </Button>
               <Button
                 type="button"
                 size="sm"
+                className="shrink-0"
                 onClick={() => send({ voice: false })}
                 disabled={busy || (!draft.trim() && !attachments.length)}
               >
-                <Send aria-hidden="true" /> Отправить
+                <Send aria-hidden="true" />
+                <span className="max-sm:sr-only">Отправить</span>
               </Button>
             </div>
           </div>
