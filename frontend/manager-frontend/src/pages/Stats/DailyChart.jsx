@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Card } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { money } from './StatsUi';
 
-const money = (x) => (x >= 1 ? `$${x.toFixed(2)}` : `$${x.toFixed(4)}`);
+// Подпись оси — «месяц.день», не как shortDay из StatsUi («день.месяц»).
 const shortDay = (day) => day.slice(5).replace('-', '.');
 
 function Legend() {
@@ -13,18 +15,39 @@ function Legend() {
   );
 }
 
+// Одна рамка на график, пустое состояние и заглушку первой загрузки: шапка min-h-5
+// и тело ровно BODY высотой — карточка не меняет высоту при смене состояния.
+const BODY = 'h-[170px] w-full';
+
+function Frame({ caption = null, children }) {
+  return (
+    <Card className="min-h-[230px] gap-2 p-4">
+      <div className="flex min-h-5 items-center gap-3">
+        <span className="shrink-0 text-sm font-medium">Расход по дням</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground tabular-nums">{caption}</span>
+        <Legend />
+      </div>
+      {children}
+    </Card>
+  );
+}
+
+export function DailyChartSkeleton() {
+  return (
+    <Frame>
+      <Skeleton className={BODY} />
+    </Frame>
+  );
+}
+
 export default function DailyChart({ days }) {
   const [hover, setHover] = useState(null);
 
   if (!days.length) {
     return (
-      <Card className="min-h-[230px] gap-2 p-4">
-        <div className="flex min-h-5 items-center justify-between gap-3">
-          <span className="text-sm font-medium">Расход по дням</span>
-          <Legend />
-        </div>
-        <p className="flex flex-1 items-center justify-center text-sm text-muted-foreground">За период вызовов не было</p>
-      </Card>
+      <Frame>
+        <p className={`${BODY} flex items-center justify-center text-sm text-muted-foreground`}>За период вызовов не было</p>
+      </Frame>
     );
   }
 
@@ -42,18 +65,15 @@ export default function DailyChart({ days }) {
   const current = hover === null ? null : days[hover];
 
   return (
-    <Card className="min-h-[230px] gap-2 p-4">
-      <div className="flex min-h-5 items-center gap-3">
-        <span className="shrink-0 text-sm font-medium">Расход по дням</span>
-        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground tabular-nums">
-          {current
-            ? `${current.day}: ${money(current.cost_usd)} · ${current.calls} вызовов · ${current.messages_in}↓ ${current.messages_out}↑`
-            : `максимум за день ${money(maxCost)}`}
-        </span>
-        <Legend />
-      </div>
+    <Frame
+      caption={
+        current
+          ? `${current.day}: ${money(current.cost_usd)} · ${current.calls} вызовов · ${current.messages_in}↓ ${current.messages_out}↑`
+          : `максимум за день ${money(maxCost)}`
+      }
+    >
       <svg
-        className="h-[170px] w-full"
+        className={BODY}
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="none"
         role="img"
@@ -89,6 +109,6 @@ export default function DailyChart({ days }) {
           );
         })}
       </svg>
-    </Card>
+    </Frame>
   );
 }

@@ -1,5 +1,7 @@
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { TableCell, TableRow } from '@/components/ui/table';
 
 // Форматтеры и общие классы таблиц статистики — одни на все карточки страницы.
 export const money = (x) => (x >= 1 ? `$${x.toFixed(2)}` : `$${(x ?? 0).toFixed(4)}`);
@@ -30,4 +32,24 @@ export function Section({ title, description, flush = false, className, children
       <CardContent className={flush ? 'px-0 pb-0' : 'px-4 pb-4'}>{children}</CardContent>
     </Card>
   );
+}
+
+/**
+ * Строки-заглушки первой загрузки: те же TableRow/TableCell и те же классы ячеек,
+ * что у настоящих строк, а Skeleton h-5 равен строке text-sm — высота строки
+ * совпадает с итоговой по построению. lastCell подменяет последнюю ячейку
+ * (колонка действий со своей кнопкой).
+ */
+export function SkeletonRows({ rows = 5, cols, lastCell = null }) {
+  const plain = lastCell ? cols - 1 : cols;
+  return Array.from({ length: rows }, (_, r) => (
+    <TableRow key={r} className="hover:bg-transparent">
+      {Array.from({ length: plain }, (_, c) => (
+        <TableCell key={c} className={TD}>
+          <Skeleton className={c === 0 ? 'h-5 w-28 max-w-full' : 'ml-auto h-5 w-12'} />
+        </TableCell>
+      ))}
+      {lastCell}
+    </TableRow>
+  ));
 }

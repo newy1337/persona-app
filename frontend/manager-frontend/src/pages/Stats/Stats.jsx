@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/Header/Header';
 import { getUsage, getManagerUsage, getBalance, getDealStages } from '../../api/usage';
-import DailyChart from './DailyChart';
+import DailyChart, { DailyChartSkeleton } from './DailyChart';
 import DateRangePicker, { mskToday, addDays } from '../../components/DateRangePicker/DateRangePicker';
 import PricesEditor from './PricesEditor';
-import ManagersTable from './ManagersTable';
-import StagesTable from './StagesTable';
+import ManagersTable, { ManagersTableSkeleton } from './ManagersTable';
+import StagesTable, { StagesTableSkeleton } from './StagesTable';
 import Balance from './Balance';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription } from '@/components/ui/card';
@@ -22,7 +22,7 @@ import {
   stickyLastCol,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { EDGE, NUM, Section, TD, TH, kilo, money, num, pct } from './StatsUi';
+import { EDGE, NUM, Section, SkeletonRows, TD, TH, kilo, money, num, pct } from './StatsUi';
 
 const STAGE_LABEL = {
   judge_plan: 'Судья: разбор',
@@ -44,12 +44,18 @@ const SPLIT_COLORS = [
 const KPI_GRID = 'grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6';
 const TABS = [['overview', 'Обзор'], ['managers', 'По менеджерам'], ['stages', 'Этапы']];
 
-function Kpi({ title, value, hint }) {
+// Плитка одна и на загрузку, и на данные: заглушки стоят внутри тех же строк
+// (min-h-8 значение, min-h-4 подпись), поэтому высота плитки не меняется.
+function Kpi({ title, value, hint, loading = false }) {
   return (
     <Card className="min-h-[92px] gap-1 p-4 tabular-nums">
       <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{title}</span>
-      <span className="text-2xl font-semibold leading-8 tabular-nums">{value}</span>
-      <span className="min-h-4 text-xs text-muted-foreground">{hint}</span>
+      <span className="min-h-8 text-2xl font-semibold leading-8 tabular-nums">
+        {loading ? <Skeleton className="my-1 h-6 w-20 max-w-full" /> : value}
+      </span>
+      <span className="min-h-4 text-xs text-muted-foreground">
+        {loading ? <Skeleton className="my-0.5 h-3 w-24 max-w-full" /> : hint}
+      </span>
     </Card>
   );
 }
@@ -81,29 +87,39 @@ function Split({ rows, label }) {
   );
 }
 
-function RowsSkeleton({ label, ...props }) {
+// Та же полоса h-3 и те же строки легенды по h-4 (строка text-xs), что у Split;
+// строк столько, сколько этапов расхода знает панель.
+function SplitSkeleton() {
   return (
-    <div className="space-y-2" aria-busy="true" {...props}>
-      <span className="sr-only">{label}</span>
-      {Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+    <div className="flex flex-col gap-2.5">
+      <Skeleton className="h-3 rounded-full" />
+      <div className="flex flex-col gap-1.5">
+        {Object.keys(STAGE_LABEL).map((key) => <Skeleton key={key} className="h-4 w-44 max-w-full" />)}
+      </div>
     </div>
   );
 }
 
-function OverviewSkeleton() {
-  return (
-    <div className="space-y-3" aria-busy="true">
-      <span className="sr-only">Загружаю…</span>
-      <div className={KPI_GRID}>
-        {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-[92px] rounded-xl" />)}
-      </div>
-      <Skeleton className="h-[230px] rounded-xl" />
-      <div className="space-y-2">
-        {Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-10 w-full" />)}
-      </div>
-    </div>
-  );
-}
+const KPI_TITLES = ['Расход', 'За ход клиента', 'Из кеша', 'Токенов', 'Сообщений', 'Чатов'];
+const MODEL_SKELETON_ROWS = 3;
+const CHAT_SKELETON_ROWS = 5;
+
+const kpis = (t) => [
+  { title: KPI_TITLES[0], value: money(t.cost_usd), hint: `${num(t.calls)} вызовов модели` },
+  {
+    title: KPI_TITLES[1],
+    value: t.messages_in ? money(t.cost_usd / t.messages_in) : '—',
+    hint: `${num(t.messages_in)} входящих`,
+  },
+  { title: KPI_TITLES[2], value: pct(t.cache_hit_rate), hint: `${kilo(t.tokens.cache_read)} токенов дешёвых` },
+  {
+    title: KPI_TITLES[3],
+    value: kilo(t.tokens.input + t.tokens.cache_read + t.tokens.cache_write),
+    hint: `выход ${kilo(t.tokens.output)}`,
+  },
+  { title: KPI_TITLES[4], value: `${num(t.messages_in)} ↓ / ${num(t.messages_out)} ↑`, hint: `руками ${pct(t.manual_share)}` },
+  { title: KPI_TITLES[5], value: num(t.chats), hint: t.avg_latency_ms ? `ответ модели ~${(t.avg_latency_ms / 1000).toFixed(1)} с` : null },
+];
 
 export default function Stats() {
   const navigate = useNavigate();
@@ -239,9 +255,9 @@ export default function Stats() {
               </TabsList>
             </Tabs>
 
-            <div className="min-h-[320px] space-y-3">
+            <div className="min-h-[320px] space-y-3" aria-busy={(tab === 'overview' && !data) || undefined}>
               {tab === 'stages' ? (
-                stages ? <StagesTable data={stages} /> : <RowsSkeleton label="Считаю этапы…" />
+                stages ? <StagesTable data={stages} /> : <StagesTableSkeleton label="Считаю этапы…" />
               ) : tab === 'managers' ? (
                 <>
                   <p className="min-h-4 text-xs text-muted-foreground" aria-live="polite">
@@ -250,39 +266,33 @@ export default function Stats() {
                   {managers ? (
                     <ManagersTable rows={managers} />
                   ) : (
-                    <RowsSkeleton label="Считаю по менеджерам…" data-testid="managers-loading" />
+                    <ManagersTableSkeleton label="Считаю по менеджерам…" data-testid="managers-loading" />
                   )}
                 </>
-              ) : !data ? (
-                <OverviewSkeleton />
               ) : (
+                // Обзор — одно дерево и на первую загрузку, и на данные: карточки, шапки
+                // таблиц и строки те же, заглушки стоят только на месте значений.
                 <>
+                  {!data && <span className="sr-only">Загружаю…</span>}
                   <div className={KPI_GRID}>
-                    <Kpi title="Расход" value={money(t.cost_usd)} hint={`${num(t.calls)} вызовов модели`} />
-                    <Kpi
-                      title="За ход клиента"
-                      value={t.messages_in ? money(t.cost_usd / t.messages_in) : '—'}
-                      hint={`${num(t.messages_in)} входящих`}
-                    />
-                    <Kpi title="Из кеша" value={pct(t.cache_hit_rate)} hint={`${kilo(t.tokens.cache_read)} токенов дешёвых`} />
-                    <Kpi
-                      title="Токенов"
-                      value={kilo(t.tokens.input + t.tokens.cache_read + t.tokens.cache_write)}
-                      hint={`выход ${kilo(t.tokens.output)}`}
-                    />
-                    <Kpi title="Сообщений" value={`${num(t.messages_in)} ↓ / ${num(t.messages_out)} ↑`} hint={`руками ${pct(t.manual_share)}`} />
-                    <Kpi title="Чатов" value={num(t.chats)} hint={t.avg_latency_ms ? `ответ модели ~${(t.avg_latency_ms / 1000).toFixed(1)} с` : null} />
+                    {(data ? kpis(t) : KPI_TITLES.map((title) => ({ title }))).map((k) => (
+                      <Kpi key={k.title} {...k} loading={!data} />
+                    ))}
                   </div>
 
-                  <DailyChart days={data.by_day} />
+                  {data ? <DailyChart days={data.by_day} /> : <DailyChartSkeleton />}
 
                   <div className="grid gap-3 lg:grid-cols-[minmax(280px,1fr)_minmax(320px,1.4fr)]">
                     <Section title="Куда уходят деньги" className="min-w-0">
-                      <Split
-                        label="вызовов ещё не было"
-                        rows={data.by_stage.map((r) => ({ key: r.stage, label: STAGE_LABEL[r.stage] ?? r.stage, cost_usd: r.cost_usd, calls: r.calls }))}
-                      />
-                      {data.by_persona.length > 1 && (
+                      {data ? (
+                        <Split
+                          label="вызовов ещё не было"
+                          rows={data.by_stage.map((r) => ({ key: r.stage, label: STAGE_LABEL[r.stage] ?? r.stage, cost_usd: r.cost_usd, calls: r.calls }))}
+                        />
+                      ) : (
+                        <SplitSkeleton />
+                      )}
+                      {data?.by_persona.length > 1 && (
                         <>
                           <h3 className="mt-4 mb-2.5 text-sm font-medium">По личностям</h3>
                           <Split
@@ -306,7 +316,8 @@ export default function Stats() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {data.by_model.map((m) => (
+                          {!data && <SkeletonRows rows={MODEL_SKELETON_ROWS} cols={6} />}
+                          {data?.by_model.map((m) => (
                             <TableRow key={m.model}>
                               <TableCell className={cn(TD, 'font-mono text-xs')}>
                                 {m.model}
@@ -319,7 +330,7 @@ export default function Stats() {
                               <TableCell className={cn(TD, NUM, 'text-muted-foreground')}>{m.avg_latency_ms ? `${(m.avg_latency_ms / 1000).toFixed(1)} с` : '—'}</TableCell>
                             </TableRow>
                           ))}
-                          {data.by_model.length === 0 && (
+                          {data?.by_model.length === 0 && (
                             <TableRow><TableCell colSpan={6} className={cn(TD, 'text-muted-foreground')}>За период вызовов не было</TableCell></TableRow>
                           )}
                         </TableBody>
@@ -339,7 +350,18 @@ export default function Stats() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {data.top_chats.map((c) => (
+                        {!data && (
+                          <SkeletonRows
+                            rows={CHAT_SKELETON_ROWS}
+                            cols={5}
+                            lastCell={
+                              <TableCell className={cn(TD, 'py-1 text-right align-middle')}>
+                                <Skeleton className="ml-auto h-8 w-[76px]" />
+                              </TableCell>
+                            }
+                          />
+                        )}
+                        {data?.top_chats.map((c) => (
                           <TableRow key={c.chat_id}>
                             <TableCell className={cn(TD, 'font-mono text-xs')}>{c.chat_id}</TableCell>
                             <TableCell className={cn(TD, NUM)}>{num(c.calls)}</TableCell>
@@ -350,7 +372,7 @@ export default function Stats() {
                             </TableCell>
                           </TableRow>
                         ))}
-                        {data.top_chats.length === 0 && (
+                        {data?.top_chats.length === 0 && (
                           <TableRow><TableCell colSpan={5} className={cn(TD, 'text-muted-foreground')}>Пока пусто</TableCell></TableRow>
                         )}
                       </TableBody>

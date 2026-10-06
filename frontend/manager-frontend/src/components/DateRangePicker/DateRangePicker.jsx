@@ -108,17 +108,26 @@ export default function DateRangePicker({ from, to, firstDay = null, onChange })
   const list = useMemo(() => presets(today, firstDay), [today, firstDay]);
   const active = list.find((p) => p.from === from && p.to === to);
 
-  // Закрытие по выбору или Escape возвращает фокус на кнопку; клик мимо панели — нет.
+  // Любое закрытие — выбор, Escape, клик мимо панели — возвращает фокус на кнопку.
+  const toTrigger = () => trigger.current?.focus({ preventScroll: true });
   const close = () => {
     setOpen(false);
-    trigger.current?.focus({ preventScroll: true });
+    toTrigger();
   };
 
   useEffect(() => {
     if (!open) return undefined;
     panel.current?.focus({ preventScroll: true });
     const onDown = (e) => {
-      if (box.current && !box.current.contains(e.target)) setOpen(false);
+      if (!box.current || box.current.contains(e.target)) return;
+      close();
+      // Сам mousedown после обработчика переносит фокус на то, по чему кликнули.
+      // Если это другой элемент управления — фокус остаётся у него; если пустое
+      // место (фокус упал на <body>) — возвращаем его на кнопку.
+      setTimeout(() => {
+        const el = document.activeElement;
+        if (!el || el === document.body) toTrigger();
+      }, 0);
     };
     const onKey = (e) => e.key === 'Escape' && close();
     document.addEventListener('mousedown', onDown);

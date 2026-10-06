@@ -4,7 +4,7 @@ import { CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { DEAL_STAGES } from '../../data/dealStages';
-import { EDGE, NUM, Section, TD, TH, kilo, money, num, pct, shortDay } from './StatsUi';
+import { EDGE, NUM, Section, SkeletonRows, TD, TH, kilo, money, num, pct, shortDay } from './StatsUi';
 
 const tokensOf = (t) => (t ? t.input + t.cache_read + t.cache_write : 0);
 
@@ -78,6 +78,52 @@ function Cells({ row, share }) {
 
 const TITLE = 'По менеджерам';
 
+const DESCRIPTION = (
+  <CardDescription className="text-xs">
+    Нажмите на строку — раскроются дни. Заголовок столбца сортирует таблицу.
+  </CardDescription>
+);
+
+function Head({ sort, onSort }) {
+  return (
+    <TableHeader>
+      <TableRow>
+        <TableHead className={TH}>Менеджер</TableHead>
+        {COLUMNS.map((c) => (
+          <TableHead
+            key={c.id}
+            title={c.hint}
+            aria-sort={sort === c.id ? 'descending' : 'none'}
+            className={cn(TH, 'cursor-pointer select-none text-right hover:text-foreground', sort === c.id && 'text-foreground')}
+            onClick={onSort && (() => onSort(c.id))}
+          >
+            {c.title}
+            <span className="ml-1 inline-flex w-3.5 justify-center align-[-2px]" aria-hidden="true">
+              {sort === c.id && <ArrowDown className="size-3.5" />}
+            </span>
+          </TableHead>
+        ))}
+      </TableRow>
+    </TableHeader>
+  );
+}
+
+// Первая загрузка: та же карточка, описание и шапка, что у готовой таблицы, —
+// отличаются только строки тела.
+export function ManagersTableSkeleton({ label, ...props }) {
+  return (
+    <Section title={TITLE} flush description={DESCRIPTION} aria-busy="true" {...props}>
+      <span className="sr-only">{label}</span>
+      <Table className={EDGE}>
+        <Head sort="cost_usd" />
+        <TableBody>
+          <SkeletonRows rows={6} cols={COLUMNS.length + 1} />
+        </TableBody>
+      </Table>
+    </Section>
+  );
+}
+
 export default function ManagersTable({ rows }) {
   const [open, setOpen] = useState(() => new Set());
   const [sort, setSort] = useState('cost_usd');
@@ -128,35 +174,9 @@ export default function ManagersTable({ rows }) {
   }
 
   return (
-    <Section
-      title={TITLE}
-      flush
-      description={
-        <CardDescription className="text-xs">
-          Нажмите на строку — раскроются дни. Заголовок столбца сортирует таблицу.
-        </CardDescription>
-      }
-    >
+    <Section title={TITLE} flush description={DESCRIPTION}>
       <Table className={EDGE}>
-        <TableHeader>
-          <TableRow>
-            <TableHead className={TH}>Менеджер</TableHead>
-            {COLUMNS.map((c) => (
-              <TableHead
-                key={c.id}
-                title={c.hint}
-                aria-sort={sort === c.id ? 'descending' : 'none'}
-                className={cn(TH, 'cursor-pointer select-none text-right hover:text-foreground', sort === c.id && 'text-foreground')}
-                onClick={() => setSort(c.id)}
-              >
-                {c.title}
-                <span className="ml-1 inline-flex w-3.5 justify-center align-[-2px]" aria-hidden="true">
-                  {sort === c.id && <ArrowDown className="size-3.5" />}
-                </span>
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
+        <Head sort={sort} onSort={setSort} />
         <TableBody>
           {sorted.map((r) => {
             const id = r.manager_id ?? 'none';
