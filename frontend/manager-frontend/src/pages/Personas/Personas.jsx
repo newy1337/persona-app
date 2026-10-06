@@ -13,9 +13,12 @@ import {
   setDefaultPersona,
   updatePersona,
 } from '../../api/personas';
+import { Copy, MoreHorizontal, Pencil, Plus } from 'lucide-react';
+import { useRouteBusy } from '@/components/AppLayout/routeBusy';
+import { IconAction } from '@/components/IconAction/IconAction';
+import { PageHeader } from '@/components/PageHeader/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -24,6 +27,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -119,15 +129,23 @@ const SECTION_KEYS = TABS.map((t) => t.key);
 // Каркас списка и карточки личности общий для скелета и для данных: одни и
 // те же классы задают отступы и высоты строк, поэтому при появлении данных
 // ничего не сдвигается.
-const LIST_BOX = 'flex gap-1 max-lg:overflow-x-auto lg:flex-col';
-const LIST_ROW = 'min-w-40 flex-col items-start gap-1 px-3 py-2 lg:w-full';
-const LIST_META = 'flex min-h-5 flex-wrap items-center gap-1.5 text-xs';
+const LIST_BOX = 'flex gap-0.5 max-lg:overflow-x-auto lg:flex-col';
+const LIST_ROW = 'min-w-40 flex-col items-start gap-0.5 rounded-md px-3 py-2 lg:w-full';
+const LIST_META = 'flex min-h-5 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs';
+const DETAIL_BOX = 'flex min-w-0 flex-col gap-4 rounded-lg border bg-card p-4';
 const HEAD_BOX = 'flex flex-wrap items-start justify-between gap-3';
-const HEAD_ACTIONS = 'flex flex-wrap items-center gap-2';
+const HEAD_ACTIONS = 'flex items-center gap-1';
 const MODELS_BOX = 'flex flex-wrap gap-4';
 const MODEL_FIELD = 'min-w-60 flex-1 sm:max-w-sm';
-const TABS_BOX = 'h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0 [scrollbar-width:none]';
-const BODY_BOX = 'min-h-[60vh]';
+// Вкладки секций — обычный список shadcn Tabs; на узком экране лента прокручивается.
+const TABS_LIST = 'max-w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
+const TAB = 'flex-none gap-1 px-3';
+// Место под точку черновика занято всегда — вкладка не меняет ширину.
+const TAB_DOT = 'size-1.5 shrink-0 rounded-full';
+// Редактор растягивается на высоту блока: полоса сохранения стоит у нижнего края.
+const BODY_BOX = 'flex min-h-[60vh] flex-col';
+// Метка без рамки: точка статуса и нейтральный текст.
+const PLAIN_BADGE = 'h-5 border-transparent px-0 font-normal text-muted-foreground';
 
 const MODEL_FIELDS = [
   { key: 'generator', column: 'generator_model', label: 'Модель ответов', hint: 'пишет реплики клиенту' },
@@ -184,20 +202,21 @@ function DetailSkeleton({ models }) {
           <div className="mt-1 flex h-4 items-center"><Skeleton className="h-3 w-80 max-w-full" /></div>
         </div>
         <div className={HEAD_ACTIONS}>
-          {['w-32', 'w-28', 'w-32', 'w-32'].map((w, i) => <Skeleton key={i} className={cn('h-8', w)} />)}
+          {[0, 1, 2].map((i) => <Skeleton key={i} className="size-8" />)}
         </div>
       </div>
       {models !== null && <ModelsSkeleton />}
       <div className="flex flex-col gap-2">
-        <div className={cn('flex items-center', TABS_BOX)}>
+        <div className={cn('inline-flex h-9 w-fit items-center rounded-lg bg-muted p-[3px]', TABS_LIST)}>
           {TABS.map((t) => (
-            <div key={t.key} className="-mb-px flex h-9 flex-none items-center px-3">
-              <Skeleton className="h-4 w-14" />
+            <div key={t.key} className={cn('flex h-full items-center', TAB)}>
+              <Skeleton className="h-4 w-14 bg-background" />
+              <span className={TAB_DOT} />
             </div>
           ))}
         </div>
       </div>
-      <div className={cn('flex flex-col gap-4', BODY_BOX)}>
+      <div className={cn('gap-4', BODY_BOX)}>
         <Skeleton className="h-8 w-full" />
         <Skeleton className="h-48 w-full" />
         <Skeleton className="h-48 w-full" />
@@ -349,178 +368,190 @@ export default function Personas() {
 
   const draftSections = (id) => drafted.find((d) => d.id === id)?.sections ?? [];
   const detailLoading = !persona && (!booted || selected != null);
+  useRouteBusy(!booted);
 
   return (
-    <>
-        <div className="container">
-          <div className="my-6 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-xl font-semibold">Личности</h2>
-            <Button disabled={creating} onClick={() => setCreating(true)}>+ Новая личность</Button>
-          </div>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Кем говорит бот. Аккаунт ссылается на личность идентификатором (<span className="font-mono">persona_id</span>),
-            одна личность может стоять на нескольких аккаунтах. Правки действуют со следующего ответа.
-          </p>
-          <CreateDialog
-            open={creating}
-            personas={items}
-            onCancel={() => setCreating(false)}
-            onDone={async (id) => { setCreating(false); await loadList(); setSelected(id); }}
-          />
-          <div role="status" className="my-3 flex min-h-5 flex-col gap-1 text-sm">
-            {error && <p className="text-destructive">{error}</p>}
-            {flash && <p className="text-success-foreground">{flash}</p>}
-          </div>
+    <div className="container pb-8">
+      <PageHeader
+        title="Личности"
+        description="Кем говорит бот. Одна личность может стоять на нескольких аккаунтах; правки действуют со следующего ответа."
+      >
+        <Button variant="outline" size="sm" disabled={creating} onClick={() => setCreating(true)}>
+          <Plus aria-hidden="true" />
+          Новая личность
+        </Button>
+      </PageHeader>
+      <CreateDialog
+        open={creating}
+        personas={items}
+        onCancel={() => setCreating(false)}
+        onDone={async (id) => { setCreating(false); await loadList(); setSelected(id); }}
+      />
 
-          <div className="grid items-start gap-4 pb-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-            <Card className="gap-1 p-2 lg:sticky lg:top-[calc(var(--header-h)+12px)]">
-              {!listLoaded && items.length === 0 ? (
-                <ListSkeleton />
-              ) : (
-                <div className={LIST_BOX}>
-                  {items.map((x) => {
-                    const active = x.id === selected;
-                    return (
-                      <Button
-                        key={x.id}
-                        variant="ghost"
-                        aria-current={active ? 'true' : undefined}
-                        data-active={active || undefined}
-                        className={cn('h-auto justify-start text-left font-normal whitespace-normal data-[active]:bg-accent', LIST_ROW)}
-                        onClick={() => setSelected(x.id)}
-                      >
-                        <span className="text-sm font-semibold">{x.name}</span>
-                        <span className={cn(LIST_META, 'text-muted-foreground')}>
-                          <span className="font-mono">{x.slug}</span>
-                          {x.is_default && <Badge className="h-5">основная</Badge>}
-                          {!x.enabled && <Badge variant="secondary" className="h-5">выключена</Badge>}
-                          {x.accounts > 0 && <span className="tabular-nums">{x.accounts} акк.</span>}
-                          {draftSections(x.id).length > 0 && (
-                            <span className="text-warning-foreground" title="есть несохранённые правки">● черновик</span>
-                          )}
-                        </span>
-                      </Button>
-                    );
-                  })}
-                  {items.length === 0 && <p className="px-3 py-2 text-sm text-muted-foreground">Личностей нет</p>}
-                </div>
-              )}
-            </Card>
+      <div className="flex flex-col gap-4">
+        <div role="status" className="flex min-h-4 flex-col gap-1 text-xs">
+          {error && <p className="text-destructive">{error}</p>}
+          {flash && <p className="text-muted-foreground">{flash}</p>}
+        </div>
 
-            <Card className="min-w-0 gap-4 p-4">
-              {!persona ? (
-                detailLoading ? (
-                  <DetailSkeleton models={models} />
-                ) : (
-                  <p className={cn(BODY_BOX, 'text-sm text-muted-foreground')}>Выберите личность слева</p>
-                )
+        <div className="grid items-start gap-4 lg:grid-cols-[224px_minmax(0,1fr)]">
+          <nav aria-label="Личности" className="lg:sticky lg:top-[calc(var(--header-h)+12px)]">
+            {!listLoaded && items.length === 0 ? (
+              <ListSkeleton />
+            ) : (
+              <div className={LIST_BOX}>
+                {items.map((x) => {
+                  const active = x.id === selected;
+                  return (
+                    <Button
+                      key={x.id}
+                      variant="ghost"
+                      aria-current={active ? 'true' : undefined}
+                      data-active={active || undefined}
+                      className={cn('h-auto justify-start text-left font-normal whitespace-normal data-[active]:bg-accent', LIST_ROW)}
+                      onClick={() => setSelected(x.id)}
+                    >
+                      <span className="flex h-5 items-center text-sm font-medium">{x.name}</span>
+                      <span className={cn(LIST_META, 'text-muted-foreground')}>
+                        <span className="font-mono">{x.slug}</span>
+                        {x.is_default && <span>основная</span>}
+                        {!x.enabled && <span>выключена</span>}
+                        {x.accounts > 0 && <span className="tabular-nums">{x.accounts} акк.</span>}
+                        {draftSections(x.id).length > 0 && (
+                          <Badge variant="warning" className={PLAIN_BADGE} title="есть несохранённые правки">черновик</Badge>
+                        )}
+                      </span>
+                    </Button>
+                  );
+                })}
+                {items.length === 0 && <p className="px-3 py-2 text-sm text-muted-foreground">Личностей нет</p>}
+              </div>
+            )}
+          </nav>
+
+          <div className={DETAIL_BOX}>
+            {!persona ? (
+              detailLoading ? (
+                <DetailSkeleton models={models} />
               ) : (
-                <>
-                  <div className={HEAD_BOX}>
-                    <div className="min-w-0">
-                      <h3 className="flex flex-wrap items-baseline gap-2 text-base font-semibold">
-                        {persona.name} <span className="font-mono text-xs font-normal text-muted-foreground">{persona.slug}</span>
-                      </h3>
-                      <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-                        {persona.card_lines} строк карточки · {persona.examples} примеров тона ·{' '}
-                        {persona.storylines} сюжетов · промптов изменено {persona.edited_prompts} ·{' '}
-                        {persona.accounts} аккаунт(ов)
-                      </p>
-                    </div>
-                    <div className={HEAD_ACTIONS}>
-                      <Button variant="outline" size="sm" disabled={renaming} onClick={rename}>Переименовать</Button>
-                      <Button variant="outline" size="sm" title="Копия со всеми документами и промптами" onClick={duplicate}>
-                        Дублировать
-                      </Button>
-                      <Button variant="outline" size="sm" title="Скачать личность одним файлом: все секции сразу" onClick={exportFile}>
-                        Выгрузить всё
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        title="Взять секции из файла — прежние уйдут в историю версий"
-                        onClick={() => filePicker.current?.click()}
-                      >
-                        Загрузить всё
-                      </Button>
-                      <input
-                        ref={filePicker}
-                        type="file"
-                        accept="application/json,.json"
-                        hidden
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          e.target.value = '';
-                          void importFile(file);
-                        }}
-                      />
-                      {!persona.is_default && (
-                        <Button variant="outline" size="sm" onClick={() => run(() => setDefaultPersona(persona.id))}>Сделать основной</Button>
-                      )}
-                      {!persona.is_default && (
-                        <Button variant="outline" size="sm" onClick={() => run(() => updatePersona(persona.id, { enabled: !persona.enabled }))}>
-                          {persona.enabled ? 'Выключить' : 'Включить'}
-                        </Button>
-                      )}
-                      {!persona.is_default && (
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={remove}>
-                          Удалить
-                        </Button>
-                      )}
-                    </div>
+                <p className={cn(BODY_BOX, 'text-sm text-muted-foreground')}>Выберите личность слева</p>
+              )
+            ) : (
+              <>
+                <div className={HEAD_BOX}>
+                  <div className="min-w-0">
+                    <h2 className="flex min-h-6 flex-wrap items-center gap-2 text-base font-semibold">
+                      {persona.name}
+                      <span className="font-mono text-xs font-normal text-muted-foreground">{persona.slug}</span>
+                      {persona.is_default && <Badge variant="secondary" className="h-5 font-normal">основная</Badge>}
+                      {!persona.enabled && <Badge variant="outline" className="h-5 font-normal text-muted-foreground">выключена</Badge>}
+                    </h2>
+                    <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                      {persona.card_lines} строк карточки · {persona.examples} примеров тона ·{' '}
+                      {persona.storylines} сюжетов · промптов изменено {persona.edited_prompts} ·{' '}
+                      {persona.accounts} аккаунт(ов)
+                    </p>
                   </div>
-
-                  {models === undefined ? (
-                    <ModelsSkeleton />
-                  ) : models ? (
-                    <div className={MODELS_BOX}>
-                      {MODEL_FIELDS.map((m) => (
-                        <ModelSelect
-                          key={m.key}
-                          label={m.label}
-                          hint={m.hint}
-                          value={persona[m.column]}
-                          options={models[m.key]}
-                          fallback={models.defaults[m.key]}
-                          onChange={(v) => run(() => updatePersona(persona.id, { [m.column]: v }))}
-                        />
-                      ))}
-                    </div>
-                  ) : null}
-
-                  <Tabs value={tab} onValueChange={setTab}>
-                    <TabsList className={TABS_BOX}>
-                      {TABS.map((t) => (
-                        <TabsTrigger
-                          key={t.key}
-                          value={t.key}
-                          className="-mb-px h-9 flex-none rounded-none border-0 border-b-2 border-transparent px-3 text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                  <div className={HEAD_ACTIONS}>
+                    <IconAction icon={Pencil} label="Переименовать" disabled={renaming} onClick={rename} />
+                    <IconAction icon={Copy} label="Дублировать" hint="Дублировать: копия со всеми документами и промптами" onClick={duplicate} />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <IconAction icon={MoreHorizontal} label="Ещё" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-48">
+                        <DropdownMenuItem title="Скачать личность одним файлом: все секции сразу" onSelect={exportFile}>
+                          Выгрузить всё
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          title="Взять секции из файла — прежние уйдут в историю версий"
+                          onSelect={() => filePicker.current?.click()}
                         >
-                          {t.label}
-                          <span className="inline-block w-2.5 text-left text-xs text-warning-foreground" aria-hidden={!draftSections(persona.id).includes(t.key)}>
-                            {draftSections(persona.id).includes(t.key) ? '●' : ''}
-                          </span>
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
-                  </Tabs>
-
-                  <div className={BODY_BOX}>
-                    {tab === 'prompts' ? (
-                      <PromptsEditor persona={persona} defaults={defaults} onSaved={refresh} onError={setError} />
-                    ) : tab === 'rhythm' ? (
-                      <RhythmEditor persona={persona} onSaved={refresh} onError={setError} />
-                    ) : tab === 'variables' ? (
-                      <VariablesEditor persona={persona} onSaved={refresh} onError={setError} />
-                    ) : (
-                      <SectionEditor persona={persona} section={tab} onSaved={refresh} onError={setError} />
-                    )}
+                          Загрузить всё
+                        </DropdownMenuItem>
+                        {!persona.is_default && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onSelect={() => run(() => setDefaultPersona(persona.id))}>
+                              Сделать основной
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => run(() => updatePersona(persona.id, { enabled: !persona.enabled }))}>
+                              {persona.enabled ? 'Выключить' : 'Включить'}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem variant="destructive" onSelect={remove}>
+                              Удалить
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <input
+                      ref={filePicker}
+                      type="file"
+                      accept="application/json,.json"
+                      hidden
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        void importFile(file);
+                      }}
+                    />
                   </div>
-                </>
-              )}
-            </Card>
+                </div>
+
+                {models === undefined ? (
+                  <ModelsSkeleton />
+                ) : models ? (
+                  <div className={MODELS_BOX}>
+                    {MODEL_FIELDS.map((m) => (
+                      <ModelSelect
+                        key={m.key}
+                        label={m.label}
+                        hint={m.hint}
+                        value={persona[m.column]}
+                        options={models[m.key]}
+                        fallback={models.defaults[m.key]}
+                        onChange={(v) => run(() => updatePersona(persona.id, { [m.column]: v }))}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+
+                <Tabs value={tab} onValueChange={setTab}>
+                  <TabsList className={TABS_LIST}>
+                    {TABS.map((t) => {
+                      const hasDraft = draftSections(persona.id).includes(t.key);
+                      return (
+                        <TabsTrigger key={t.key} value={t.key} className={TAB}>
+                          {t.label}
+                          <span
+                            className={cn(TAB_DOT, hasDraft && 'bg-warning-foreground')}
+                            title={hasDraft ? 'есть несохранённые правки' : undefined}
+                            aria-hidden="true"
+                          />
+                        </TabsTrigger>
+                      );
+                    })}
+                  </TabsList>
+                </Tabs>
+
+                <div className={BODY_BOX}>
+                  {tab === 'prompts' ? (
+                    <PromptsEditor persona={persona} defaults={defaults} onSaved={refresh} onError={setError} />
+                  ) : tab === 'rhythm' ? (
+                    <RhythmEditor persona={persona} onSaved={refresh} onError={setError} />
+                  ) : tab === 'variables' ? (
+                    <VariablesEditor persona={persona} onSaved={refresh} onError={setError} />
+                  ) : (
+                    <SectionEditor persona={persona} section={tab} onSaved={refresh} onError={setError} />
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
-    </>
+      </div>
+    </div>
   );
 }

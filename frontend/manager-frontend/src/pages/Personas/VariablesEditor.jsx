@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { Plus, TriangleAlert, X } from 'lucide-react';
 import { putSection } from '../../api/personas';
+import { IconAction } from '@/components/IconAction/IconAction';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,7 +24,9 @@ const DRAFT_DELAY_MS = 600;
 const BUILTINS = { name: 'имя личности' };
 const CHAT_VARIABLES = { city: 'город лида', site: 'сайт знакомств лида' };
 
-const HEAD = 'h-10 px-3 text-xs font-medium text-muted-foreground';
+const HEAD = 'h-9 px-3 text-xs font-medium text-muted-foreground';
+// Таблица идёт во всю ширину блока личности и отделена линиями, без своей рамки.
+const EDGE = '[&_th:first-child]:pl-4 [&_td:first-child]:pl-4 [&_th:last-child]:pr-4 [&_td:last-child]:pr-4';
 const CELL = 'p-3 align-top whitespace-normal [overflow-wrap:anywhere]';
 
 export default function VariablesEditor({ persona, onSaved, onError }) {
@@ -157,7 +160,7 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
   const where = (key) => [...(used.get(key) ?? [])].map((section) => SECTION_LABELS[section] ?? section);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-1 flex-col gap-4">
       <EditorBar
         summary={`${defined.size} переменн. · в текстах используется ${[...used.keys()].length}`}
         hint={
@@ -171,23 +174,25 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
         }
         draftAt={draftAt}
         dirty={dirty}
+        versions={versions}
+        onReset={reset}
       >
-        <Button variant="outline" size="sm" onClick={() => addRow()}>+ Переменная</Button>
-        <Button variant="outline" size="sm" onClick={versions.toggle}>
-          {versions.open ? 'Скрыть историю' : 'История версий'}
+        <Button variant="outline" size="sm" className="mr-1" onClick={() => addRow()}>
+          <Plus aria-hidden="true" />
+          Переменная
         </Button>
-        <Button variant="outline" size="sm" disabled={!dirty} onClick={reset}>Отменить правки</Button>
       </EditorBar>
 
       {missing.length > 0 && (
         <Alert variant="warning" className="py-2.5">
-          <AlertDescription className="flex flex-row flex-wrap items-center gap-1.5 text-xs text-warning-foreground">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription className="flex flex-row flex-wrap items-center gap-1.5 text-xs">
             <span>В текстах есть, но не заданы:</span>
             {missing.map((key) => (
               <Button
                 key={key}
                 variant="outline"
-                size="sm"
+                size="xs"
                 className="font-mono"
                 title={`Используется: ${where(key).join(', ')}`}
                 onClick={() => addRow(key)}
@@ -201,20 +206,20 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
 
       <VersionsTable versions={versions.versions} loading={versions.loading} onRestore={versions.restore} />
 
-      <div className="overflow-hidden rounded-lg border bg-card">
-        <Table className={cn(stickyLastCol, 'min-w-[760px]')}>
+      <div className="-mx-4 border-t">
+        <Table className={cn(stickyLastCol, EDGE, 'min-w-[760px]')}>
           <TableHeader>
             <TableRow>
               <TableHead className={HEAD}>Переменная</TableHead>
               <TableHead className={HEAD}>Значение</TableHead>
               <TableHead className={HEAD}>Пояснение</TableHead>
               <TableHead className={HEAD}>Где используется</TableHead>
-              <TableHead className={HEAD}></TableHead>
+              <TableHead className={cn(HEAD, 'w-0')}><span className="sr-only">Действия</span></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {Object.entries(BUILTINS).map(([key, label]) => (
-              <TableRow key={`builtin-${key}`} className="opacity-75">
+              <TableRow key={`builtin-${key}`} className="text-muted-foreground">
                 <TableCell className={cn(CELL, 'font-mono')}>{`{${key}}`}</TableCell>
                 <TableCell className={CELL}>{persona.name}</TableCell>
                 <TableCell className={cn(CELL, 'text-muted-foreground')}>{label} — встроенная, меняется переименованием</TableCell>
@@ -225,7 +230,7 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
             {Object.entries(CHAT_VARIABLES).map(([key, label]) => {
               const fallback = rows.find((r) => String(r.key).trim() === key);
               return (
-                <TableRow key={`chat-${key}`} className="opacity-75">
+                <TableRow key={`chat-${key}`} className="text-muted-foreground">
                   <TableCell className={cn(CELL, 'font-mono')}>{`{${key}}`}</TableCell>
                   <TableCell className={CELL}>из карточки лида</TableCell>
                   <TableCell className={cn(CELL, 'text-muted-foreground')}>
@@ -274,16 +279,7 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
                   </TableCell>
                   <TableCell className={cn(CELL, 'pt-4', !places.length && 'text-muted-foreground')}>{places.join(', ') || 'нигде'}</TableCell>
                   <TableCell className={CELL}>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 text-destructive hover:text-destructive"
-                      title="Удалить переменную"
-                      aria-label="Удалить переменную"
-                      onClick={() => removeRow(i)}
-                    >
-                      <X className="size-4" />
-                    </Button>
+                    <IconAction icon={X} label="Удалить переменную" tone="danger" onClick={() => removeRow(i)} />
                   </TableCell>
                 </TableRow>
               );
@@ -291,7 +287,7 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
             {rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5} className={cn(CELL, 'text-muted-foreground')}>
-                  Переменных пока нет — нажмите «+ Переменная» или добавьте из списка незаданных выше.
+                  Переменных пока нет — нажмите «Переменная» или добавьте из списка незаданных выше.
                 </TableCell>
               </TableRow>
             )}

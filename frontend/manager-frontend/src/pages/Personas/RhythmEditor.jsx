@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRhythmDefaults, putSection } from '../../api/personas';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { RotateCcw } from 'lucide-react';
+import { IconAction } from '@/components/IconAction/IconAction';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -50,16 +50,17 @@ function Time({ label, value, onChange }) {
   );
 }
 
+// Блок настроек — раздел с линией сверху: рамка в рамке блока личности не нужна.
 function Block({ title, toggle, hint, children }) {
   return (
-    <Card className="gap-2.5 p-4">
-      <header className="flex items-center justify-between gap-2">
+    <section className="flex flex-col gap-2.5 border-t pt-4">
+      <header className="flex min-h-5 items-center justify-between gap-2">
         <span className="text-sm font-medium">{title}</span>
         {toggle}
       </header>
       {hint && <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>}
       {children}
-    </Card>
+    </section>
   );
 }
 
@@ -191,25 +192,26 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
   const goodnight = draft.goodnight ?? {};
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-1 flex-col gap-4">
       <EditorBar
         summary={rhythmSummary(draft)}
         hint="Правка действует со следующего сообщения, перезапуск не нужен. Окна утра и прощания — по часам выбранного пояса; утро и прощание слушаются общего выключателя инициативы в настройках."
         draftAt={draftAt}
         dirty={dirty}
+        versions={versions}
+        onReset={reset}
       >
-        <Button variant="outline" size="sm" onClick={applyDefaults} title="Подставить цифры по умолчанию — сохранит обычная кнопка">
-          Как по умолчанию
-        </Button>
-        <Button variant="outline" size="sm" onClick={versions.toggle}>
-          {versions.open ? 'Скрыть историю' : 'История версий'}
-        </Button>
-        <Button variant="outline" size="sm" disabled={!dirty} onClick={reset}>Отменить правки</Button>
+        <IconAction
+          icon={RotateCcw}
+          label="Как по умолчанию"
+          hint="Как по умолчанию: подставить цифры — сохранит обычная кнопка"
+          onClick={applyDefaults}
+        />
       </EditorBar>
 
       <VersionsTable versions={versions.versions} loading={versions.loading} onRestore={versions.restore} />
 
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-x-8 gap-y-6">
         <Block
           title="Задержка ответа"
           toggle={<Toggle checked={rd.enabled !== false} onChange={(v) => set(['reply_delay', 'enabled'], v)}>включена</Toggle>}

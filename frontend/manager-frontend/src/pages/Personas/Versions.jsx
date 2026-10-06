@@ -1,17 +1,9 @@
 import { PanelUX } from '../../ui/PanelUX';
 import { useCallback, useState } from 'react';
 import { getVersions, restoreVersion } from '../../api/personas';
-import { Button } from '@/components/ui/button';
+import { RotateCcw } from 'lucide-react';
+import { IconAction } from '@/components/IconAction/IconAction';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  stickyLastCol,
-} from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 
 export function fmtTs(ts) {
@@ -69,58 +61,42 @@ export function useVersions(personaId, section, { onRestored, onError }) {
   return { versions, loading, open: versions !== null || loading, toggle, restore, hide };
 }
 
-const HEAD = 'h-10 px-3 text-xs font-medium text-muted-foreground';
-const CELL = 'p-3 align-top whitespace-normal [overflow-wrap:anywhere]';
+// Список версий — строки с разделителями на приглушённой подложке внутри блока
+// личности (рамка в рамке не нужна). Заглушка собрана из той же строки.
+const ROW = 'flex h-11 items-center gap-3 px-3 text-sm';
+const WHEN = 'w-24 shrink-0 text-xs text-muted-foreground tabular-nums';
+const WHO = 'w-28 shrink-0 truncate';
+const NOTE = 'min-w-0 flex-1 truncate text-muted-foreground';
+const SIZE = 'w-16 shrink-0 text-right text-xs text-muted-foreground tabular-nums';
 
 export default function VersionsTable({ versions, loading = false, onRestore }) {
   if (!versions && !loading) return null;
   return (
-    <div className="overflow-hidden rounded-lg border bg-card">
-      <Table className={cn(stickyLastCol, 'min-w-[560px]')}>
-        <TableHeader>
-          <TableRow>
-            <TableHead className={HEAD}>Когда</TableHead>
-            <TableHead className={HEAD}>Кто</TableHead>
-            <TableHead className={HEAD}>Подпись</TableHead>
-            <TableHead className={HEAD}>Размер</TableHead>
-            <TableHead className={HEAD}></TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {!versions ? (
-            <>
-              {[0, 1, 2].map((i) => (
-                <TableRow key={i} role="status" aria-label="Загружаю историю версий">
-                  <TableCell className={CELL}><Skeleton className="h-4 w-24" /></TableCell>
-                  <TableCell className={CELL}><Skeleton className="h-4 w-20" /></TableCell>
-                  <TableCell className={CELL}><Skeleton className="h-4 w-40" /></TableCell>
-                  <TableCell className={CELL}><Skeleton className="h-4 w-12" /></TableCell>
-                  <TableCell className={CELL}><Skeleton className="h-8 w-20" /></TableCell>
-                </TableRow>
-              ))}
-            </>
-          ) : (
-            <>
-              {versions.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className={cn(CELL, 'text-muted-foreground')}>Правок ещё не было</TableCell>
-                </TableRow>
-              )}
-              {versions.map((v) => (
-                <TableRow key={v.id}>
-                  <TableCell className={cn(CELL, 'font-mono text-xs text-muted-foreground tabular-nums')}>{fmtTs(v.created_at)}</TableCell>
-                  <TableCell className={CELL}>{v.saved_by ?? '—'}</TableCell>
-                  <TableCell className={cn(CELL, 'text-muted-foreground')}>{v.note ?? ''}</TableCell>
-                  <TableCell className={cn(CELL, 'text-muted-foreground tabular-nums')}>{(v.bytes / 1024).toFixed(1)} КБ</TableCell>
-                  <TableCell className={CELL}>
-                    <Button variant="outline" size="sm" onClick={() => onRestore(v.id)}>Вернуть</Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </>
-          )}
-        </TableBody>
-      </Table>
-    </div>
+    <ul className="divide-y rounded-md bg-muted/40" aria-label="История версий">
+      {!versions ? (
+        [0, 1, 2].map((i) => (
+          <li key={i} className={ROW} role="status" aria-label="Загружаю историю версий">
+            <span className={WHEN}><Skeleton className="h-4 w-20" /></span>
+            <span className={WHO}><Skeleton className="h-4 w-20" /></span>
+            <span className={NOTE}><Skeleton className="h-4 w-40 max-w-full" /></span>
+            <span className={SIZE}><Skeleton className="ml-auto h-4 w-12" /></span>
+            <Skeleton className="size-8 shrink-0" />
+          </li>
+        ))
+      ) : (
+        <>
+          {versions.length === 0 && <li className={cn(ROW, 'text-muted-foreground')}>Правок ещё не было</li>}
+          {versions.map((v) => (
+            <li key={v.id} className={ROW}>
+              <span className={WHEN}>{fmtTs(v.created_at)}</span>
+              <span className={WHO} title={v.saved_by ?? undefined}>{v.saved_by ?? '—'}</span>
+              <span className={NOTE} title={v.note ?? undefined}>{v.note ?? ''}</span>
+              <span className={SIZE}>{(v.bytes / 1024).toFixed(1)} КБ</span>
+              <IconAction icon={RotateCcw} label="Вернуть" hint="Вернуть эту версию" onClick={() => onRestore(v.id)} />
+            </li>
+          ))}
+        </>
+      )}
+    </ul>
   );
 }

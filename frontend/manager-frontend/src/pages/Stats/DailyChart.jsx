@@ -1,34 +1,34 @@
 import { useState } from 'react';
-import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { money } from './StatsUi';
 
 // Подпись оси — «месяц.день», не как shortDay из StatsUi («день.месяц»).
 const shortDay = (day) => day.slice(5).replace('-', '.');
 
+// Один тон на график: расход — акцентом, сообщения — нейтральной отметкой (её видно и поверх столбца).
 function Legend() {
   return (
     <span className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
-      <span className="inline-flex items-center gap-1.5"><i className="size-2.5 rounded-sm bg-primary/70" /> деньги</span>
-      <span className="inline-flex items-center gap-1.5"><i className="h-0.5 w-2.5 rounded-sm bg-success-foreground" /> сообщения</span>
+      <span className="inline-flex items-center gap-1.5"><i className="size-2 rounded-xs bg-primary" /> деньги</span>
+      <span className="inline-flex items-center gap-1.5"><i className="h-0.5 w-2.5 rounded-full bg-foreground/70" /> сообщения</span>
     </span>
   );
 }
 
 // Одна рамка на график, пустое состояние и заглушку первой загрузки: шапка min-h-5
-// и тело ровно BODY высотой — карточка не меняет высоту при смене состояния.
+// и тело ровно BODY высотой — блок не меняет высоту при смене состояния.
 const BODY = 'h-[170px] w-full';
 
 function Frame({ caption = null, children }) {
   return (
-    <Card className="min-h-[230px] gap-2 p-4">
+    <section className="flex min-h-[230px] flex-col gap-2 rounded-lg border bg-card p-4">
       <div className="flex min-h-5 items-center gap-3">
-        <span className="shrink-0 text-sm font-medium">Расход по дням</span>
+        <h2 className="shrink-0 text-sm font-medium">Расход по дням</h2>
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground tabular-nums">{caption}</span>
         <Legend />
       </div>
       {children}
-    </Card>
+    </section>
   );
 }
 
@@ -79,6 +79,18 @@ export default function DailyChart({ days }) {
         role="img"
         aria-label="Расход по дням"
       >
+        {[0, 0.5, 1].map((share) => (
+          <line
+            key={share}
+            x1={pad.left}
+            x2={W - pad.right}
+            y1={pad.top + plotH * share}
+            y2={pad.top + plotH * share}
+            className="stroke-border"
+            strokeWidth="1"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
         {days.map((d, i) => {
           const x = pad.left + i * step + (step - barW) / 2;
           const h = (d.cost_usd / maxCost) * plotH;
@@ -92,14 +104,14 @@ export default function DailyChart({ days }) {
                 width={barW}
                 height={Math.max(h, d.cost_usd > 0 ? 1.5 : 0)}
                 rx="2"
-                className={hover === i ? 'fill-primary' : 'fill-primary/70'}
+                className={hover === i ? 'fill-primary' : 'fill-primary/75'}
               />
-              <rect x={x} y={pad.top + plotH - msgH} width={barW} height="1.5" className="fill-success-foreground" />
+              <rect x={x} y={pad.top + plotH - msgH} width={barW} height="1.5" className="fill-foreground/70" />
               {i % labelEvery === 0 && (
                 <text
                   x={pad.left + i * step + step / 2}
                   y={H - 5}
-                  className="fill-muted-foreground text-[11px]"
+                  className="fill-muted-foreground text-xs"
                   textAnchor="middle"
                 >
                   {shortDay(d.day)}

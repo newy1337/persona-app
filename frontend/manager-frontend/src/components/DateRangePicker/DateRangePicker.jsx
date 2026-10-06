@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -60,14 +60,14 @@ function Month({ monthDay, from, to, today, onPick }) {
   const cells = monthGrid(monthDay);
   while (cells.length < GRID_CELLS) cells.push(null);
   return (
-    <div className="w-[224px]">
+    <div className="w-56">
       <div className="mb-1.5 text-center text-sm font-medium">{title}</div>
-      <div className="grid grid-cols-7 gap-0.5">
+      <div className="grid grid-cols-7">
         {WEEKDAYS.map((w) => (
-          <span key={w} className="pb-0.5 text-center text-[11px] text-muted-foreground">{w}</span>
+          <span key={w} className="pb-0.5 text-center text-xs text-muted-foreground">{w}</span>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-0.5">
+      <div className="grid grid-cols-7 gap-y-0.5">
         {cells.map((day, i) => {
           if (day === null) return <span key={`x${i}`} className="size-8" />;
           const edge = day === from || day === to;
@@ -79,9 +79,11 @@ function Month({ monthDay, from, to, today, onPick }) {
               variant="ghost"
               className={cn(
                 'size-8 p-0 text-xs font-normal tabular-nums',
-                edge && 'bg-primary font-semibold text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
-                inside && 'rounded-none bg-primary/15 hover:bg-primary/25',
-                day === today && !edge && 'ring-1 ring-primary/60 ring-inset',
+                // Выбранный период — единственная заливка панели: середина bg-accent
+                // сплошной лентой (ячейки без зазора), концы — акцентом.
+                inside && 'rounded-none bg-accent',
+                edge && 'bg-primary font-medium text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
+                day === today && !edge && 'font-semibold underline underline-offset-4',
                 day > today && 'text-muted-foreground',
               )}
               disabled={day > today}
@@ -154,6 +156,7 @@ export default function DateRangePicker({ from, to, firstDay = null, onChange })
         ref={trigger}
         type="button"
         variant="outline"
+        size="sm"
         className="min-w-[180px] justify-start"
         data-testid="range-button"
         aria-haspopup="dialog"
@@ -164,11 +167,10 @@ export default function DateRangePicker({ from, to, firstDay = null, onChange })
           setOpen((v) => !v);
         }}
       >
-        <Calendar aria-hidden="true" />
+        <Calendar className="text-muted-foreground" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-left tabular-nums">
           {active ? active.label : from === to ? human(from) : `${human(from)} — ${human(to)}`}
         </span>
-        <ChevronDown className="opacity-60" aria-hidden="true" />
       </Button>
 
       {open && (
@@ -177,9 +179,9 @@ export default function DateRangePicker({ from, to, firstDay = null, onChange })
           tabIndex={-1}
           role="dialog"
           aria-label="Выбор периода"
-          className="absolute top-[calc(100%+6px)] right-0 z-50 flex max-h-[calc(100vh-120px)] overflow-auto rounded-lg border bg-popover text-popover-foreground shadow-md outline-hidden [scrollbar-gutter:stable] max-md:right-auto max-md:left-0 max-md:max-w-[calc(100vw-32px)] max-md:flex-col"
+          className="absolute top-[calc(100%+6px)] right-0 z-50 flex max-h-[calc(100vh-120px)] overflow-auto rounded-lg border bg-popover text-popover-foreground shadow-sm outline-hidden [scrollbar-gutter:stable] max-md:right-auto max-md:left-0 max-md:max-w-[calc(100vw-32px)] max-md:flex-col"
         >
-          <div className="flex min-w-[190px] flex-col gap-0.5 border-r bg-muted/30 p-2 max-md:flex-row max-md:flex-wrap max-md:border-r-0 max-md:border-b">
+          <div className="flex min-w-[190px] flex-col gap-0.5 border-r p-2 max-md:flex-row max-md:flex-wrap max-md:border-r-0 max-md:border-b">
             {list.map((p) => (
               <Button
                 key={p.key}
@@ -187,7 +189,7 @@ export default function DateRangePicker({ from, to, firstDay = null, onChange })
                 variant="ghost"
                 size="sm"
                 aria-pressed={active?.key === p.key}
-                className="justify-start aria-pressed:bg-secondary aria-pressed:text-secondary-foreground"
+                className="justify-start font-normal aria-pressed:bg-accent aria-pressed:font-medium aria-pressed:text-accent-foreground"
                 onClick={() => {
                   onChange({ from: p.from, to: p.to });
                   close();
@@ -202,8 +204,7 @@ export default function DateRangePicker({ from, to, firstDay = null, onChange })
               <Button
                 type="button"
                 variant="ghost"
-                size="icon"
-                className="size-7"
+                size="icon-xs"
                 onClick={() => setLeftMonth(shiftMonth(leftMonth, -1))}
                 aria-label="Предыдущий месяц"
               >
@@ -215,8 +216,7 @@ export default function DateRangePicker({ from, to, firstDay = null, onChange })
               <Button
                 type="button"
                 variant="ghost"
-                size="icon"
-                className="size-7"
+                size="icon-xs"
                 disabled={shiftMonth(leftMonth, 1) >= monthStart(today)}
                 onClick={() => setLeftMonth(shiftMonth(leftMonth, 1))}
                 aria-label="Следующий месяц"

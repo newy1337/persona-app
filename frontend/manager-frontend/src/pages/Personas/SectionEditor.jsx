@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { putSection } from '../../api/personas';
-import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import VersionsTable, { useVersions } from './Versions';
@@ -120,7 +119,7 @@ export default function SectionEditor({ persona, section, onSaved, onError }) {
   const notes = Object.entries(stored ?? {}).filter(([k, v]) => k.startsWith('_') && typeof v === 'string');
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-1 flex-col gap-3">
       <EditorBar
         leading={
           <Tabs value={mode} onValueChange={setMode}>
@@ -138,15 +137,12 @@ export default function SectionEditor({ persona, section, onSaved, onError }) {
         }
         draftAt={draftAt}
         dirty={dirty}
-      >
-        <Button variant="outline" size="sm" onClick={versions.toggle}>
-          {versions.open ? 'Скрыть историю' : 'История версий'}
-        </Button>
-        <Button variant="outline" size="sm" disabled={!dirty} onClick={reset}>Отменить правки</Button>
-      </EditorBar>
+        versions={versions}
+        onReset={reset}
+      />
 
       {notes.length > 0 && (
-        <details className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground [&_summary]:cursor-pointer [&_summary]:select-none [&_summary]:text-foreground">
+        <details className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground [&_summary]:cursor-pointer [&_summary]:select-none [&_summary]:text-foreground">
           <summary>Заметки автора — {notes.length}</summary>
           <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-4 leading-snug">
             {notes.map(([k, v]) => (

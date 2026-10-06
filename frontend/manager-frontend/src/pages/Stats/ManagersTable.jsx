@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { ArrowDown, ChevronDown, ChevronRight } from 'lucide-react';
-import { CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { DEAL_STAGES } from '../../data/dealStages';
@@ -78,11 +77,7 @@ function Cells({ row, share }) {
 
 const TITLE = 'По менеджерам';
 
-const DESCRIPTION = (
-  <CardDescription className="text-xs">
-    Нажмите на строку — раскроются дни. Заголовок столбца сортирует таблицу.
-  </CardDescription>
-);
+const DESCRIPTION = 'Нажмите на строку — раскроются дни. Заголовок столбца сортирует таблицу.';
 
 function Head({ sort, onSort }) {
   return (

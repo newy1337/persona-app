@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronRight, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronRight, Plus, X } from 'lucide-react';
+import { IconAction } from '@/components/IconAction/IconAction';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -91,7 +92,7 @@ export function FieldRow({ parent, k, children }) {
     <div className="grid items-start gap-1.5 md:grid-cols-[minmax(150px,210px)_minmax(0,1fr)] md:gap-3.5">
       <div className="flex flex-col gap-0.5 md:pt-1.5">
         <span className="text-sm font-medium">{label(k)}</span>
-        {label(k) !== k && <span className="font-mono text-[11px] text-muted-foreground">{k}</span>}
+        {label(k) !== k && <span className="font-mono text-xs text-muted-foreground">{k}</span>}
         {hint && <span className="text-xs leading-snug text-muted-foreground">{hint}</span>}
       </div>
       <div className="min-w-0">{children}</div>
@@ -111,7 +112,7 @@ function ScalarField({ value, onChange }) {
   if (typeof value === 'number') {
     return (
       <Input
-        className="w-30 font-mono tabular-nums"
+        className="w-30 tabular-nums"
         inputMode="decimal"
         value={String(value)}
         onChange={(e) => {
@@ -146,38 +147,9 @@ function itemTitle(item, index) {
 function RowTools({ index, total, onMove, onRemove }) {
   return (
     <div className="flex shrink-0 gap-0.5">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7"
-        title="Выше"
-        aria-label="Выше"
-        disabled={index === 0}
-        onClick={() => onMove(index, -1)}
-      >
-        <ArrowUp className="size-3.5" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7"
-        title="Ниже"
-        aria-label="Ниже"
-        disabled={index === total - 1}
-        onClick={() => onMove(index, 1)}
-      >
-        <ArrowDown className="size-3.5" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7 text-destructive hover:text-destructive"
-        title="Удалить"
-        aria-label="Удалить"
-        onClick={() => onRemove(index)}
-      >
-        <X className="size-3.5" />
-      </Button>
+      <IconAction icon={ArrowUp} size="icon-xs" label="Выше" disabled={index === 0} onClick={() => onMove(index, -1)} />
+      <IconAction icon={ArrowDown} size="icon-xs" label="Ниже" disabled={index === total - 1} onClick={() => onMove(index, 1)} />
+      <IconAction icon={X} size="icon-xs" label="Удалить" tone="danger" onClick={() => onRemove(index)} />
     </div>
   );
 }
@@ -214,8 +186,8 @@ function ArrayEditor({ value, onChange }) {
             <RowTools index={i} total={value.length} onMove={move} onRemove={remove} />
           </div>
         ) : (
-          <div key={i} className="rounded-md border bg-muted/30">
-            <div className="flex items-center gap-2 px-2 py-1.5">
+          <div key={i} className="rounded-md bg-muted/40">
+            <div className="flex items-center gap-2 px-2 py-1">
               <Button
                 variant="ghost"
                 size="sm"
@@ -238,7 +210,9 @@ function ArrayEditor({ value, onChange }) {
           </div>
         ),
       )}
-      <Button variant="outline" size="sm" className="self-start" onClick={addItem}>+ Добавить</Button>
+      <Button variant="outline" size="sm" className="self-start" onClick={addItem}><Plus aria-hidden="true" />
+        Добавить
+      </Button>
     </div>
   );
 }

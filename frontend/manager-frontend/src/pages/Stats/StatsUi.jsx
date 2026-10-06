@@ -1,5 +1,4 @@
 import { cn } from '@/lib/utils';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TableCell, TableRow } from '@/components/ui/table';
 
@@ -11,7 +10,7 @@ export const kilo = (x) =>
 export const pct = (x) => `${Math.round((x ?? 0) * 100)}%`;
 export const shortDay = (d) => d.slice(5).split('-').reverse().join('.');
 
-export const TH = 'h-10 text-xs font-medium text-muted-foreground';
+export const TH = 'h-9 px-3 text-xs font-medium text-muted-foreground';
 export const TD = 'p-3 align-top whitespace-normal [overflow-wrap:anywhere]';
 export const NUM = 'text-right tabular-nums whitespace-nowrap';
 // Крайние ячейки подравниваются к внутреннему отступу карточки (px-4).
@@ -19,18 +18,19 @@ export const EDGE =
   '[&_th:first-child]:pl-4 [&_td:first-child]:pl-4 [&_th:last-child]:pr-4 [&_td:last-child]:pr-4';
 
 /**
- * Карточка раздела статистики: заголовок text-sm, необязательное описание
- * (CardDescription) и содержимое. flush — таблица прижимается к краям карточки.
+ * Блок раздела статистики: одна рамка без тени, заголовок text-sm, необязательное
+ * описание (текст или узлы) и содержимое. flush — таблица прижимается к краям
+ * блока и отделяется от шапки линией.
  */
 export function Section({ title, description, flush = false, className, children, ...props }) {
   return (
-    <Card className={cn('gap-0 py-0', className)} {...props}>
-      <CardHeader className="gap-1 px-4 pt-4 pb-3">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        {description}
-      </CardHeader>
-      <CardContent className={flush ? 'px-0 pb-0' : 'px-4 pb-4'}>{children}</CardContent>
-    </Card>
+    <section className={cn('overflow-hidden rounded-lg border bg-card', className)} {...props}>
+      <header className={cn('flex flex-col gap-1 px-4 py-3', flush && 'border-b')}>
+        <h2 className="text-sm font-medium">{title}</h2>
+        {description && <div className="space-y-1 text-xs text-muted-foreground">{description}</div>}
+      </header>
+      <div className={flush ? undefined : 'px-4 pb-4'}>{children}</div>
+    </section>
   );
 }
 

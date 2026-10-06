@@ -1,0 +1,134 @@
+// @vitest-environment jsdom
+import React, { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { api } from '../../api/client';
+import Stats from './Stats';
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+const tokens = { input: 1000, output: 500, cache_read: 9000, cache_write: 0 };
+const usage = {
+  range: { first_day: '2026-08-01' },
+  totals: {
+    cost_usd: 12.5, calls: 400, messages_in: 120, messages_out: 150, chats: 14,
+    cache_hit_rate: 0.9, manual_share: 0.2, avg_latency_ms: 2100, tokens,
+  },
+  by_day: [{ day: '2026-10-05', cost_usd: 12.5, calls: 400, messages_in: 120, messages_out: 150 }],
+  by_stage: [{ stage: 'generator', cost_usd: 10, calls: 300 }, { stage: 'judge_plan', cost_usd: 2.5, calls: 100 }],
+  by_persona: [{ persona_id: 'nastya', cost_usd: 12.5, calls: 400 }],
+  by_model: [{ model: 'vendor/model-a', priced: false, calls: 400, cost_usd: 12.5, avg_latency_ms: 2100, tokens }],
+  top_chats: [{ chat_id: 4242, calls: 40, cost_usd: 3.25, tokens }],
+  prices: { is_default: false },
+  unpriced_models: [],
+};
+const prices = {
+  is_default: false,
+  note: '',
+  families: {},
+  models: { 'vendor/model-a': { input: 3, output: 15, cache_write: 3.75, cache_read: 0.3 } },
+};
+
+let host;
+let root;
+let get;
+
+const flush = () => act(async () => { await Promise.resolve(); });
+const buttonByText = (scope, text) => [...scope.querySelectorAll('button')].find((b) => b.textContent.trim() === text);
+const typeInto = (el, value) =>
+  act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+
+beforeEach(async () => {
+  host = document.createElement('div');
+  document.body.append(host);
+  root = createRoot(host);
+  get = vi.spyOn(api, 'get').mockImplementation(async (path) => {
+    if (path.startsWith('/api/stats/balance')) return { left: 249.15, today: 1, week: 2, month: 3, days_left: 12, error: null };
+    if (path.startsWith('/api/stats/prices')) return prices;
+    if (path.startsWith('/api/stats/managers')) return { by_manager: [] };
+    if (path.startsWith('/api/stats/stages')) return { stages: [], days: [], totals: {}, reached: {} };
+    return usage;
+  });
+  await act(async () => root.render(<MemoryRouter><Stats /></MemoryRouter>));
+  await flush();
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  host.remove();
+  vi.restoreAllMocks();
+});
+
+describe('страница статистики', () => {
+  it('шапка страницы одна, показатели стоят одной полосой', () => {
+    expect(host.querySelectorAll('h1')).toHaveLength(1);
+    expect(host.querySelector('h1').textContent).toBe('Статистика');
+    for (const title of ['Расход', 'За ход клиента', 'Из кеша', 'Токенов', 'Сообщений', 'Чатов']) {
+      expect(host.textContent).toContain(title);
+    }
+    expect(host.textContent).toContain('$12.50');
+    expect(host.textContent).toContain('120 ↓ / 150 ↑');
+  });
+
+  it('модель без цены помечена, диалог открывается кнопкой-иконкой', () => {
+    expect(host.textContent).toContain('без цены');
+    const open = host.querySelector('button[aria-label="Открыть"]');
+    expect(open).not.toBeNull();
+    expect(open.closest('tr').textContent).toContain('4242');
+  });
+
+  it('цены не запрашиваются, пока окно закрыто', () => {
+    expect(get.mock.calls.some(([path]) => path === '/api/stats/prices')).toBe(false);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('«Цены моделей» открывает окно: правка включает сохранение и уходит одним запросом', async () => {
+    const put = vi.spyOn(api, 'put').mockImplementation(async (_path, table) => ({ ...prices, models: table.models }));
+    await act(async () => buttonByText(host, 'Цены моделей').click());
+    await flush();
+
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog.textContent).toContain('vendor/model-a');
+    const save = buttonByText(dialog, 'Сохранить цены');
+    expect(save.disabled).toBe(true);
+
+    await typeInto(dialog.querySelector('input[aria-label="vendor/model-a: вход"]'), '4');
+    expect(save.disabled).toBe(false);
+    const loadsBefore = get.mock.calls.filter(([path]) => path.startsWith('/api/stats?')).length;
+    await act(async () => save.click());
+    await flush();
+
+    expect(put).toHaveBeenCalledWith('/api/stats/prices', {
+      models: { 'vendor/model-a': { input: '4', output: 15, cache_write: 3.75, cache_read: 0.3 } },
+      families: {},
+      note: '',
+    });
+    // После сохранения страница пересчитывает расход по новым ценам.
+    expect(get.mock.calls.filter(([path]) => path.startsWith('/api/stats?')).length).toBe(loadsBefore + 1);
+    expect(buttonByText(dialog, 'Сохранить цены').disabled).toBe(true);
+  });
+
+  it('ошибка сохранения цен остаётся в окне', async () => {
+    vi.spyOn(api, 'put').mockRejectedValue({ detail: 'цена должна быть числом' });
+    await act(async () => buttonByText(host, 'Цены моделей').click());
+    await flush();
+    const dialog = document.querySelector('[role="dialog"]');
+    await typeInto(dialog.querySelector('input[aria-label="vendor/model-a: выход"]'), 'x');
+    await act(async () => buttonByText(dialog, 'Сохранить цены').click());
+    await flush();
+    expect(dialog.textContent).toContain('цена должна быть числом');
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+  });
+
+  it('«Отмена» закрывает окно цен', async () => {
+    await act(async () => buttonByText(host, 'Цены моделей').click());
+    await flush();
+    await act(async () => buttonByText(document.querySelector('[role="dialog"]'), 'Отмена').click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+});

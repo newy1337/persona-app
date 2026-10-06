@@ -1,4 +1,3 @@
-import { CardDescription } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -16,11 +15,11 @@ import { EDGE, NUM, Section, SkeletonRows, TD, TH, num, shortDay } from './Stats
 const TITLE = 'Этапы сделки по дням';
 
 const DESCRIPTION = (
-  <CardDescription className="text-xs">
+  <p>
     Чат засчитывается в этап один раз — в день, когда впервые до него дошёл; пройденные
     этапы остаются, откат назад ничего не снимает. Архив отдельно: по дням — сколько чатов
     отправили в архив, «всего» — сколько чатов в архиве сейчас.
-  </CardDescription>
+  </p>
 );
 
 function Head({ stages }) {

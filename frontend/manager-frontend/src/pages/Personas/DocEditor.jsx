@@ -47,12 +47,12 @@ export default function DocEditor({ doc, onChange }) {
               size="sm"
               aria-current={current ? 'true' : undefined}
               data-active={current || undefined}
-              className="w-auto shrink-0 justify-start gap-2 px-2.5 font-normal text-muted-foreground data-[active]:bg-accent data-[active]:font-semibold data-[active]:text-foreground md:w-full"
+              className="w-auto shrink-0 justify-start gap-2 px-2.5 font-normal text-muted-foreground data-[active]:bg-accent data-[active]:font-medium data-[active]:text-foreground md:w-full"
               onClick={() => setActive(n.id)}
             >
               <span className="truncate">{n.title}</span>
               {n.count !== null && (
-                <span className="ml-auto font-mono text-[11px] text-muted-foreground tabular-nums">{n.count}</span>
+                <span className="ml-auto text-xs font-normal text-muted-foreground tabular-nums">{n.count}</span>
               )}
             </Button>
           );
