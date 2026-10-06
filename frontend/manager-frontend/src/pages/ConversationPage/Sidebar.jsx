@@ -224,7 +224,7 @@ function Sidebar({
           <div className={cn(metaRow, 'min-h-9')} data-testid="deal-stage">
             <span className={metaLabel}>Этап</span>
             <NativeSelect
-              className="h-8 min-w-0 px-2"
+              className="h-8 min-w-0"
               aria-label="Этап сделки"
               value={pins.deal_stage || ''}
               disabled={busy}

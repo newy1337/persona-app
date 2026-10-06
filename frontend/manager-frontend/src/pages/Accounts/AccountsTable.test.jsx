@@ -85,5 +85,5 @@ test('empty state and the first-load skeleton live inside the table block', asyn
   expect(host.querySelector('table td').textContent).toContain('Аккаунтов нет');
   await render(<AccountsTableSkeleton rows={2} />);
   expect(host.querySelectorAll('[role="status"] tbody tr').length).toBe(2);
-  expect(host.querySelectorAll('[role="status"] tbody tr:first-child td').length).toBe(6);
+  expect(host.querySelectorAll('[role="status"] tbody tr:first-child td').length).toBe(host.querySelectorAll('[role="status"] thead th').length);
 });

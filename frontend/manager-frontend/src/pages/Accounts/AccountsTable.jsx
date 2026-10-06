@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react';
-import { ChevronRight, Globe, LogIn, LogOut, MessageSquare, Pause, Pencil, Play, TimerOff, Trash2 } from 'lucide-react';
+import { ChevronRight, Globe, LogIn, LogOut, Pause, Pencil, Play, TimerOff, Trash2 } from 'lucide-react';
 import { PanelUX as ux } from '../../ui/PanelUX';
 import { cn } from '@/lib/utils';
 import { IconAction } from '@/components/IconAction/IconAction';
@@ -16,86 +16,100 @@ export const STATUS_VARIANT = {
   banned: 'destructive',
 };
 
-// [подпись, ширина, подпись только для экранного диктора]
+/* Сетка аккаунтов: одно значение в ячейке (у аккаунта под именем — ник, у
+   состояния — строка под ограничение). Ширины заданы у всех колонок, кроме
+   «Аккаунт» — она забирает остаток. «Регион» и «Пульс» видны с 1536px, на
+   экранах уже они остаются в раскрытии строки. Уже 1160px таблица
+   прокручивается внутри рамки. */
+const WIDE_ONLY = 'max-2xl:hidden';
 const COLUMNS = [
-  ['Подробнее', '44px', true],
-  ['Аккаунт', '30%'],
-  ['Личность · менеджер', '20%'],
-  ['Диалоги · прокси'],
-  ['Состояние', '17%'],
-  ['Действия', '96px', true],
+  { key: 'toggle', label: 'Подробнее', width: '44px', quiet: true },
+  { key: 'account', label: 'Аккаунт' },
+  { key: 'phone', label: 'Телефон', width: '148px' },
+  { key: 'persona', label: 'Личность', width: '140px' },
+  { key: 'manager', label: 'Менеджер', width: '124px' },
+  { key: 'region', label: 'Регион', width: '84px', wide: true },
+  { key: 'chats', label: 'Диалоги', width: '84px' },
+  { key: 'proxy', label: 'Прокси', width: '168px' },
+  { key: 'state', label: 'Состояние', width: '176px' },
+  { key: 'pulse', label: 'Пульс', width: '120px', wide: true },
+  { key: 'actions', label: 'Действия', width: '88px', quiet: true },
 ];
 
 // ── Каркас строки ────────────────────────────────────────────────────────────
 // Настоящая строка и строка-заглушка первой загрузки собираются ОДНИМ каркасом:
-// те же <tr>/<td>, та же высота ячейки и те же строки текста. Высота заглушки
-// равна высоте строки по построению. Меняете разметку строки — меняйте её
-// здесь, заглушка подтянется сама.
-//
-// До 1100px таблица складывается: thead прячется, строка становится сеткой
-//   стрелка | аккаунт             | действия
-//           | личность · менеджер | состояние
-//           | диалоги · прокси
-// внутри того же блока с рамкой. Классы написаны целиком — сканер Tailwind
-// не собирает их из кусочков.
-const ROW =
-  'border-b last:border-b-0 max-[1100px]:grid max-[1100px]:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] max-[1100px]:items-center max-[1100px]:gap-x-2 max-[1100px]:gap-y-1.5 max-[1100px]:px-3 max-[1100px]:py-2.5';
-const CELL = 'h-14 px-3 py-0 whitespace-normal max-[1100px]:block max-[1100px]:h-auto max-[1100px]:min-w-0 max-[1100px]:p-0';
+// те же <tr>/<td> и та же высота ячейки, поэтому высота заглушки равна высоте
+// строки по построению. Меняете колонки — меняйте COLUMNS, заглушка подтянется.
+const ROW = 'border-b last:border-b-0';
+const CELL = 'h-[52px] px-3 py-0';
+const ONE = 'flex min-w-0 items-center gap-1.5 text-sm';
 const LINE_1 = 'truncate text-sm leading-5';
 const LINE_2 = 'min-h-4 truncate text-xs leading-4 text-muted-foreground';
-const AVATAR_BOX = 'size-9 shrink-0 rounded-full';
+const AVATAR_BOX = 'size-8 shrink-0 rounded-full';
 const SLOT = 'block size-8 shrink-0';
+const Empty = () => <span className="text-muted-foreground">—</span>;
 
 function Frame({ children, className, tableProps, ...props }) {
   return (
-    <div className={cn('overflow-hidden rounded-lg border bg-card', className)} {...props}>
-      <Table className="table-fixed max-[1100px]:block" {...tableProps}>
-        <TableHeader className="max-[1100px]:hidden">
+    <div className={cn('rounded-lg border bg-card', className)} {...props}>
+      <Table className="min-w-[1160px] table-fixed" {...tableProps}>
+        <TableHeader>
           <tr>
-            {COLUMNS.map(([label, width, hidden]) => (
-              <TableHead key={label} scope="col" style={width ? { width } : undefined} className="h-9 px-3 text-xs font-medium text-muted-foreground">
-                {hidden ? <span className="sr-only">{label}</span> : label}
+            {COLUMNS.map((col) => (
+              <TableHead
+                key={col.key}
+                scope="col"
+                style={col.width ? { width: col.width } : undefined}
+                className={cn('h-9 px-3 text-xs font-medium text-muted-foreground', col.wide && WIDE_ONLY)}
+              >
+                {col.quiet ? <span className="sr-only">{col.label}</span> : col.label}
               </TableHead>
             ))}
           </tr>
         </TableHeader>
-        <tbody className="max-[1100px]:block">{children}</tbody>
+        <tbody>{children}</tbody>
       </Table>
     </div>
   );
 }
 
-function RowShell({ className, toggle, avatar, title, sub, persona, owner, ownerProps, facts, badge, note, actions, actionsProps, ...props }) {
+/** cells — содержимое по ключам колонок, cellProps — атрибуты отдельных ячеек. */
+function RowShell({ className, cells, cellProps = {}, ...props }) {
   return (
     <tr className={cn(ROW, className)} {...props}>
-      <TableCell className={cn(CELL, 'pr-0 max-[1100px]:col-start-1 max-[1100px]:row-start-1')}>{toggle}</TableCell>
-      <TableCell className={cn(CELL, 'max-[1100px]:col-span-2 max-[1100px]:col-start-2 max-[1100px]:row-start-1')}>
-        <div className="flex min-w-0 items-center gap-2.5">
-          {avatar}
-          <div className="min-w-0 flex-1">
-            <div className={cn(LINE_1, 'font-medium')}>{title}</div>
-            <div className={LINE_2}>{sub}</div>
-          </div>
-        </div>
-      </TableCell>
-      <TableCell className={cn(CELL, 'max-[1100px]:col-start-2 max-[1100px]:row-start-2')}>
-        <div className={LINE_1}>{persona}</div>
-        <div className={LINE_2} {...ownerProps}>{owner}</div>
-      </TableCell>
-      <TableCell className={cn(CELL, 'max-[1100px]:col-span-2 max-[1100px]:col-start-2 max-[1100px]:row-start-3')}>
-        <div className="flex min-w-0 items-center gap-3 text-xs leading-4 text-muted-foreground tabular-nums">{facts}</div>
-      </TableCell>
-      <TableCell className={cn(CELL, 'max-[1100px]:col-start-3 max-[1100px]:row-start-2')}>
-        <div className="flex min-w-0 flex-col items-start gap-0.5">
-          {badge}
-          {/* Строка под ограничение / причину потери сессии: место занято всегда, высота строки не меняется. */}
-          <div className={cn(LINE_2, 'max-w-full text-destructive')} title={note || undefined}>{note}</div>
-        </div>
-      </TableCell>
-      <TableCell className={cn(CELL, 'max-[1100px]:col-start-4 max-[1100px]:row-start-1')} {...actionsProps}>
-        <div className="flex items-center justify-end gap-0.5">{actions}</div>
-      </TableCell>
+      {COLUMNS.map((col) => (
+        <TableCell
+          key={col.key}
+          className={cn(CELL, col.key === 'toggle' && 'pr-0', col.wide && WIDE_ONLY)}
+          {...cellProps[col.key]}
+        >
+          {cells[col.key]}
+        </TableCell>
+      ))}
     </tr>
+  );
+}
+
+/** Аккаунт: аватар, имя и строка под ним. */
+function Who({ avatar, title, sub }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5">
+      {avatar}
+      <div className="min-w-0 flex-1">
+        <div className={cn(LINE_1, 'font-medium')}>{title}</div>
+        <div className={LINE_2}>{sub}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Состояние: бейдж и строка под ограничение / причину потери сессии — место занято всегда. */
+function State({ badge, note }) {
+  return (
+    <div className="flex min-w-0 flex-col items-start gap-0.5">
+      {badge}
+      <div className={cn(LINE_2, 'max-w-full text-destructive')} title={note || undefined}>{note}</div>
+    </div>
   );
 }
 
@@ -110,33 +124,41 @@ function Bar({ className }) {
  * дальше список никогда не подменяется ни ею, ни текстом.
  */
 export function AccountsTableSkeleton({ rows = 3 }) {
+  const one = (width) => <div className={ONE}><Bar className={cn('max-w-full', width)} /></div>;
   return (
     <Frame role="status" aria-label="Загрузка аккаунтов" tableProps={{ 'aria-hidden': true }}>
       {Array.from({ length: rows }, (_, i) => (
         <RowShell
           key={i}
-          toggle={<span className={SLOT} />}
-          avatar={<Skeleton className={AVATAR_BOX} />}
-          title={<Bar className="w-32 max-w-full" />}
-          sub={<Bar className="h-2.5 w-44 max-w-full" />}
-          persona={<Bar className="w-20 max-w-full" />}
-          owner={<Bar className="h-2.5 w-28 max-w-full" />}
-          facts={<Bar className="h-2.5 w-36 max-w-full" />}
-          badge={<Badge variant="outline" className="w-[72px] animate-pulse border-transparent bg-accent">{' '}</Badge>}
-          actions={<><Skeleton className={SLOT} /><Skeleton className={SLOT} /></>}
+          cells={{
+            toggle: <span className={SLOT} />,
+            account: (
+              <Who
+                avatar={<Skeleton className={AVATAR_BOX} />}
+                title={<Bar className="w-28 max-w-full" />}
+                sub={<Bar className="h-2.5 w-24 max-w-full" />}
+              />
+            ),
+            phone: one('w-24'),
+            persona: one('w-20'),
+            manager: one('w-20'),
+            region: one('w-10'),
+            chats: one('w-6'),
+            proxy: one('w-28'),
+            state: (
+              <State badge={<Badge variant="outline" className="w-[72px] animate-pulse border-transparent bg-accent">{' '}</Badge>} />
+            ),
+            pulse: one('w-20'),
+            actions: (
+              <div className="flex items-center justify-end gap-0.5">
+                <Skeleton className={SLOT} />
+                <Skeleton className={SLOT} />
+              </div>
+            ),
+          }}
         />
       ))}
     </Frame>
-  );
-}
-
-function Fact({ icon: Icon, label, className, children }) {
-  return (
-    <span className={cn('inline-flex min-w-0 items-center gap-1.5', className)} title={`${label}: ${children}`}>
-      <Icon aria-hidden="true" className="size-3.5 shrink-0" />
-      <span className="sr-only">{label}: </span>
-      <span className="truncate">{children}</span>
-    </span>
   );
 }
 
@@ -158,8 +180,8 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
   if (!rows.length) {
     return (
       <Frame tableProps={{ 'aria-label': 'Telegram-аккаунты' }}>
-        <tr className="max-[1100px]:block">
-          <td colSpan={COLUMNS.length} className="px-3 py-10 text-center text-sm text-muted-foreground max-[1100px]:block">
+        <tr>
+          <td colSpan={COLUMNS.length} className="px-3 py-10 text-center text-sm text-muted-foreground">
             Аккаунтов нет. Добавьте номер, затем войдите — код придёт в Telegram.
           </td>
         </tr>
@@ -181,13 +203,12 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
         const detailsId = `account-details-${row.id}`;
         const lost = row.status === 'unauthorized' && row.lost_at;
         const proxy = row.needs_proxy_setup ? 'не задан' : row.proxy_label || row.proxy_geo || 'задан';
-        const showPhone = row.phone_e164 && row.phone_e164 !== name;
         const owner = `${row.manager_username || 'без менеджера'}${row.region_code ? ` · регион ${row.region_code}` : ''}`;
         const note = row.flood_until ? `Ограничен до ${date(row.flood_until)}` : lost ? row.lost_reason || '' : '';
         const facts = [
           { label: 'ID аккаунта', value: `#${row.id}`, mono: true },
           { label: 'Диалогов', value: row.chats ?? 0 },
-          { label: 'Прокси', value: proxy, mono: !row.needs_proxy_setup },
+          { label: 'Прокси', value: proxy, mono: Boolean(row.proxy_label) && !row.needs_proxy_setup },
           { label: 'Назначение', value: row.purpose === 'test' ? 'Тестовый' : row.purpose === 'prod' ? 'Рабочий' : row.purpose || '—' },
           { label: 'Регион', value: row.region_code || 'не задан' },
           { label: 'Последний вход', value: date(row.last_login_at) },
@@ -201,95 +222,117 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
               className={cn('cursor-pointer transition-colors hover:bg-muted/50', open && 'border-b-0 bg-muted/30')}
               // Клик по строке раскрывает её; выделение текста мышью раскрытием не считается.
               onClick={() => !window.getSelection?.()?.toString() && toggle(row.id)}
-              toggle={(
-                <IconAction
-                  icon={ChevronRight}
-                  label={open ? 'Свернуть' : 'Подробнее'}
-                  aria-expanded={open}
-                  aria-controls={open ? detailsId : undefined}
-                  className={cn('[&_svg]:transition-transform', open && '[&_svg]:rotate-90')}
-                  onClick={(e) => { e.stopPropagation(); toggle(row.id); }}
-                />
-              )}
-              avatar={(
-                <div className="relative shrink-0">
-                  <Avatar
-                    className={cn('flex items-center justify-center border bg-muted text-[11px] font-semibold text-muted-foreground', AVATAR_BOX)}
-                    src={row.avatar_url}
-                    name={name}
+              cellProps={{ actions: { onClick: stop } }}
+              cells={{
+                toggle: (
+                  <IconAction
+                    icon={ChevronRight}
+                    label={open ? 'Свернуть' : 'Подробнее'}
+                    aria-expanded={open}
+                    aria-controls={open ? detailsId : undefined}
+                    className={cn('[&_svg]:transition-transform', open && '[&_svg]:rotate-90')}
+                    onClick={(e) => { e.stopPropagation(); toggle(row.id); }}
                   />
-                  <span
-                    role="img"
-                    aria-label={presence}
-                    title={presence}
-                    className={cn('absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-card', online ? 'bg-success-foreground' : 'bg-muted-foreground/50')}
+                ),
+                account: (
+                  <Who
+                    avatar={(
+                      <div className="relative shrink-0">
+                        <Avatar
+                          className={cn('flex items-center justify-center border bg-muted text-[11px] font-medium text-muted-foreground', AVATAR_BOX)}
+                          src={row.avatar_url}
+                          name={name}
+                        />
+                        <span
+                          role="img"
+                          aria-label={presence}
+                          title={presence}
+                          className={cn('absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-card', online ? 'bg-success-foreground' : 'bg-muted-foreground/50')}
+                        />
+                      </div>
+                    )}
+                    title={<span title={name}>{name}</span>}
+                    sub={row.username ? (
+                      <a
+                        className="text-primary hover:underline"
+                        href={`https://t.me/${row.username}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={stop}
+                        aria-label={row.display_name ? undefined : `Профиль ${row.username}`}
+                      >
+                        {row.display_name ? `@${row.username}` : 'Telegram'}
+                      </a>
+                    ) : presence}
                   />
-                </div>
-              )}
-              title={<span title={name}>{name}</span>}
-              sub={(
-                <>
-                  {row.username && (
-                    <a
-                      className="text-primary hover:underline"
-                      href={`https://t.me/${row.username}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={stop}
-                      aria-label={row.display_name ? undefined : `Профиль ${row.username}`}
-                    >
-                      {row.display_name ? `@${row.username}` : 'Telegram'}
-                    </a>
-                  )}
-                  {row.username && showPhone && ' · '}
-                  {showPhone && <span className="font-mono tabular-nums">{row.phone_e164}</span>}
-                </>
-              )}
-              persona={(
-                <>
-                  {row.persona_name || row.persona_id || 'Без личности'}
-                  {row.purpose === 'test' && <span className="ml-1.5 text-xs text-muted-foreground">тест</span>}
-                </>
-              )}
-              ownerProps={{ 'data-testid': 'account-owner', title: owner }}
-              owner={owner}
-              facts={(
-                <>
-                  <Fact icon={MessageSquare} label="Диалогов" className="shrink-0">{row.chats ?? 0}</Fact>
-                  <Fact icon={Globe} label="Прокси">{proxy}</Fact>
-                </>
-              )}
-              badge={(
-                <Badge variant={lost ? 'destructive' : STATUS_VARIANT[row.status] || 'outline'} title={row.lost_reason || undefined}>
-                  {statusLabel(row)}
-                </Badge>
-              )}
-              note={note}
-              actionsProps={{ onClick: stop }}
-              actions={(
-                <>
-                  <IconAction icon={Pencil} label="Изменить" disabled={busy} onClick={() => onEdit(row)} />
-                  {loginNeeded ? (
-                    <IconAction icon={LogIn} label="Войти" disabled={busy} onClick={() => onLogin(row)} />
-                  ) : row.status === 'active' || row.status === 'paused' ? (
-                    // Одна и та же кнопка: меняются только значок и подпись.
-                    <IconAction
-                      icon={row.status === 'active' ? Pause : Play}
-                      label={row.status === 'active' ? 'Пауза' : 'Включить'}
-                      disabled={busy}
-                      onClick={() => onStatus(row, row.status === 'active' ? 'paused' : 'active')}
-                    />
-                  ) : (
-                    <span aria-hidden="true" className={SLOT} />
-                  )}
-                </>
-              )}
+                ),
+                phone: (
+                  <div className={ONE}>
+                    {row.phone_e164 ? <span className="truncate font-mono text-xs tabular-nums">{row.phone_e164}</span> : <Empty />}
+                  </div>
+                ),
+                persona: (
+                  <div className={ONE} title={row.persona_name || row.persona_id || undefined}>
+                    <span className={cn('truncate', !(row.persona_name || row.persona_id) && 'text-muted-foreground')}>
+                      {row.persona_name || row.persona_id || 'Без личности'}
+                    </span>
+                    {row.purpose === 'test' && <span className="shrink-0 text-xs text-muted-foreground">тест</span>}
+                  </div>
+                ),
+                manager: (
+                  <div className={ONE} data-testid="account-owner" title={owner}>
+                    <span className={cn('truncate', !row.manager_username && 'text-muted-foreground')}>
+                      {row.manager_username || 'без менеджера'}
+                    </span>
+                  </div>
+                ),
+                region: (
+                  <div className={ONE}>
+                    {row.region_code ? <span className="truncate tabular-nums">{row.region_code}</span> : <Empty />}
+                  </div>
+                ),
+                chats: <div className={cn(ONE, 'tabular-nums')}>{row.chats ?? 0}</div>,
+                proxy: (
+                  <div className={ONE} title={`Прокси: ${proxy}`}>
+                    <span className={cn('truncate', row.needs_proxy_setup && 'text-muted-foreground')}>{proxy}</span>
+                  </div>
+                ),
+                state: (
+                  <State
+                    badge={(
+                      <Badge variant={lost ? 'destructive' : STATUS_VARIANT[row.status] || 'outline'} title={row.lost_reason || undefined}>
+                        {statusLabel(row)}
+                      </Badge>
+                    )}
+                    note={note}
+                  />
+                ),
+                pulse: <div className={cn(ONE, 'tabular-nums text-muted-foreground')}><span className="truncate">{date(row.last_heartbeat_at)}</span></div>,
+                actions: (
+                  <div className="flex items-center justify-end gap-0.5">
+                    <IconAction icon={Pencil} label="Изменить" disabled={busy} onClick={() => onEdit(row)} />
+                    {loginNeeded ? (
+                      <IconAction icon={LogIn} label="Войти" disabled={busy} onClick={() => onLogin(row)} />
+                    ) : row.status === 'active' || row.status === 'paused' ? (
+                      // Одна и та же кнопка: меняются только значок и подпись.
+                      <IconAction
+                        icon={row.status === 'active' ? Pause : Play}
+                        label={row.status === 'active' ? 'Пауза' : 'Включить'}
+                        disabled={busy}
+                        onClick={() => onStatus(row, row.status === 'active' ? 'paused' : 'active')}
+                      />
+                    ) : (
+                      <span aria-hidden="true" className={SLOT} />
+                    )}
+                  </div>
+                ),
+              }}
             />
             {open && (
-              <tr className="border-b bg-muted/30 last:border-b-0 max-[1100px]:block">
-                <td colSpan={COLUMNS.length} className="px-3 pt-1 pb-3 pl-14 whitespace-normal max-[1100px]:block max-[1100px]:pt-0 max-[1100px]:pl-3">
+              <tr className="border-b bg-muted/30 last:border-b-0">
+                <td colSpan={COLUMNS.length} className="px-3 pt-1 pb-3 pl-14 whitespace-normal">
                   <div id={detailsId} role="region" aria-label={`Подробности: ${name}`}>
-                    <dl className="m-0 grid grid-cols-4 gap-x-6 gap-y-3 max-[1100px]:grid-cols-2">
+                    <dl className="m-0 grid max-w-5xl grid-cols-4 gap-x-6 gap-y-3">
                       {facts.map(({ label, value, mono }) => (
                         <div key={label} className="min-w-0">
                           <dt className="text-xs leading-4 text-muted-foreground">{label}</dt>

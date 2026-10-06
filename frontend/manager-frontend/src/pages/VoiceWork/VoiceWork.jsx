@@ -355,8 +355,10 @@ export default function VoiceWork() {
           <TabsTrigger value="library" onClick={() => changeTab('library')}>Библиотека</TabsTrigger>
         </TabsList>
       </Tabs>
-      <SearchInput className="max-w-sm flex-[1_1_240px]" aria-label="Поиск заданий и записей" placeholder="Поиск по названию" value={query} onChange={setQuery} />
-      {tab === 'tasks' && <NativeSelect className="h-8 w-auto" aria-label="Статус заданий" value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="active">Активные</option>{Object.entries(states).filter(([key]) => key !== 'ready').map(([key, label]) => <option key={key} value={key}>{label}</option>)}<option value="all">Все</option></NativeSelect>}
+      <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2 max-sm:w-full">
+        {tab === 'tasks' && <NativeSelect className="h-8 w-auto" aria-label="Статус заданий" value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="active">Активные</option>{Object.entries(states).filter(([key]) => key !== 'ready').map(([key, label]) => <option key={key} value={key}>{label}</option>)}<option value="all">Все</option></NativeSelect>}
+        <SearchInput className="w-full sm:w-80" aria-label="Поиск заданий и записей" placeholder="Поиск по названию" value={query} onChange={setQuery} />
+      </div>
     </div>
     {error && <Alert variant="destructive" role="alert" className="mb-4"><AlertDescription className="flex w-full flex-row flex-wrap items-center gap-2">{error} <Button type="button" variant="outline" size="sm" disabled={loading} onClick={retry}>Повторить</Button></AlertDescription></Alert>}
     {detailError && <p role="alert" className="mb-3 text-xs text-destructive">{detailError}</p>}

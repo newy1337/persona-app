@@ -146,7 +146,7 @@ function PricesForm({ onChanged, onClose }) {
 export default function PricesEditor({ open, onOpenChange, onChanged }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false} className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+      <DialogContent portal={false} showCloseButton={false} className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <PricesForm onChanged={onChanged} onClose={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>

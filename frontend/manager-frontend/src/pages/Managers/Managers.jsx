@@ -317,11 +317,11 @@ export function ManagersPage() {
           <Button type="button" size="sm" onClick={() => { setCreating(true); setCredentials(null); }}>+ Создать учётку</Button>
         </PageHeader>
         <div className="mb-3 flex min-h-8 flex-wrap items-center gap-x-4 gap-y-2">
-          <SearchInput className="w-full max-w-xs" aria-label="Поиск менеджеров" placeholder="Логин, регион или роль" value={query} onChange={setQuery} />
           {/* Одно место и для счётчика, и для ошибки страницы: список под ним не сдвигается. */}
           {error
             ? <p className="min-w-0 flex-1 text-xs text-destructive" role="alert">{error}</p>
             : <span className={cn(caption, 'min-w-[14ch] tabular-nums')}>{loading ? 'Загружаем…' : `Показано: ${visible.length}`}</span>}
+          <SearchInput className="ml-auto w-full sm:w-80" aria-label="Поиск менеджеров" placeholder="Логин, регион или роль" value={query} onChange={setQuery} />
         </div>
         <div className="mb-6 rounded-lg border bg-card">
           <Table aria-label="Менеджеры" className="min-w-[720px] table-fixed">

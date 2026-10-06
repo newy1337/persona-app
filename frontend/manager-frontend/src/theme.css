@@ -22,6 +22,9 @@
      60 — плавающие баннеры (напоминания о стадии, оффлайн-плашки),
      70 — уведомления (notices / toasts). */
 :root {
+  /* Системные элементы (выпадающие списки select, календарь, полосы
+     прокрутки) рисуются в цветах текущей темы. */
+  color-scheme: light;
   --radius: 0.625rem;
   --header-h: 56px;
 
@@ -50,6 +53,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: oklch(0.141 0.005 285.823);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.178 0.005 285.9);
@@ -147,6 +151,16 @@
 
   .container {
     @apply relative;
+  }
+
+  /* Стрелка NativeSelect: системную убирает appearance, свою рисуем фоном.
+     Серый штрих читается и на светлой, и на тёмной теме. */
+  .native-select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 14px;
   }
 }
 

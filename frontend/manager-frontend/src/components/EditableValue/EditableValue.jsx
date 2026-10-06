@@ -30,9 +30,12 @@ export default function EditableValue({ value, display, placeholder = '—', tit
   }, [editing]);
 
   // На время сохранения поле отключено и теряет фокус; после сбоя возвращаем
-  // его, чтобы можно было поправить значение или выйти по Esc.
+  // его, чтобы можно было поправить значение или выйти по Esc. Если человек
+  // уже перешёл в другое поле (например, пишет сообщение) — не мешаем.
   useEffect(() => {
-    if (error) input.current?.focus();
+    if (!error) return;
+    const active = document.activeElement;
+    if (!active || active === document.body) input.current?.focus();
   }, [error]);
 
   async function save() {

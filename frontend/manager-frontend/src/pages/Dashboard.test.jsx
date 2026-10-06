@@ -87,11 +87,11 @@ describe('главная панель: один список вместо дву
     await act(async () => root.unmount());
   });
 
-  it('«Новые на ручном» смонтирована всегда и выключена, пока таких чатов нет', async () => {
+  it('поиска, фильтров и «Новые на ручном» на странице пока нет', async () => {
     const { host, root } = await draw();
-    const toggle = host.querySelector('[data-testid="filter-new"]');
-    expect(toggle.disabled).toBe(true);
-    expect(toggle.textContent).toContain('Новые на ручном · 0');
+    expect(host.querySelector('[aria-label="Поиск по диалогам"]')).toBeNull();
+    expect(host.querySelector('[data-testid="filter-new"]')).toBeNull();
+    expect([...host.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Фильтры')).toBe(false);
     await act(async () => root.unmount());
   });
 

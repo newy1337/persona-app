@@ -1,4 +1,3 @@
-import { Children } from 'react';
 import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Bot, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -6,20 +5,19 @@ import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DEAL_STAGES, dealStageLabel } from '../../data/dealStages';
-import { Attribution } from '../Attribution/Attribution';
 import { IconAction } from '../IconAction/IconAction';
-import { CELL, COLUMNS, HEAD_CELL, LINE_1, LINE_2, TABLE_MIN_WIDTH } from './rowLayout';
+import { CELL, COLUMNS, HEAD_CELL, LINE_1, LINE_2, TABLE_MIN_WIDTH, WIDE_ONLY } from './rowLayout';
 
-function TgLink({ username, label }) {
+function TgLink({ username }) {
   return (
     <a
-      className="text-primary hover:underline"
+      className="truncate text-primary hover:underline"
       href={`https://t.me/${username}`}
       target="_blank"
       rel="noreferrer"
       onClick={(e) => e.stopPropagation()}
     >
-      {label || `@${username}`}
+      @{username}
     </a>
   );
 }
@@ -29,22 +27,23 @@ function SortIcon({ sort, col }) {
   return sort.dir === 'asc' ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" />;
 }
 
-/** Дети через « · »: пустые пропускаются, узлы остаются узлами. */
-function Dotted({ children }) {
-  return Children.toArray(children)
-    .filter((part) => part !== '')
-    .map((part, i) => (
-      <span key={part.key ?? i} className="contents">
-        {i > 0 && ' · '}
-        {part}
-      </span>
-    ));
+const Empty = () => <span className="text-muted-foreground">—</span>;
+
+/** Ячейка в одну линию: текст обрезается, полное значение — в title. */
+function Cell({ col, title, className, children, ...props }) {
+  return (
+    <TableCell className={cn(CELL, COLUMNS.find((c) => c.key === col)?.wide && WIDE_ONLY, className)} {...props}>
+      <div className="flex min-w-0 items-center gap-1.5 text-sm" title={title}>
+        {children}
+      </div>
+    </TableCell>
+  );
 }
 
 /**
- * Таблица диалогов: строка в две линии (главное сверху, второстепенное снизу
- * приглушённо), вся строка открывает диалог, с клавиатуры — кнопка «Открыть».
- * Всё, что не поместилось в две линии, лежит в title соответствующей ячейки.
+ * Таблица диалогов — сетка: каждое значение в своей колонке и в одну линию
+ * (у собеседника под именем возраст и город, у времени — дата). Вся строка
+ * открывает диалог, с клавиатуры — кнопка «Открыть».
  */
 export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, onHide, onDealStage = null, helpers }) {
   const { Avatar, Stage, isNew, unreadLabel, presence, nextAction, time, date, accountLost, typingLabels } = helpers;
@@ -56,13 +55,13 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
           <TableRow className="hover:bg-transparent">
             {COLUMNS.map((col) => (
               <TableHead
-                key={col.label}
+                key={col.key}
                 scope="col"
                 style={{ width: col.width }}
                 {...(col.sort
                   ? { 'aria-sort': sort.col === col.sort ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none' }
                   : {})}
-                className={HEAD_CELL}
+                className={cn(HEAD_CELL, col.wide && WIDE_ONLY)}
               >
                 {col.sort ? (
                   <Button
@@ -97,22 +96,18 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
             const who = row.name || `Чат ${row.chat_id}`;
             const age = row.age ? `${row.age} лет` : null;
             const idLabel = `ID ${row.chat_id}`;
-            const whoTitle = [
-              warning,
-              age,
-              row.city,
-              row.phone,
-              row.client_username ? `@${row.client_username}` : null,
-              idLabel,
-              online?.text,
-            ]
+            const about = [age, row.city].filter(Boolean).join(' · ');
+            const whoTitle = [who, warning, about, online?.text].filter(Boolean).join(' · ');
+            const contactTitle = [row.client_username ? `@${row.client_username}` : null, row.phone, idLabel]
               .filter(Boolean)
               .join(' · ');
-            const lead = row.is_paused ? (fresh ? 'Менеджер · ждёт ответа' : 'Менеджер') : 'Бот';
             const LeadIcon = row.is_paused ? User : Bot;
-            const leadText = [lead, next?.text].filter(Boolean).join(' · ');
             const lost = row.account_lost ? accountLost(row.account_lost, { short: true }) : null;
-            const manager = `Менеджер: ${row.manager_username || 'не назначен'} · Регион: ${row.region_code || 'не задан'}`;
+            const account = row.account_username
+              ? `@${row.account_username}`
+              : row.account_id
+                ? `Аккаунт #${row.account_id}`
+                : 'Аккаунт удалён';
 
             return (
               <TableRow
@@ -122,10 +117,10 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                 className="cursor-pointer focus-within:bg-muted/50"
               >
                 <TableCell className={CELL}>
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="relative shrink-0" title={online?.text}>
+                  <div className="flex min-w-0 items-center gap-2.5" title={whoTitle}>
+                    <span className="relative shrink-0">
                       <Avatar
-                        className="size-9 rounded-full bg-muted font-medium text-muted-foreground"
+                        className="size-8 rounded-full bg-muted text-xs font-medium text-muted-foreground"
                         style={{ '--av-bg': 'var(--muted)' }}
                         src={row.avatar_url}
                         name={row.name || '—'}
@@ -139,104 +134,121 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className={LINE_1}>
-                        <span className="truncate font-medium" title={who}>{who}</span>
+                        <span className="truncate font-medium">{who}</span>
                         {fresh && (
                           <Badge
                             variant="default"
                             data-testid="new-badge"
                             title="Клиент написал — ждёт ответа менеджера"
-                            className="h-5 px-1.5 tabular-nums"
+                            className="h-[18px] px-1.5 tabular-nums"
                           >
                             {unreadLabel(row.unread_count)}
                           </Badge>
                         )}
                       </div>
-                      <div className={LINE_2} title={whoTitle}>
-                        <span className="truncate">
-                          {row.typing ? (
-                            `${typingLabels[row.typing] || 'печатает'}…`
-                          ) : (
-                            <Dotted>
-                              {warning && <span className="text-destructive">{warning}</span>}
-                              {age}
-                              {row.city}
-                              {row.client_username ? (
-                                <TgLink username={row.client_username} />
-                              ) : (
-                                <span className="font-mono tabular-nums">{row.phone || idLabel}</span>
-                              )}
-                            </Dotted>
-                          )}
+                      <div className={LINE_2}>
+                        <span className={cn('truncate', warning && !row.typing && 'text-destructive')}>
+                          {row.typing ? `${typingLabels[row.typing] || 'печатает'}…` : warning || about || '—'}
                         </span>
                       </div>
                     </div>
                   </div>
                 </TableCell>
 
-                <TableCell className={CELL}>
-                  <div className={LINE_1}>
-                    <Stage stage={row.stage} />
-                    {onDealStage ? (
-                      <div
-                        data-testid="deal-stage"
-                        className="min-w-0 shrink-0"
-                        title={row.deal_note || undefined}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <NativeSelect
-                          aria-label={`Этап сделки: ${row.name || row.chat_id}`}
-                          className={cn('h-7 w-auto max-w-36 px-1.5 text-xs', !row.deal_stage && 'text-muted-foreground')}
-                          value={row.deal_stage || ''}
-                          onChange={(e) => {
-                            const stage = e.target.value;
-                            if (stage) onDealStage(row.chat_id, stage, row);
-                          }}
-                        >
-                          <option value="">{row.deal_stage ? '— не задан' : 'Нужно указать этап'}</option>
-                          {DEAL_STAGES.map((st) => (
-                            <option key={st.id} value={st.id}>{st.label}</option>
-                          ))}
-                        </NativeSelect>
-                      </div>
-                    ) : (
-                      row.deal_stage && (
-                        <span
-                          data-testid="deal-stage"
-                          className="min-w-0 truncate text-xs"
-                          title={row.deal_note || undefined}
-                        >
-                          <span className="text-muted-foreground">Этап: </span>
-                          {dealStageLabel(row.deal_stage)}
-                          {row.deal_note ? ` · ${row.deal_note}` : ''}
-                        </span>
-                      )
-                    )}
-                  </div>
-                  <div className={LINE_2} title={[lead, nextFull].filter(Boolean).join(' · ')}>
-                    <LeadIcon aria-hidden="true" className="size-3.5 shrink-0" />
-                    <span className="truncate">{leadText}</span>
-                  </div>
-                </TableCell>
+                <Cell col="contact" title={contactTitle}>
+                  {row.client_username ? (
+                    <TgLink username={row.client_username} />
+                  ) : (
+                    <span className="truncate font-mono text-xs tabular-nums">{row.phone || idLabel}</span>
+                  )}
+                </Cell>
 
-                <TableCell className={CELL}>
-                  <div className={LINE_1} title={manager}>
-                    <Attribution value={row} compact className="flex-row gap-2 [&>span]:truncate" />
-                  </div>
-                  <div className={LINE_2}>
-                    <span className="truncate">
-                      <Dotted>
-                        {row.account_username ? (
-                          <TgLink username={row.account_username} />
-                        ) : row.account_id ? (
-                          `Аккаунт #${row.account_id}`
-                        ) : (
-                          'Аккаунт удалён'
-                        )}
-                        {lost && <span className="text-destructive">{lost}</span>}
-                      </Dotted>
+                <Cell col="stage">
+                  <Stage stage={row.stage} />
+                </Cell>
+
+                <Cell col="deal">
+                  {onDealStage ? (
+                    <div
+                      data-testid="deal-stage"
+                      className="min-w-0 flex-1"
+                      title={row.deal_note || undefined}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <NativeSelect
+                        aria-label={`Этап сделки: ${row.name || row.chat_id}`}
+                        variant="ghost"
+                        className={cn('-ml-2 h-7 text-ellipsis', !row.deal_stage && 'text-muted-foreground')}
+                        value={row.deal_stage || ''}
+                        onChange={(e) => {
+                          const stage = e.target.value;
+                          if (stage) onDealStage(row.chat_id, stage, row);
+                        }}
+                      >
+                        <option value="">{row.deal_stage ? '— не задан' : 'Нужно указать этап'}</option>
+                        {DEAL_STAGES.map((st) => (
+                          <option key={st.id} value={st.id}>{st.label}</option>
+                        ))}
+                      </NativeSelect>
+                    </div>
+                  ) : row.deal_stage ? (
+                    <span
+                      data-testid="deal-stage"
+                      className="min-w-0 truncate"
+                      title={[dealStageLabel(row.deal_stage), row.deal_note].filter(Boolean).join(' · ')}
+                    >
+                      <span className="sr-only">Этап: </span>
+                      {dealStageLabel(row.deal_stage)}
+                      {row.deal_note ? <span className="text-muted-foreground">{` · ${row.deal_note}`}</span> : null}
                     </span>
-                  </div>
-                </TableCell>
+                  ) : (
+                    <Empty />
+                  )}
+                </Cell>
+
+                <Cell col="lead">
+                  <LeadIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{row.is_paused ? 'Менеджер' : 'Бот'}</span>
+                </Cell>
+
+                <Cell col="next" title={fresh ? 'Клиент написал — ждёт ответа менеджера' : nextFull}>
+                  {fresh ? (
+                    <>
+                      <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning-foreground" />
+                      <span className="truncate">клиент ждёт ответа</span>
+                    </>
+                  ) : next?.text ? (
+                    <span className="truncate text-muted-foreground">{next.text}</span>
+                  ) : (
+                    <Empty />
+                  )}
+                </Cell>
+
+                <Cell
+                  col="manager"
+                  title={`Менеджер: ${row.manager_username || 'не назначен'} · Регион: ${row.region_code || 'не задан'}`}
+                >
+                  <span className={cn('truncate', !row.manager_username && 'text-muted-foreground')}>
+                    {row.manager_username || 'не назначен'}
+                  </span>
+                </Cell>
+
+                <Cell col="region">
+                  {row.region_code ? <span className="truncate tabular-nums">{row.region_code}</span> : <Empty />}
+                </Cell>
+
+                <Cell
+                  col="account"
+                  title={[account, row.account_lost ? accountLost(row.account_lost) : null].filter(Boolean).join(' · ')}
+                >
+                  {lost ? (
+                    <span className="truncate text-destructive">{lost}</span>
+                  ) : row.account_username ? (
+                    <TgLink username={row.account_username} />
+                  ) : (
+                    <span className="truncate text-muted-foreground">{account}</span>
+                  )}
+                </Cell>
 
                 <TableCell className={CELL}>
                   <div className={cn(LINE_1, 'tabular-nums')}>{time(row.last_message_ts)}</div>

@@ -79,27 +79,47 @@ describe('строка диалога', () => {
     expect(dataRows()[0].querySelectorAll('td:last-child button').length).toBe(1);
   });
 
-  it('вторая линия собеседника: возраст, город и ник; остальное — в подсказке', async () => {
+  const cellOf = (rowIndex, label) => {
+    const index = [...host.querySelectorAll('thead th')].findIndex((th) => th.textContent.trim() === label);
+    return dataRows()[rowIndex].querySelectorAll('td')[index];
+  };
+
+  it('под именем — возраст и город, контакт в своей колонке, остальное — в подсказке', async () => {
     await draw();
-    const cell = dataRows()[0].querySelector('td');
-    expect(cell.textContent).toContain('27 лет · Томск · @tomsk_user');
-    const hint = cell.querySelector('[title*="ID 1"]').getAttribute('title');
+    expect(cellOf(0, 'Собеседник').textContent).toContain('27 лет · Томск');
+    const contact = cellOf(0, 'Контакт');
+    expect(contact.textContent).toBe('@tomsk_user');
+    expect(contact.querySelector('a').getAttribute('href')).toBe('https://t.me/tomsk_user');
+    const hint = contact.querySelector('[title]').getAttribute('title');
     expect(hint).toContain('+79160000001');
-    expect(hint).toContain('@tomsk_user');
+    expect(hint).toContain('ID 1');
   });
 
-  it('без ника показывается номер чата, блокировка видна в строке', async () => {
+  it('без ника в контакте номер чата, блокировка видна под именем', async () => {
     await draw();
-    const cell = dataRows()[2].querySelector('td');
-    expect(cell.textContent).toContain('Заблокировал(а) нас');
-    expect(cell.textContent).toContain('ID 3');
+    expect(cellOf(2, 'Собеседник').textContent).toContain('Заблокировал(а) нас');
+    expect(cellOf(2, 'Контакт').textContent).toBe('ID 3');
   });
 
-  it('ручной режим с новыми сообщениями: метка и «Менеджер · ждёт ответа»', async () => {
+  it('ручной режим с новыми сообщениями: метка, «Менеджер» и «клиент ждёт ответа»', async () => {
     await draw();
     expect(dataRows()[1].querySelector('[data-testid="new-badge"]').textContent).toBe('2 новых');
-    expect(dataRows()[1].textContent).toContain('Менеджер · ждёт ответа');
-    expect(dataRows()[0].textContent).toContain('Бот');
+    expect(cellOf(1, 'Ведёт').textContent).toBe('Менеджер');
+    expect(cellOf(1, 'Что дальше').textContent).toBe('клиент ждёт ответа');
+    expect(cellOf(0, 'Ведёт').textContent).toBe('Бот');
+  });
+
+  it('менеджер, регион и аккаунт — отдельные колонки', async () => {
+    await act(async () =>
+      root.render(
+        <ConversationsTable
+          rows={[row(9, { manager_username: 'olga', region_code: '0077', account_username: 'sender_9' })]}
+        />,
+      ),
+    );
+    expect(cellOf(0, 'Менеджер').textContent).toBe('olga');
+    expect(cellOf(0, 'Регион').textContent).toBe('0077');
+    expect(cellOf(0, 'Аккаунт').textContent).toBe('@sender_9');
   });
 
   it('клик по селекту этапа сделки не открывает диалог', async () => {

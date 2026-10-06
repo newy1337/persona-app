@@ -89,50 +89,6 @@ function ChatTopBar({
             className="lg:hidden"
             onClick={() => setSidebarOpen(true)}
           />
-          <SearchInput
-            className="flex-1"
-            placeholder="Поиск по сообщениям…"
-            aria-label="Поиск по сообщениям"
-            value={msgQuery}
-            onChange={(v) => {
-              setMsgQuery(v);
-              setHitPos(0);
-              const found = searchMessages(data.messages, v);
-              if (found.length) scrollToMessage(found[0]);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                stepHit(e.shiftKey ? -1 : 1);
-              }
-              if (e.key === 'Escape') {
-                setMsgQuery('');
-                setHitPos(0);
-              }
-            }}
-          />
-          {/* Счётчик и стрелки смонтированы всегда: появление запроса не сдвигает панель. */}
-          <span className="flex shrink-0 items-center">
-            <span className="min-w-[44px] px-1 text-center text-xs tabular-nums text-muted-foreground">
-              {searching ? (hits.length ? `${hitPos + 1} / ${hits.length}` : 'нет') : ''}
-            </span>
-            {/* На телефоне стрелки уступают место полю: по совпадениям ведут Enter / Shift+Enter. */}
-            <span className="flex items-center max-sm:hidden">
-              <IconAction
-                icon={ChevronUp}
-                label="Предыдущее совпадение"
-                disabled={!searching || hits.length < 2}
-                onClick={() => stepHit(-1)}
-              />
-              <IconAction
-                icon={ChevronDown}
-                label="Следующее совпадение"
-                disabled={!searching || hits.length < 2}
-                onClick={() => stepHit(1)}
-              />
-            </span>
-          </span>
-          <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden="true" />
           <IconAction
             icon={Images}
             label="Медиа"
@@ -206,6 +162,50 @@ function ChatTopBar({
               }
             }}
           />
+          <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+          <SearchInput
+            className="ml-auto w-64 min-w-0 max-sm:flex-1"
+            placeholder="Поиск по сообщениям…"
+            aria-label="Поиск по сообщениям"
+            value={msgQuery}
+            onChange={(v) => {
+              setMsgQuery(v);
+              setHitPos(0);
+              const found = searchMessages(data.messages, v);
+              if (found.length) scrollToMessage(found[0]);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                stepHit(e.shiftKey ? -1 : 1);
+              }
+              if (e.key === 'Escape') {
+                setMsgQuery('');
+                setHitPos(0);
+              }
+            }}
+          />
+          {/* Счётчик и стрелки смонтированы всегда: появление запроса не сдвигает панель. */}
+          <span className="flex shrink-0 items-center">
+            <span className="min-w-[44px] px-1 text-center text-xs tabular-nums text-muted-foreground">
+              {searching ? (hits.length ? `${hitPos + 1} / ${hits.length}` : 'нет') : ''}
+            </span>
+            {/* На телефоне стрелки уступают место полю: по совпадениям ведут Enter / Shift+Enter. */}
+            <span className="flex items-center max-sm:hidden">
+              <IconAction
+                icon={ChevronUp}
+                label="Предыдущее совпадение"
+                disabled={!searching || hits.length < 2}
+                onClick={() => stepHit(-1)}
+              />
+              <IconAction
+                icon={ChevronDown}
+                label="Следующее совпадение"
+                disabled={!searching || hits.length < 2}
+                onClick={() => stepHit(1)}
+              />
+            </span>
+          </span>
         </div>
       </div>
 

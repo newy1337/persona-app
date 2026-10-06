@@ -99,8 +99,8 @@ export function TaskChat({ task }) {
     <div className="flex flex-wrap items-center justify-between gap-2"><div><strong className="text-sm font-medium">Переписка · {task.contactLabel}</strong><p className={cn(muted, 'min-h-4 tabular-nums')}>Только просмотр · обновление каждые 5 секунд{updated && ` · ${updated.toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow' })}`}</p></div>
       <div className="flex flex-wrap items-center gap-1">
         <Button type="button" variant="outline" size="sm" disabled={loading || !data?.next_before} onClick={() => { setTrail(old => [...old, before]); setBefore(data.next_before); }}>Ранние сообщения</Button>
-        {before && <><Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => { setBefore(trail[trail.length - 1] ?? null); setTrail(old => old.slice(0, -1)); }}>Новые сообщения</Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => { setBefore(null); setTrail([]); }}>К последним</Button></>}
+        <Button type="button" variant="outline" size="sm" disabled={loading || !before} onClick={() => { setBefore(trail[trail.length - 1] ?? null); setTrail(old => old.slice(0, -1)); }}>Новые сообщения</Button>
+        <Button type="button" variant="outline" size="sm" disabled={!before} onClick={() => { setBefore(null); setTrail([]); }}>К последним</Button>
         <IconAction icon={RefreshCw} label="Обновить" disabled={loading} onClick={() => setRefresh(n => n + 1)} />
       </div></div>
     {error && <p className={errorLine} role="alert">{error}{data && ' Показаны ранее загруженные сообщения.'}</p>}

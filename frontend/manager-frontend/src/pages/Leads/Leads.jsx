@@ -366,13 +366,6 @@ export default function Leads() {
           />
 
           <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-2">
-            <SearchInput
-              className="w-full sm:w-80"
-              aria-label="Поиск лидов"
-              placeholder="Телефон, @username, имя, город"
-              value={qInput}
-              onChange={setQInput}
-            />
             {ids.length > 0 && (
               <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Действия с выбранными">
                 <span className="min-w-[11ch] text-xs tabular-nums text-muted-foreground" role="status">Выбрано: {ids.length}</span>
@@ -385,6 +378,13 @@ export default function Leads() {
                 <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setSelected(new Set())}>Снять выделение</Button>
               </div>
             )}
+            <SearchInput
+              className="ml-auto w-full sm:w-80"
+              aria-label="Поиск лидов"
+              placeholder="Телефон, @username, имя, город"
+              value={qInput}
+              onChange={setQInput}
+            />
           </div>
 
           <LeadsTable rows={data.items} query={q} status={status} selected={selected}

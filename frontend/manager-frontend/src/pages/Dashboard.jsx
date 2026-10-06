@@ -1,14 +1,13 @@
 import { useCallback, useState, useEffect } from 'react';
-import { CircleAlert, TriangleAlert } from 'lucide-react';
+import { Archive, ArrowLeft, CircleAlert, TriangleAlert } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useRouteBusy } from '../components/AppLayout/routeBusy';
 import { PageHeader } from '../components/PageHeader/PageHeader';
-import { DialogsToolbar } from '../components/DialogsToolbar/DialogsToolbar';
 import NeedManagerAssist from '../components/NeedManagerAssist/NeedManagerAssist';
 import LiveConversations from '../components/LiveConversations/LiveConversations';
 import StatsBar from '../components/StatsBar/StatsBar';
-import ConversationsTable, { waitsForManager } from '../components/ConversationsTable/ConversationsTable';
+import ConversationsTable from '../components/ConversationsTable/ConversationsTable';
 import {
   getConversations,
   getHiddenConversations,
@@ -37,7 +36,7 @@ const POLL_MS = 10000;
 
 /** Напоминание об этапах: тихая строка в шапке таблицы, а не баннер. */
 function StageReminder({ count, onDismiss }) {
-  const text = `В ${count} ${count === 1 ? 'диалоге' : 'диалогах'} не указан этап — выберите его в колонке «Стадия и режим».`;
+  const text = `В ${count} ${count === 1 ? 'диалоге' : 'диалогах'} не указан этап — выберите его в колонке «Этап».`;
   return (
     <div role="status" data-testid="stage-reminder" className="flex min-w-0 items-center gap-1.5 text-xs">
       <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0 text-warning-foreground" />
@@ -55,9 +54,6 @@ function Dashboard() {
   const [rows, setRows] = useState([]);
   const [stats, setStats] = useState(EMPTY_STATS);
   const [error, setError] = useState(null);
-  const [query, setQuery] = useState('');
-  const [headFilters, setHeadFilters] = useState({ lead: '', account: '' });
-  const [onlyNew, setOnlyNew] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [ready, setReady] = useState(false);
   useRouteBusy(!ready);
@@ -146,7 +142,12 @@ function Dashboard() {
 
   return (
     <div className="container">
-      <PageHeader title={showHidden ? 'Архив' : 'Диалоги'} />
+      <PageHeader title={showHidden ? 'Архив' : 'Диалоги'}>
+        <Button type="button" variant="outline" size="sm" onClick={() => setShowHidden((v) => !v)}>
+          {showHidden ? <ArrowLeft aria-hidden="true" /> : <Archive aria-hidden="true" />}
+          {showHidden ? 'Вернуться к диалогам' : 'Архив'}
+        </Button>
+      </PageHeader>
       <div className="flex flex-col gap-4 pb-10">
         {/* Ошибка загрузки — исключительное состояние: появляется только когда она есть. */}
         {error && (
@@ -156,26 +157,11 @@ function Dashboard() {
           </Alert>
         )}
         <StatsBar stats={stats} />
-        <DialogsToolbar
-          query={query}
-          onQueryChange={setQuery}
-          filters={headFilters}
-          onFiltersChange={setHeadFilters}
-          accounts={[...new Set(rows.map((r) => r.account_id).filter((a) => a != null))].sort()}
-          newCount={rows.filter(waitsForManager).length}
-          onlyNew={onlyNew}
-          onOnlyNewChange={setOnlyNew}
-          showHidden={showHidden}
-          onToggleShowHidden={setShowHidden}
-        />
-        <NeedManagerAssist agents={managerAgents} query={query} headFilters={headFilters} />
-        <LiveConversations agents={liveAgents} query={query} headFilters={headFilters} />
+        <NeedManagerAssist agents={managerAgents} />
+        <LiveConversations agents={liveAgents} />
         <ConversationsTable
           ready={ready}
           rows={rows}
-          query={query}
-          headFilters={headFilters}
-          onlyNew={onlyNew}
           showHidden={showHidden}
           onHide={toggleHidden}
           onDealStage={changeDealStage}
