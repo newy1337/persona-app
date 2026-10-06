@@ -9,7 +9,10 @@ import { cn } from '@/lib/utils';
 export function DeliveryStatus({ delivery }) {
   if (!delivery) return null;
   const labels = { pending: 'В очереди на отправку', claimed: 'Отправляется…', sent: 'Голосовое отправлено', failed: 'Не отправлено', needs_review: 'Доставку нужно проверить', resolved: 'Доставку проверили вручную' };
-  return <div className={cn('min-h-5 text-sm', ['failed', 'needs_review'].includes(delivery.status) ? 'text-warning-foreground' : 'text-muted-foreground')} role="status">
+  // Статус доставки — точка и нейтральный текст; цветом текст не красим.
+  const dot = { failed: 'bg-destructive', needs_review: 'bg-warning-foreground', sent: 'bg-success-foreground' }[delivery.status];
+  return <div className="min-h-5 text-xs leading-5 text-muted-foreground" role="status">
+    {dot && <span className={cn('mr-1.5 inline-block size-1.5 rounded-full align-middle', dot)} aria-hidden="true" />}
     {labels[delivery.status] || delivery.status} · диалог <span className="font-mono tabular-nums">{delivery.chat_id}</span>
     {delivery.error && <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{delivery.error}</p>}
   </div>;
@@ -41,14 +44,14 @@ export function SendVoice({ item, initialChat, onClose, onChange }) {
   }
   return <PanelUX.Modal title="Отправить голосовое" busy={busy} onClose={onClose} footer={<>
     <Button type="button" variant="outline" disabled={busy} onClick={onClose}>Закрыть</Button>
-    {!delivery && <Button type="button" disabled={busy || !chat} onClick={() => send()}>{busy && <LoaderCircle className="animate-spin" />}{busy ? 'Добавляем в очередь…' : 'Отправить выбранному собеседнику'}</Button>}
+    {!delivery && <Button type="button" disabled={busy || !chat} onClick={() => send()}>{busy && <LoaderCircle className="animate-spin" aria-hidden="true" />}{busy ? 'Добавляем в очередь…' : 'Отправить выбранному собеседнику'}</Button>}
     {delivery?.status === 'failed' && <Button type="button" disabled={busy} onClick={() => send(true)}>Повторить отправку</Button>}
   </>}>
-    <div className="flex min-h-[200px] flex-col gap-3 text-sm"><p className="[overflow-wrap:anywhere]"><strong className="font-medium">{item.title}</strong><br />Голос: {item.task.personaName}</p>
+    <div className="flex min-h-[200px] flex-col gap-3 text-sm"><p className="[overflow-wrap:anywhere]"><span className="font-medium">{item.title}</span><br /><span className="text-xs text-muted-foreground">Голос: {item.task.personaName}</span></p>
       {!delivery && <TaskChatSelect sendTarget required value={chat} disabled={busy} onChange={value => { setChat(value); requestId.current = crypto.randomUUID(); }} />}
       <DeliveryStatus delivery={delivery} />
-      {delivery?.status === 'sent' && <p>Запись остаётся в библиотеке. Её можно отправить в другой диалог.</p>}
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      {delivery?.status === 'sent' && <p className="text-xs text-muted-foreground">Запись остаётся в библиотеке. Её можно отправить в другой диалог.</p>}
+      <div className="min-h-4 text-xs text-destructive">{error && <p role="alert">{error}</p>}</div>
     </div>
   </PanelUX.Modal>;
 }

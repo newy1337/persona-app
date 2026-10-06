@@ -33,15 +33,14 @@ export default function Login({ onDone }) {
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background p-4">
-      <Card className="w-[360px] max-w-full gap-4 py-6">
-        <CardHeader className="px-6">
-          <h1 className="text-lg leading-none font-semibold">Панель менеджера</h1>
+      <Card className="w-full max-w-sm gap-5">
+        <CardHeader>
+          <h1 className="text-lg leading-none font-semibold tracking-tight">Панель менеджера</h1>
         </CardHeader>
-        <CardContent className="px-6">
+        <CardContent>
           <form className="flex flex-col gap-2" onSubmit={submit}>
             <Field label="Логин">
               <Input
-                placeholder="логин"
                 autoFocus
                 autoComplete="username"
                 value={username}
@@ -51,16 +50,16 @@ export default function Login({ onDone }) {
             <Field label="Пароль">
               <Input
                 type="password"
-                placeholder="пароль"
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </Field>
-            <p className="min-h-5 text-sm text-destructive" role="alert">{error}</p>
-            <Button type="submit" size="lg" className="w-full" disabled={busy || !username || !password}>
+            <Button type="submit" className="w-full" disabled={busy || !username || !password}>
               {busy ? 'Вход…' : 'Войти'}
             </Button>
+            {/* Строка ошибки занята всегда: карточка не меняет высоту. */}
+            <p className="min-h-4 text-xs text-destructive" role="alert">{error}</p>
           </form>
         </CardContent>
       </Card>

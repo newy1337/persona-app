@@ -3,6 +3,7 @@ import { Download, RefreshCw } from 'lucide-react';
 import { api, authHeaders } from '../../api/client';
 import { PanelUX } from '../../ui/PanelUX';
 import VoicePlayer from '../../components/VoicePlayer/VoicePlayer';
+import { IconAction } from '@/components/IconAction/IconAction';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
@@ -12,7 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
 const muted = 'text-xs text-muted-foreground';
-const errorLine = 'text-sm text-destructive';
+const errorLine = 'text-xs text-destructive';
 
 export function TaskChatSelect({ managerId, persona, value, onChange, disabled, required = false, warnMissing = true, sendTarget = false, showChatAccess = true }) {
   const [query, setQuery] = useState(''), [data, setData] = useState({ items: [] }), [error, setError] = useState(''), [loading, setLoading] = useState(false);
@@ -26,7 +27,7 @@ export function TaskChatSelect({ managerId, persona, value, onChange, disabled, 
     }, 250);
     return () => { active = false; clearTimeout(timer); };
   }, [managerId, persona, query, sendTarget]);
-  return <div className="flex min-w-0 flex-col gap-1.5">
+  return <div className="grid min-w-0 gap-x-4 gap-y-1.5 sm:grid-cols-2">
     <Field label="Поиск диалога"><Input placeholder="Имя, Telegram или ID" value={query} onChange={e => setQuery(e.target.value)} disabled={disabled} /></Field>
     <Field label={sendTarget ? 'Получатель' : required ? 'Диалог для автоматической отправки' : 'Переписка для войсера'}><NativeSelect required={required} disabled={disabled} aria-busy={loading} value={value}
       onChange={e => onChange(e.target.value, data.items.find(item => item.chat_id === e.target.value))}>
@@ -34,10 +35,11 @@ export function TaskChatSelect({ managerId, persona, value, onChange, disabled, 
       {value && !data.items.some(item => item.chat_id === value) && <option value={value}>Диалог {value}</option>}
       {data.items.map(item => <option key={item.chat_id} value={item.chat_id}>{item.label} · {item.chat_id}{sendTarget && item.persona_name ? ` · ${item.persona_name}` : ''}{!sendTarget && item.unassigned ? ' · без менеджера' : ''}</option>)}
     </NativeSelect></Field>
-    <p className={cn(muted, 'min-h-4')}>{loading ? 'Ищем диалоги…' : data.more ? 'Показаны 40 диалогов. Уточните поиск.' : !data.items.length ? 'Подходящих диалогов не найдено.' : sendTarget ? 'Выберите получателя и убедитесь, что текст и голос подходят этому диалогу.' : showChatAccess ? 'Войсер сможет читать выбранную переписку, в том числе во время звонка.' : 'Войсер получит текст и эмоциональность. Переписка при записи голосового ему недоступна.'}</p>
-    {!value && warnMissing && !sendTarget && <p className="text-xs text-warning-foreground">Без привязки войсер получит задание, но не увидит переписку.</p>}
-    {!sendTarget && data.items.find(item => item.chat_id === value)?.unassigned && <p className={muted}>Аккаунт не закреплён за менеджером. При создании задания доступ к этой переписке получит выбранный менеджер; войсер — только для звонка. Остальные диалоги аккаунта останутся закрыты.</p>}
-    {error && <p className={errorLine} role="alert">{error}</p>}
+    {/* Подсказка встаёт в пустую строку сообщений под полями (16px + зазор 6px), а не добавляет свою. */}
+    <p className={cn(muted, '-mt-5.5 min-h-4 sm:col-span-2')}>{loading ? 'Ищем диалоги…' : data.more ? 'Показаны 40 диалогов. Уточните поиск.' : !data.items.length ? 'Подходящих диалогов не найдено.' : sendTarget ? 'Выберите получателя и убедитесь, что текст и голос подходят этому диалогу.' : showChatAccess ? 'Войсер сможет читать выбранную переписку, в том числе во время звонка.' : 'Войсер получит текст и эмоциональность. Переписка при записи голосового ему недоступна.'}</p>
+    {!value && warnMissing && !sendTarget && <p className={cn(muted, 'flex items-center gap-1.5 sm:col-span-2')}><span className="size-1.5 shrink-0 rounded-full bg-warning-foreground" aria-hidden="true" />Без привязки войсер получит задание, но не увидит переписку.</p>}
+    {!sendTarget && data.items.find(item => item.chat_id === value)?.unassigned && <p className={cn(muted, 'sm:col-span-2')}>Аккаунт не закреплён за менеджером. При создании задания доступ к этой переписке получит выбранный менеджер; войсер — только для звонка. Остальные диалоги аккаунта останутся закрыты.</p>}
+    {error && <p className={cn(errorLine, 'sm:col-span-2')} role="alert">{error}</p>}
   </div>;
 }
 
@@ -62,7 +64,7 @@ function Attachment({ taskId, message }) {
     {!file && <Button type="button" variant="outline" size="xs" disabled={busy} onClick={load}>{busy ? 'Загружаем…' : `${labels[message.mediaKind] || 'Вложение'} · открыть`}</Button>}
     {file && (/^image\/(jpeg|png|gif|webp)$/.test(file.type) ? <div className="aspect-video w-full max-w-[320px] overflow-hidden rounded-md bg-muted"><img className="size-full object-contain" src={file.url} alt="Вложение в переписке" /></div> :
       file.type.startsWith('audio/') ? <VoicePlayer src={file.url} /> : file.type.startsWith('video/') ? <div className="aspect-video w-full max-w-[320px] overflow-hidden rounded-md bg-muted"><video className="size-full object-contain" controls playsInline src={file.url} /></div> :
-        <Button asChild variant="outline" size="xs"><a href={file.url} download={`attachment-${message.id}`}><Download />Скачать файл</a></Button>)}
+        <Button asChild variant="outline" size="xs"><a href={file.url} download={`attachment-${message.id}`}><Download aria-hidden="true" />Скачать файл</a></Button>)}
     {error && <p className={cn(errorLine, 'mt-1')} role="alert">{error}</p>}
   </div>;
 }
@@ -95,21 +97,21 @@ export function TaskChat({ task }) {
   const scrollerClass = 'flex h-[42vh] min-h-[220px] flex-col gap-3 overflow-y-auto py-1 pr-2 pl-0.5 [overscroll-behavior:contain] [scrollbar-gutter:stable]';
   return <section className="flex min-w-0 flex-col gap-3" aria-label="Переписка по заданию">
     <div className="flex flex-wrap items-center justify-between gap-2"><div><strong className="text-sm font-medium">Переписка · {task.contactLabel}</strong><p className={cn(muted, 'min-h-4 tabular-nums')}>Только просмотр · обновление каждые 5 секунд{updated && ` · ${updated.toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow' })}`}</p></div>
-      <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => setRefresh(n => n + 1)}><RefreshCw />Обновить</Button></div>
-    <div className="flex flex-wrap gap-2">
-      <Button type="button" variant="outline" size="sm" disabled={loading || !data?.next_before} onClick={() => { setTrail(old => [...old, before]); setBefore(data.next_before); }}>Ранние сообщения</Button>
-      {before && <><Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => { setBefore(trail[trail.length - 1] ?? null); setTrail(old => old.slice(0, -1)); }}>Новые сообщения</Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => { setBefore(null); setTrail([]); }}>К последним</Button></>}
-    </div>
+      <div className="flex flex-wrap items-center gap-1">
+        <Button type="button" variant="outline" size="sm" disabled={loading || !data?.next_before} onClick={() => { setTrail(old => [...old, before]); setBefore(data.next_before); }}>Ранние сообщения</Button>
+        {before && <><Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => { setBefore(trail[trail.length - 1] ?? null); setTrail(old => old.slice(0, -1)); }}>Новые сообщения</Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => { setBefore(null); setTrail([]); }}>К последним</Button></>}
+        <IconAction icon={RefreshCw} label="Обновить" disabled={loading} onClick={() => setRefresh(n => n + 1)} />
+      </div></div>
     {error && <p className={errorLine} role="alert">{error}{data && ' Показаны ранее загруженные сообщения.'}</p>}
     {!data && <div className={scrollerClass} aria-busy={loading} {...(loading ? { role: 'status', 'aria-label': 'Загружаем переписку…' } : {})}>
       {loading && <><span className="sr-only">Загружаем переписку…</span><Skeleton className="h-14 w-3/5 rounded-lg" /><Skeleton className="h-14 w-1/2 self-end rounded-lg" /><Skeleton className="h-14 w-2/3 rounded-lg" /></>}
     </div>}
     {data && <div className={scrollerClass} aria-busy={loading} ref={scroller} onScroll={e => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
       {!data.items.length && <p className={muted}>В этом диалоге пока нет сообщений.</p>}
-      {data.items.map(m => <article key={m.id} className={cn('w-fit max-w-[95%] shrink-0 rounded-lg border bg-card p-3 text-sm text-card-foreground [overflow-wrap:anywhere] sm:max-w-[88%]', m.role !== 'user' && 'self-end border-primary/20 bg-primary/10')}>
+      {data.items.map(m => <article key={m.id} className={cn('w-fit max-w-[95%] shrink-0 rounded-lg border bg-card p-3 text-sm text-card-foreground [overflow-wrap:anywhere] sm:max-w-[88%]', m.role !== 'user' && 'self-end border-transparent bg-muted')}>
         <div className={cn(muted, 'mb-1.5 flex flex-wrap gap-x-3.5 gap-y-1')}><strong className="font-medium">{m.role === 'user' ? task.contactLabel : m.author?.startsWith('operator:') ? 'Менеджер' : `Бот · ${task.personaName}`}</strong>
-          <time className="font-mono tabular-nums" dateTime={new Date(m.ts * 1000).toISOString()}>{new Date(m.ts * 1000).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', dateStyle: 'short', timeStyle: 'short' })}</time></div>
+          <time className="tabular-nums" dateTime={new Date(m.ts * 1000).toISOString()}>{new Date(m.ts * 1000).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', dateStyle: 'short', timeStyle: 'short' })}</time></div>
         {m.deletedAt ? <p className={muted}>Сообщение удалено</p> : <>{m.text && <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>}{m.has_file && <Attachment taskId={task.id} message={m} />}{!m.has_file && m.mediaKind && !m.text && <p className={muted}>Вложение не сохранено</p>}{m.editedAt && <span className={muted}>Изменено</span>}</>}
         {m.reaction && <span aria-label="Реакция">{m.reaction}</span>}
       </article>)}

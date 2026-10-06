@@ -105,7 +105,7 @@ export default function VoicePlayer({ src, onListened = null }) {
       <Button
         type="button"
         size="icon"
-        variant={failed ? 'secondary' : 'default'}
+        variant="outline"
         className="rounded-full"
         onClick={toggle}
         aria-label={playing ? 'Пауза' : 'Слушать'}
@@ -129,7 +129,7 @@ export default function VoicePlayer({ src, onListened = null }) {
               key={i}
               className={cn(
                 'min-h-[3px] min-w-[2px] flex-1 rounded-[2px] transition-colors',
-                i < played ? 'bg-primary' : 'bg-foreground/20',
+                i < played ? 'bg-primary' : 'bg-muted-foreground/40',
               )}
               style={{ height: `${Math.round(h * 100)}%` }}
             />
@@ -138,7 +138,7 @@ export default function VoicePlayer({ src, onListened = null }) {
         <div className="flex h-[18px] items-center justify-between gap-2">
           <span
             className={cn(
-              'min-w-[72px] font-mono text-[11px] leading-4 tabular-nums',
+              'min-w-[72px] text-[11px] leading-4 tabular-nums',
               failed ? 'text-destructive' : 'text-muted-foreground',
             )}
           >
@@ -146,9 +146,9 @@ export default function VoicePlayer({ src, onListened = null }) {
           </span>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="xs"
-            className="h-[18px] min-w-[36px] rounded-full px-1.5 font-mono text-[10px] tabular-nums"
+            className="h-[18px] min-w-[36px] px-1.5 text-[11px] text-muted-foreground tabular-nums"
             onClick={() => setSpeed((v) => SPEEDS[(SPEEDS.indexOf(v) + 1) % SPEEDS.length])}
             title="Скорость"
           >

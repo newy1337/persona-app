@@ -4,7 +4,6 @@ import { Bell, X } from 'lucide-react';
 import { api } from '../../api/client';
 import { PanelUX } from '../../ui/PanelUX';
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { BANNER_MS, loadDismissed, loadShown, normalizeQueue, pruneDismissed, queueKey, queueText, saveDismissed, saveShown } from './queueNotices';
 
@@ -16,12 +15,19 @@ const waitingLabel = since => {
 };
 const pushSupported = () => typeof window !== 'undefined' && 'Notification' in window;
 
-const BANNER_CLASS = 'fixed right-5 bottom-5 z-[60] flex w-[min(390px,calc(100vw-2rem))] min-h-14 items-start gap-3 rounded-lg border bg-card p-4 text-sm text-card-foreground shadow-lg max-sm:right-4 max-sm:bottom-4';
-const BANNER_TEXT_CLASS = 'min-w-0 flex-1 rounded-sm text-left leading-relaxed outline-none [overflow-wrap:anywhere] focus-visible:ring-[3px] focus-visible:ring-ring/50';
-const GROUP_TITLE_CLASS = 'mt-1 text-xs font-semibold tracking-[0.04em] text-muted-foreground uppercase';
-const ITEM_CLASS = 'rounded-lg border bg-card p-3.5';
-const ITEM_UNREAD_CLASS = 'border-primary/40 bg-primary/5';
+// Всплывающее уведомление — нейтральная карточка: непрочитанное отмечает только точка.
+const BANNER_CLASS = 'fixed right-5 bottom-5 z-[60] flex w-[min(380px,calc(100vw-2rem))] items-start gap-2.5 rounded-lg border bg-popover py-2.5 pr-2 pl-3.5 text-sm text-popover-foreground shadow-sm max-sm:right-4 max-sm:bottom-4';
+const BANNER_TEXT_CLASS = 'min-w-0 flex-1 rounded-sm py-0.5 text-left leading-5 outline-none [overflow-wrap:anywhere] focus-visible:ring-[3px] focus-visible:ring-ring/50';
+const BANNER_CLOSE_CLASS = 'shrink-0 text-muted-foreground hover:text-foreground';
+const GROUP_TITLE_CLASS = 'text-xs font-medium text-muted-foreground';
+// Строка списка: точка — текст и время — действия. Рамок и подложек у строк нет.
+const ITEM_CLASS = 'flex flex-wrap items-start gap-x-2.5 gap-y-2 py-3';
+const ITEM_ACTIONS_CLASS = 'ml-auto flex shrink-0 items-center gap-1 pl-4';
 const smallBtn = buttonVariants({ variant: 'outline', size: 'sm' });
+
+function UnreadDot({ className }) {
+  return <span className={cn('size-1.5 shrink-0 rounded-full bg-primary', className)} aria-hidden="true" />;
+}
 
 export default function VoiceNotifications({ userId }) {
   const [data, setData] = useState({ items: [], unread: 0 }), [open, setOpen] = useState(false), [error, setError] = useState('');
@@ -138,65 +144,84 @@ export default function VoiceNotifications({ userId }) {
   return <>
     <Button
       type="button"
-      variant="outline"
-      size="icon"
-      className="relative shrink-0"
+      variant="ghost"
+      size="icon-sm"
+      className="relative shrink-0 text-muted-foreground hover:text-foreground"
       aria-label={`Уведомления: ${unread} непрочитанных`}
       onClick={() => setOpen(true)}
       title="Уведомления: ждут менеджера, голосовые"
     >
       <Bell aria-hidden="true" />
-      <Badge
-        variant={unread ? 'default' : 'secondary'}
-        className="absolute -top-1.5 -right-1.5 h-4 min-w-4 rounded-full px-1 font-mono text-[10px] leading-none tabular-nums"
+      {/* Счётчик смонтирован всегда и не занимает места в потоке: шапка не дёргается. */}
+      <span
+        className={cn(
+          'absolute -top-0.5 -right-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-foreground px-1 text-[10px] leading-none font-medium text-background tabular-nums',
+          !unread && 'invisible',
+        )}
         aria-hidden="true"
       >
         {unread > 99 ? '99+' : unread}
-      </Badge>
+      </span>
     </Button>
     {showVoiceBanner && <div className={BANNER_CLASS} role="status">
+      <UnreadDot className="mt-2" />
       <button type="button" className={BANNER_TEXT_CLASS} onClick={() => setOpen(true)}>{latest.text}</button>
-      <Button type="button" variant="ghost" size="icon" className="-mt-2 -mr-2 size-8" aria-label="Скрыть уведомление" onClick={() => setDismissed(latest.id)}>
+      <Button type="button" variant="ghost" size="icon-xs" className={BANNER_CLOSE_CLASS} aria-label="Скрыть уведомление" onClick={() => setDismissed(latest.id)}>
         <X aria-hidden="true" />
       </Button>
     </div>}
-    {showQueueBanner && <div className={cn(BANNER_CLASS, 'border-warning-foreground/40')} role="status" data-testid="queue-banner">
+    {showQueueBanner && <div className={BANNER_CLASS} role="status" data-testid="queue-banner">
+      <UnreadDot className="mt-2" />
       <button type="button" className={BANNER_TEXT_CLASS} onClick={() => openChat(latestQueue)}>
-        <strong className="font-semibold">Ждут менеджера</strong> · {queueText(latestQueue)}
+        <strong className="font-medium">Ждут менеджера</strong> · {queueText(latestQueue)}
         {pendingQueue.length > 1 && <span className="text-muted-foreground"> · ещё {pendingQueue.length - 1}</span>}
       </button>
-      <Button type="button" variant="ghost" size="icon" className="-mt-2 -mr-2 size-8" aria-label="Закрыть уведомление" onClick={() => closeQueue(latestQueue)}>
+      <Button type="button" variant="ghost" size="icon-xs" className={BANNER_CLOSE_CLASS} aria-label="Закрыть уведомление" onClick={() => closeQueue(latestQueue)}>
         <X aria-hidden="true" />
       </Button>
     </div>}
     {open && <PanelUX.Modal title="Уведомления" onClose={() => setOpen(false)} footer={<Button type="button" variant="outline" onClick={() => setOpen(false)}>Закрыть</Button>}>
       <div className="flex min-h-[120px] flex-col gap-3 text-sm">
-        {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
-        {permission === 'default' && <p className="rounded-lg border border-dashed px-3.5 py-3 leading-relaxed">
-          Чтобы видеть новые чаты в очереди, даже когда панель свёрнута, включите уведомления браузера.{' '}
+        {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
+        {permission === 'default' && <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md bg-muted/40 px-3 py-2.5">
+          <p className="min-w-0 flex-[1_1_240px] text-xs leading-relaxed text-muted-foreground">Чтобы видеть новые чаты в очереди, даже когда панель свёрнута, включите уведомления браузера.</p>
           <Button type="button" variant="outline" size="sm" onClick={askPush}>Включить push</Button>
-        </p>}
-        {permission === 'denied' && <p className="text-muted-foreground">Push в браузере запрещён — разрешите уведомления для этого сайта в настройках браузера.</p>}
-        {pendingQueue.length > 0 && <h4 className={GROUP_TITLE_CLASS}>Ждут менеджера</h4>}
-        {pendingQueue.map(item => <article key={queueKey(item)} className={cn(ITEM_CLASS, ITEM_UNREAD_CLASS)} data-testid="queue-notice">
-          <p className="mb-2 leading-relaxed [overflow-wrap:anywhere]">{queueText(item)}</p>
-          <time className="font-mono text-xs text-muted-foreground">ждёт {waitingLabel(item.waiting_since)}{item.manager_name ? ` · ${item.manager_name}` : ''}</time>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => openChat(item)}>Открыть чат</Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => closeQueue(item)}>Закрыть</Button>
+        </div>}
+        {permission === 'denied' && <p className="text-xs text-muted-foreground">Push в браузере запрещён — разрешите уведомления для этого сайта в настройках браузера.</p>}
+        {!data.items.length && !pendingQueue.length && <p className="text-muted-foreground">Новых уведомлений пока нет. Здесь появятся чаты, которые ждут менеджера, и готовые голосовые.</p>}
+        {pendingQueue.length > 0 && <section>
+          <h4 className={GROUP_TITLE_CLASS}>Ждут менеджера</h4>
+          <div className="divide-y">
+            {pendingQueue.map(item => <article key={queueKey(item)} className={ITEM_CLASS} data-testid="queue-notice">
+              <UnreadDot className="mt-1.5" />
+              <div className="min-w-0 flex-1">
+                <p className="leading-5 [overflow-wrap:anywhere]">{queueText(item)}</p>
+                <time className="text-xs text-muted-foreground tabular-nums">ждёт {waitingLabel(item.waiting_since)}{item.manager_name ? ` · ${item.manager_name}` : ''}</time>
+              </div>
+              <div className={ITEM_ACTIONS_CLASS}>
+                <Button type="button" variant="outline" size="sm" onClick={() => openChat(item)}>Открыть чат</Button>
+                <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => closeQueue(item)}>Закрыть</Button>
+              </div>
+            </article>)}
           </div>
-        </article>)}
-        {(pendingQueue.length > 0 || data.items.length > 0) && data.items.length > 0 && <h4 className={GROUP_TITLE_CLASS}>Голосовые</h4>}
-        {!data.items.length && !pendingQueue.length && <p>Новых уведомлений пока нет. Здесь появятся чаты, которые ждут менеджера, и готовые голосовые.</p>}
-        {data.items.map(item => <article key={item.id} className={cn(ITEM_CLASS, !item.readAt && ITEM_UNREAD_CLASS)}>
-          <p className="mb-2 leading-relaxed [overflow-wrap:anywhere]">{item.text}</p>
-          <time className="font-mono text-xs text-muted-foreground">{new Date(item.createdAt * 1000).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}</time>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Link className={smallBtn} to={`/voice?task=${item.taskId}`} onClick={() => { read(item); setOpen(false); }}>Открыть задание</Link>
-            {!item.readAt && <Button type="button" variant="outline" size="sm" onClick={() => read(item)}>Прочитано</Button>}
+        </section>}
+        {data.items.length > 0 && <section>
+          <h4 className={GROUP_TITLE_CLASS}>Голосовые</h4>
+          <div className="divide-y">
+            {data.items.map(item => <article key={item.id} className={ITEM_CLASS}>
+              <UnreadDot className={cn('mt-1.5', item.readAt && 'invisible')} />
+              <div className="min-w-0 flex-1">
+                <p className={cn('leading-5 [overflow-wrap:anywhere]', item.readAt && 'text-muted-foreground')}>{item.text}</p>
+                <time className="text-xs text-muted-foreground tabular-nums">{new Date(item.createdAt * 1000).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}</time>
+              </div>
+              <div className={ITEM_ACTIONS_CLASS}>
+                <Link className={smallBtn} to={`/voice?task=${item.taskId}`} onClick={() => { read(item); setOpen(false); }}>Открыть задание</Link>
+                {!item.readAt && <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => read(item)}>Прочитано</Button>}
+              </div>
+            </article>)}
           </div>
-        </article>)}
-        {data.items.length >= 40 && <p className="text-muted-foreground">Показаны последние 40 уведомлений; непрочитанные — первыми.</p>}
+        </section>}
+        {data.items.length >= 40 && <p className="text-xs text-muted-foreground">Показаны последние 40 уведомлений; непрочитанные — первыми.</p>}
       </div>
     </PanelUX.Modal>}
   </>;

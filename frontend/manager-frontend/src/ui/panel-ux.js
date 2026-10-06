@@ -30,6 +30,9 @@ export function createPanelUX({ React, api }) {
     updateConfirmation();
     current?.resolve(value);
   }
+  // Окно всегда из трёх частей: заголовок, прокручиваемое тело и подвал с
+  // действиями (outline «Отмена» + одна главная кнопка). Заливок нет — части
+  // разделяют только тонкие линии.
   // described — в children есть DialogDescription (confirm, удаление лида): тогда
   // Radix сам связывает окно с описанием. У окон-форм описания нет, и связь
   // снимаем явно, иначе Radix предупреждает в консоли.
@@ -59,11 +62,12 @@ export function createPanelUX({ React, api }) {
         onPointerDownOutside: blockWhenBusy,
         onInteractOutside: blockWhenBusy,
       },
-      h('div', { className: 'shrink-0 border-b px-5 py-4' },
-        h(DialogTitle, { className: 'text-base leading-snug font-semibold [overflow-wrap:anywhere]' }, title)),
-      h('div', { className: 'min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 text-sm leading-relaxed [scrollbar-gutter:stable]' }, children),
-      footer && h('div', { className: 'flex shrink-0 flex-wrap items-center justify-end gap-2 border-t bg-muted/30 px-5 py-4' }, footer)));
+      h('div', { 'data-slot': 'dialog-header', className: 'shrink-0 border-b px-5 py-4' },
+        h(DialogTitle, { className: 'text-base leading-6 font-semibold [overflow-wrap:anywhere]' }, title)),
+      h('div', { className: 'min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 text-sm leading-relaxed [scrollbar-gutter:stable]' }, children),
+      footer && h('div', { 'data-slot': 'dialog-footer', className: 'flex shrink-0 flex-wrap items-center justify-end gap-2 border-t px-5 py-3' }, footer)));
   }
+  // Уведомление — нейтральная карточка; статус несёт только иконка слева.
   const noticeIcon = status => status === 'pending'
     ? h(Loader2, { className: 'size-4 shrink-0 animate-spin text-muted-foreground', 'aria-hidden': true })
     : status === 'success'
@@ -74,20 +78,18 @@ export function createPanelUX({ React, api }) {
     const question = useSyncExternalStore(subscribeConfirmation, () => confirmation);
     const noticeList = state.notices;
     return h(React.Fragment, null,
-      h('div', { className: 'pointer-events-none fixed top-[calc(var(--header-h)+1rem)] right-5 z-[70] grid w-[min(380px,calc(100vw-2.5rem))] gap-2', 'aria-label': 'Результаты действий' },
+      h('div', { className: 'pointer-events-none fixed top-[calc(var(--header-h)+1rem)] right-5 z-[70] grid w-[min(360px,calc(100vw-2.5rem))] gap-2', 'aria-label': 'Результаты действий' },
         noticeList.map(item => h('div', {
           key: item.id,
           role: item.status === 'error' ? 'alert' : 'status',
           'aria-live': item.status === 'error' ? 'assertive' : 'polite',
-          className: cn('pointer-events-auto flex min-h-11 items-center gap-2.5 rounded-lg border bg-popover px-3.5 py-2 text-sm text-popover-foreground shadow-lg',
-            item.status === 'success' && 'border-success-foreground/40',
-            item.status === 'error' && 'border-destructive/50'),
+          className: 'pointer-events-auto flex min-h-11 items-center gap-2.5 rounded-lg border bg-popover py-1.5 pr-2 pl-3 text-sm text-popover-foreground shadow-sm',
         },
         noticeIcon(item.status),
         h('span', { className: 'min-w-0 flex-1 [overflow-wrap:anywhere]' }, item.text),
         item.status === 'pending'
           ? h('span', { className: 'size-7 shrink-0', 'aria-hidden': true })
-          : h(Button, { type: 'button', variant: 'ghost', size: 'icon', className: 'size-7', 'aria-label': 'Закрыть уведомление', onClick: () => store.dismiss(item.id) }, h(X, { className: 'size-4' }))))),
+          : h(Button, { type: 'button', variant: 'ghost', size: 'icon-xs', className: 'text-muted-foreground hover:text-foreground', 'aria-label': 'Закрыть уведомление', onClick: () => store.dismiss(item.id) }, h(X, { 'aria-hidden': true }))))),
       question && h(Modal, { title: question.title || 'Подтвердите действие', described: true, onClose: () => answer(false), footer: h(React.Fragment, null,
         h(Button, { type: 'button', variant: 'outline', 'data-autofocus': true, onClick: () => answer(false) }, 'Отмена'),
         h(Button, { type: 'button', variant: question.danger ? 'destructive' : 'default', onClick: () => answer(true) }, question.confirmLabel || 'Подтвердить')) },
@@ -110,8 +112,8 @@ export function createPanelUX({ React, api }) {
     lead.telegram_user_id && h('label', { className: 'mt-4 flex cursor-pointer items-start gap-2.5 text-sm text-foreground' },
       h(NativeCheckbox, { className: 'mt-0.5', checked: telegram, disabled: busy, onChange: event => setTelegram(event.target.checked) }),
       'Удалить переписку в Telegram у обоих участников'),
-    lead.telegram_user_id && h('div', { className: 'mt-3 min-h-5 text-xs text-destructive' }, telegram && h('p', null, 'Сообщения исчезнут у обоих. Отменить это нельзя.')),
-    h('div', { className: 'mt-3 min-h-5 text-xs text-destructive' }, error && h('p', { role: 'alert' }, error)));
+    lead.telegram_user_id && h('div', { className: 'mt-2 min-h-4 text-xs text-destructive' }, telegram && h('p', null, 'Сообщения исчезнут у обоих. Отменить это нельзя.')),
+    h('div', { className: 'mt-2 min-h-4 text-xs text-destructive' }, error && h('p', { role: 'alert' }, error)));
   }
   return { Modal, FeedbackHost, DeleteLeadModal, confirm, useActions, readableError, ...store };
 }

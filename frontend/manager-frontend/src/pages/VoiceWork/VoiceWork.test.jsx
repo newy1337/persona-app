@@ -143,3 +143,34 @@ test('opens the assigned chat from the bot deep link and preserves the call note
   expect(host.textContent).not.toContain('Переписка');
   expect(api.get.mock.calls.some(([path]) => path.includes('/conversation'))).toBe(false);
 });
+
+test('pages through tasks with the shared pager and asks the server for the chosen page', async () => {
+  const task = id => ({ id, title: `Задание ${id}`, kind: 'voice', voiceMode: 'library', status: 'queued', script: 'Текст', createdAt: 1 });
+  result = { total: 95, items: [task(1), task(2)] };
+  await render();
+  expect(host.querySelector('[role=status]').textContent).toBe('1–40 из 95');
+  const nav = host.querySelector('nav[aria-label="Страницы заданий"]');
+  expect(nav.querySelector('[aria-current=page]').textContent).toBe('1');
+  await act(async () => nav.querySelector('[aria-label="Страница 2"]').click());
+  expect(api.get.mock.calls.some(([path]) => path.startsWith('/api/voicer/tasks?') && path.includes('page=2'))).toBe(true);
+  expect(host.querySelector('nav[aria-label="Страницы заданий"] [aria-current=page]').textContent).toBe('2');
+});
+
+test('renames a recording in a dialog and keeps the dialog with the typed title when saving fails', async () => {
+  result = { total: 1, items: [{ id: 1, title: 'Утро', current: true, revision: 1, duration: 5, createdAt: 1,
+    task: { id: 1, personaSlug: 'nastya', personaName: 'Настя', contactLabel: 'Дима', managerName: 'manager', voicerName: 'Оля' } }] };
+  const put = vi.spyOn(api, 'put').mockRejectedValueOnce(new Error('Название занято')).mockResolvedValueOnce({});
+  await render('/voice?tab=library');
+  expect(host.querySelector('form')).toBeNull();
+  await act(async () => host.querySelector('[aria-label="Переименовать"]').click());
+  const form = host.querySelector('[role=dialog] form#recording-rename');
+  expect(form.querySelector('input').value).toBe('Утро');
+  await input('Название записи', 'Доброе утро');
+  await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  expect(put).toHaveBeenCalledWith('/api/voicer/recordings/1', { title: 'Доброе утро' });
+  expect(host.querySelector('[role=alert]').textContent).toContain('Название занято');
+  expect(host.querySelector('#recording-rename input').value).toBe('Доброе утро');
+  await act(async () => host.querySelector('#recording-rename').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  expect(put).toHaveBeenCalledTimes(2);
+  expect(host.querySelector('[role=dialog]')).toBeNull();
+});

@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { api } from '../../api/client';
 import { ManagersPage } from './Managers';
+import { PanelUX } from '../../ui/PanelUX';
 
 vi.mock('../../components/Header/Header', () => ({ default: () => null }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -37,17 +38,54 @@ test('creates a manager with a leading-zero region and no manually entered passw
 test('failed region saves retain the editor and typed value', async () => {
   vi.spyOn(api,'put').mockRejectedValue({status:500});
   await render(<ManagersPage />);
-  await act(async()=>[...host.querySelectorAll('[data-manager-id="2"] button')].find(b=>b.textContent==='Изменить').click());
+  await act(async()=>host.querySelector('[data-manager-id="2"] [aria-label="Изменить"]').click());
   const field=host.querySelector('#manager-editor input'); await input(field,'0999');
   await act(async()=>host.querySelector('#manager-editor').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
   expect(host.querySelector('#manager-editor input').value).toBe('0999');
   expect(host.querySelector('[role=alert]').textContent).toContain('Попробуйте ещё раз');
 });
 test('account assignment opens separately with searchable accounts', async () => {
-  await render(<ManagersPage />); await click('Назначить');
+  await render(<ManagersPage />); await act(async()=>host.querySelector('[aria-label="Назначить аккаунты: manager_test"]').click());
   expect(host.querySelector('[role=dialog]')).not.toBeNull();
   await input(host.querySelector('[aria-label="Поиск аккаунтов"]'),'not_found');
   expect(host.textContent).toContain('Аккаунты не найдены');
   await input(host.querySelector('[aria-label="Поиск аккаунтов"]'),'sender_test');
   expect(host.querySelector('.mr-assignment-list input')?.checked, host.querySelector('.mr-assignment-list').textContent).toBe(true);
+});
+
+// Меню «Ещё» строки: Radix рисует его порталом в body и позиционирует через ResizeObserver, которого нет в jsdom.
+globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} };
+const openMenu = async id => act(async () => host.querySelector(`[data-manager-id="${id}"] [aria-label="Ещё"]`).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+const menuItem = text => [...document.querySelectorAll('[role=menuitem]')].find(item => item.textContent === text);
+
+test('the create form opens in a dialog instead of pushing the list down', async () => {
+  await render(<ManagersPage />);
+  expect(host.querySelector('form')).toBeNull();
+  await click('+ Создать учётку');
+  expect(host.querySelector('[role=dialog] form[aria-label="Создание учётки"]')).not.toBeNull();
+  await click('Отмена');
+  expect(host.querySelector('[role=dialog]')).toBeNull();
+});
+test('the row menu opens the credentials dialog', async () => {
+  await render(<ManagersPage />); await openMenu(2);
+  await act(async () => menuItem('Логин и пароль').click());
+  expect(api.get).toHaveBeenCalledWith('/api/managers/2/credentials');
+  expect(host.querySelector('[role=dialog]').textContent).toContain('Данные для входа: new_manager');
+  await act(async () => host.querySelector('[aria-label="Показать пароль"]').click());
+  expect(host.querySelector('[role=dialog] input[type=password]')).toBeNull();
+  expect(host.querySelector('[aria-label="Скрыть пароль"]')).not.toBeNull();
+});
+test('the row menu deletes another account only after confirmation and never offers it for yourself', async () => {
+  const remove = vi.spyOn(api, 'delete').mockResolvedValue({ ...users, items: [users.items[0]] });
+  await render(<><ManagersPage /><PanelUX.FeedbackHost /></>);
+  await openMenu(1);
+  expect(menuItem('Логин и пароль')).toBeDefined(); expect(menuItem('Удалить')).toBeUndefined();
+  await act(async () => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+  await openMenu(2);
+  await act(async () => menuItem('Удалить').click());
+  expect(remove).not.toHaveBeenCalled();
+  expect(host.querySelector('[role=dialog]').textContent).toContain('Удалить manager_test?');
+  await click('Удалить');
+  expect(remove).toHaveBeenCalledWith('/api/managers/2');
+  expect(host.querySelector('[data-manager-id="2"]')).toBeNull();
 });

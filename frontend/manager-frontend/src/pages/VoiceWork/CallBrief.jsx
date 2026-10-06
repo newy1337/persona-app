@@ -25,10 +25,10 @@ export function CallBrief({ task }) {
     document.addEventListener('visibilitychange', load);
     return () => { active = false; clearInterval(timer); document.removeEventListener('visibilitychange', load); };
   }, [task.id, task.chatId, retry]);
-  return <details className="min-w-0 rounded-lg border bg-card px-4 py-3 text-sm text-card-foreground" open>
+  return <details className="min-w-0 rounded-lg border bg-card p-4 text-sm text-card-foreground" open>
     <summary className="cursor-pointer font-medium">Памятка к звонку</summary>
     <div className="mt-2 flex min-h-[200px] flex-col gap-2">
-      {error && <p role="alert" className="flex flex-wrap items-center gap-2 text-sm text-destructive">{error} <Button type="button" variant="outline" size="sm" onClick={() => setRetry(n => n + 1)}>Повторить</Button></p>}
+      {error && <p role="alert" className="flex flex-wrap items-center gap-2 text-xs text-destructive">{error} <Button type="button" variant="outline" size="sm" onClick={() => setRetry(n => n + 1)}>Повторить</Button></p>}
       {!brief?.persona ? (!error && <div role="status" className="grid min-h-[160px] gap-5 sm:grid-cols-2" aria-label="Загружаем памятку…">
         <span className="sr-only">Загружаем памятку…</span>
         <div className="flex flex-col gap-2"><Skeleton className="h-5 w-2/3" /><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-5/6" /><Skeleton className="h-4 w-3/4" /></div>
@@ -36,12 +36,12 @@ export function CallBrief({ task }) {
       </div>) : <>
         <p className={muted}>Данные из карточки и сохранённой памяти. Если факт не указан — он неизвестен. Последние сообщения могут содержать уточнения.</p>
         <div className="grid max-h-[38vh] min-h-[160px] gap-5 overflow-y-auto [overscroll-behavior:contain] [scrollbar-gutter:stable] sm:grid-cols-2">
-          <section className="min-w-0"><h4 className="my-3 text-sm font-medium">Личность · {brief.persona.name}</h4>
+          <section className="min-w-0"><h4 className="mb-2 text-sm font-medium">Личность · {brief.persona.name}</h4>
             {brief.persona.sections.map((section, i) => i === 0 ? <Notes key={section.title} title={section.title} items={section.items} />
-              : <details key={section.title} className="my-2"><summary className="cursor-pointer text-sm">{section.title}</summary><Notes items={section.items} /></details>)}
+              : <details key={section.title} className="my-2"><summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">{section.title}</summary><Notes items={section.items} /></details>)}
             {!brief.persona.sections.length && <p>Краткой карточки нет. Полная биография доступна в задании.</p>}
           </section>
-          <section className="min-w-0"><h4 className="my-3 text-sm font-medium">Собеседник · {brief.interlocutor.label}</h4>
+          <section className="min-w-0"><h4 className="mb-2 text-sm font-medium">Собеседник · {brief.interlocutor.label}</h4>
             {!brief.interlocutor.linked ? <p>Привяжите диалог, чтобы получить сведения о собеседнике.</p> : <>
               <dl className="m-0">{brief.interlocutor.fields.map((f, i) => <div key={i} className="my-2"><dt className={muted}>{f.label}</dt><dd className="mt-0.5 whitespace-pre-wrap [overflow-wrap:anywhere]">{f.value}</dd></div>)}</dl>
               {!brief.interlocutor.fields.length && <p>Основные сведения пока не сохранены.</p>}
@@ -52,7 +52,7 @@ export function CallBrief({ task }) {
             </>}
           </section>
         </div>
-        {!!brief.recent.length && <details className="my-2"><summary className="cursor-pointer text-sm">Последнее в переписке</summary>{brief.recent.map(m => <p key={m.id} className="my-1 whitespace-pre-wrap [overflow-wrap:anywhere]"><strong>{m.speaker}:</strong> {m.text}</p>)}</details>}
+        {!!brief.recent.length && <details className="my-2"><summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">Последнее в переписке</summary>{brief.recent.map(m => <p key={m.id} className="my-1 whitespace-pre-wrap [overflow-wrap:anywhere]"><strong className="font-medium">{m.speaker}:</strong> {m.text}</p>)}</details>}
       </>}
     </div>
   </details>;
