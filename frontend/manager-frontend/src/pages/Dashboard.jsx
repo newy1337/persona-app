@@ -1,11 +1,14 @@
 import { useCallback, useState, useEffect } from 'react';
+import { CircleAlert, TriangleAlert } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { useRouteBusy } from '../components/AppLayout/routeBusy';
+import { PageHeader } from '../components/PageHeader/PageHeader';
 import { DialogsToolbar } from '../components/DialogsToolbar/DialogsToolbar';
 import NeedManagerAssist from '../components/NeedManagerAssist/NeedManagerAssist';
 import LiveConversations from '../components/LiveConversations/LiveConversations';
 import StatsBar from '../components/StatsBar/StatsBar';
-import ConversationsTable from '../components/ConversationsTable/ConversationsTable';
+import ConversationsTable, { waitsForManager } from '../components/ConversationsTable/ConversationsTable';
 import {
   getConversations,
   getHiddenConversations,
@@ -32,6 +35,20 @@ const EMPTY_STATS = STAT_TILES.map((t) => ({ id: t.key, label: t.label, value: n
 
 const POLL_MS = 10000;
 
+/** Напоминание об этапах: тихая строка в шапке таблицы, а не баннер. */
+function StageReminder({ count, onDismiss }) {
+  const text = `В ${count} ${count === 1 ? 'диалоге' : 'диалогах'} не указан этап — выберите его в колонке «Стадия и режим».`;
+  return (
+    <div role="status" data-testid="stage-reminder" className="flex min-w-0 items-center gap-1.5 text-xs">
+      <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0 text-warning-foreground" />
+      <span className="truncate text-muted-foreground" title={text}>{text}</span>
+      <Button type="button" variant="ghost" size="xs" className="shrink-0" onClick={onDismiss} aria-label="Скрыть напоминание">
+        Понятно
+      </Button>
+    </div>
+  );
+}
+
 function Dashboard() {
   const [liveAgents, setLiveAgents] = useState([]);
   const [managerAgents, setManagerAgents] = useState([]);
@@ -40,9 +57,10 @@ function Dashboard() {
   const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
   const [headFilters, setHeadFilters] = useState({ lead: '', account: '' });
-  const [dateFilter, setDateFilter] = useState('');
+  const [onlyNew, setOnlyNew] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [ready, setReady] = useState(false);
+  useRouteBusy(!ready);
 
   const load = useCallback(() => {
     Promise.all([
@@ -128,49 +146,42 @@ function Dashboard() {
 
   return (
     <div className="container">
-          <DialogsToolbar
-            className="pt-5"
-            query={query}
-            onQueryChange={setQuery}
-            filters={headFilters}
-            onFiltersChange={setHeadFilters}
-            accounts={[...new Set(rows.map((r) => r.account_id).filter((a) => a != null))].sort()}
-          />
-          {/* Слоты под ошибку и напоминание держат высоту, чтобы страница не прыгала. */}
-          <div className="mt-4 min-h-[50px]">
-            {error && (
-              <Alert variant="destructive" role="alert">
-                <AlertDescription>Не удалось загрузить: {error}</AlertDescription>
-              </Alert>
-            )}
-          </div>
-          <StatsBar stats={stats} dateFilter={dateFilter} onDateFilterChange={setDateFilter} />
-          <div className="mt-3 min-h-[50px]">
-            {reminder && (
-              <Alert
-                variant="warning"
-                role="status"
-                data-testid="stage-reminder"
-                className="flex items-center justify-between gap-3 py-2"
-              >
-                <span>В {reminder.count} {reminder.count === 1 ? 'диалоге' : reminder.count < 5 ? 'диалогах' : 'диалогах'} не указан этап — выберите его в колонке «Стадия и режим».</span>
-                <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={dismissReminder} aria-label="Скрыть напоминание">Понятно</Button>
-              </Alert>
-            )}
-          </div>
-          <NeedManagerAssist agents={managerAgents} query={query} headFilters={headFilters} dateFilter={dateFilter} />
-          <LiveConversations agents={liveAgents} query={query} headFilters={headFilters} dateFilter={dateFilter} />
-          <ConversationsTable
-            ready={ready}
-            rows={rows}
-            query={query}
-            headFilters={headFilters}
-            dateFilter={dateFilter}
-            showHidden={showHidden}
-            onToggleShowHidden={setShowHidden}
-            onHide={toggleHidden}
-            onDealStage={changeDealStage}
-          />
+      <PageHeader title={showHidden ? 'Архив' : 'Диалоги'} />
+      <div className="flex flex-col gap-4 pb-10">
+        {/* Ошибка загрузки — исключительное состояние: появляется только когда она есть. */}
+        {error && (
+          <Alert variant="destructive" role="alert">
+            <CircleAlert aria-hidden="true" />
+            <AlertDescription>Не удалось загрузить: {error}</AlertDescription>
+          </Alert>
+        )}
+        <StatsBar stats={stats} />
+        <DialogsToolbar
+          query={query}
+          onQueryChange={setQuery}
+          filters={headFilters}
+          onFiltersChange={setHeadFilters}
+          accounts={[...new Set(rows.map((r) => r.account_id).filter((a) => a != null))].sort()}
+          newCount={rows.filter(waitsForManager).length}
+          onlyNew={onlyNew}
+          onOnlyNewChange={setOnlyNew}
+          showHidden={showHidden}
+          onToggleShowHidden={setShowHidden}
+        />
+        <NeedManagerAssist agents={managerAgents} query={query} headFilters={headFilters} />
+        <LiveConversations agents={liveAgents} query={query} headFilters={headFilters} />
+        <ConversationsTable
+          ready={ready}
+          rows={rows}
+          query={query}
+          headFilters={headFilters}
+          onlyNew={onlyNew}
+          showHidden={showHidden}
+          onHide={toggleHidden}
+          onDealStage={changeDealStage}
+          headerExtra={reminder && <StageReminder count={reminder.count} onDismiss={dismissReminder} />}
+        />
+      </div>
     </div>
   );
 }

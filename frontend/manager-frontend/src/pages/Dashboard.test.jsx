@@ -23,6 +23,10 @@ vi.mock('../api/conversations', () => ({
   setConversationHidden: vi.fn(),
 }));
 
+// Статистика живёт в своём модуле: без этой подмены запрос падал, и страница
+// в тестах оставалась без строк.
+vi.mock('../api/stats', () => ({ getStats: stats }));
+
 vi.mock('react-router-dom', async () => {
   const React = await import('react');
   return {
@@ -73,6 +77,41 @@ describe('главная панель: один список вместо дву
     const { host, root } = await draw();
     // Третья строка старше суток, значит в живых остаются две.
     expect(host.textContent).toContain('2');
+    await act(async () => root.unmount());
+  });
+
+  it('шапка страницы — «Диалоги», фильтра по периоду больше нет', async () => {
+    const { host, root } = await draw();
+    expect(host.querySelector('h1').textContent).toBe('Диалоги');
+    expect(host.textContent).not.toContain('Период');
+    await act(async () => root.unmount());
+  });
+
+  it('«Новые на ручном» смонтирована всегда и выключена, пока таких чатов нет', async () => {
+    const { host, root } = await draw();
+    const toggle = host.querySelector('[data-testid="filter-new"]');
+    expect(toggle.disabled).toBe(true);
+    expect(toggle.textContent).toContain('Новые на ручном · 0');
+    await act(async () => root.unmount());
+  });
+
+  it('напоминание об этапах — строка в шапке таблицы, «Понятно» её убирает', async () => {
+    window.localStorage.clear();
+    const { host, root } = await draw();
+    const hint = host.querySelector('[data-testid="stage-reminder"]');
+    expect(hint.textContent).toContain('В 3 диалогах не указан этап');
+    await act(async () => hint.querySelector('button[aria-label="Скрыть напоминание"]').click());
+    expect(host.querySelector('[data-testid="stage-reminder"]')).toBeNull();
+    await act(async () => root.unmount());
+  });
+
+  it('переключатель архива меняет заголовок и запрашивает архив', async () => {
+    const { host, root } = await draw();
+    const button = [...host.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Архив');
+    await act(async () => button.click());
+    expect(hidden).toHaveBeenCalled();
+    expect(host.querySelector('h1').textContent).toBe('Архив');
+    expect(host.textContent).toContain('Вернуться к диалогам');
     await act(async () => root.unmount());
   });
 });

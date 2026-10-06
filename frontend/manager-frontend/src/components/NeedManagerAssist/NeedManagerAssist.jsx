@@ -4,7 +4,7 @@ import { Label } from '@/components/ui/label';
 import { NativeCheckbox } from '@/components/ui/native-checkbox';
 import AgentCard from '../AgentCard/AgentCard';
 import SectionHeader from '../SectionHeader/SectionHeader';
-import { matchesQuery, matchesHeadFilters, matchesDateFilter } from '../../utils/search';
+import { matchesQuery, matchesHeadFilters } from '../../utils/search';
 
 const MANUAL_KEY = 'nastya_queue_manual_mode';
 
@@ -16,7 +16,7 @@ const readManualFlag = () => {
   }
 };
 
-function NeedManagerAssist({ agents = [], query = '', headFilters = {}, dateFilter = '' }) {
+function NeedManagerAssist({ agents = [], query = '', headFilters = {} }) {
   const [showCount, setShowCount] = useState(6);
   const [page, setPage] = useState(1);
   const [withManual, setWithManual] = useState(readManualFlag);
@@ -35,8 +35,7 @@ function NeedManagerAssist({ agents = [], query = '', headFilters = {}, dateFilt
     (a) =>
       (withManual || a.queue_reason !== 'manual_mode') &&
       matchesQuery(a, query) &&
-      matchesHeadFilters(a, headFilters) &&
-      matchesDateFilter(a, dateFilter),
+      matchesHeadFilters(a, headFilters),
   );
   const manualCount = agents.filter((a) => a.queue_reason === 'manual_mode').length;
 
@@ -52,7 +51,7 @@ function NeedManagerAssist({ agents = [], query = '', headFilters = {}, dateFilt
   }, [page, totalPages]);
 
   return (
-    <section className="pt-7">
+    <section>
       <SectionHeader
         title="Ждут менеджера"
         count={filtered.length}

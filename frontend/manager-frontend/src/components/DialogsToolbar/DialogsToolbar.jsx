@@ -1,4 +1,4 @@
-import { SlidersHorizontal } from 'lucide-react';
+import { Archive, ArrowLeft, SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -55,7 +55,7 @@ function DialogFilters({ value, onChange, accounts }) {
           </Badge>
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="flex w-[280px] flex-col gap-4 p-4">
+      <PopoverContent align="start" className="flex w-[280px] flex-col gap-4 p-4">
         <div className="flex min-h-5 items-center justify-between">
           <span className="text-sm font-medium">Фильтры</span>
           <Button
@@ -90,12 +90,26 @@ function DialogFilters({ value, onChange, accounts }) {
 }
 
 /**
- * Тулбар страницы диалогов: поиск и фильтры. Раньше стояли в шапке панели —
- * там они были видны только на этой странице и растягивали шапку на вторую строку.
+ * Тулбар страницы диалогов — одна строка: поиск, фильтры, «Новые на ручном»
+ * и справа переход в архив. Кнопки смонтированы всегда (выключаются через
+ * disabled), поэтому строка не перестраивается при обновлении данных.
  */
-export function DialogsToolbar({ query, onQueryChange, filters, onFiltersChange, accounts = [], className, children }) {
+export function DialogsToolbar({
+  query,
+  onQueryChange,
+  filters,
+  onFiltersChange,
+  accounts = [],
+  newCount = 0,
+  onlyNew = false,
+  onOnlyNewChange = null,
+  showHidden = false,
+  onToggleShowHidden = null,
+  className,
+  children,
+}) {
   return (
-    <div className={cn('flex flex-wrap items-center gap-2', className)}>
+    <div className={cn('flex min-h-8 flex-wrap items-center gap-2', className)}>
       <SearchInput
         className="w-full sm:w-[320px]"
         placeholder="Имя, номер, город, chat_id…"
@@ -104,7 +118,35 @@ export function DialogsToolbar({ query, onQueryChange, filters, onFiltersChange,
         onChange={onQueryChange}
       />
       <DialogFilters value={filters} onChange={onFiltersChange} accounts={accounts} />
+      {onOnlyNewChange && (
+        <Button
+          type="button"
+          variant={onlyNew ? 'secondary' : 'outline'}
+          size="sm"
+          aria-pressed={onlyNew}
+          disabled={newCount === 0 && !onlyNew}
+          onClick={() => onOnlyNewChange(!onlyNew)}
+          title="Чаты на ручном режиме, где клиент написал, а переписку ещё не открывали"
+          data-testid="filter-new"
+          className="shrink-0 font-normal"
+        >
+          Новые на ручном ·{' '}
+          <span className="min-w-[2ch] text-left tabular-nums">{newCount}</span>
+        </Button>
+      )}
       {children}
+      {onToggleShowHidden && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="ml-auto shrink-0 font-normal"
+          onClick={() => onToggleShowHidden(!showHidden)}
+        >
+          {showHidden ? <ArrowLeft aria-hidden="true" /> : <Archive aria-hidden="true" />}
+          {showHidden ? 'Вернуться к диалогам' : 'Архив'}
+        </Button>
+      )}
     </div>
   );
 }

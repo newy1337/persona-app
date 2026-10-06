@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
 import AgentCard from '../AgentCard/AgentCard';
 import SectionHeader from '../SectionHeader/SectionHeader';
-import { matchesQuery, matchesHeadFilters, matchesDateFilter } from '../../utils/search';
+import { matchesQuery, matchesHeadFilters } from '../../utils/search';
 
-function LiveConversations({ agents = [], query = '', headFilters = {}, dateFilter = '' }) {
+function LiveConversations({ agents = [], query = '', headFilters = {} }) {
   const [showCount, setShowCount] = useState(6);
   const [page, setPage] = useState(1);
 
   const filtered = agents.filter(
-    (a) => matchesQuery(a, query) && matchesHeadFilters(a, headFilters) && matchesDateFilter(a, dateFilter),
+    (a) => matchesQuery(a, query) && matchesHeadFilters(a, headFilters),
   );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / showCount));
@@ -23,7 +23,7 @@ function LiveConversations({ agents = [], query = '', headFilters = {}, dateFilt
   }, [page, totalPages]);
 
   return (
-    <section className="pt-7">
+    <section>
       <SectionHeader
         title="Активные диалоги"
         count={filtered.length === agents.length ? agents.length : `${filtered.length} из ${agents.length}`}

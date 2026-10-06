@@ -1,15 +1,15 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
+import { IconAction } from '../IconAction/IconAction';
 
 export const SHOW_OPTIONS = [3, 6, 9, 12];
 
 /**
- * Шапка секции с карточками: акцентная полоска, заголовок, счётчик и
- * правый блок управления — «Показать N», страницы. Доп. контролы секции
- * (например, галочка ручного режима) передаются детьми и встают перед селектом.
+ * Шапка секции с карточками: заголовок, счётчик и тихий правый блок —
+ * «Показать N» и листание. Доп. контролы секции (например, галочка ручного
+ * режима) передаются детьми и встают перед селектом.
  */
 function SectionHeader({
   title,
@@ -23,20 +23,19 @@ function SectionHeader({
   className,
 }) {
   return (
-    <div className={cn('mb-5 flex flex-wrap items-center justify-between gap-3', className)}>
-      <div className="flex min-w-0 items-center gap-3">
-        <span aria-hidden="true" className="h-5 w-0.5 shrink-0 rounded-full bg-primary" />
-        <h2 className="text-[15px] font-bold">{title}</h2>
-        <Badge variant="outline" className="h-5 min-w-7 tabular-nums">
+    <div className={cn('mb-2 flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-1', className)}>
+      <div className="flex min-w-0 items-center gap-2">
+        <h2 className="text-sm font-medium">{title}</h2>
+        <Badge variant="outline" className="h-5 min-w-7 font-normal tabular-nums text-muted-foreground">
           {count}
         </Badge>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         {children}
         <NativeSelect
           aria-label="Показать"
-          className="h-8 w-auto"
+          className="mr-1 h-8 w-auto text-xs"
           value={showCount}
           onChange={(e) => onShowCount(Number(e.target.value))}
         >
@@ -47,29 +46,21 @@ function SectionHeader({
           ))}
         </NativeSelect>
 
-        <Button
-          variant="outline"
-          size="icon"
-          className="size-8"
-          aria-label="Предыдущая страница"
+        <IconAction
+          icon={ChevronLeft}
+          label="Предыдущая страница"
           onClick={() => onPage(Math.max(1, page - 1))}
           disabled={page === 1}
-        >
-          <ChevronLeft />
-        </Button>
-        <span className="hidden min-w-16 text-center font-mono text-xs tabular-nums text-muted-foreground sm:inline-block">
-          <span className="text-foreground">{page}</span> / {totalPages}
+        />
+        <span className="hidden min-w-10 text-center text-xs tabular-nums text-muted-foreground sm:inline-block">
+          {page} / {totalPages}
         </span>
-        <Button
-          variant="outline"
-          size="icon"
-          className="size-8"
-          aria-label="Следующая страница"
+        <IconAction
+          icon={ChevronRight}
+          label="Следующая страница"
           onClick={() => onPage(Math.min(totalPages, page + 1))}
           disabled={page === totalPages}
-        >
-          <ChevronRight />
-        </Button>
+        />
       </div>
     </div>
   );

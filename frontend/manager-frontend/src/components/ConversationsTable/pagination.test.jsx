@@ -39,36 +39,59 @@ const draw = async (count) =>
   act(async () => root.render(<ConversationsTable rows={rows(count)} />));
 
 const pager = () => host.querySelector('nav[aria-label="Страницы диалогов"]');
-const buttons = () => [...host.querySelectorAll('nav button')];
+const prev = () => pager().querySelector('button[aria-label="Предыдущая страница"]');
+const next = () => pager().querySelector('button[aria-label="Следующая страница"]');
 const dataRows = () => host.querySelectorAll('tbody tr');
 
 describe('пагинация списка диалогов', () => {
-  it('до пятидесяти строк переключателя нет', async () => {
-    await draw(30);
+  it('до двадцати пяти строк переключателя нет', async () => {
+    await draw(20);
     expect(pager()).toBeNull();
-    expect(dataRows().length).toBe(30);
+    expect(dataRows().length).toBe(20);
   });
 
-  it('свыше пятидесяти показывается первая страница и переключатель', async () => {
+  it('свыше двадцати пяти показывается первая страница и переключатель', async () => {
     await draw(120);
-    expect(dataRows().length).toBe(50);
+    expect(dataRows().length).toBe(25);
     expect(pager()).not.toBeNull();
-    expect(host.textContent).toContain('1–50 из 120');
+    expect(host.textContent).toContain('1–25 из 120');
   });
 
-  it('«Назад» на первой странице недоступна', async () => {
+  it('«Предыдущая страница» на первой странице недоступна', async () => {
     await draw(120);
-    expect(buttons()[0].disabled).toBe(true);
+    expect(prev().disabled).toBe(true);
   });
 
-  it('«Вперёд» листает и доводит до последней страницы', async () => {
+  it('«Следующая страница» листает и доводит до последней страницы', async () => {
     await draw(120);
-    await act(async () => buttons()[1].click());
-    expect(host.textContent).toContain('51–100 из 120');
-    await act(async () => buttons()[1].click());
+    await act(async () => next().click());
+    expect(host.textContent).toContain('26–50 из 120');
+    for (let i = 0; i < 3; i += 1) {
+      await act(async () => next().click());
+    }
     expect(host.textContent).toContain('101–120 из 120');
     expect(dataRows().length).toBe(20);
-    expect(buttons()[1].disabled).toBe(true);
+    expect(next().disabled).toBe(true);
+  });
+
+  it('кнопка с номером открывает свою страницу и помечается текущей', async () => {
+    await draw(120);
+    await act(async () => pager().querySelector('button[aria-label="Страница 3"]').click());
+    expect(host.textContent).toContain('51–75 из 120');
+    expect(pager().querySelector('[aria-current="page"]').textContent).toBe('3');
+  });
+
+  it('размер страницы меняется и возвращает на первую страницу', async () => {
+    await draw(120);
+    await act(async () => next().click());
+    const size = host.querySelector('select[aria-label="Строк на странице"]');
+    expect([...size.options].map((o) => o.value)).toEqual(['25', '50', '100']);
+    await act(async () => {
+      size.value = '50';
+      size.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(host.textContent).toContain('1–50 из 120');
+    expect(dataRows().length).toBe(50);
   });
 
   it('в заголовке остаётся общее число, а не размер страницы', async () => {
