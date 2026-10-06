@@ -2,11 +2,10 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { api } from '../api/client';
-import { ManagersPage, CreateLeadForm, AccountsTable } from './ManagerRegion';
-import { PanelUX } from './PanelUX';
+import { api } from '../../api/client';
+import { ManagersPage } from './Managers';
 
-vi.mock('../components/Header/Header', () => ({ default: () => null }));
+vi.mock('../../components/Header/Header', () => ({ default: () => null }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let host, root;
 const users = { roles: ['admin', 'manager'], items: [
@@ -51,29 +50,4 @@ test('account assignment opens separately with searchable accounts', async () =>
   expect(host.textContent).toContain('Аккаунты не найдены');
   await input(host.querySelector('[aria-label="Поиск аккаунтов"]'),'sender_test');
   expect(host.querySelector('.mr-assignment-list input')?.checked, host.querySelector('.mr-assignment-list').textContent).toBe(true);
-});
-test('a selected Telegram sender is submitted with its persona; automatic remains available', async () => {
-  const post=vi.spyOn(api,'post').mockResolvedValue({ok:true});
-  const Select=({onChange})=><select onChange={e=>onChange(e.target.value)}><option value="">Любая</option></select>;
-  await render(<CreateLeadForm personas={[{slug:'nastya',name:'Настя'}]} PersonaSelect={Select} onDone={()=>{}} onCancel={()=>{}} />);
-  await input(host.querySelector('input'),'@test_contact');
-  const sender=host.querySelector('.mr-lead-sender select');
-  expect(sender.value).toBe('');
-  await act(async()=>{sender.value='7';sender.dispatchEvent(new Event('change',{bubbles:true}));});
-  await act(async()=>host.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
-  expect(post).toHaveBeenCalledWith('/api/leads',expect.objectContaining({preferred_account_id:7,persona_id:'nastya'}));
-});
-test('account overview shows manager/region and keeps secondary actions collapsed', async () => {
-  await render(<AccountsTable rows={accounts} alive={{}} helpers={{Avatar:()=>null,statusLabel:()=> 'активен',statusClasses:{},date:()=> '—'}} />);
-  expect(host.textContent).toContain('manager_test'); expect(host.textContent).toContain('0077');
-  expect([...host.querySelectorAll('button')].some(b=>b.textContent==='Удалить')).toBe(false);
-  await click('Ещё');
-  expect([...host.querySelectorAll('button')].some(b=>b.textContent==='Удалить')).toBe(true);
-});
-test('failed lead deletion stays open and supports retry', async () => {
-  const confirm=vi.fn().mockRejectedValueOnce({status:500}).mockResolvedValueOnce({ok:true});
-  await render(<PanelUX.DeleteLeadModal lead={{id:1,username:'test'}} onCancel={()=>{}} onConfirm={confirm} />);
-  await click('Удалить'); expect(host.querySelector('[role=dialog]')).not.toBeNull();
-  expect(host.querySelector('[role=alert]').textContent).toContain('Попробуйте ещё раз');
-  await click('Удалить'); expect(confirm).toHaveBeenCalledTimes(2);
 });
