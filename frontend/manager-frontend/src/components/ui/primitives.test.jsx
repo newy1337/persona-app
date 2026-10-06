@@ -369,10 +369,12 @@ describe('примитивы shadcn монтируются в этом прое�
     expect(btn?.className).toContain('h-7');
     expect(btn.className).toContain('text-xs');
     const [ok, warn] = el.querySelectorAll('[data-slot="badge"]');
-    expect(ok.className).toContain('bg-success');
-    expect(ok.className).toContain('text-success-foreground');
-    expect(warn.className).toContain('bg-warning');
-    expect(warn.className).toContain('text-warning-foreground');
+    // Статус — цветная точка у нейтрального текста, без заливки.
+    expect(ok.className).toContain('before:bg-success-foreground');
+    expect(ok.className).toContain('text-foreground');
+    expect(ok.className.split(' ')).not.toContain('bg-success');
+    expect(warn.className).toContain('before:bg-warning-foreground');
+    expect(warn.className.split(' ')).not.toContain('bg-warning');
   });
 
   it('подвал таблицы и общие наборы классов', async () => {
@@ -453,7 +455,8 @@ describe('примитивы shadcn монтируются в этом прое�
     expect(danger.getAttribute('role')).toBe('alert');
     expect(danger.className).toContain('text-destructive');
     expect(warn.getAttribute('role')).toBe('status');
-    expect(warn.className).toContain('bg-warning');
+    expect(warn.className).toContain('border-warning-foreground/30');
+    expect(warn.className.split(' ')).not.toContain('bg-warning');
   });
 
   it('диалог, панель и поповер без портала остаются внутри хоста', async () => {

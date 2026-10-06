@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Header from '../../components/Header/Header';
 import { getUsage, getManagerUsage, getBalance, getDealStages } from '../../api/usage';
 import DailyChart, { DailyChartSkeleton } from './DailyChart';
 import DateRangePicker, { mskToday, addDays } from '../../components/DateRangePicker/DateRangePicker';
@@ -219,9 +218,7 @@ export default function Stats() {
     ) : null;
 
   return (
-    <div className="app">
-      <Header />
-      <main className="main">
+    <>
         <div className="container pb-8">
           <div className="my-6 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-semibold">Статистика</h2>
@@ -383,7 +380,6 @@ export default function Stats() {
             </div>
           </div>
         </div>
-      </main>
-    </div>
+    </>
   );
 }

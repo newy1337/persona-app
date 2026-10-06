@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils';
  * (первый дочерний <svg>), заголовком и описанием во второй колонке.
  * По умолчанию role="status" — сообщение не перебивает чтение экрана;
  * для срочных ошибок передайте role="alert".
+ * Заливки нет ни у одного варианта: предупреждение — нейтральная карточка с
+ * янтарной рамкой и иконкой, ошибка — красный текст на карточке.
  */
 const alertVariants = cva(
   'relative grid w-full grid-cols-[0_1fr] items-start gap-y-0.5 rounded-lg border px-4 py-3 text-sm has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] has-[>svg]:gap-x-3 [&>svg]:size-4 [&>svg]:translate-y-0.5 [&>svg]:text-current',
@@ -16,7 +18,7 @@ const alertVariants = cva(
         destructive:
           'bg-card text-destructive border-destructive/30 *:data-[slot=alert-description]:text-destructive/90',
         warning:
-          'bg-warning text-warning-foreground border-warning-foreground/20 *:data-[slot=alert-description]:text-warning-foreground/90',
+          'bg-card text-card-foreground border-warning-foreground/30 [&>svg]:text-warning-foreground *:data-[slot=alert-description]:text-foreground',
       },
     },
     defaultVariants: { variant: 'default' },

@@ -8,7 +8,6 @@ import { PanelUX } from '../../ui/PanelUX';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { stageColors } from '../../data/stages';
-import Header from '../../components/Header/Header';
 import MediaGallery from '../../components/MediaGallery/MediaGallery';
 import Sidebar from './Sidebar';
 import ChatTopBar from './ChatTopBar';
@@ -29,7 +28,6 @@ import {
   fmtChatDate,
   loadReadCursor,
   saveReadCursor,
-  liveRows,
 } from '../../utils/chat';
 import {
   getConversationById,
@@ -55,7 +53,8 @@ const MAX_ALBUM = 10;
 
 // Каркас страницы. Те же классы собирают и готовую страницу, и скелетон первой
 // загрузки — поэтому высоты полос совпадают по построению.
-const PAGE = 'flex h-dvh flex-col overflow-hidden bg-background';
+/* Каркас (AppLayout) держит экранную высоту; страница занимает всё под шапкой. */
+const PAGE = 'flex min-h-0 flex-1 flex-col bg-background';
 const SUB_HEADER = 'shrink-0 border-b bg-background py-2';
 const SUB_ROW = 'container flex items-center gap-2';
 const BODY = 'flex min-h-0 flex-1';
@@ -135,7 +134,6 @@ function ConversationPage() {
   const [inboundMedia, setInboundMedia] = useState([]);
 
   const [chats, setChats] = useState(null);
-  const [liveCount, setLiveCount] = useState(0);
   const [stickyDate, setStickyDate] = useState('');
   const [readUpTo, setReadUpTo] = useState(() => loadReadCursor(id));
   const [draft, setDraft] = useState('');
@@ -210,11 +208,9 @@ function ConversationPage() {
     getConversations()
       .then((rows) => {
         setChats(rows);
-        setLiveCount(liveRows(rows).length);
       })
       .catch(() => {
         setChats([]);
-        setLiveCount(0);
       });
   }, [id]);
 
@@ -555,7 +551,6 @@ function ConversationPage() {
   if (error && !data) {
     return (
       <div className={PAGE}>
-        <Header />
         <div className="container">
           <Alert variant="destructive" role="alert" className="my-6">
             <AlertDescription className="block">
@@ -569,7 +564,6 @@ function ConversationPage() {
   if (!data) {
     return (
       <div className={PAGE}>
-        <Header />
         <PageSkeleton />
       </div>
     );
@@ -603,8 +597,6 @@ function ConversationPage() {
 
   return (
     <div className={PAGE}>
-      <Header liveCount={liveCount} />
-
       <div className={`subHeader ${SUB_HEADER}`}>
         <div className={SUB_ROW}>
           <Button variant="outline" className="backBtn mr-auto" onClick={() => navigate('/')}>

@@ -3,21 +3,25 @@ import { cva } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 /**
- * Варианты success / warning опираются на токены --success / --warning из
- * theme.css: приглушённые, с низкой насыщенностью, чтобы не спорить с синим
- * primary. Цвета стадий диалогов сюда не входят — они по-прежнему задаются
- * инлайном через --badge-color / --badge-bg из data/stages.js.
+ * Статусные варианты (success / warning / destructive) — нейтральный текст и
+ * цветная точка слева, без заливки: цвет несёт смысл, но не спорит с остальным
+ * интерфейсом. default — мягкая синяя подложка для единственной выделенной
+ * метки в блоке; secondary и outline — нейтральные. Цвета стадий диалогов
+ * приходят из data/stages.js и выводятся такой же точкой.
  */
+const DOT =
+  "gap-1.5 text-foreground before:size-1.5 before:shrink-0 before:rounded-full before:content-['']";
+
 const badgeVariants = cva(
   'inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 gap-1 [&>svg]:size-3 transition-[color,box-shadow] overflow-hidden',
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-primary text-primary-foreground [a&]:hover:bg-primary/90',
+        default: 'border-primary/30 bg-primary/10 text-foreground',
         secondary: 'border-transparent bg-secondary text-secondary-foreground',
-        destructive: 'border-transparent bg-destructive text-white',
-        success: 'border-transparent bg-success text-success-foreground',
-        warning: 'border-transparent bg-warning text-warning-foreground',
+        destructive: `${DOT} before:bg-destructive`,
+        success: `${DOT} before:bg-success-foreground`,
+        warning: `${DOT} before:bg-warning-foreground`,
         outline: 'text-foreground',
       },
     },

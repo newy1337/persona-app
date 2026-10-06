@@ -1,6 +1,5 @@
 import { PanelUX } from '../../ui/PanelUX';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Header from '../../components/Header/Header';
 import {
   createPersona,
   deletePersona,
@@ -352,9 +351,7 @@ export default function Personas() {
   const detailLoading = !persona && (!booted || selected != null);
 
   return (
-    <div className="app">
-      <Header />
-      <main className="main">
+    <>
         <div className="container">
           <div className="my-6 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-semibold">Личности</h2>
@@ -524,7 +521,6 @@ export default function Personas() {
             </Card>
           </div>
         </div>
-      </main>
-    </div>
+    </>
   );
 }

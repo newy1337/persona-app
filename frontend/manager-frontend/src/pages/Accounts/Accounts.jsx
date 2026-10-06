@@ -1,7 +1,6 @@
 import { AccountsTable } from '../../ui/ManagerRegion';
 import { PanelUX } from '../../ui/PanelUX';
 import { useCallback, useEffect, useState } from 'react';
-import Header from '../../components/Header/Header';
 import {
   addAccount,
   deleteAccount,
@@ -180,9 +179,7 @@ export default function Accounts() {
   }
 
   return (
-    <div className="app">
-      <Header />
-      <main className="main">
+    <>
         <div className="container">
           <div className="my-6 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-semibold">Telegram-аккаунты</h2>
@@ -204,7 +201,6 @@ export default function Accounts() {
               helpers={{ Avatar: ClientAvatar, statusLabel: accountStatusLabel, statusClasses: {}, date: fmtTs }} />
           )}
         </div>
-      </main>
 
       {auth && <AuthWizard account={auth} onClose={() => { setAuth(null); load(); }} />}
       {proxyFor && <ProxyDialog account={proxyFor} onClose={() => { setProxyFor(null); load(); }} />}
@@ -222,6 +218,6 @@ export default function Accounts() {
           }}
         />
       )}
-    </div>
+    </>
   );
 }

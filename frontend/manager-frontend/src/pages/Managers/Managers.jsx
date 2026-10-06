@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import { api } from '../../api/client';
-import Nav from '../../components/Header/Header';
 import { getAccounts as loadAccounts } from '../../api/accounts';
 import { PanelUX as ux } from '../../ui/PanelUX';
 import { VoiceBotLink } from '../VoiceWork/VoiceBotLink';
@@ -304,9 +303,7 @@ export function ManagersPage() {
   const visible = managerList.filter(user => [user.username, user.region_code, roles[user.role]].some(value => String(value || '').toLowerCase().includes(needle)));
   const cell = cn('p-3 align-top whitespace-normal [overflow-wrap:anywhere]', cardCell);
   return (
-    <div className="app">
-      <Nav />
-      <main className="main">
+    <>
         <div className="container">
           <div className="my-6 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-semibold">Менеджеры</h2>
@@ -374,8 +371,7 @@ export function ManagersPage() {
           {editing && <ManagerEditor key={editing.user_id} user={editing} me={me} roleList={data.roles} voicerList={voicerList} onSave={save} onClose={() => setEditing(null)} />}
           {assigning && <AccountAssignment key={assigning.user_id} user={assigning} userList={managerList} accountList={accountList} onSave={save} onClose={() => setAssigning(null)} />}
         </div>
-      </main>
-    </div>
+    </>
   );
 }
 

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import Header from '../../components/Header/Header';
 import { getSettings, updateSettings } from '../../api/settings';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -137,9 +136,7 @@ export default function Settings() {
   const triggers = settings?.handoff_triggers ?? [];
 
   return (
-    <div className="app">
-      <Header />
-      <main className="main">
+    <>
         <div className="container">
           <div className="my-6 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-semibold">Настройки</h2>
@@ -165,7 +162,6 @@ export default function Settings() {
             )}
           </section>
         </div>
-      </main>
-    </div>
+    </>
   );
 }

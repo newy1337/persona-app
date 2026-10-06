@@ -4,7 +4,6 @@ import { CallBrief } from './CallBrief';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Download, ExternalLink, LoaderCircle, Play, Plus, Search, Send } from 'lucide-react';
-import Header from '../../components/Header/Header';
 import VoicePlayer from '../../components/VoicePlayer/VoicePlayer';
 import { api, authHeaders } from '../../api/client';
 import { SendVoice, DeliveryStatus } from './SendVoice';
@@ -264,7 +263,7 @@ export default function VoiceWork() {
   const manager = options && options.role !== 'voice';
   const pages = Math.max(1, Math.ceil(total / PAGE));
   const emptyText = shown === 'library' ? 'Записей пока нет. Они появятся после выполнения заданий в Telegram.' : search || status !== 'active' ? 'По выбранным условиям заданий нет.' : 'Очередь пуста. Здесь появятся задания на голосовые и звонки.';
-  return <div className="app"><Header /><main className="main"><div className="container">
+  return <div className="container">
     <div className="my-6 flex min-w-0 flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-semibold">Войсер</h2><p className={muted}>Голосовые, звонки и готовые записи</p></div><div className="flex min-h-9 flex-wrap items-center gap-2">
       {context.get('chat') && options?.role !== 'voice' && <Button asChild variant="outline"><Link to={`/conversation/${context.get('chat')}`}>Вернуться в диалог</Link></Button>}
       {!options && <Skeleton className="h-9 w-[148px]" />}
@@ -305,5 +304,5 @@ export default function VoiceWork() {
     </>}
     {creating && manager && <CreateTask options={options} context={context} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); changeTab('tasks'); setStatus('active'); load(); }} />}
     {detail && <TaskDetail key={detail.id} task={detail} role={options.role} bot={options.bot} initialView={context.get('view')} onClose={closeDetail} onChange={load} />}
-  </div></main></div>;
+  </div>;
 }

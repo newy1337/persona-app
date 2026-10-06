@@ -93,7 +93,6 @@ function unmount() {
   root = null;
 }
 
-const liveCount = () => container.querySelector('[class*="liveCount"]')?.textContent;
 const navButton = (name) => container.querySelector(`button[aria-label="${name}"]`);
 
 beforeEach(() => {
@@ -110,11 +109,6 @@ afterEach(() => {
 });
 
 describe('ConversationPage: шапка и навигация по чатам', () => {
-  it('LIVE в шапке считается из списка диалогов: два свежих, третий старше суток', async () => {
-    await renderPage();
-    expect(liveCount()).toBe('2');
-  });
-
   it('в sub-header стоят стрелки и «К дашборду», позиция 1 из 3', async () => {
     await renderPage();
     expect(navButton('Предыдущий чат')).toBeTruthy();

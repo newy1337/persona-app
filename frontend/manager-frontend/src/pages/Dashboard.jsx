@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import Header from '../components/Header/Header';
+import { DialogsToolbar } from '../components/DialogsToolbar/DialogsToolbar';
 import NeedManagerAssist from '../components/NeedManagerAssist/NeedManagerAssist';
 import LiveConversations from '../components/LiveConversations/LiveConversations';
 import StatsBar from '../components/StatsBar/StatsBar';
@@ -127,17 +127,15 @@ function Dashboard() {
   }, [load]);
 
   return (
-    <div className="app">
-      <Header
-        liveCount={liveAgents.length}
-        query={query}
-        onQueryChange={setQuery}
-        filters={headFilters}
-        onFiltersChange={setHeadFilters}
-        accounts={[...new Set(rows.map((r) => r.account_id).filter((a) => a != null))].sort()}
-      />
-      <main className="main">
-        <div className="container">
+    <div className="container">
+          <DialogsToolbar
+            className="pt-5"
+            query={query}
+            onQueryChange={setQuery}
+            filters={headFilters}
+            onFiltersChange={setHeadFilters}
+            accounts={[...new Set(rows.map((r) => r.account_id).filter((a) => a != null))].sort()}
+          />
           {/* Слоты под ошибку и напоминание держат высоту, чтобы страница не прыгала. */}
           <div className="mt-4 min-h-[50px]">
             {error && (
@@ -173,8 +171,6 @@ function Dashboard() {
             onHide={toggleHidden}
             onDealStage={changeDealStage}
           />
-        </div>
-      </main>
     </div>
   );
 }

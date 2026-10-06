@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Loader2, Search } from 'lucide-react';
-import Header from '../../components/Header/Header';
 import { PanelUX } from '../../ui/PanelUX';
 import { CreateLeadForm } from './CreateLeadForm';
 import { LeadsTable } from './LeadsTable';
@@ -267,9 +266,7 @@ export default function Leads() {
   const items = data.items ?? [];
 
   return (
-    <div className="app">
-      <Header />
-      <main className="main">
+    <>
         <div className="container">
           <div className="my-6 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-semibold">Лиды</h2>
@@ -337,7 +334,6 @@ export default function Leads() {
             onPersonaChange={(id, persona_id) => run(() => updateLead(id, { persona_id }))}
             personas={personas} helpers={{ PersonaSelect, statusLabels: LABEL, statusBadges: BADGE, date: fmtTs }} />
         </div>
-      </main>
       {importing && <ImportDialog personas={personas} onClose={() => { setImporting(false); load(); }} />}
       {deleting && (
         <DeleteLeadDialog
@@ -361,6 +357,6 @@ export default function Leads() {
           }}
         />
       )}
-    </div>
+    </>
   );
 }
