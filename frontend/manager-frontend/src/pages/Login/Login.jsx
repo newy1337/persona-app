@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { api, ApiError, setTokens } from '../../api/client';
-import styles from './Login.module.scss';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
 
 export default function Login({ onDone }) {
   const [username, setUsername] = useState('');
@@ -29,32 +32,38 @@ export default function Login({ onDone }) {
   }
 
   return (
-    <div className={styles.wrap}>
-      <form className={styles.card} onSubmit={submit}>
-        <h1 className={styles.title}>Панель менеджера</h1>
-        <input
-          className={styles.field}
-          placeholder="логин"
-          autoFocus
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-        />
-        <input
-          className={styles.field}
-          type="password"
-          placeholder="пароль"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        {error && <p className={styles.error}>{error}</p>}
-        <button
-          className={styles.submit}
-          type="submit"
-          disabled={busy || !username || !password}
-        >
-          {busy ? 'Вход…' : 'Войти'}
-        </button>
-      </form>
+    <div className="flex min-h-dvh items-center justify-center bg-background p-4">
+      <Card className="w-[360px] max-w-full gap-4 py-6">
+        <CardHeader className="px-6">
+          <h1 className="text-lg leading-none font-semibold">Панель менеджера</h1>
+        </CardHeader>
+        <CardContent className="px-6">
+          <form className="flex flex-col gap-2" onSubmit={submit}>
+            <Field label="Логин">
+              <Input
+                placeholder="логин"
+                autoFocus
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </Field>
+            <Field label="Пароль">
+              <Input
+                type="password"
+                placeholder="пароль"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </Field>
+            <p className="min-h-5 text-sm text-destructive" role="alert">{error}</p>
+            <Button type="submit" size="lg" className="w-full" disabled={busy || !username || !password}>
+              {busy ? 'Вход…' : 'Войти'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -1,19 +1,28 @@
+import { AlertCircle, Check, Loader2, X } from 'lucide-react';
+import { Button } from '../components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../components/ui/dialog';
+import { NativeCheckbox } from '../components/ui/native-checkbox';
+import { cn } from '../lib/utils';
 import { createActionStore, readableError } from './action-store';
 export { createActionStore, readableError, actionLabels } from './action-store';
 
-export function createPanelUX({ React, api, styles: s }) {
+/* Компенсация ширины полосы прокрутки от react-remove-scroll (внутри Radix
+   Dialog) не нужна: html уже держит место под неё через scrollbar-gutter: stable,
+   и лишний margin-right сдвигал бы страницу на 15px при открытии окна. */
+const SCROLL_LOCK_FIX = 'html body[data-scroll-locked]{margin-right:0!important}';
+
+export function createPanelUX({ React, api }) {
   const h = React.createElement;
-  const { useState, useEffect, useRef, useId, useSyncExternalStore } = React;
-  const actions = createActionStore(api);
+  const { useState, useRef, useSyncExternalStore } = React;
+  const store = createActionStore(api);
   let confirmation = null;
-  const confirmationListeners = new Set(), modalStack = [];
-  let savedOverflow;
-  const updateConfirmation = () => { for (const listener of confirmationListeners) listener(); };
-  const subscribeConfirmation = listener => { confirmationListeners.add(listener); return () => confirmationListeners.delete(listener); };
-  const useActions = () => useSyncExternalStore(actions.subscribe, actions.getSnapshot);
-  function confirm(options) {
+  const listenerSet = new Set();
+  const updateConfirmation = () => { for (const listener of listenerSet) listener(); };
+  const subscribeConfirmation = listener => { listenerSet.add(listener); return () => listenerSet.delete(listener); };
+  const useActions = () => useSyncExternalStore(store.subscribe, store.getSnapshot);
+  function confirm(input) {
     if (confirmation) return Promise.resolve(false);
-    const config = typeof options === 'string' ? { message: options } : options;
+    const config = typeof input === 'string' ? { message: input } : input;
     let resolve;
     const promise = new Promise(done => { resolve = done; });
     confirmation = { ...config, resolve, promise };
@@ -21,54 +30,71 @@ export function createPanelUX({ React, api, styles: s }) {
     return promise;
   }
   function answer(value) {
-    const previous = confirmation;
+    const current = confirmation;
     confirmation = null;
     updateConfirmation();
-    previous?.resolve(value);
+    current?.resolve(value);
   }
   function Modal({ title, children, footer, onClose, busy = false, wide = false }) {
-    const ref = useRef(null), closeRef = useRef(onClose), busyRef = useRef(busy), titleId = useId();
+    const closeRef = useRef(onClose), busyRef = useRef(busy);
     closeRef.current = onClose; busyRef.current = busy;
-    useEffect(() => {
-      const previous = document.activeElement, node = ref.current;
-      if (!modalStack.length) { savedOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
-      modalStack.push(node);
-      const focusable = () => [...node.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(item => item.getClientRects().length);
-      (node.querySelector('[data-autofocus]') || focusable()[0] || node).focus();
-      function keydown(event) {
-        if (modalStack.at(-1) !== node) return;
-        if (event.key === 'Escape' && !busyRef.current) { event.preventDefault(); event.stopPropagation(); closeRef.current(); }
-        if (event.key !== 'Tab') return;
-        const fields = focusable(), first = fields[0], last = fields.at(-1);
-        if (!first) { event.preventDefault(); node.focus(); }
-        else if (event.shiftKey && (document.activeElement === first || !node.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
-        else if (!event.shiftKey && (document.activeElement === last || !node.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
-      }
-      document.addEventListener('keydown', keydown, true);
-      return () => {
-        document.removeEventListener('keydown', keydown, true);
-        modalStack.splice(modalStack.indexOf(node), 1);
-        if (!modalStack.length) document.body.style.overflow = savedOverflow;
-        if (previous?.isConnected) previous.focus();
-      };
-    }, []);
-    return h('div', { className: 'ux-overlay', onMouseDown: event => { if (event.target === event.currentTarget && !busy) onClose(); } },
-      h('section', { ref, className: `ux-modal ${wide ? 'ux-modal-wide' : ''}`, role: 'dialog', 'aria-modal': true, 'aria-labelledby': titleId, tabIndex: -1, 'aria-busy': busy },
-        h('header', { className: 'ux-modal-head' }, h('h3', { id: titleId }, title)),
-        h('div', { className: 'ux-modal-body' }, children),
-        footer && h('footer', { className: 'ux-modal-footer' }, footer)));
+    // Кто открыл окно — туда и возвращаем фокус при закрытии. Снимок берём
+    // при первом рендере: эффекты FocusScope уже успели бы перевести фокус внутрь.
+    const [opener] = useState(() => (typeof document === 'undefined' ? null : document.activeElement));
+    const blockWhenBusy = event => { if (busyRef.current) event.preventDefault(); };
+    return h(Dialog, { open: true, onOpenChange: open => { if (!open) closeRef.current(); } },
+      h(DialogContent, {
+        portal: false,
+        showCloseButton: false,
+        className: cn('flex max-h-[calc(100dvh-3rem)] flex-col gap-0 overflow-hidden p-0', wide && 'sm:max-w-2xl'),
+        'aria-busy': busy,
+        'aria-describedby': undefined,
+        onOpenAutoFocus: event => {
+          const target = event.currentTarget?.querySelector?.('[data-autofocus]');
+          if (target) { event.preventDefault(); target.focus(); }
+        },
+        onCloseAutoFocus: event => {
+          event.preventDefault();
+          if (opener?.isConnected && typeof opener.focus === 'function') opener.focus();
+        },
+        onEscapeKeyDown: blockWhenBusy,
+        onPointerDownOutside: blockWhenBusy,
+        onInteractOutside: blockWhenBusy,
+      },
+      h('div', { className: 'shrink-0 border-b px-5 py-4' },
+        h(DialogTitle, { className: 'text-base leading-snug font-semibold [overflow-wrap:anywhere]' }, title)),
+      h('div', { className: 'min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 text-sm leading-relaxed [scrollbar-gutter:stable]' }, children),
+      footer && h('div', { className: 'flex shrink-0 flex-wrap items-center justify-end gap-2 border-t bg-muted/30 px-5 py-4' }, footer)));
   }
+  const noticeIcon = status => status === 'pending'
+    ? h(Loader2, { className: 'size-4 shrink-0 animate-spin text-muted-foreground', 'aria-hidden': true })
+    : status === 'success'
+      ? h(Check, { className: 'size-4 shrink-0 text-success-foreground', 'aria-hidden': true })
+      : h(AlertCircle, { className: 'size-4 shrink-0 text-destructive', 'aria-hidden': true });
   function FeedbackHost() {
     const state = useActions();
     const question = useSyncExternalStore(subscribeConfirmation, () => confirmation);
+    const noticeList = state.notices;
     return h(React.Fragment, null,
-      h('div', { className: 'ux-notices', 'aria-label': 'Результаты действий' }, state.notices.map(item => h('div', { key: item.id, className: `ux-notice ux-notice-${item.status}`, role: item.status === 'error' ? 'alert' : 'status', 'aria-live': item.status === 'error' ? 'assertive' : 'polite' },
-        h('span', { className: 'ux-notice-icon', 'aria-hidden': true }, item.status === 'pending' ? '◌' : item.status === 'success' ? '✓' : '!'),
-        h('span', null, item.text),
-        item.status !== 'pending' && h('button', { type: 'button', 'aria-label': 'Закрыть уведомление', onClick: () => actions.dismiss(item.id) }, '×')))),
+      h('style', null, SCROLL_LOCK_FIX),
+      h('div', { className: 'pointer-events-none fixed top-[calc(var(--header-h)+1rem)] right-5 z-[70] grid w-[min(380px,calc(100vw-2.5rem))] gap-2', 'aria-label': 'Результаты действий' },
+        noticeList.map(item => h('div', {
+          key: item.id,
+          role: item.status === 'error' ? 'alert' : 'status',
+          'aria-live': item.status === 'error' ? 'assertive' : 'polite',
+          className: cn('pointer-events-auto flex min-h-11 items-center gap-2.5 rounded-lg border bg-popover px-3.5 py-2 text-sm text-popover-foreground shadow-lg',
+            item.status === 'success' && 'border-success-foreground/40',
+            item.status === 'error' && 'border-destructive/50'),
+        },
+        noticeIcon(item.status),
+        h('span', { className: 'min-w-0 flex-1 [overflow-wrap:anywhere]' }, item.text),
+        item.status === 'pending'
+          ? h('span', { className: 'size-7 shrink-0', 'aria-hidden': true })
+          : h(Button, { type: 'button', variant: 'ghost', size: 'icon', className: 'size-7', 'aria-label': 'Закрыть уведомление', onClick: () => store.dismiss(item.id) }, h(X, { className: 'size-4' }))))),
       question && h(Modal, { title: question.title || 'Подтвердите действие', onClose: () => answer(false), footer: h(React.Fragment, null,
-        h('button', { type: 'button', className: s.btn, 'data-autofocus': true, onClick: () => answer(false) }, 'Отмена'),
-        h('button', { type: 'button', className: question.danger ? s.btnDanger : s.btnPrimary, onClick: () => answer(true) }, question.confirmLabel || 'Подтвердить')) }, h('p', { className: 'ux-confirm-text' }, question.message)));
+        h(Button, { type: 'button', variant: 'outline', 'data-autofocus': true, onClick: () => answer(false) }, 'Отмена'),
+        h(Button, { type: 'button', variant: question.danger ? 'destructive' : 'default', onClick: () => answer(true) }, question.confirmLabel || 'Подтвердить')) },
+      h(DialogDescription, { className: 'whitespace-pre-line [overflow-wrap:anywhere]' }, question.message)));
   }
   function DeleteLeadModal({ lead, onCancel, onConfirm }) {
     const [telegram, setTelegram] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -81,12 +107,14 @@ export function createPanelUX({ React, api, styles: s }) {
       finally { lock.current = false; setBusy(false); }
     }
     return h(Modal, { title: `Удалить лид ${lead.phone_e164 || '@' + lead.username}?`, busy, onClose: onCancel, footer: h(React.Fragment, null,
-      h('button', { type: 'button', className: s.btn, disabled: busy, 'data-autofocus': true, onClick: onCancel }, 'Отмена'),
-      h('button', { type: 'button', className: s.btnDanger, disabled: busy, onClick: submit }, busy ? 'Удаляем…' : telegram ? 'Удалить с перепиской' : 'Удалить')) },
-      h('p', { className: 'ux-confirm-text' }, lead.telegram_user_id ? 'Удалятся переписка в панели, память бота и карточка. Если добавить этого человека снова, знакомство начнётся заново.' : 'Удалится только запись лида в базе.'),
-      lead.telegram_user_id && h('label', { className: 'ux-check' }, h('input', { type: 'checkbox', checked: telegram, disabled: busy, onChange: event => setTelegram(event.target.checked) }), 'Удалить переписку в Telegram у обоих участников'),
-      telegram && h('p', { className: 'ux-inline-error' }, 'Сообщения исчезнут у обоих. Отменить это нельзя.'),
-      error && h('p', { className: 'ux-inline-error', role: 'alert' }, error));
+      h(Button, { type: 'button', variant: 'outline', disabled: busy, 'data-autofocus': true, onClick: onCancel }, 'Отмена'),
+      h(Button, { type: 'button', variant: 'destructive', disabled: busy, onClick: submit }, busy ? 'Удаляем…' : telegram ? 'Удалить с перепиской' : 'Удалить')) },
+    h(DialogDescription, { className: 'whitespace-pre-line [overflow-wrap:anywhere]' }, lead.telegram_user_id ? 'Удалятся переписка в панели, память бота и карточка. Если добавить этого человека снова, знакомство начнётся заново.' : 'Удалится только запись лида в базе.'),
+    lead.telegram_user_id && h('label', { className: 'mt-4 flex cursor-pointer items-start gap-2.5 text-sm text-foreground' },
+      h(NativeCheckbox, { className: 'mt-0.5', checked: telegram, disabled: busy, onChange: event => setTelegram(event.target.checked) }),
+      'Удалить переписку в Telegram у обоих участников'),
+    lead.telegram_user_id && h('div', { className: 'mt-3 min-h-5 text-xs text-destructive' }, telegram && h('p', null, 'Сообщения исчезнут у обоих. Отменить это нельзя.')),
+    h('div', { className: 'mt-3 min-h-5 text-xs text-destructive' }, error && h('p', { role: 'alert' }, error)));
   }
-  return { Modal, FeedbackHost, DeleteLeadModal, confirm, useActions, readableError, ...actions };
+  return { Modal, FeedbackHost, DeleteLeadModal, confirm, useActions, readableError, ...store };
 }
