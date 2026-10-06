@@ -12,9 +12,6 @@ export default defineConfig(({ mode }) => {
   return {
     base: '/',
     plugins: [react(), tailwind()],
-    esbuild: {
-      jsx: 'automatic',
-    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src'),
