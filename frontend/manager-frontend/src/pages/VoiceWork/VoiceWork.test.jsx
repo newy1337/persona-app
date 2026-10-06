@@ -148,7 +148,7 @@ test('pages through tasks with the shared pager and asks the server for the chos
   const task = id => ({ id, title: `Задание ${id}`, kind: 'voice', voiceMode: 'library', status: 'queued', script: 'Текст', createdAt: 1 });
   result = { total: 95, items: [task(1), task(2)] };
   await render();
-  expect(host.querySelector('[role=status]').textContent).toBe('1–40 из 95');
+  expect(host.querySelector('[role=status]').textContent).toBe('Всего: 95 · 1–40');
   const nav = host.querySelector('nav[aria-label="Страницы заданий"]');
   expect(nav.querySelector('[aria-current=page]').textContent).toBe('1');
   await act(async () => nav.querySelector('[aria-label="Страница 2"]').click());

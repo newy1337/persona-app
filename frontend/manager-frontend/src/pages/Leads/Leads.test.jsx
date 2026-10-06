@@ -68,7 +68,7 @@ const byLabel = (label, scope = document) => scope.querySelector(`[aria-label="$
 const buttonByText = (text, scope = host) => [...scope.querySelectorAll('button')].find((b) => b.textContent.trim() === text);
 const lastQuery = () => leadsApi.getLeads.mock.calls.at(-1)[0];
 const rowIds = () => [...host.querySelectorAll('[data-lead-id]')].map((r) => Number(r.dataset.leadId));
-const pagerStatus = () => [...host.querySelectorAll('[role="status"]')].map((n) => n.textContent).find((t) => /из \d+|Нет записей/.test(t));
+const pagerStatus = () => [...host.querySelectorAll('[role="status"]')].map((n) => n.textContent).find((t) => t.startsWith('Всего: '));
 const stage = (label) => [...byLabel('Статус', host).querySelectorAll('button')].find((b) => b.textContent.startsWith(label));
 const openMenu = async (row) => {
   await act(async () => byLabel('Ещё', row).dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 })));
@@ -96,12 +96,12 @@ describe('лиды: постраничный список', () => {
     expect(lastQuery()).toEqual({ status: '', q: '', limit: 25, offset: 0 });
     expect(rowIds()).toHaveLength(25);
     expect(rowIds()[0]).toBe(60);
-    expect(pagerStatus()).toBe('1–25 из 60');
+    expect(pagerStatus()).toBe('Всего: 60 · 1–25');
 
     await click(byLabel('Страница 2', host));
     expect(lastQuery()).toMatchObject({ limit: 25, offset: 25 });
     expect(rowIds()[0]).toBe(35);
-    expect(pagerStatus()).toBe('26–50 из 60');
+    expect(pagerStatus()).toBe('Всего: 60 · 26–50');
     expect(byLabel('Страница 2', host).getAttribute('aria-current')).toBe('page');
   });
 
@@ -149,23 +149,25 @@ describe('лиды: постраничный список', () => {
     expect(rowIds()[0]).toBe(35);
   });
 
-  it('старый бэкенд без total: считаем по пришедшим строкам, переключателя страниц нет', async () => {
+  it('старый бэкенд без total: считаем по пришедшим строкам, страница одна', async () => {
     leadsApi.getLeads.mockImplementation(async () => ({ items: [lead(2), lead(1)], counts: { ...COUNTS, total: 2 } }));
     await mount();
-    expect(pagerStatus()).toBe('1–2 из 2');
-    expect(host.querySelector('nav')).toBeNull();
+    expect(pagerStatus()).toBe('Всего: 2 · 1–2');
+    expect(host.querySelectorAll('nav button[aria-label^="Страница "]')).toHaveLength(1);
+    expect(byLabel('Предыдущая страница', host).disabled).toBe(true);
+    expect(byLabel('Следующая страница', host).disabled).toBe(true);
   });
 
   it('список стал короче — страница поджимается к последней', async () => {
     await mount();
     await click(byLabel('Страница 3', host));
-    expect(pagerStatus()).toBe('51–60 из 60');
+    expect(pagerStatus()).toBe('Всего: 60 · 51–60');
     total = 30;
     await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
     await flush();
     await flush();
     expect(lastQuery()).toMatchObject({ limit: 25, offset: 25 });
-    expect(pagerStatus()).toBe('26–30 из 30');
+    expect(pagerStatus()).toBe('Всего: 30 · 26–30');
     expect(rowIds()).toHaveLength(5);
   });
 

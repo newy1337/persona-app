@@ -44,9 +44,13 @@ const next = () => pager().querySelector('button[aria-label="Следующая 
 const dataRows = () => host.querySelectorAll('tbody tr');
 
 describe('пагинация списка диалогов', () => {
-  it('до двадцати пяти строк переключателя нет', async () => {
+  it('до двадцати пяти строк — одна страница, стрелки выключены', async () => {
     await draw(20);
-    expect(pager()).toBeNull();
+    expect(pager().querySelectorAll('button[aria-label^="Страница "]')).toHaveLength(1);
+    expect(pager().querySelector('[aria-current="page"]').textContent).toBe('1');
+    expect(prev().disabled).toBe(true);
+    expect(next().disabled).toBe(true);
+    expect(host.textContent).toContain('Всего: 20 · 1–20');
     expect(dataRows().length).toBe(20);
   });
 
@@ -54,7 +58,7 @@ describe('пагинация списка диалогов', () => {
     await draw(120);
     expect(dataRows().length).toBe(25);
     expect(pager()).not.toBeNull();
-    expect(host.textContent).toContain('1–25 из 120');
+    expect(host.textContent).toContain('Всего: 120 · 1–25');
   });
 
   it('«Предыдущая страница» на первой странице недоступна', async () => {
@@ -65,11 +69,11 @@ describe('пагинация списка диалогов', () => {
   it('«Следующая страница» листает и доводит до последней страницы', async () => {
     await draw(120);
     await act(async () => next().click());
-    expect(host.textContent).toContain('26–50 из 120');
+    expect(host.textContent).toContain('Всего: 120 · 26–50');
     for (let i = 0; i < 3; i += 1) {
       await act(async () => next().click());
     }
-    expect(host.textContent).toContain('101–120 из 120');
+    expect(host.textContent).toContain('Всего: 120 · 101–120');
     expect(dataRows().length).toBe(20);
     expect(next().disabled).toBe(true);
   });
@@ -77,7 +81,7 @@ describe('пагинация списка диалогов', () => {
   it('кнопка с номером открывает свою страницу и помечается текущей', async () => {
     await draw(120);
     await act(async () => pager().querySelector('button[aria-label="Страница 3"]').click());
-    expect(host.textContent).toContain('51–75 из 120');
+    expect(host.textContent).toContain('Всего: 120 · 51–75');
     expect(pager().querySelector('[aria-current="page"]').textContent).toBe('3');
   });
 
@@ -90,7 +94,7 @@ describe('пагинация списка диалогов', () => {
       size.value = '50';
       size.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    expect(host.textContent).toContain('1–50 из 120');
+    expect(host.textContent).toContain('Всего: 120 · 1–50');
     expect(dataRows().length).toBe(50);
   });
 
