@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Bell, X } from 'lucide-react';
 import { api } from '../../api/client';
 import { PanelUX } from '../../ui/PanelUX';
-import s from '../../styles/AdminPage.module.scss';
-import v from './VoiceNotifications.module.scss';
+import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { BANNER_MS, loadDismissed, loadShown, normalizeQueue, pruneDismissed, queueKey, queueText, saveDismissed, saveShown } from './queueNotices';
 
 const normalize = data => ({ items: Array.isArray(data?.items) ? data.items : [], unread: Number(data?.unread) || 0 });
@@ -13,6 +15,13 @@ const waitingLabel = since => {
   return min < 60 ? `${min} мин` : min < 1440 ? `${Math.floor(min / 60)} ч` : `${Math.floor(min / 1440)} д`;
 };
 const pushSupported = () => typeof window !== 'undefined' && 'Notification' in window;
+
+const BANNER_CLASS = 'fixed right-5 bottom-5 z-[60] flex w-[min(390px,calc(100vw-2rem))] min-h-14 items-start gap-3 rounded-lg border bg-card p-4 text-sm text-card-foreground shadow-lg max-sm:right-4 max-sm:bottom-4';
+const BANNER_TEXT_CLASS = 'min-w-0 flex-1 rounded-sm text-left leading-relaxed outline-none [overflow-wrap:anywhere] focus-visible:ring-[3px] focus-visible:ring-ring/50';
+const GROUP_TITLE_CLASS = 'mt-1 text-xs font-semibold tracking-[0.04em] text-muted-foreground uppercase';
+const ITEM_CLASS = 'rounded-lg border bg-card p-3.5';
+const ITEM_UNREAD_CLASS = 'border-primary/40 bg-primary/5';
+const smallBtn = buttonVariants({ variant: 'outline', size: 'sm' });
 
 export default function VoiceNotifications({ userId }) {
   const [data, setData] = useState({ items: [], unread: 0 }), [open, setOpen] = useState(false), [error, setError] = useState('');
@@ -127,48 +136,67 @@ export default function VoiceNotifications({ userId }) {
   const showVoiceBanner = latest && latest.id !== dismissed && !open;
   const showQueueBanner = !showVoiceBanner && latestQueue && !open;
   return <>
-    <button className={`${s.btnSm} ${v.bell}`} aria-label={`Уведомления: ${unread} непрочитанных`} onClick={() => setOpen(true)} title="Уведомления: ждут менеджера, голосовые">
-      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M9 21h6" /></svg>
-      <span>{unread > 99 ? '99+' : unread}</span>
-    </button>
-    {showVoiceBanner && <div className={v.banner} role="status">
-      <button className={v.noticeText} onClick={() => setOpen(true)}>{latest.text}</button>
-      <button className={v.dismiss} aria-label="Скрыть уведомление" onClick={() => setDismissed(latest.id)}>×</button>
+    <Button
+      type="button"
+      variant="outline"
+      size="icon"
+      className="relative shrink-0"
+      aria-label={`Уведомления: ${unread} непрочитанных`}
+      onClick={() => setOpen(true)}
+      title="Уведомления: ждут менеджера, голосовые"
+    >
+      <Bell aria-hidden="true" />
+      <Badge
+        variant={unread ? 'default' : 'secondary'}
+        className="absolute -top-1.5 -right-1.5 h-4 min-w-4 rounded-full px-1 font-mono text-[10px] leading-none tabular-nums"
+        aria-hidden="true"
+      >
+        {unread > 99 ? '99+' : unread}
+      </Badge>
+    </Button>
+    {showVoiceBanner && <div className={BANNER_CLASS} role="status">
+      <button type="button" className={BANNER_TEXT_CLASS} onClick={() => setOpen(true)}>{latest.text}</button>
+      <Button type="button" variant="ghost" size="icon" className="-mt-2 -mr-2 size-8" aria-label="Скрыть уведомление" onClick={() => setDismissed(latest.id)}>
+        <X aria-hidden="true" />
+      </Button>
     </div>}
-    {showQueueBanner && <div className={`${v.banner} ${v.bannerQueue}`} role="status" data-testid="queue-banner">
-      <button className={v.noticeText} onClick={() => openChat(latestQueue)}>
-        <strong>Ждут менеджера</strong> · {queueText(latestQueue)}
-        {pendingQueue.length > 1 && <span className={v.more}> · ещё {pendingQueue.length - 1}</span>}
+    {showQueueBanner && <div className={cn(BANNER_CLASS, 'border-warning-foreground/40')} role="status" data-testid="queue-banner">
+      <button type="button" className={BANNER_TEXT_CLASS} onClick={() => openChat(latestQueue)}>
+        <strong className="font-semibold">Ждут менеджера</strong> · {queueText(latestQueue)}
+        {pendingQueue.length > 1 && <span className="text-muted-foreground"> · ещё {pendingQueue.length - 1}</span>}
       </button>
-      <button className={v.dismiss} aria-label="Закрыть уведомление" onClick={() => closeQueue(latestQueue)}>×</button>
+      <Button type="button" variant="ghost" size="icon" className="-mt-2 -mr-2 size-8" aria-label="Закрыть уведомление" onClick={() => closeQueue(latestQueue)}>
+        <X aria-hidden="true" />
+      </Button>
     </div>}
-    {open && <PanelUX.Modal title="Уведомления" onClose={() => setOpen(false)} footer={<button className={s.btn} onClick={() => setOpen(false)}>Закрыть</button>}>
-      <div className={v.list}>
-        {error && <p className={s.error} role="alert">{error}</p>}
-        {permission === 'default' && <p className={v.pushRow}>
+    {open && <PanelUX.Modal title="Уведомления" onClose={() => setOpen(false)} footer={<Button type="button" variant="outline" onClick={() => setOpen(false)}>Закрыть</Button>}>
+      <div className="flex min-h-[120px] flex-col gap-3 text-sm">
+        {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+        {permission === 'default' && <p className="rounded-lg border border-dashed px-3.5 py-3 leading-relaxed">
           Чтобы видеть новые чаты в очереди, даже когда панель свёрнута, включите уведомления браузера.{' '}
-          <button className={s.btnSm} onClick={askPush}>Включить push</button>
+          <Button type="button" variant="outline" size="sm" onClick={askPush}>Включить push</Button>
         </p>}
-        {permission === 'denied' && <p className={s.muted}>Push в браузере запрещён — разрешите уведомления для этого сайта в настройках браузера.</p>}
-        {pendingQueue.length > 0 && <h4 className={v.groupTitle}>Ждут менеджера</h4>}
-        {pendingQueue.map(item => <article key={queueKey(item)} className={`${v.item} ${v.unread}`} data-testid="queue-notice">
-          <p>{queueText(item)}</p>
-          <time>ждёт {waitingLabel(item.waiting_since)}{item.manager_name ? ` · ${item.manager_name}` : ''}</time>
-          <div className={v.actions}>
-            <button className={s.btnSm} onClick={() => openChat(item)}>Открыть чат</button>
-            <button className={s.btnSm} onClick={() => closeQueue(item)}>Закрыть</button>
+        {permission === 'denied' && <p className="text-muted-foreground">Push в браузере запрещён — разрешите уведомления для этого сайта в настройках браузера.</p>}
+        {pendingQueue.length > 0 && <h4 className={GROUP_TITLE_CLASS}>Ждут менеджера</h4>}
+        {pendingQueue.map(item => <article key={queueKey(item)} className={cn(ITEM_CLASS, ITEM_UNREAD_CLASS)} data-testid="queue-notice">
+          <p className="mb-2 leading-relaxed [overflow-wrap:anywhere]">{queueText(item)}</p>
+          <time className="font-mono text-xs text-muted-foreground">ждёт {waitingLabel(item.waiting_since)}{item.manager_name ? ` · ${item.manager_name}` : ''}</time>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => openChat(item)}>Открыть чат</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => closeQueue(item)}>Закрыть</Button>
           </div>
         </article>)}
-        {(pendingQueue.length > 0 || data.items.length > 0) && data.items.length > 0 && <h4 className={v.groupTitle}>Голосовые</h4>}
+        {(pendingQueue.length > 0 || data.items.length > 0) && data.items.length > 0 && <h4 className={GROUP_TITLE_CLASS}>Голосовые</h4>}
         {!data.items.length && !pendingQueue.length && <p>Новых уведомлений пока нет. Здесь появятся чаты, которые ждут менеджера, и готовые голосовые.</p>}
-        {data.items.map(item => <article key={item.id} className={`${v.item} ${!item.readAt ? v.unread : ''}`}>
-          <p>{item.text}</p><time>{new Date(item.createdAt * 1000).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}</time>
-          <div className={v.actions}>
-            <Link className={s.btnSm} to={`/voice?task=${item.taskId}`} onClick={() => { read(item); setOpen(false); }}>Открыть задание</Link>
-            {!item.readAt && <button className={s.btnSm} onClick={() => read(item)}>Прочитано</button>}
+        {data.items.map(item => <article key={item.id} className={cn(ITEM_CLASS, !item.readAt && ITEM_UNREAD_CLASS)}>
+          <p className="mb-2 leading-relaxed [overflow-wrap:anywhere]">{item.text}</p>
+          <time className="font-mono text-xs text-muted-foreground">{new Date(item.createdAt * 1000).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}</time>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link className={smallBtn} to={`/voice?task=${item.taskId}`} onClick={() => { read(item); setOpen(false); }}>Открыть задание</Link>
+            {!item.readAt && <Button type="button" variant="outline" size="sm" onClick={() => read(item)}>Прочитано</Button>}
           </div>
         </article>)}
-        {data.items.length >= 40 && <p>Показаны последние 40 уведомлений; непрочитанные — первыми.</p>}
+        {data.items.length >= 40 && <p className="text-muted-foreground">Показаны последние 40 уведомлений; непрочитанные — первыми.</p>}
       </div>
     </PanelUX.Modal>}
   </>;
