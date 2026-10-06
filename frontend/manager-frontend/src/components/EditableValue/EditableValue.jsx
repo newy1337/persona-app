@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import s from './EditableValue.module.scss';
+import { Pencil } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Input } from '@/components/ui/input';
 
-export default function EditableValue({ value, display, placeholder = '—', title, onSave }) {
+/**
+ * Значение, которое правится на месте. Обе формы — кнопка и поле — занимают
+ * одну и ту же строку высотой h-6, поэтому вход в правку не двигает соседей;
+ * ошибка сохранения всплывает под полем и места в потоке не занимает.
+ * `label` — подпись строки: из неё собирается aria-label кнопки и поля.
+ */
+export default function EditableValue({ value, display, placeholder = '—', title, label, onSave }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value ?? '');
   const [busy, setBusy] = useState(false);
@@ -35,30 +43,40 @@ export default function EditableValue({ value, display, placeholder = '—', tit
   }
 
   if (!editing) {
+    const shown = display ?? (value || placeholder);
     return (
       <button
         type="button"
-        className={s.view}
+        className="group/ev inline-flex min-h-6 max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-left align-middle outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         title={title ?? 'Нажмите, чтобы поправить — бот узнает это как факт'}
+        aria-label={label && typeof shown === 'string' ? `${label}: ${shown}` : undefined}
         onClick={(e) => {
           e.stopPropagation();
           setEditing(true);
         }}
       >
-        <span className={value ? s.value : s.empty}>{display ?? (value || placeholder)}</span>
-        <span className={s.pen} aria-hidden="true">✎</span>
+        <span className={cn('min-w-0 truncate', !value && 'text-muted-foreground')}>{shown}</span>
+        <Pencil
+          aria-hidden="true"
+          className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/ev:opacity-100 group-focus-visible/ev:opacity-100"
+        />
       </button>
     );
   }
 
   return (
-    <span className={s.edit} onClick={(e) => e.stopPropagation()}>
-      <input
+    <span
+      className="relative inline-flex h-6 w-full max-w-full min-w-0 items-center align-middle"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <Input
         ref={input}
-        className={s.input}
+        className="h-6 min-w-[90px] rounded-sm px-1.5 py-0 text-xs md:text-xs"
         value={text}
         disabled={busy}
         placeholder="пусто — снять"
+        aria-label={label}
+        aria-invalid={error ? true : undefined}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') void save();
@@ -69,7 +87,14 @@ export default function EditableValue({ value, display, placeholder = '—', tit
         }}
         onBlur={() => void save()}
       />
-      {error && <span className={s.error}>{error}</span>}
+      {error && (
+        <span
+          role="alert"
+          className="absolute top-full left-0 z-10 mt-0.5 max-w-full rounded-sm border bg-popover px-1.5 py-0.5 text-[11px] leading-4 text-destructive shadow-md"
+        >
+          {error}
+        </span>
+      )}
     </span>
   );
 }
