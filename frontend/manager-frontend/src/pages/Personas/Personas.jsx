@@ -53,7 +53,7 @@ const TABS = [
 function CreateDialog({ open, personas, onDone, onCancel }) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onCancel(); }}>
-      <DialogContent className="gap-0 p-0">
+      <DialogContent portal={false} showCloseButton={false} className="gap-0 p-0">
         <DialogHeader className="border-b px-6 py-4">
           <DialogTitle>Новая личность</DialogTitle>
           <DialogDescription>
@@ -117,10 +117,28 @@ function CreateForm({ personas, onDone, onCancel }) {
 
 const SECTION_KEYS = TABS.map((t) => t.key);
 
+// Каркас списка и карточки личности общий для скелета и для данных: одни и
+// те же классы задают отступы и высоты строк, поэтому при появлении данных
+// ничего не сдвигается.
+const LIST_BOX = 'flex gap-1 max-lg:overflow-x-auto lg:flex-col';
+const LIST_ROW = 'min-w-40 flex-col items-start gap-1 px-3 py-2 lg:w-full';
+const LIST_META = 'flex min-h-5 flex-wrap items-center gap-1.5 text-xs';
+const HEAD_BOX = 'flex flex-wrap items-start justify-between gap-3';
+const HEAD_ACTIONS = 'flex flex-wrap items-center gap-2';
+const MODELS_BOX = 'flex flex-wrap gap-4';
+const MODEL_FIELD = 'min-w-60 flex-1 sm:max-w-sm';
+const TABS_BOX = 'h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0 [scrollbar-width:none]';
+const BODY_BOX = 'min-h-[60vh]';
+
+const MODEL_FIELDS = [
+  { key: 'generator', column: 'generator_model', label: 'Модель ответов', hint: 'пишет реплики клиенту' },
+  { key: 'judge', column: 'judge_model', label: 'Модель судей', hint: 'план диалога и проверка ответа — два вызова на реплику' },
+];
+
 function ModelSelect({ label, hint, value, options, fallback, onChange }) {
   const fallbackLabel = options.find((o) => o.id === fallback)?.label ?? fallback;
   return (
-    <Field label={label} hint={hint} className="min-w-60 flex-1 sm:max-w-sm">
+    <Field label={label} hint={hint} className={MODEL_FIELD}>
       <NativeSelect value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
         <option value="">по умолчанию — {fallbackLabel}</option>
         {options.map((o) => (
@@ -133,22 +151,58 @@ function ModelSelect({ label, hint, value, options, fallback, onChange }) {
 
 function ListSkeleton() {
   return (
-    <div className="flex flex-col gap-1" role="status" aria-label="Загружаю личности">
-      {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+    <div className={LIST_BOX} role="status" aria-label="Загружаю личности">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className={cn('flex shrink-0', LIST_ROW)}>
+          <span className="flex h-5 items-center"><Skeleton className="h-4 w-24" /></span>
+          <span className={LIST_META}><Skeleton className="h-3 w-32" /></span>
+        </div>
+      ))}
     </div>
   );
 }
 
-function DetailSkeleton() {
+// Те же Field с настоящими подписью и подсказкой — высота ряда совпадает с
+// готовым, даже когда подсказка переносится на вторую строку.
+function ModelsSkeleton() {
   return (
-    <div className="flex min-h-[60vh] flex-col gap-4" role="status" aria-label="Загружаю личность">
-      <div className="flex flex-col gap-2">
-        <Skeleton className="h-6 w-56" />
-        <Skeleton className="h-4 w-80" />
+    <div className={MODELS_BOX} role="status" aria-label="Загружаю модели">
+      {MODEL_FIELDS.map((m) => (
+        <Field key={m.key} label={m.label} hint={m.hint} className={MODEL_FIELD}>
+          <Skeleton className="h-9 w-full" />
+        </Field>
+      ))}
+    </div>
+  );
+}
+
+function DetailSkeleton({ models }) {
+  return (
+    <div className="flex flex-col gap-4" role="status" aria-label="Загружаю личность">
+      <div className={HEAD_BOX}>
+        <div className="min-w-0">
+          <div className="flex h-6 items-center"><Skeleton className="h-4 w-40" /></div>
+          <div className="mt-1 flex h-4 items-center"><Skeleton className="h-3 w-80 max-w-full" /></div>
+        </div>
+        <div className={HEAD_ACTIONS}>
+          {['w-32', 'w-28', 'w-32', 'w-32'].map((w, i) => <Skeleton key={i} className={cn('h-8', w)} />)}
+        </div>
       </div>
-      <Skeleton className="h-20 w-full" />
-      <Skeleton className="h-9 w-full" />
-      <Skeleton className="h-48 w-full" />
+      {models !== null && <ModelsSkeleton />}
+      <div className="flex flex-col gap-2">
+        <div className={cn('flex items-center', TABS_BOX)}>
+          {TABS.map((t) => (
+            <div key={t.key} className="-mb-px flex h-9 flex-none items-center px-3">
+              <Skeleton className="h-4 w-14" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className={cn('flex flex-col gap-4', BODY_BOX)}>
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-48 w-full" />
+        <Skeleton className="h-48 w-full" />
+      </div>
     </div>
   );
 }
@@ -156,6 +210,9 @@ function DetailSkeleton() {
 export default function Personas() {
   const [items, setItems] = useState([]);
   const [listLoaded, setListLoaded] = useState(false);
+  // Первая загрузка закончилась (удачно или нет): до этого карточка личности
+  // держит скелет, а не подменяется строкой «Выберите личность слева».
+  const [booted, setBooted] = useState(false);
   const [selected, setSelected] = useState(null);
   const [persona, setPersona] = useState(null);
   const [defaults, setDefaults] = useState(null);
@@ -197,7 +254,8 @@ export default function Personas() {
       .catch((e) => {
         setModels((cur) => (cur === undefined ? null : cur));
         setError(e.detail || e.message);
-      });
+      })
+      .finally(() => setBooted(true));
   }, [loadList]);
 
   useEffect(() => {
@@ -291,7 +349,7 @@ export default function Personas() {
   }
 
   const draftSections = (id) => drafted.find((d) => d.id === id)?.sections ?? [];
-  const detailLoading = !persona && (!listLoaded || selected != null);
+  const detailLoading = !persona && (!booted || selected != null);
 
   return (
     <div className="app">
@@ -312,19 +370,17 @@ export default function Personas() {
             onCancel={() => setCreating(false)}
             onDone={async (id) => { setCreating(false); await loadList(); setSelected(id); }}
           />
-          <p
-            role="status"
-            className={cn('my-3 min-h-5 text-sm', error ? 'text-destructive' : 'text-success-foreground')}
-          >
-            {error || flash || ''}
-          </p>
+          <div role="status" className="my-3 flex min-h-5 flex-col gap-1 text-sm">
+            {error && <p className="text-destructive">{error}</p>}
+            {flash && <p className="text-success-foreground">{flash}</p>}
+          </div>
 
           <div className="grid items-start gap-4 pb-6 lg:grid-cols-[240px_minmax(0,1fr)]">
             <Card className="gap-1 p-2 lg:sticky lg:top-[calc(var(--header-h)+12px)]">
               {!listLoaded && items.length === 0 ? (
                 <ListSkeleton />
               ) : (
-                <div className="flex gap-1 max-lg:overflow-x-auto lg:flex-col">
+                <div className={LIST_BOX}>
                   {items.map((x) => {
                     const active = x.id === selected;
                     return (
@@ -333,11 +389,11 @@ export default function Personas() {
                         variant="ghost"
                         aria-current={active ? 'true' : undefined}
                         data-active={active || undefined}
-                        className="h-auto min-w-40 flex-col items-start justify-start gap-1 px-3 py-2 text-left font-normal whitespace-normal data-[active]:bg-accent lg:w-full"
+                        className={cn('h-auto justify-start text-left font-normal whitespace-normal data-[active]:bg-accent', LIST_ROW)}
                         onClick={() => setSelected(x.id)}
                       >
                         <span className="text-sm font-semibold">{x.name}</span>
-                        <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className={cn(LIST_META, 'text-muted-foreground')}>
                           <span className="font-mono">{x.slug}</span>
                           {x.is_default && <Badge className="h-5">основная</Badge>}
                           {!x.enabled && <Badge variant="secondary" className="h-5">выключена</Badge>}
@@ -357,13 +413,13 @@ export default function Personas() {
             <Card className="min-w-0 gap-4 p-4">
               {!persona ? (
                 detailLoading ? (
-                  <DetailSkeleton />
+                  <DetailSkeleton models={models} />
                 ) : (
-                  <p className="min-h-[60vh] text-sm text-muted-foreground">Выберите личность слева</p>
+                  <p className={cn(BODY_BOX, 'text-sm text-muted-foreground')}>Выберите личность слева</p>
                 )
               ) : (
                 <>
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className={HEAD_BOX}>
                     <div className="min-w-0">
                       <h3 className="flex flex-wrap items-baseline gap-2 text-base font-semibold">
                         {persona.name} <span className="font-mono text-xs font-normal text-muted-foreground">{persona.slug}</span>
@@ -374,7 +430,7 @@ export default function Personas() {
                         {persona.accounts} аккаунт(ов)
                       </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className={HEAD_ACTIONS}>
                       <Button variant="outline" size="sm" disabled={renaming} onClick={rename}>Переименовать</Button>
                       <Button variant="outline" size="sm" title="Копия со всеми документами и промптами" onClick={duplicate}>
                         Дублировать
@@ -418,33 +474,25 @@ export default function Personas() {
                   </div>
 
                   {models === undefined ? (
-                    <div className="flex flex-wrap gap-4" role="status" aria-label="Загружаю модели">
-                      <Skeleton className="h-20 min-w-60 flex-1 sm:max-w-sm" />
-                      <Skeleton className="h-20 min-w-60 flex-1 sm:max-w-sm" />
-                    </div>
+                    <ModelsSkeleton />
                   ) : models ? (
-                    <div className="flex flex-wrap gap-4">
-                      <ModelSelect
-                        label="Модель ответов"
-                        hint="пишет реплики клиенту"
-                        value={persona.generator_model}
-                        options={models.generator}
-                        fallback={models.defaults.generator}
-                        onChange={(v) => run(() => updatePersona(persona.id, { generator_model: v }))}
-                      />
-                      <ModelSelect
-                        label="Модель судей"
-                        hint="план диалога и проверка ответа — два вызова на реплику"
-                        value={persona.judge_model}
-                        options={models.judge}
-                        fallback={models.defaults.judge}
-                        onChange={(v) => run(() => updatePersona(persona.id, { judge_model: v }))}
-                      />
+                    <div className={MODELS_BOX}>
+                      {MODEL_FIELDS.map((m) => (
+                        <ModelSelect
+                          key={m.key}
+                          label={m.label}
+                          hint={m.hint}
+                          value={persona[m.column]}
+                          options={models[m.key]}
+                          fallback={models.defaults[m.key]}
+                          onChange={(v) => run(() => updatePersona(persona.id, { [m.column]: v }))}
+                        />
+                      ))}
                     </div>
                   ) : null}
 
                   <Tabs value={tab} onValueChange={setTab}>
-                    <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0 [scrollbar-width:none]">
+                    <TabsList className={TABS_BOX}>
                       {TABS.map((t) => (
                         <TabsTrigger
                           key={t.key}
@@ -460,7 +508,7 @@ export default function Personas() {
                     </TabsList>
                   </Tabs>
 
-                  <div className="min-h-[60vh]">
+                  <div className={BODY_BOX}>
                     {tab === 'prompts' ? (
                       <PromptsEditor persona={persona} defaults={defaults} onSaved={refresh} onError={setError} />
                     ) : tab === 'rhythm' ? (
