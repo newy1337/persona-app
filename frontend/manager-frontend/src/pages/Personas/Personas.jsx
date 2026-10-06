@@ -14,6 +14,23 @@ import {
   setDefaultPersona,
   updatePersona,
 } from '../../api/personas';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 import PromptsEditor from './PromptsEditor';
 import RhythmEditor from './RhythmEditor';
 import VariablesEditor from './VariablesEditor';
@@ -21,8 +38,6 @@ import SectionEditor from './SectionEditor';
 import { personaFileName, readPersonaFile } from './personaFile';
 import { saveJsonFile } from './files';
 import { drafts } from './drafts';
-import s from '../../styles/AdminPage.module.scss';
-import p from './Personas.module.scss';
 
 const TABS = [
   { key: 'prompts', label: 'Промпты' },
@@ -34,6 +49,22 @@ const TABS = [
   { key: 'beats', label: 'Биты' },
   { key: 'variables', label: 'Переменные' },
 ];
+
+function CreateDialog({ open, personas, onDone, onCancel }) {
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onCancel(); }}>
+      <DialogContent className="gap-0 p-0">
+        <DialogHeader className="border-b px-6 py-4">
+          <DialogTitle>Новая личность</DialogTitle>
+          <DialogDescription>
+            Кем говорит бот. Документы можно скопировать у существующей личности.
+          </DialogDescription>
+        </DialogHeader>
+        <CreateForm personas={personas} onDone={onDone} onCancel={onCancel} />
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function CreateForm({ personas, onDone, onCancel }) {
   const [f, setF] = useState({ name: '', slug: '', copy_from: '' });
@@ -60,27 +91,26 @@ function CreateForm({ personas, onDone, onCancel }) {
   }
 
   return (
-    <form className={s.form} onSubmit={submit}>
-      <label className={s.label}>
-        Имя
-        <input className={s.field} autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
-      </label>
-      <label className={s.label}>
-        Идентификатор (латиницей)
-        <input className={s.field} placeholder="соберём из имени" value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value })} />
-      </label>
-      <label className={s.label}>
-        Скопировать документы у
-        <select className={s.select} value={f.copy_from} onChange={(e) => setF({ ...f, copy_from: e.target.value })}>
-          <option value="">— пустая личность —</option>
-          {personas.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-        </select>
-      </label>
-      {error && <p className={`${s.error} ${s.formFull}`} style={{ justifyContent: 'flex-start' }}>{error}</p>}
-      <div className={s.formFull}>
-        <button type="button" className={s.btn} onClick={onCancel}>Отмена</button>
-        <button type="submit" className={s.btnPrimary} disabled={busy || !f.name.trim()}>{busy ? 'Создание…' : 'Создать'}</button>
+    <form onSubmit={submit}>
+      <div className="flex flex-col gap-3 px-6 py-4">
+        <Field label="Имя">
+          <Input autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+        </Field>
+        <Field label="Идентификатор (латиницей)">
+          <Input placeholder="соберём из имени" value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value })} />
+        </Field>
+        <Field label="Скопировать документы у">
+          <NativeSelect value={f.copy_from} onChange={(e) => setF({ ...f, copy_from: e.target.value })}>
+            <option value="">— пустая личность —</option>
+            {personas.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </NativeSelect>
+        </Field>
+        <p className="min-h-4 text-xs text-destructive" role="status">{error || ''}</p>
       </div>
+      <DialogFooter className="border-t px-6 py-4">
+        <Button type="button" variant="outline" onClick={onCancel}>Отмена</Button>
+        <Button type="submit" disabled={busy || !f.name.trim()}>{busy ? 'Создание…' : 'Создать'}</Button>
+      </DialogFooter>
     </form>
   );
 }
@@ -90,29 +120,47 @@ const SECTION_KEYS = TABS.map((t) => t.key);
 function ModelSelect({ label, hint, value, options, fallback, onChange }) {
   const fallbackLabel = options.find((o) => o.id === fallback)?.label ?? fallback;
   return (
-    <label className={p.modelField}>
-      <span className={p.modelLabel}>{label}</span>
-      <select
-        className={s.select}
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value || null)}
-      >
+    <Field label={label} hint={hint} className="min-w-60 flex-1 sm:max-w-sm">
+      <NativeSelect value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
         <option value="">по умолчанию — {fallbackLabel}</option>
         {options.map((o) => (
           <option key={o.id} value={o.id}>{o.label}</option>
         ))}
-      </select>
-      <span className={p.modelHint}>{hint}</span>
-    </label>
+      </NativeSelect>
+    </Field>
+  );
+}
+
+function ListSkeleton() {
+  return (
+    <div className="flex flex-col gap-1" role="status" aria-label="Загружаю личности">
+      {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+    </div>
+  );
+}
+
+function DetailSkeleton() {
+  return (
+    <div className="flex min-h-[60vh] flex-col gap-4" role="status" aria-label="Загружаю личность">
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-6 w-56" />
+        <Skeleton className="h-4 w-80" />
+      </div>
+      <Skeleton className="h-20 w-full" />
+      <Skeleton className="h-9 w-full" />
+      <Skeleton className="h-48 w-full" />
+    </div>
   );
 }
 
 export default function Personas() {
   const [items, setItems] = useState([]);
+  const [listLoaded, setListLoaded] = useState(false);
   const [selected, setSelected] = useState(null);
   const [persona, setPersona] = useState(null);
   const [defaults, setDefaults] = useState(null);
-  const [models, setModels] = useState(null);
+  // undefined — ещё грузятся (скелет), null — не удалось получить (ряд спрятан).
+  const [models, setModels] = useState(undefined);
   const [tab, setTab] = useState('prompts');
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -126,9 +174,13 @@ export default function Personas() {
   useEffect(refreshDrafts, [refreshDrafts, tab, persona]);
 
   const loadList = useCallback(async () => {
-    const list = await getPersonas();
-    setItems(list.items);
-    return list.items;
+    try {
+      const list = await getPersonas();
+      setItems(list.items);
+      return list.items;
+    } finally {
+      setListLoaded(true);
+    }
   }, []);
 
   const loadOne = useCallback(async (id) => {
@@ -142,7 +194,10 @@ export default function Personas() {
         setModels(m);
         if (list.length) setSelected((cur) => cur ?? list[0].id);
       })
-      .catch((e) => setError(e.detail || e.message));
+      .catch((e) => {
+        setModels((cur) => (cur === undefined ? null : cur));
+        setError(e.detail || e.message);
+      });
   }, [loadList]);
 
   useEffect(() => {
@@ -235,83 +290,106 @@ export default function Personas() {
     });
   }
 
+  const draftSections = (id) => drafted.find((d) => d.id === id)?.sections ?? [];
+  const detailLoading = !persona && (!listLoaded || selected != null);
+
   return (
     <div className="app">
       <Header />
       <main className="main">
         <div className="container">
-          <div className={s.head}>
-            <h2 className={s.title}>Личности</h2>
-            {!creating && <button className={s.btnPrimary} onClick={() => setCreating(true)}>+ Новая личность</button>}
+          <div className="my-6 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-semibold">Личности</h2>
+            <Button disabled={creating} onClick={() => setCreating(true)}>+ Новая личность</Button>
           </div>
-          <p className={s.hint}>
-            Кем говорит бот. Аккаунт ссылается на личность идентификатором (<span className={s.mono}>persona_id</span>),
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Кем говорит бот. Аккаунт ссылается на личность идентификатором (<span className="font-mono">persona_id</span>),
             одна личность может стоять на нескольких аккаунтах. Правки действуют со следующего ответа.
           </p>
-          {creating && (
-            <CreateForm
-              personas={items}
-              onCancel={() => setCreating(false)}
-              onDone={async (id) => { setCreating(false); await loadList(); setSelected(id); }}
-            />
-          )}
-          {error && <p className={s.error}>{error}</p>}
-          {flash && <p className={s.ok} style={{ margin: '0 0 12px', fontSize: 13 }}>{flash}</p>}
+          <CreateDialog
+            open={creating}
+            personas={items}
+            onCancel={() => setCreating(false)}
+            onDone={async (id) => { setCreating(false); await loadList(); setSelected(id); }}
+          />
+          <p
+            role="status"
+            className={cn('my-3 min-h-5 text-sm', error ? 'text-destructive' : 'text-success-foreground')}
+          >
+            {error || flash || ''}
+          </p>
 
-          <div className={p.layout}>
-            <aside className={p.list}>
-              {items.map((x) => (
-                <button
-                  key={x.id}
-                  className={`${p.listItem} ${x.id === selected ? p.listItemActive : ''}`}
-                  onClick={() => setSelected(x.id)}
-                >
-                  <span className={p.listName}>{x.name}</span>
-                  <span className={p.listMeta}>
-                    <span className={s.mono}>{x.slug}</span>
-                    {x.is_default && <span className={s.badgeActive}>основная</span>}
-                    {!x.enabled && <span className={s.badgeRetired}>выключена</span>}
-                    {x.accounts > 0 && <span className={s.muted}>{x.accounts} акк.</span>}
-                    {(drafted.find((d) => d.id === x.id)?.sections.length ?? 0) > 0 && (
-                      <span className={p.draftMark} title="есть несохранённые правки">● черновик</span>
-                    )}
-                  </span>
-                </button>
-              ))}
-              {items.length === 0 && <p className={s.empty}>Личностей нет</p>}
-            </aside>
+          <div className="grid items-start gap-4 pb-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+            <Card className="gap-1 p-2 lg:sticky lg:top-[calc(var(--header-h)+12px)]">
+              {!listLoaded && items.length === 0 ? (
+                <ListSkeleton />
+              ) : (
+                <div className="flex gap-1 max-lg:overflow-x-auto lg:flex-col">
+                  {items.map((x) => {
+                    const active = x.id === selected;
+                    return (
+                      <Button
+                        key={x.id}
+                        variant="ghost"
+                        aria-current={active ? 'true' : undefined}
+                        data-active={active || undefined}
+                        className="h-auto min-w-40 flex-col items-start justify-start gap-1 px-3 py-2 text-left font-normal whitespace-normal data-[active]:bg-accent lg:w-full"
+                        onClick={() => setSelected(x.id)}
+                      >
+                        <span className="text-sm font-semibold">{x.name}</span>
+                        <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                          <span className="font-mono">{x.slug}</span>
+                          {x.is_default && <Badge className="h-5">основная</Badge>}
+                          {!x.enabled && <Badge variant="secondary" className="h-5">выключена</Badge>}
+                          {x.accounts > 0 && <span className="tabular-nums">{x.accounts} акк.</span>}
+                          {draftSections(x.id).length > 0 && (
+                            <span className="text-warning-foreground" title="есть несохранённые правки">● черновик</span>
+                          )}
+                        </span>
+                      </Button>
+                    );
+                  })}
+                  {items.length === 0 && <p className="px-3 py-2 text-sm text-muted-foreground">Личностей нет</p>}
+                </div>
+              )}
+            </Card>
 
-            <section className={p.detail}>
+            <Card className="min-w-0 gap-4 p-4">
               {!persona ? (
-                <p className={s.empty}>Выберите личность слева</p>
+                detailLoading ? (
+                  <DetailSkeleton />
+                ) : (
+                  <p className="min-h-[60vh] text-sm text-muted-foreground">Выберите личность слева</p>
+                )
               ) : (
                 <>
-                  <div className={p.detailHead}>
-                    <div>
-                      <h3 className={p.detailName}>
-                        {persona.name} <span className={s.mono} style={{ fontSize: 12 }}>{persona.slug}</span>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="flex flex-wrap items-baseline gap-2 text-base font-semibold">
+                        {persona.name} <span className="font-mono text-xs font-normal text-muted-foreground">{persona.slug}</span>
                       </h3>
-                      <p className={s.muted} style={{ margin: '4px 0 0', fontSize: 12 }}>
+                      <p className="mt-1 text-xs text-muted-foreground tabular-nums">
                         {persona.card_lines} строк карточки · {persona.examples} примеров тона ·{' '}
                         {persona.storylines} сюжетов · промптов изменено {persona.edited_prompts} ·{' '}
                         {persona.accounts} аккаунт(ов)
                       </p>
                     </div>
-                    <div className={s.actions}>
-                      <button className={s.btnSm} disabled={renaming} onClick={rename}>Переименовать</button>
-                      <button className={s.btnSm} title="Копия со всеми документами и промптами" onClick={duplicate}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button variant="outline" size="sm" disabled={renaming} onClick={rename}>Переименовать</Button>
+                      <Button variant="outline" size="sm" title="Копия со всеми документами и промптами" onClick={duplicate}>
                         Дублировать
-                      </button>
-                      <button className={s.btnSm} title="Скачать личность одним файлом: все секции сразу" onClick={exportFile}>
+                      </Button>
+                      <Button variant="outline" size="sm" title="Скачать личность одним файлом: все секции сразу" onClick={exportFile}>
                         Выгрузить всё
-                      </button>
-                      <button
-                        className={s.btnSm}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
                         title="Взять секции из файла — прежние уйдут в историю версий"
                         onClick={() => filePicker.current?.click()}
                       >
                         Загрузить всё
-                      </button>
+                      </Button>
                       <input
                         ref={filePicker}
                         type="file"
@@ -324,19 +402,28 @@ export default function Personas() {
                         }}
                       />
                       {!persona.is_default && (
-                        <button className={s.btnSm} onClick={() => run(() => setDefaultPersona(persona.id))}>Сделать основной</button>
+                        <Button variant="outline" size="sm" onClick={() => run(() => setDefaultPersona(persona.id))}>Сделать основной</Button>
                       )}
                       {!persona.is_default && (
-                        <button className={s.btnSm} onClick={() => run(() => updatePersona(persona.id, { enabled: !persona.enabled }))}>
+                        <Button variant="outline" size="sm" onClick={() => run(() => updatePersona(persona.id, { enabled: !persona.enabled }))}>
                           {persona.enabled ? 'Выключить' : 'Включить'}
-                        </button>
+                        </Button>
                       )}
-                      {!persona.is_default && <button className={s.btnSmDanger} onClick={remove}>Удалить</button>}
+                      {!persona.is_default && (
+                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={remove}>
+                          Удалить
+                        </Button>
+                      )}
                     </div>
                   </div>
 
-                  {models && (
-                    <div className={p.modelRow}>
+                  {models === undefined ? (
+                    <div className="flex flex-wrap gap-4" role="status" aria-label="Загружаю модели">
+                      <Skeleton className="h-20 min-w-60 flex-1 sm:max-w-sm" />
+                      <Skeleton className="h-20 min-w-60 flex-1 sm:max-w-sm" />
+                    </div>
+                  ) : models ? (
+                    <div className="flex flex-wrap gap-4">
                       <ModelSelect
                         label="Модель ответов"
                         hint="пишет реплики клиенту"
@@ -354,35 +441,39 @@ export default function Personas() {
                         onChange={(v) => run(() => updatePersona(persona.id, { judge_model: v }))}
                       />
                     </div>
-                  )}
+                  ) : null}
 
-                  <div className={p.tabs}>
-                    {TABS.map((t) => (
-                      <button
-                        key={t.key}
-                        className={`${p.tab} ${tab === t.key ? p.tabActive : ''}`}
-                        onClick={() => setTab(t.key)}
-                      >
-                        {t.label}
-                        {(drafted.find((d) => d.id === persona.id)?.sections ?? []).includes(t.key) && (
-                          <span className={p.draftMark}> ●</span>
-                        )}
-                      </button>
-                    ))}
+                  <Tabs value={tab} onValueChange={setTab}>
+                    <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0 [scrollbar-width:none]">
+                      {TABS.map((t) => (
+                        <TabsTrigger
+                          key={t.key}
+                          value={t.key}
+                          className="-mb-px h-9 flex-none rounded-none border-0 border-b-2 border-transparent px-3 text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                        >
+                          {t.label}
+                          <span className="inline-block w-2.5 text-left text-xs text-warning-foreground" aria-hidden={!draftSections(persona.id).includes(t.key)}>
+                            {draftSections(persona.id).includes(t.key) ? '●' : ''}
+                          </span>
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </Tabs>
+
+                  <div className="min-h-[60vh]">
+                    {tab === 'prompts' ? (
+                      <PromptsEditor persona={persona} defaults={defaults} onSaved={refresh} onError={setError} />
+                    ) : tab === 'rhythm' ? (
+                      <RhythmEditor persona={persona} onSaved={refresh} onError={setError} />
+                    ) : tab === 'variables' ? (
+                      <VariablesEditor persona={persona} onSaved={refresh} onError={setError} />
+                    ) : (
+                      <SectionEditor persona={persona} section={tab} onSaved={refresh} onError={setError} />
+                    )}
                   </div>
-
-                  {tab === 'prompts' ? (
-                    <PromptsEditor persona={persona} defaults={defaults} onSaved={refresh} onError={setError} />
-                  ) : tab === 'rhythm' ? (
-                    <RhythmEditor persona={persona} onSaved={refresh} onError={setError} />
-                  ) : tab === 'variables' ? (
-                    <VariablesEditor persona={persona} onSaved={refresh} onError={setError} />
-                  ) : (
-                    <SectionEditor persona={persona} section={tab} onSaved={refresh} onError={setError} />
-                  )}
                 </>
               )}
-            </section>
+            </Card>
           </div>
         </div>
       </main>

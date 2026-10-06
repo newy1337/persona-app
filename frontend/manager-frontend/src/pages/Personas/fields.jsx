@@ -1,6 +1,11 @@
 import { useState } from 'react';
-import s from '../../styles/AdminPage.module.scss';
-import p from './Personas.module.scss';
+import { ArrowDown, ArrowUp, ChevronRight, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 
 export const LABELS = {
   name: 'Имя',
@@ -79,19 +84,34 @@ export function hintFor(parent, key) {
 const isPlain = (v) => v === null || typeof v !== 'object';
 const isLongText = (v) => typeof v === 'string' && (v.length > 60 || v.includes('\n'));
 
+/** Строка «подпись слева — значение справа»; общая для DocEditor и ObjectEditor. */
+export function FieldRow({ parent, k, children }) {
+  const hint = hintFor(parent, k);
+  return (
+    <div className="grid items-start gap-1.5 md:grid-cols-[minmax(150px,210px)_minmax(0,1fr)] md:gap-3.5">
+      <div className="flex flex-col gap-0.5 md:pt-1.5">
+        <span className="text-sm font-medium">{label(k)}</span>
+        {label(k) !== k && <span className="font-mono text-[11px] text-muted-foreground">{k}</span>}
+        {hint && <span className="text-xs leading-snug text-muted-foreground">{hint}</span>}
+      </div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
 function ScalarField({ value, onChange }) {
   if (typeof value === 'boolean') {
     return (
-      <label className={s.check}>
-        <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
+      <Label className="h-9 gap-1.5 text-sm font-normal">
+        <Checkbox checked={value} onCheckedChange={(v) => onChange(v === true)} />
         {value ? 'да' : 'нет'}
-      </label>
+      </Label>
     );
   }
   if (typeof value === 'number') {
     return (
-      <input
-        className={`${s.field} ${p.numField}`}
+      <Input
+        className="w-30 font-mono tabular-nums"
         inputMode="decimal"
         value={String(value)}
         onChange={(e) => {
@@ -102,25 +122,64 @@ function ScalarField({ value, onChange }) {
     );
   }
   if (value === null) {
-    return <input className={s.field} value="" placeholder="пусто" onChange={(e) => onChange(e.target.value)} />;
+    return <Input value="" placeholder="пусто" onChange={(e) => onChange(e.target.value)} />;
   }
   if (isLongText(value)) {
     return (
-      <textarea
-        className={`${s.field} ${p.textField}`}
+      <Textarea
+        className="field-sizing-fixed resize-y leading-normal"
         rows={Math.min(12, Math.max(2, String(value).split('\n').length + 1))}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
     );
   }
-  return <input className={s.field} value={value} onChange={(e) => onChange(e.target.value)} />;
+  return <Input value={value} onChange={(e) => onChange(e.target.value)} />;
 }
 
 function itemTitle(item, index) {
   if (isPlain(item)) return String(item ?? '').slice(0, 80) || `— ${index + 1}`;
   const named = item.id ?? item.title ?? item.name ?? item.topic ?? item.text ?? item.story;
   return named ? String(named).slice(0, 80) : `${index + 1}`;
+}
+
+function RowTools({ index, total, onMove, onRemove }) {
+  return (
+    <div className="flex shrink-0 gap-0.5">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7"
+        title="Выше"
+        aria-label="Выше"
+        disabled={index === 0}
+        onClick={() => onMove(index, -1)}
+      >
+        <ArrowUp className="size-3.5" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7"
+        title="Ниже"
+        aria-label="Ниже"
+        disabled={index === total - 1}
+        onClick={() => onMove(index, 1)}
+      >
+        <ArrowDown className="size-3.5" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7 text-destructive hover:text-destructive"
+        title="Удалить"
+        aria-label="Удалить"
+        onClick={() => onRemove(index)}
+      >
+        <X className="size-3.5" />
+      </Button>
+    </div>
+  );
 }
 
 function ArrayEditor({ value, onChange }) {
@@ -147,65 +206,53 @@ function ArrayEditor({ value, onChange }) {
   const toggle = (i) => setOpen((v) => { const n = new Set(v); if (n.has(i)) n.delete(i); else n.add(i); return n; });
 
   return (
-    <div className={p.fieldList}>
-      {value.map((item, i) => (
-        <div key={i} className={allPlain ? p.listRow : p.listCard}>
-          {allPlain ? (
-            <>
-              <ScalarField value={item} onChange={(v) => replace(i, v)} />
-              <div className={p.rowTools}>
-                <button className={p.iconBtn} title="Выше" onClick={() => move(i, -1)}>↑</button>
-                <button className={p.iconBtn} title="Ниже" onClick={() => move(i, 1)}>↓</button>
-                <button className={`${p.iconBtn} ${p.iconDanger}`} title="Удалить" onClick={() => remove(i)}>✕</button>
+    <div className="flex flex-col gap-2">
+      {value.map((item, i) =>
+        allPlain ? (
+          <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+            <ScalarField value={item} onChange={(v) => replace(i, v)} />
+            <RowTools index={i} total={value.length} onMove={move} onRemove={remove} />
+          </div>
+        ) : (
+          <div key={i} className="rounded-md border bg-muted/30">
+            <div className="flex items-center gap-2 px-2 py-1.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="min-w-0 flex-1 justify-start gap-2 px-2 font-normal"
+                aria-expanded={open.has(i)}
+                onClick={() => toggle(i)}
+              >
+                <ChevronRight
+                  className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open.has(i) && 'rotate-90')}
+                />
+                <span className="truncate">{itemTitle(item, i)}</span>
+              </Button>
+              <RowTools index={i} total={value.length} onMove={move} onRemove={remove} />
+            </div>
+            {open.has(i) && (
+              <div className="border-t px-3 pt-2 pb-3">
+                <ValueEditor value={item} onChange={(v) => replace(i, v)} />
               </div>
-            </>
-          ) : (
-            <>
-              <div className={p.cardHead}>
-                <button className={p.cardToggle} onClick={() => toggle(i)}>
-                  <span className={p.caret}>{open.has(i) ? '▾' : '▸'}</span>
-                  <span className={p.cardName}>{itemTitle(item, i)}</span>
-                </button>
-                <div className={p.rowTools}>
-                  <button className={p.iconBtn} title="Выше" onClick={() => move(i, -1)}>↑</button>
-                  <button className={p.iconBtn} title="Ниже" onClick={() => move(i, 1)}>↓</button>
-                  <button className={`${p.iconBtn} ${p.iconDanger}`} title="Удалить" onClick={() => remove(i)}>✕</button>
-                </div>
-              </div>
-              {open.has(i) && (
-                <div className={p.cardBody}>
-                  <ValueEditor value={item} onChange={(v) => replace(i, v)} />
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      ))}
-      <button className={s.btnSm} onClick={addItem}>+ Добавить</button>
+            )}
+          </div>
+        ),
+      )}
+      <Button variant="outline" size="sm" className="self-start" onClick={addItem}>+ Добавить</Button>
     </div>
   );
 }
 
 function ObjectEditor({ value, onChange }) {
   const keys = Object.keys(value).filter((k) => !k.startsWith('_'));
-  if (!keys.length) return <p className={s.muted}>Пусто — добавьте поля в режиме JSON.</p>;
+  if (!keys.length) return <p className="text-xs text-muted-foreground">Пусто — добавьте поля в режиме JSON.</p>;
   return (
-    <div className={p.fields}>
-      {keys.map((k) => {
-        const hint = hintFor(value, k);
-        return (
-          <div key={k} className={p.field}>
-            <div className={p.fieldLabel}>
-              <span className={p.fieldName}>{label(k)}</span>
-              {label(k) !== k && <span className={p.fieldKey}>{k}</span>}
-              {hint && <span className={p.fieldHint}>{hint}</span>}
-            </div>
-            <div className={p.fieldValue}>
-              <ValueEditor value={value[k]} onChange={(v) => onChange({ ...value, [k]: v })} />
-            </div>
-          </div>
-        );
-      })}
+    <div className="flex flex-col gap-3.5">
+      {keys.map((k) => (
+        <FieldRow key={k} parent={value} k={k}>
+          <ValueEditor value={value[k]} onChange={(v) => onChange({ ...value, [k]: v })} />
+        </FieldRow>
+      ))}
     </div>
   );
 }

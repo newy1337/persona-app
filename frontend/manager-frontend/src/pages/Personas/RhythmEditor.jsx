@@ -1,51 +1,69 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRhythmDefaults, putSection } from '../../api/personas';
-import VersionsTable, { ago, useVersions } from './Versions';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import VersionsTable, { useVersions } from './Versions';
+import { EditorBar, SaveBar } from './EditorBar';
 import { drafts } from './drafts';
 import { TIMEZONES, rhythmSummary } from './rhythm';
-import s from '../../styles/AdminPage.module.scss';
-import p from './Personas.module.scss';
 
 const DRAFT_DELAY_MS = 600;
 
 function Num({ label, hint, value, onChange, min = 0, max = 1440, step = 1, unit }) {
   return (
-    <label className={p.rhythmField}>
-      <span className={p.rhythmLabel}>{label}</span>
-      <span className={p.rhythmInput}>
-        <input
-          className={s.field}
+    <Field label={label} hint={hint}>
+      <span className="flex items-center gap-1.5">
+        <Input
           type="number"
+          className="max-w-30 tabular-nums"
           min={min}
           max={max}
           step={step}
-          value={value}
+          value={value ?? ''}
           onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
         />
-        {unit && <span className={s.muted}>{unit}</span>}
+        {unit && <span className="text-xs text-muted-foreground">{unit}</span>}
       </span>
-      {hint && <span className={p.rhythmHint}>{hint}</span>}
-    </label>
+    </Field>
   );
 }
 
 function Toggle({ checked, onChange, children }) {
   return (
-    <label className={s.check}>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <Label className="gap-1.5 text-xs font-normal text-muted-foreground">
+      <Checkbox checked={checked} onCheckedChange={(v) => onChange(v === true)} />
       {children}
-    </label>
+    </Label>
   );
 }
 
 function Time({ label, value, onChange }) {
   return (
-    <label className={p.rhythmField}>
-      <span className={p.rhythmLabel}>{label}</span>
-      <input className={s.field} type="time" value={value} onChange={(e) => onChange(e.target.value)} />
-    </label>
+    <Field label={label}>
+      <Input type="time" className="tabular-nums" value={value ?? ''} onChange={(e) => onChange(e.target.value)} />
+    </Field>
   );
 }
+
+function Block({ title, toggle, hint, children }) {
+  return (
+    <Card className="gap-2.5 p-4">
+      <header className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium">{title}</span>
+        {toggle}
+      </header>
+      {hint && <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>}
+      {children}
+    </Card>
+  );
+}
+
+const Pair = ({ children }) => <div className="grid grid-cols-2 gap-2.5">{children}</div>;
 
 export default function RhythmEditor({ persona, onSaved, onError }) {
   const server = useMemo(() => persona.sections.rhythm ?? {}, [persona.sections.rhythm]);
@@ -173,40 +191,30 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
   const goodnight = draft.goodnight ?? {};
 
   return (
-    <div className={p.prompts}>
-      <div className={p.sectionBar}>
-        <span className={s.muted}>{rhythmSummary(draft)}</span>
-        <div className={s.actions}>
-          <button className={s.btnSm} onClick={applyDefaults} title="Подставить цифры по умолчанию — сохранит обычная кнопка">
-            Как по умолчанию
-          </button>
-          <button className={s.btnSm} onClick={versions.toggle}>
-            {versions.open ? 'Скрыть историю' : 'История версий'}
-          </button>
-          <button className={s.btnSm} disabled={!dirty} onClick={reset}>Отменить правки</button>
-        </div>
-      </div>
+    <div className="flex flex-col gap-4">
+      <EditorBar
+        summary={rhythmSummary(draft)}
+        hint="Правка действует со следующего сообщения, перезапуск не нужен. Окна утра и прощания — по часам выбранного пояса; утро и прощание слушаются общего выключателя инициативы в настройках."
+        draftAt={draftAt}
+        dirty={dirty}
+      >
+        <Button variant="outline" size="sm" onClick={applyDefaults} title="Подставить цифры по умолчанию — сохранит обычная кнопка">
+          Как по умолчанию
+        </Button>
+        <Button variant="outline" size="sm" onClick={versions.toggle}>
+          {versions.open ? 'Скрыть историю' : 'История версий'}
+        </Button>
+        <Button variant="outline" size="sm" disabled={!dirty} onClick={reset}>Отменить правки</Button>
+      </EditorBar>
 
-      <p className={s.hint}>
-        Правка действует со следующего сообщения, перезапуск не нужен. Окна утра и прощания — по часам выбранного
-        пояса; утро и прощание слушаются общего выключателя инициативы в настройках.
-      </p>
+      <VersionsTable versions={versions.versions} loading={versions.loading} onRestore={versions.restore} />
 
-      {draftAt && dirty && (
-        <p className={p.draftNote}>
-          Черновик сохранён в браузере ({ago(draftAt)}) — правки не потеряются при перезагрузке.
-        </p>
-      )}
-
-      <VersionsTable versions={versions.versions} onRestore={versions.restore} />
-
-      <div className={p.rhythmGrid}>
-        <section className={p.rhythmCard}>
-          <header className={p.rhythmHead}>
-            <span className={p.promptTitle}>Задержка ответа</span>
-            <Toggle checked={rd.enabled !== false} onChange={(v) => set(['reply_delay', 'enabled'], v)}>включена</Toggle>
-          </header>
-          <p className={p.promptHint}>Сначала отвечает быстро, дальше — как занятой человек.</p>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
+        <Block
+          title="Задержка ответа"
+          toggle={<Toggle checked={rd.enabled !== false} onChange={(v) => set(['reply_delay', 'enabled'], v)}>включена</Toggle>}
+          hint="Сначала отвечает быстро, дальше — как занятой человек."
+        >
           <Num
             label="Разогрев"
             unit="мин"
@@ -214,14 +222,14 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
             value={rd.warmup_minutes}
             onChange={(v) => set(['reply_delay', 'warmup_minutes'], v)}
           />
-          <div className={p.rhythmPair}>
+          <Pair>
             <Num label="В разогреве от" unit="мин" value={rd.warmup_min_minutes} onChange={(v) => set(['reply_delay', 'warmup_min_minutes'], v)} />
             <Num label="до" unit="мин" value={rd.warmup_max_minutes} onChange={(v) => set(['reply_delay', 'warmup_max_minutes'], v)} />
-          </div>
-          <div className={p.rhythmPair}>
+          </Pair>
+          <Pair>
             <Num label="Потом от" unit="мин" value={rd.min_minutes} onChange={(v) => set(['reply_delay', 'min_minutes'], v)} />
             <Num label="до" unit="мин" value={rd.max_minutes} onChange={(v) => set(['reply_delay', 'max_minutes'], v)} />
-          </div>
+          </Pair>
           <Num
             label="Пауза в потоке"
             unit="сек"
@@ -230,63 +238,47 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
             value={rd.burst_seconds}
             onChange={(v) => set(['reply_delay', 'burst_seconds'], v)}
           />
-        </section>
+        </Block>
 
-        <section className={p.rhythmCard}>
-          <header className={p.rhythmHead}>
-            <span className={p.promptTitle}>После молчания</span>
-            <Toggle checked={as.enabled !== false} onChange={(v) => set(['after_silence', 'enabled'], v)}>включено</Toggle>
-          </header>
-          <p className={p.promptHint}>
-            Бот написал, а собеседник молчал дольше порога — отвечает не сразу. Ночь и разговор, закрытый «спокойной ночи»,
-            молчанием не считаются. Следующий ответ — снова обычный.
-          </p>
+        <Block
+          title="После молчания"
+          toggle={<Toggle checked={as.enabled !== false} onChange={(v) => set(['after_silence', 'enabled'], v)}>включено</Toggle>}
+          hint="Бот написал, а собеседник молчал дольше порога — отвечает не сразу. Ночь и разговор, закрытый «спокойной ночи», молчанием не считаются. Следующий ответ — снова обычный."
+        >
           <Num label="Молчал дольше" unit="ч" max={72} step={0.5} value={as.silence_hours} onChange={(v) => set(['after_silence', 'silence_hours'], v)} />
-          <div className={p.rhythmPair}>
+          <Pair>
             <Num label="Ответ через от" unit="ч" max={48} step={0.5} value={as.min_hours} onChange={(v) => set(['after_silence', 'min_hours'], v)} />
             <Num label="до" unit="ч" max={48} step={0.5} value={as.max_hours} onChange={(v) => set(['after_silence', 'max_hours'], v)} />
-          </div>
-        </section>
+          </Pair>
+        </Block>
 
-        <section className={p.rhythmCard}>
-          <header className={p.rhythmHead}>
-            <span className={p.promptTitle}>Утреннее сообщение</span>
-            <Toggle checked={morning.enabled !== false} onChange={(v) => set(['morning', 'enabled'], v)}>включено</Toggle>
-          </header>
-          <p className={p.promptHint}>
-            Одно в день, в случайную минуту окна — у каждого собеседника свою. Написал первым этим утром — она просто
-            ответит на его сообщение. Текст — промпт «Утреннее сообщение».
-          </p>
-          <div className={p.rhythmPair}>
+        <Block
+          title="Утреннее сообщение"
+          toggle={<Toggle checked={morning.enabled !== false} onChange={(v) => set(['morning', 'enabled'], v)}>включено</Toggle>}
+          hint="Одно в день, в случайную минуту окна — у каждого собеседника свою. Написал первым этим утром — она просто ответит на его сообщение. Текст — промпт «Утреннее сообщение»."
+        >
+          <Pair>
             <Time label="С" value={morning.from} onChange={(v) => set(['morning', 'from'], v)} />
             <Time label="До" value={morning.to} onChange={(v) => set(['morning', 'to'], v)} />
-          </div>
-        </section>
+          </Pair>
+        </Block>
 
-        <section className={p.rhythmCard}>
-          <header className={p.rhythmHead}>
-            <span className={p.promptTitle}>Прощание на ночь</span>
-            <Toggle checked={goodnight.enabled !== false} onChange={(v) => set(['goodnight', 'enabled'], v)}>включено</Toggle>
-          </header>
-          <p className={p.promptHint}>
-            Если сегодня общались и разговор затих. Попрощался первым — ответит взаимно, своё прощание не шлёт.
-            «До» раньше «с» — окно через полночь. Текст — промпт «Прощание на ночь».
-          </p>
-          <div className={p.rhythmPair}>
+        <Block
+          title="Прощание на ночь"
+          toggle={<Toggle checked={goodnight.enabled !== false} onChange={(v) => set(['goodnight', 'enabled'], v)}>включено</Toggle>}
+          hint="Если сегодня общались и разговор затих. Попрощался первым — ответит взаимно, своё прощание не шлёт. «До» раньше «с» — окно через полночь. Текст — промпт «Прощание на ночь»."
+        >
+          <Pair>
             <Time label="С" value={goodnight.from} onChange={(v) => set(['goodnight', 'from'], v)} />
             <Time label="До" value={goodnight.to} onChange={(v) => set(['goodnight', 'to'], v)} />
-          </div>
-        </section>
+          </Pair>
+        </Block>
 
-        <section className={p.rhythmCard}>
-          <header className={p.rhythmHead}>
-            <span className={p.promptTitle}>«Печатает…»</span>
-            <Toggle checked={draft.typing?.enabled !== false} onChange={(v) => set(['typing', 'enabled'], v)}>включено</Toggle>
-          </header>
-          <p className={p.promptHint}>
-            Перед каждой частью ответа — статус набора на время, зависящее от длины. Набор идёт заходами с короткими
-            паузами, как у человека, который печатает, задумывается и дописывает.
-          </p>
+        <Block
+          title="«Печатает…»"
+          toggle={<Toggle checked={draft.typing?.enabled !== false} onChange={(v) => set(['typing', 'enabled'], v)}>включено</Toggle>}
+          hint="Перед каждой частью ответа — статус набора на время, зависящее от длины. Набор идёт заходами с короткими паузами, как у человека, который печатает, задумывается и дописывает."
+        >
           <Num
             label="Скорость набора"
             unit="зн/с"
@@ -302,23 +294,21 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
             value={draft.typing?.min_seconds}
             onChange={(v) => set(['typing', 'min_seconds'], v)}
           />
-          <div className={p.rhythmPair}>
+          <Pair>
             <Num label="Между частями от" unit="сек" max={60} step={0.5} value={draft.typing?.part_pause_min} onChange={(v) => set(['typing', 'part_pause_min'], v)} />
             <Num label="до" unit="сек" max={60} step={0.5} value={draft.typing?.part_pause_max} onChange={(v) => set(['typing', 'part_pause_max'], v)} />
-          </div>
-        </section>
+          </Pair>
+        </Block>
 
-        <section className={p.rhythmCard}>
-          <header className={p.rhythmHead}>
-            <span className={p.promptTitle}>Старые сообщения</span>
+        <Block
+          title="Старые сообщения"
+          toggle={
             <Toggle checked={draft.late_messages?.enabled !== false} onChange={(v) => set(['late_messages', 'enabled'], v)}>
               отвечать
             </Toggle>
-          </header>
-          <p className={p.promptHint}>
-            Пришли, пока аккаунт был не в сети или без ответа, — например, при входе в аккаунт. Ответ не как на свежее:
-            через «ответ через» из «После молчания», не ночью, и она коротко извиняется за паузу.
-          </p>
+          }
+          hint="Пришли, пока аккаунт был не в сети или без ответа, — например, при входе в аккаунт. Ответ не как на свежее: через «ответ через» из «После молчания», не ночью, и она коротко извиняется за паузу."
+        >
           <Num
             label="Старое — старше"
             unit="ч"
@@ -333,19 +323,15 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
             value={draft.late_messages?.max_age_days}
             onChange={(v) => set(['late_messages', 'max_age_days'], v)}
           />
-        </section>
+        </Block>
 
-        <section className={p.rhythmCard}>
-          <header className={p.rhythmHead}>
-            <span className={p.promptTitle}>Общее</span>
-          </header>
-          <label className={p.rhythmField}>
-            <span className={p.rhythmLabel}>Часовой пояс окон</span>
-            <select className={s.select} value={draft.timezone} onChange={(e) => set(['timezone'], e.target.value)}>
-              {!TIMEZONES.some((t) => t.id === draft.timezone) && <option value={draft.timezone}>{draft.timezone}</option>}
+        <Block title="Общее">
+          <Field label="Часовой пояс окон">
+            <NativeSelect value={draft.timezone ?? ''} onChange={(e) => set(['timezone'], e.target.value)}>
+              {!TIMEZONES.some((t) => t.id === draft.timezone) && <option value={draft.timezone ?? ''}>{draft.timezone}</option>}
               {TIMEZONES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-            </select>
-          </label>
+            </NativeSelect>
+          </Field>
           <Num
             label="Не писать утро и прощание молчащим дольше"
             unit="дн"
@@ -360,22 +346,18 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
             value={draft.max_unanswered}
             onChange={(v) => set(['max_unanswered'], v)}
           />
-        </section>
+        </Block>
       </div>
 
-      <div className={p.stickyBar}>
-        {flash && <span className={s.ok}>{flash}</span>}
-        <input
-          className={s.field}
-          style={{ maxWidth: 240 }}
-          placeholder="подпись к версии"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
-        <button className={s.btnPrimary} disabled={!dirty || busy} onClick={save} title="Ctrl+S">
-          {busy ? 'Сохранение…' : 'Сохранить ритм'}
-        </button>
-      </div>
+      <SaveBar
+        status={flash}
+        note={note}
+        onNote={setNote}
+        onSave={save}
+        disabled={!dirty || busy}
+        busy={busy}
+        label="Сохранить ритм"
+      />
     </div>
   );
 }

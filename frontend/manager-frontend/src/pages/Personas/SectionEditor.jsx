@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { putSection } from '../../api/personas';
-import VersionsTable, { ago, useVersions } from './Versions';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import VersionsTable, { useVersions } from './Versions';
+import { EditorBar, SaveBar } from './EditorBar';
 import DocEditor from './DocEditor';
 import { drafts } from './drafts';
-import s from '../../styles/AdminPage.module.scss';
-import p from './Personas.module.scss';
 
 const DRAFT_DELAY_MS = 600;
 const pretty = (value) => JSON.stringify(value ?? {}, null, 2);
@@ -118,74 +120,71 @@ export default function SectionEditor({ persona, section, onSaved, onError }) {
   const notes = Object.entries(stored ?? {}).filter(([k, v]) => k.startsWith('_') && typeof v === 'string');
 
   return (
-    <div className={p.section}>
-      <div className={p.sectionBar}>
-        <div className={p.modes}>
-          <button className={`${p.modeBtn} ${mode === 'form' ? p.modeBtnActive : ''}`} onClick={() => setMode('form')}>Форма</button>
-          <button className={`${p.modeBtn} ${mode === 'json' ? p.modeBtnActive : ''}`} onClick={() => setMode('json')}>JSON</button>
-        </div>
-        <span className={s.muted}>
-          {(text.length / 1024).toFixed(1)} КБ
-          {section === 'beats' && stored === null && ' · биты выводятся из сюжетов'}
-        </span>
-        <div className={s.actions}>
-          <button className={s.btnSm} onClick={versions.toggle}>
-            {versions.open ? 'Скрыть историю' : 'История версий'}
-          </button>
-          <button className={s.btnSm} disabled={!dirty} onClick={reset}>Отменить правки</button>
-        </div>
-      </div>
-
-      {draftAt && dirty && (
-        <p className={p.draftNote}>
-          Черновик сохранён в браузере ({ago(draftAt)}) — правки не потеряются при перезагрузке.
-        </p>
-      )}
+    <div className="flex flex-col gap-3">
+      <EditorBar
+        leading={
+          <Tabs value={mode} onValueChange={setMode}>
+            <TabsList className="h-8">
+              <TabsTrigger value="form" className="px-3 text-xs">Форма</TabsTrigger>
+              <TabsTrigger value="json" className="px-3 text-xs">JSON</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        }
+        summary={
+          <>
+            {(text.length / 1024).toFixed(1)} КБ
+            {section === 'beats' && stored === null && ' · биты выводятся из сюжетов'}
+          </>
+        }
+        draftAt={draftAt}
+        dirty={dirty}
+      >
+        <Button variant="outline" size="sm" onClick={versions.toggle}>
+          {versions.open ? 'Скрыть историю' : 'История версий'}
+        </Button>
+        <Button variant="outline" size="sm" disabled={!dirty} onClick={reset}>Отменить правки</Button>
+      </EditorBar>
 
       {notes.length > 0 && (
-        <details className={p.notes}>
+        <details className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground [&_summary]:cursor-pointer [&_summary]:select-none [&_summary]:text-foreground">
           <summary>Заметки автора — {notes.length}</summary>
-          <ul>
+          <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-4 leading-snug">
             {notes.map(([k, v]) => (
               <li key={k}>
-                <span className={s.mono}>{k}</span> — {v}
+                <span className="font-mono">{k}</span> — {v}
               </li>
             ))}
           </ul>
         </details>
       )}
 
-      <VersionsTable versions={versions.versions} onRestore={versions.restore} />
+      <VersionsTable versions={versions.versions} loading={versions.loading} onRestore={versions.restore} />
 
       {mode === 'json' || !parsed.ok ? (
-        <textarea
-          className={`${s.field} ${p.json}`}
+        <Textarea
+          className="field-sizing-fixed min-h-[60vh] resize-y overflow-x-auto font-mono text-xs leading-normal whitespace-pre [overflow-wrap:normal] md:text-xs"
           spellCheck={false}
           value={text}
           onChange={(e) => edit(e.target.value)}
         />
       ) : Array.isArray(parsed.doc) ? (
-        <div className={p.docBody}>
+        <div className="min-w-0 max-h-[62vh] overflow-y-auto pr-1.5 [scrollbar-gutter:stable]">
           <DocEditor doc={{ beats: parsed.doc }} onChange={(next) => edit(pretty(next.beats))} />
         </div>
       ) : (
         <DocEditor doc={parsed.doc} onChange={(next) => edit(pretty(next))} />
       )}
 
-      <div className={p.stickyBar}>
-        {!parsed.ok && <span className={s.error}>JSON не разбирается: {parsed.error}</span>}
-        {flash && !dirty && <span className={s.ok}>{flash}</span>}
-        <input
-          className={s.field}
-          style={{ maxWidth: 240 }}
-          placeholder="подпись к версии"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
-        <button className={s.btnPrimary} disabled={!dirty || !parsed.ok || busy} onClick={save} title="Ctrl+S">
-          {busy ? 'Сохранение…' : 'Сохранить секцию'}
-        </button>
-      </div>
+      <SaveBar
+        error={parsed.ok ? null : `JSON не разбирается: ${parsed.error}`}
+        status={!dirty ? flash : null}
+        note={note}
+        onNote={setNote}
+        onSave={save}
+        disabled={!dirty || !parsed.ok || busy}
+        busy={busy}
+        label="Сохранить секцию"
+      />
     </div>
   );
 }

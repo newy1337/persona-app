@@ -1,14 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import { putSection } from '../../api/personas';
-import VersionsTable, { ago, useVersions } from './Versions';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  stickyLastCol,
+} from '@/components/ui/table';
+import { cn } from '@/lib/utils';
+import VersionsTable, { useVersions } from './Versions';
+import { EditorBar, SaveBar } from './EditorBar';
 import { drafts } from './drafts';
 import { SECTION_LABELS, docFromRows, rowErrors, rowsFromDoc, usages } from './variables';
-import s from '../../styles/AdminPage.module.scss';
-import p from './Personas.module.scss';
 
 const DRAFT_DELAY_MS = 600;
 const BUILTINS = { name: 'имя личности' };
 const CHAT_VARIABLES = { city: 'город лида', site: 'сайт знакомств лида' };
+
+const HEAD = 'h-10 px-3 text-xs font-medium text-muted-foreground';
+const CELL = 'p-3 align-top whitespace-normal [overflow-wrap:anywhere]';
 
 export default function VariablesEditor({ persona, onSaved, onError }) {
   const server = useMemo(() => persona.sections.variables ?? {}, [persona.sections.variables]);
@@ -21,6 +37,8 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
   const [flash, setFlash] = useState(null);
   const timer = useRef(null);
   const lastId = useRef(null);
+  const keyInputs = useRef([]);
+  const focusRow = useRef(null);
 
   const versions = useVersions(persona.id, 'variables', {
     onRestored: () => {
@@ -62,6 +80,13 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
+  // Новая строка получает фокус в поле имени — сразу можно печатать.
+  useEffect(() => {
+    if (focusRow.current == null) return;
+    keyInputs.current[focusRow.current]?.focus();
+    focusRow.current = null;
+  }, [rows]);
+
   const doc = useMemo(() => docFromRows(rows), [rows]);
   const dirty = JSON.stringify(doc) !== serverText;
   const errors = useMemo(() => rowErrors(rows, BUILTINS), [rows]);
@@ -87,7 +112,10 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
   };
 
   const setCell = (i, field, value) => update(rows.map((r, j) => (j === i ? { ...r, [field]: value } : r)));
-  const addRow = (key = '') => update([...rows, { key, value: '', note: '' }]);
+  const addRow = (key = '') => {
+    focusRow.current = rows.length;
+    update([...rows, { key, value: '', note: '' }]);
+  };
   const removeRow = (i) => update(rows.filter((_, j) => j !== i));
 
   const reset = () => {
@@ -129,142 +157,158 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
   const where = (key) => [...(used.get(key) ?? [])].map((section) => SECTION_LABELS[section] ?? section);
 
   return (
-    <div className={p.prompts}>
-      <div className={p.sectionBar}>
-        <span className={s.muted}>
-          {defined.size} переменн. · в текстах используется {[...used.keys()].length}
-        </span>
-        <div className={s.actions}>
-          <button className={s.btnSm} onClick={() => addRow()}>+ Переменная</button>
-          <button className={s.btnSm} onClick={versions.toggle}>
-            {versions.open ? 'Скрыть историю' : 'История версий'}
-          </button>
-          <button className={s.btnSm} disabled={!dirty} onClick={reset}>Отменить правки</button>
-        </div>
-      </div>
-
-      <p className={s.hint}>
-        Напишите <span className={s.mono}>{'{site}'}</span> в любой вкладке — промпты, карточка, цели, сюжеты, день, биты —
-        и задайте значение здесь. Бот увидит значение, в редакторах останется <span className={s.mono}>{'{site}'}</span>.
-        Имена — буквы (можно русские), цифры и «_». Незаданная <span className={s.mono}>{'{…}'}</span> остаётся в тексте как есть.
-        <span className={s.mono}> {'{city}'}</span> и <span className={s.mono}>{'{site}'}</span> у каждого диалога свои — из
-        города и сайта лида; значения здесь для них запасные.
-      </p>
-
-      {draftAt && dirty && (
-        <p className={p.draftNote}>
-          Черновик сохранён в браузере ({ago(draftAt)}) — правки не потеряются при перезагрузке.
-        </p>
-      )}
+    <div className="flex flex-col gap-4">
+      <EditorBar
+        summary={`${defined.size} переменн. · в текстах используется ${[...used.keys()].length}`}
+        hint={
+          <>
+            Напишите <span className="font-mono">{'{site}'}</span> в любой вкладке — промпты, карточка, цели, сюжеты, день, биты —
+            и задайте значение здесь. Бот увидит значение, в редакторах останется <span className="font-mono">{'{site}'}</span>.
+            Имена — буквы (можно русские), цифры и «_». Незаданная <span className="font-mono">{'{…}'}</span> остаётся в тексте как есть.
+            <span className="font-mono"> {'{city}'}</span> и <span className="font-mono">{'{site}'}</span> у каждого диалога свои — из
+            города и сайта лида; значения здесь для них запасные.
+          </>
+        }
+        draftAt={draftAt}
+        dirty={dirty}
+      >
+        <Button variant="outline" size="sm" onClick={() => addRow()}>+ Переменная</Button>
+        <Button variant="outline" size="sm" onClick={versions.toggle}>
+          {versions.open ? 'Скрыть историю' : 'История версий'}
+        </Button>
+        <Button variant="outline" size="sm" disabled={!dirty} onClick={reset}>Отменить правки</Button>
+      </EditorBar>
 
       {missing.length > 0 && (
-        <div className={p.varMissing}>
-          <span>В текстах есть, но не заданы:</span>
-          {missing.map((key) => (
-            <button key={key} className={s.btnSm} title={`Используется: ${where(key).join(', ')}`} onClick={() => addRow(key)}>
-              + {`{${key}}`}
-            </button>
-          ))}
-        </div>
+        <Alert variant="warning" className="py-2.5">
+          <AlertDescription className="flex flex-row flex-wrap items-center gap-1.5 text-xs text-warning-foreground">
+            <span>В текстах есть, но не заданы:</span>
+            {missing.map((key) => (
+              <Button
+                key={key}
+                variant="outline"
+                size="sm"
+                className="font-mono"
+                title={`Используется: ${where(key).join(', ')}`}
+                onClick={() => addRow(key)}
+              >
+                + {`{${key}}`}
+              </Button>
+            ))}
+          </AlertDescription>
+        </Alert>
       )}
 
-      <VersionsTable versions={versions.versions} onRestore={versions.restore} />
+      <VersionsTable versions={versions.versions} loading={versions.loading} onRestore={versions.restore} />
 
-      <div className={s.tableWrap}>
-        <table className={`${s.table} ${p.varTable}`}>
-          <thead>
-            <tr><th>Переменная</th><th>Значение</th><th>Пояснение</th><th>Где используется</th><th></th></tr>
-          </thead>
-          <tbody>
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <Table className={cn(stickyLastCol, 'min-w-[760px]')}>
+          <TableHeader>
+            <TableRow>
+              <TableHead className={HEAD}>Переменная</TableHead>
+              <TableHead className={HEAD}>Значение</TableHead>
+              <TableHead className={HEAD}>Пояснение</TableHead>
+              <TableHead className={HEAD}>Где используется</TableHead>
+              <TableHead className={HEAD}></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {Object.entries(BUILTINS).map(([key, label]) => (
-              <tr key={`builtin-${key}`} className={p.varBuiltin}>
-                <td className={s.mono}>{`{${key}}`}</td>
-                <td>{persona.name}</td>
-                <td className={s.muted}>{label} — встроенная, меняется переименованием</td>
-                <td className={s.muted}>{where(key).join(', ') || '—'}</td>
-                <td></td>
-              </tr>
+              <TableRow key={`builtin-${key}`} className="opacity-75">
+                <TableCell className={cn(CELL, 'font-mono')}>{`{${key}}`}</TableCell>
+                <TableCell className={CELL}>{persona.name}</TableCell>
+                <TableCell className={cn(CELL, 'text-muted-foreground')}>{label} — встроенная, меняется переименованием</TableCell>
+                <TableCell className={cn(CELL, 'text-muted-foreground')}>{where(key).join(', ') || '—'}</TableCell>
+                <TableCell className={CELL}></TableCell>
+              </TableRow>
             ))}
             {Object.entries(CHAT_VARIABLES).map(([key, label]) => {
               const fallback = rows.find((r) => String(r.key).trim() === key);
               return (
-                <tr key={`chat-${key}`} className={p.varBuiltin}>
-                  <td className={s.mono}>{`{${key}}`}</td>
-                  <td>из карточки лида</td>
-                  <td className={s.muted}>
+                <TableRow key={`chat-${key}`} className="opacity-75">
+                  <TableCell className={cn(CELL, 'font-mono')}>{`{${key}}`}</TableCell>
+                  <TableCell className={CELL}>из карточки лида</TableCell>
+                  <TableCell className={cn(CELL, 'text-muted-foreground')}>
                     {label}; у лида пусто — {fallback?.value ? `«${fallback.value}» из строки ниже` : 'добавьте строку ниже с запасным значением'}
-                  </td>
-                  <td className={s.muted}>{where(key).join(', ') || '—'}</td>
-                  <td></td>
-                </tr>
+                  </TableCell>
+                  <TableCell className={cn(CELL, 'text-muted-foreground')}>{where(key).join(', ') || '—'}</TableCell>
+                  <TableCell className={CELL}></TableCell>
+                </TableRow>
               );
             })}
             {rows.map((row, i) => {
               const key = String(row.key).trim();
               const places = key ? where(key) : [];
               return (
-                <tr key={i}>
-                  <td>
-                    <span className={p.varKey}>
-                      <span className={s.muted}>{'{'}</span>
-                      <input
-                        className={`${s.field} ${s.mono}`}
+                <TableRow key={i}>
+                  <TableCell className={CELL}>
+                    <span className="inline-flex items-center gap-0.5">
+                      <span className="text-muted-foreground">{'{'}</span>
+                      <Input
+                        ref={(el) => { keyInputs.current[i] = el; }}
+                        className="h-8 w-36 font-mono text-xs md:text-xs"
                         value={row.key}
                         placeholder="site"
+                        aria-invalid={errors[i] ? true : undefined}
                         onChange={(e) => setCell(i, 'key', e.target.value)}
                       />
-                      <span className={s.muted}>{'}'}</span>
+                      <span className="text-muted-foreground">{'}'}</span>
                     </span>
-                    {errors[i] && <span className={p.varError}>{errors[i]}</span>}
-                  </td>
-                  <td>
-                    <input
-                      className={`${s.field} ${p.varValue}`}
+                    <span className="mt-1 block min-h-4 text-xs text-destructive">{errors[i] || ''}</span>
+                  </TableCell>
+                  <TableCell className={CELL}>
+                    <Input
+                      className="h-8 min-w-40"
                       value={row.value}
                       placeholder="значение"
                       onChange={(e) => setCell(i, 'value', e.target.value)}
                     />
-                  </td>
-                  <td>
-                    <input
-                      className={`${s.field} ${p.varValue}`}
+                  </TableCell>
+                  <TableCell className={CELL}>
+                    <Input
+                      className="h-8 min-w-40"
                       value={row.note}
                       placeholder="для себя"
                       onChange={(e) => setCell(i, 'note', e.target.value)}
                     />
-                  </td>
-                  <td className={places.length ? '' : s.muted}>{places.join(', ') || 'нигде'}</td>
-                  <td>
-                    <button className={s.btnSmDanger} title="Удалить переменную" onClick={() => removeRow(i)}>✕</button>
-                  </td>
-                </tr>
+                  </TableCell>
+                  <TableCell className={cn(CELL, 'pt-4', !places.length && 'text-muted-foreground')}>{places.join(', ') || 'нигде'}</TableCell>
+                  <TableCell className={CELL}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 text-destructive hover:text-destructive"
+                      title="Удалить переменную"
+                      aria-label="Удалить переменную"
+                      onClick={() => removeRow(i)}
+                    >
+                      <X className="size-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
               );
             })}
             {rows.length === 0 && (
-              <tr>
-                <td colSpan={5} className={s.muted}>
+              <TableRow>
+                <TableCell colSpan={5} className={cn(CELL, 'text-muted-foreground')}>
                   Переменных пока нет — нажмите «+ Переменная» или добавьте из списка незаданных выше.
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
-      <div className={p.stickyBar}>
-        {invalid && <span className={s.error}>Исправьте имена переменных</span>}
-        {flash && <span className={s.ok}>{flash}</span>}
-        <input
-          className={s.field}
-          style={{ maxWidth: 240 }}
-          placeholder="подпись к версии"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
-        <button className={s.btnPrimary} disabled={!dirty || busy || invalid} onClick={save} title="Ctrl+S">
-          {busy ? 'Сохранение…' : 'Сохранить переменные'}
-        </button>
-      </div>
+      <SaveBar
+        error={invalid ? 'Исправьте имена переменных' : null}
+        status={flash}
+        note={note}
+        onNote={setNote}
+        onSave={save}
+        disabled={!dirty || busy || invalid}
+        busy={busy}
+        label="Сохранить переменные"
+      />
     </div>
   );
 }

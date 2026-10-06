@@ -1,7 +1,18 @@
 import { PanelUX } from '../../ui/PanelUX';
 import { useCallback, useState } from 'react';
 import { getVersions, restoreVersion } from '../../api/personas';
-import s from '../../styles/AdminPage.module.scss';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  stickyLastCol,
+} from '@/components/ui/table';
+import { cn } from '@/lib/utils';
 
 export function fmtTs(ts) {
   if (!ts) return '—';
@@ -19,18 +30,23 @@ export function ago(ms) {
 
 export function useVersions(personaId, section, { onRestored, onError }) {
   const [versions, setVersions] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const toggle = useCallback(async () => {
+    if (loading) return;
     if (versions) {
       setVersions(null);
       return;
     }
+    setLoading(true);
     try {
       setVersions((await getVersions(personaId, section)).items);
     } catch (e) {
       onError(e.detail || e.message);
+    } finally {
+      setLoading(false);
     }
-  }, [versions, personaId, section, onError]);
+  }, [versions, loading, personaId, section, onError]);
 
   const restore = useCallback(
     async (versionId) => {
@@ -46,31 +62,65 @@ export function useVersions(personaId, section, { onRestored, onError }) {
     [personaId, section, onRestored, onError],
   );
 
-  const hide = useCallback(() => setVersions(null), []);
-  return { versions, open: versions !== null, toggle, restore, hide };
+  const hide = useCallback(() => {
+    setVersions(null);
+    setLoading(false);
+  }, []);
+  return { versions, loading, open: versions !== null || loading, toggle, restore, hide };
 }
 
-export default function VersionsTable({ versions, onRestore }) {
-  if (!versions) return null;
+const HEAD = 'h-10 px-3 text-xs font-medium text-muted-foreground';
+const CELL = 'p-3 align-top whitespace-normal [overflow-wrap:anywhere]';
+
+export default function VersionsTable({ versions, loading = false, onRestore }) {
+  if (!versions && !loading) return null;
   return (
-    <div className={s.tableWrap}>
-      <table className={s.table}>
-        <thead>
-          <tr><th>Когда</th><th>Кто</th><th>Подпись</th><th>Размер</th><th></th></tr>
-        </thead>
-        <tbody>
-          {versions.length === 0 && <tr><td colSpan={5} className={s.muted}>Правок ещё не было</td></tr>}
-          {versions.map((v) => (
-            <tr key={v.id}>
-              <td className={s.muted}>{fmtTs(v.created_at)}</td>
-              <td>{v.saved_by ?? '—'}</td>
-              <td className={s.muted}>{v.note ?? ''}</td>
-              <td className={s.muted}>{(v.bytes / 1024).toFixed(1)} КБ</td>
-              <td><button className={s.btnSm} onClick={() => onRestore(v.id)}>Вернуть</button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="overflow-hidden rounded-lg border bg-card">
+      <Table className={cn(stickyLastCol, 'min-w-[560px]')}>
+        <TableHeader>
+          <TableRow>
+            <TableHead className={HEAD}>Когда</TableHead>
+            <TableHead className={HEAD}>Кто</TableHead>
+            <TableHead className={HEAD}>Подпись</TableHead>
+            <TableHead className={HEAD}>Размер</TableHead>
+            <TableHead className={HEAD}></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {!versions ? (
+            <>
+              {[0, 1, 2].map((i) => (
+                <TableRow key={i} role="status" aria-label="Загружаю историю версий">
+                  <TableCell className={CELL}><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell className={CELL}><Skeleton className="h-4 w-20" /></TableCell>
+                  <TableCell className={CELL}><Skeleton className="h-4 w-40" /></TableCell>
+                  <TableCell className={CELL}><Skeleton className="h-4 w-12" /></TableCell>
+                  <TableCell className={CELL}><Skeleton className="h-8 w-20" /></TableCell>
+                </TableRow>
+              ))}
+            </>
+          ) : (
+            <>
+              {versions.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className={cn(CELL, 'text-muted-foreground')}>Правок ещё не было</TableCell>
+                </TableRow>
+              )}
+              {versions.map((v) => (
+                <TableRow key={v.id}>
+                  <TableCell className={cn(CELL, 'font-mono text-xs text-muted-foreground tabular-nums')}>{fmtTs(v.created_at)}</TableCell>
+                  <TableCell className={CELL}>{v.saved_by ?? '—'}</TableCell>
+                  <TableCell className={cn(CELL, 'text-muted-foreground')}>{v.note ?? ''}</TableCell>
+                  <TableCell className={cn(CELL, 'text-muted-foreground tabular-nums')}>{(v.bytes / 1024).toFixed(1)} КБ</TableCell>
+                  <TableCell className={CELL}>
+                    <Button variant="outline" size="sm" onClick={() => onRestore(v.id)}>Вернуть</Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </>
+          )}
+        </TableBody>
+      </Table>
     </div>
   );
 }

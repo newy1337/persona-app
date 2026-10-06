@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ValueEditor, hintFor, label } from './fields';
-import s from '../../styles/AdminPage.module.scss';
-import p from './Personas.module.scss';
+import { Button } from '@/components/ui/button';
+import { FieldRow, ValueEditor, hintFor, label } from './fields';
 
 const isPlain = (v) => v === null || typeof v !== 'object';
 
@@ -29,45 +28,51 @@ export default function DocEditor({ doc, onChange }) {
     if (!nav.some((n) => n.id === active)) setActive(nav[0]?.id ?? '');
   }, [nav, active]);
 
-  if (!keys.length) return <p className={s.empty}>Документ пуст — добавьте поля в режиме JSON.</p>;
+  if (!keys.length) {
+    return <p className="text-sm text-muted-foreground">Документ пуст — добавьте поля в режиме JSON.</p>;
+  }
 
   return (
-    <div className={p.docLayout}>
-      <nav className={p.docNav} aria-label="Группы документа">
-        {nav.map((n) => (
-          <button
-            key={n.id}
-            className={`${p.docNavItem} ${active === n.id ? p.docNavItemActive : ''}`}
-            onClick={() => setActive(n.id)}
-          >
-            <span className={p.docNavTitle}>{n.title}</span>
-            {n.count !== null && <span className={p.docNavCount}>{n.count}</span>}
-          </button>
-        ))}
+    <div className="grid items-start gap-4 md:grid-cols-[190px_minmax(0,1fr)]">
+      <nav
+        className="flex gap-0.5 pr-1 max-md:overflow-x-auto md:max-h-[62vh] md:flex-col md:overflow-y-auto md:[scrollbar-gutter:stable]"
+        aria-label="Группы документа"
+      >
+        {nav.map((n) => {
+          const current = active === n.id;
+          return (
+            <Button
+              key={n.id}
+              variant="ghost"
+              size="sm"
+              aria-current={current ? 'true' : undefined}
+              data-active={current || undefined}
+              className="w-auto shrink-0 justify-start gap-2 px-2.5 font-normal text-muted-foreground data-[active]:bg-accent data-[active]:font-semibold data-[active]:text-foreground md:w-full"
+              onClick={() => setActive(n.id)}
+            >
+              <span className="truncate">{n.title}</span>
+              {n.count !== null && (
+                <span className="ml-auto font-mono text-[11px] text-muted-foreground tabular-nums">{n.count}</span>
+              )}
+            </Button>
+          );
+        })}
       </nav>
 
-      <div className={p.docBody}>
+      <div className="min-w-0 max-h-[62vh] overflow-y-auto pr-1.5 [scrollbar-gutter:stable]">
         {active === '__plain' ? (
-          <div className={p.fields}>
-            {plainKeys.map((k) => {
-              const hint = hintFor(doc, k);
-              return (
-                <div key={k} className={p.field}>
-                  <div className={p.fieldLabel}>
-                    <span className={p.fieldName}>{label(k)}</span>
-                    {label(k) !== k && <span className={p.fieldKey}>{k}</span>}
-                    {hint && <span className={p.fieldHint}>{hint}</span>}
-                  </div>
-                  <div className={p.fieldValue}>
-                    <ValueEditor value={doc[k]} onChange={(v) => onChange({ ...doc, [k]: v })} />
-                  </div>
-                </div>
-              );
-            })}
+          <div className="flex flex-col gap-3.5">
+            {plainKeys.map((k) => (
+              <FieldRow key={k} parent={doc} k={k}>
+                <ValueEditor value={doc[k]} onChange={(v) => onChange({ ...doc, [k]: v })} />
+              </FieldRow>
+            ))}
           </div>
         ) : active && active in doc ? (
           <>
-            {hintFor(doc, active) && <p className={p.groupHint}>{hintFor(doc, active)}</p>}
+            {hintFor(doc, active) && (
+              <p className="mb-3 text-xs leading-relaxed text-muted-foreground">{hintFor(doc, active)}</p>
+            )}
             <ValueEditor value={doc[active]} onChange={(v) => onChange({ ...doc, [active]: v })} />
           </>
         ) : null}

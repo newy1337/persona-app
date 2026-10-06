@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { putSection } from '../../api/personas';
-import VersionsTable, { ago, useVersions } from './Versions';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
+import VersionsTable, { useVersions } from './Versions';
+import { EditorBar, SaveBar } from './EditorBar';
 import { buildPromptsFile, promptsFileName, readPromptsFile } from './promptsFile';
 import { saveJsonFile } from './files';
 import { drafts } from './drafts';
-import s from '../../styles/AdminPage.module.scss';
-import p from './Personas.module.scss';
 
 const DRAFT_DELAY_MS = 600;
 const SHORT = new Set(['opener', 'intro']);
@@ -138,85 +142,92 @@ export default function PromptsEditor({ persona, defaults, onSaved, onError }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [save]);
 
-  if (!defaults) return <p className={s.empty}>Загружаю тексты…</p>;
+  if (!defaults) {
+    return (
+      <div className="flex flex-col gap-4" role="status">
+        <p className="text-sm text-muted-foreground">Загружаю тексты…</p>
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-48 w-full" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    );
+  }
 
   const changed = defaults.keys.filter((k) => (draft[k] ?? '') !== (defaults.defaults[k] ?? '')).length;
 
   return (
-    <div className={p.prompts}>
-      <div className={p.sectionBar}>
-        <span className={s.muted}>
-          {defaults.keys.length} текстов · {changed > 0 ? `${changed} отличается от кода` : 'как в коде'}
-        </span>
-        <div className={s.actions}>
-          <button className={s.btnSm} title="Скачать тексты одним файлом" onClick={exportFile}>
-            Выгрузить в файл
-          </button>
-          <button
-            className={s.btnSm}
-            title="Взять тексты из файла — применит обычное сохранение"
-            onClick={() => filePicker.current?.click()}
-          >
-            Загрузить из файла
-          </button>
-          <input
-            ref={filePicker}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
-              void importFile(file);
-            }}
-          />
-          <button className={s.btnSm} onClick={versions.toggle}>
-            {versions.open ? 'Скрыть историю' : 'История версий'}
-          </button>
-          <button className={s.btnSm} disabled={!dirty} onClick={reset}>Отменить правки</button>
-        </div>
-      </div>
+    <div className="flex flex-col gap-4">
+      <EditorBar
+        summary={`${defaults.keys.length} текстов · ${changed > 0 ? `${changed} отличается от кода` : 'как в коде'}`}
+        hint={
+          <>
+            Правка действует со следующего ответа, перезапуск не нужен.{' '}
+            <span className="font-mono">{'{name}'}</span> заменяется именем личности, свои{' '}
+            <span className="font-mono">{'{site}'}</span> и другие задаются на вкладке «Переменные».
+          </>
+        }
+        draftAt={draftAt}
+        dirty={dirty}
+      >
+        <Button variant="outline" size="sm" title="Скачать тексты одним файлом" onClick={exportFile}>
+          Выгрузить в файл
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          title="Взять тексты из файла — применит обычное сохранение"
+          onClick={() => filePicker.current?.click()}
+        >
+          Загрузить из файла
+        </Button>
+        <input
+          ref={filePicker}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            void importFile(file);
+          }}
+        />
+        <Button variant="outline" size="sm" onClick={versions.toggle}>
+          {versions.open ? 'Скрыть историю' : 'История версий'}
+        </Button>
+        <Button variant="outline" size="sm" disabled={!dirty} onClick={reset}>Отменить правки</Button>
+      </EditorBar>
 
-      <p className={s.hint}>
-        Правка действует со следующего ответа, перезапуск не нужен.{' '}
-        <span className={s.mono}>{'{name}'}</span> заменяется именем личности, свои{' '}
-        <span className={s.mono}>{'{site}'}</span> и другие задаются на вкладке «Переменные».
-      </p>
-
-      {draftAt && dirty && (
-        <p className={p.draftNote}>
-          Черновик сохранён в браузере ({ago(draftAt)}) — правки не потеряются при перезагрузке.
-        </p>
-      )}
-
-      <VersionsTable versions={versions.versions} onRestore={versions.restore} />
+      <VersionsTable versions={versions.versions} loading={versions.loading} onRestore={versions.restore} />
 
       {defaults.keys.map((key) => {
         const label = defaults.labels[key];
         const value = draft[key] ?? '';
         const same = value === defaults.defaults[key];
         return (
-          <div key={key} className={p.promptBlock}>
-            <div className={p.promptHead}>
-              <span className={p.promptTitle}>
+          <div key={key} className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-sm font-medium">
                 {label.title}
-                {!same && <span className={p.promptOwn}>изменён</span>}
+                <Badge variant="outline" className={cn('h-5', same && 'invisible')}>изменён</Badge>
               </span>
-              <div className={s.actions}>
-                <span className={s.muted} style={{ fontSize: 11 }}>{value.length} симв.</span>
-                <button
-                  className={s.btnSm}
+              <div className="flex items-center gap-2">
+                <span className="min-w-16 text-right font-mono text-xs text-muted-foreground tabular-nums">
+                  {value.length} симв.
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
                   disabled={same}
                   title="Подставить в поле текст, зашитый в коде"
                   onClick={() => set(key, defaults.defaults[key])}
                 >
                   Текст из кода
-                </button>
+                </Button>
               </div>
             </div>
-            <p className={p.promptHint}>{label.hint}</p>
-            <textarea
-              className={`${s.field} ${p.promptText}`}
+            <p className="text-xs text-muted-foreground">{label.hint}</p>
+            <Textarea
+              className="field-sizing-fixed resize-y font-mono text-xs leading-relaxed md:text-xs"
               rows={SHORT.has(key) ? 2 : 12}
               spellCheck={false}
               value={value}
@@ -226,19 +237,15 @@ export default function PromptsEditor({ persona, defaults, onSaved, onError }) {
         );
       })}
 
-      <div className={p.stickyBar}>
-        {flash && <span className={s.ok}>{flash}</span>}
-        <input
-          className={s.field}
-          style={{ maxWidth: 240 }}
-          placeholder="подпись к версии"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
-        <button className={s.btnPrimary} disabled={!dirty || busy} onClick={save} title="Ctrl+S">
-          {busy ? 'Сохранение…' : 'Сохранить промпты'}
-        </button>
-      </div>
+      <SaveBar
+        status={flash}
+        note={note}
+        onNote={setNote}
+        onSave={save}
+        disabled={!dirty || busy}
+        busy={busy}
+        label="Сохранить промпты"
+      />
     </div>
   );
 }
