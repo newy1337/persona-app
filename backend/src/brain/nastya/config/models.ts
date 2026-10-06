@@ -77,7 +77,7 @@ export function isJudgeModel(value: unknown): value is string {
 
 export const STAGE_LABELS: Readonly<Record<string, string>> = {
   time_location: 'Определение города для местного времени',
-  generator: 'Ответ Насти',
+  generator: 'Ответ личности',
   judge_plan: 'Анализ диалога',
   judge_review: 'Проверка ответа',
   judge: 'Судья',

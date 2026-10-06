@@ -40,7 +40,11 @@ import {
   LeadFacts,
   REFUSAL_LOCK_KEY,
 } from 'src/domain/lead-facts';
-import { datingSiteOf, leadSlots } from 'src/domain/outreach-opener';
+import {
+  datingSiteOf,
+  leadSlots,
+  openerText,
+} from 'src/domain/outreach-opener';
 import { fillText } from './nastya/config/variables';
 import type { TypingStyle } from 'src/domain/typing';
 import {
@@ -2059,10 +2063,11 @@ export class NastyaBrainService implements ReplyBrain {
           },
         };
 
-        const reply = fillText(persona.prompts.opener, {
-          ...persona.variables,
-          ...(site ? { site } : {}),
-        });
+        const reply = openerText(
+          persona.prompts.opener,
+          persona.variables,
+          site,
+        );
         await this.deliverParts(
           chatId,
           [reply],
