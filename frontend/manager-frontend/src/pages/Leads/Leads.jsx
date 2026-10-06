@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Loader2, Search } from 'lucide-react';
+import { Loader2, Play, Plus, Upload } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { PanelUX } from '../../ui/PanelUX';
 import { CreateLeadForm } from './CreateLeadForm';
 import { LeadsTable } from './LeadsTable';
@@ -15,6 +16,11 @@ import {
   updateLead,
   writeFromAnother,
 } from '../../api/leads';
+import { useRouteBusy } from '../../components/AppLayout/routeBusy';
+import { PageHeader } from '../../components/PageHeader/PageHeader';
+import { Pager } from '../../components/Pager/Pager';
+import { SearchInput } from '../../components/SearchInput/SearchInput';
+import { StageTabs } from '../../components/StageTabs/StageTabs';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -26,7 +32,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
@@ -48,10 +53,16 @@ const BADGE = {
   queued: { variant: 'secondary' },
   assigned: { variant: 'default' },
   contacted: { variant: 'success' },
-  replied: { variant: 'success', className: 'border-success-foreground/40 font-semibold' },
+  replied: { variant: 'success' },
   dead: { variant: 'destructive' },
 };
 const SEARCH_DEBOUNCE_MS = 250;
+const PAGE_SIZES = [25, 50, 100];
+const DOT = {
+  success: 'bg-success-foreground',
+  warning: 'bg-warning-foreground',
+  destructive: 'bg-destructive',
+};
 
 function fmtTs(ts) {
   if (!ts) return '—';
@@ -72,9 +83,17 @@ function PersonaSelect({ personas, value, onChange, className, ...props }) {
   );
 }
 
-function AddForm(props) { return <CreateLeadForm {...props} PersonaSelect={PersonaSelect} />; }
-
 const Mono = ({ children }) => <span className="font-mono text-foreground">{children}</span>;
+
+/* Строка состояния: цветная точка и одно короткое предложение. */
+function StatusLine({ tone, children, ...props }) {
+  return (
+    <p className="flex min-w-0 items-start gap-2 leading-4" {...props}>
+      <span className={cn('mt-[5px] size-1.5 shrink-0 rounded-full', DOT[tone])} aria-hidden="true" />
+      <span className="min-w-0">{children}</span>
+    </p>
+  );
+}
 
 function ImportDialog({ personas, onClose }) {
   const [text, setText] = useState('');
@@ -101,8 +120,12 @@ function ImportDialog({ personas, onClose }) {
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(Boolean(result)); }}>
-      <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]">
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
+      <DialogContent
+        portal={false}
+        showCloseButton={false}
+        className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]"
+      >
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit} aria-label="Импорт лидов">
           <DialogHeader className="p-6 pb-4">
             <DialogTitle>Импорт номеров</DialogTitle>
             <DialogDescription>
@@ -115,12 +138,12 @@ function ImportDialog({ personas, onClose }) {
           </DialogHeader>
           <div className="flex min-h-[360px] min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-6 [scrollbar-gutter:stable]">
             {result ? (
-              <div className="rounded-lg border bg-card p-4 text-sm">
-                <p className="text-success-foreground">Добавлено: <span className="tabular-nums">{result.created}</span>, дублей: <span className="tabular-nums">{result.duplicates}</span></p>
+              <div className="flex flex-col gap-2 rounded-lg bg-muted/40 p-4 text-sm">
+                <StatusLine tone="success">Добавлено: <span className="tabular-nums">{result.created}</span>, дублей: <span className="tabular-nums">{result.duplicates}</span></StatusLine>
                 {result.errors.length > 0 && (
                   <>
-                    <p className="mt-2 text-destructive">Пропущено строк: <span className="tabular-nums">{result.errors.length}</span></p>
-                    <p className="mt-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">{result.errors.slice(0, 5).join(' · ')}{result.errors.length > 5 ? ' …' : ''}</p>
+                    <StatusLine tone="destructive">Пропущено строк: <span className="tabular-nums">{result.errors.length}</span></StatusLine>
+                    <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{result.errors.slice(0, 5).join(' · ')}{result.errors.length > 5 ? ' …' : ''}</p>
                   </>
                 )}
               </div>
@@ -130,6 +153,7 @@ function ImportDialog({ personas, onClose }) {
                   className="min-h-[240px] resize-y font-mono text-xs field-sizing-fixed [field-sizing:fixed] md:text-xs"
                   rows={10}
                   autoFocus
+                  aria-label="Список лидов"
                   placeholder={'+79001234567;Олег;Москва;34;beboo\n@some_name;Ира;;;mamba\nt.me/other_name'}
                   value={text}
                   onChange={(e) => setText(e.target.value)}
@@ -152,7 +176,7 @@ function ImportDialog({ personas, onClose }) {
               <>
                 <Button type="button" variant="outline" disabled={busy} onClick={() => onClose(false)}>Отмена</Button>
                 <Button type="submit" disabled={busy || !lines}>
-                  {busy && <Loader2 className="animate-spin" />}
+                  {busy && <Loader2 className="animate-spin" aria-hidden="true" />}
                   <span>{busy ? 'Импорт…' : <>Импортировать (<span className="tabular-nums">{lines}</span>)</>}</span>
                 </Button>
               </>
@@ -164,27 +188,34 @@ function ImportDialog({ personas, onClose }) {
   );
 }
 
+/* Состояние прозвона одной строкой; подробности лимитов — в подсказке. */
 function OutreachBar({ status, queued }) {
   if (!status) return null;
   const online = status.accounts.filter((a) => a.online);
   const sent = status.accounts.reduce((n, a) => n + a.sent_today, 0);
   const cap = status.accounts.length * status.daily_per_account;
-  let problem = null;
-  if (!status.enabled) problem = 'прозвон выключен: нет ключей Telegram или включён аварийный стоп';
-  else if (!online.length) problem = 'нет ни одного активного аккаунта онлайн — включите аккаунт в разделе «Аккаунты»';
-  else if (!status.within_hours) problem = `вне рабочих часов (${status.hours_msk[0]}:00–${status.hours_msk[1]}:00 МСК)`;
-  const detail = `Сегодня отправлено ${sent} из ${cap} (лимит ${status.daily_per_account}/акк., пауза ${Math.round(status.min_gap_s / 60)} мин, проверка очереди раз в минуту).`;
-  if (problem && queued > 0) {
-    return (
-      <p className="text-xs text-destructive tabular-nums">
-        Очередь ({queued}) стоит: {problem}. {online.length === 0 && status.enabled && <Link to="/accounts" className="underline underline-offset-4">Открыть аккаунты →</Link>}
-      </p>
-    );
+  const today = `сегодня ${sent} из ${cap}`;
+  const waiting = queued > 0 ? `в очереди ${queued}` : null;
+  const detail = `Лимит ${status.daily_per_account} в день на аккаунт, пауза ${Math.round(status.min_gap_s / 60)} мин между сообщениями, очередь проверяется раз в минуту.`;
+  let tone = 'success';
+  let parts = ['Прозвон работает', `${online.length} акк. онлайн`, today];
+  let accountsLink = false;
+  if (!status.enabled) {
+    tone = 'destructive';
+    parts = ['Прозвон выключен', 'нет ключей Telegram или включён аварийный стоп', waiting];
+  } else if (!online.length) {
+    tone = 'destructive';
+    parts = ['Прозвон стоит', 'нет ни одного активного аккаунта онлайн', waiting];
+    accountsLink = true;
+  } else if (!status.within_hours) {
+    tone = 'warning';
+    parts = ['Прозвон ждёт', `вне рабочих часов (${status.hours_msk[0]}:00–${status.hours_msk[1]}:00 МСК)`, waiting, today];
   }
   return (
-    <p className="text-xs text-muted-foreground tabular-nums">
-      Прозвон — {problem ? `${problem}, очередь ждёт` : `работает: ${online.length} акк. онлайн`}. {detail}
-    </p>
+    <StatusLine tone={tone} data-testid="outreach-status" data-tone={tone}>
+      <span className="tabular-nums" title={detail}>{parts.filter(Boolean).join(' · ')}</span>
+      {accountsLink && <>{' '}<Link to="/accounts" className="text-primary underline-offset-4 hover:underline">Открыть аккаунты →</Link></>}
+    </StatusLine>
   );
 }
 
@@ -194,10 +225,10 @@ function StuckWarning({ items, personas }) {
   if (!stuck.length) return null;
   const names = [...new Set(stuck.map((l) => l.persona_name || l.persona_id))].join(', ');
   return (
-    <p className="text-xs text-destructive">
-      {stuck.length} лид(ов) в очереди ждут: у личности {names} нет аккаунтов в сети. Включите аккаунт этой личности
+    <StatusLine tone="warning">
+      <span className="tabular-nums">{stuck.length}</span> лид(ов) в очереди ждут: у личности {names} нет аккаунтов в сети. Включите аккаунт этой личности
       или смените личность у лида.
-    </p>
+    </StatusLine>
   );
 }
 
@@ -210,6 +241,8 @@ export default function Leads() {
   const [status, setStatus] = useState('');
   const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const [outreach, setOutreach] = useState(null);
   const [error, setError] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -217,21 +250,35 @@ export default function Leads() {
   const [selected, setSelected] = useState(() => new Set());
   const [deleting, setDeleting] = useState(null);
   const [personas, setPersonas] = useState([]);
+  const busy = PanelUX.useActions().pending.some((key) => key.includes('/api/leads'));
+  // Номер последнего запроса: ответ прошлой страницы не затирает новую.
+  const request = useRef(0);
+
+  useRouteBusy(data.items === null);
 
   useEffect(() => {
-    const t = setTimeout(() => setQ(qInput), SEARCH_DEBOUNCE_MS);
+    if (qInput === q) return undefined;
+    const t = setTimeout(() => { setQ(qInput); setPage(1); }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [qInput]);
+  }, [qInput, q]);
 
   const loadPersonas = useCallback(() => {
     getLeadPersonas().then((r) => setPersonas(r.items ?? [])).catch(() => setPersonas([]));
   }, []);
 
   const load = useCallback(() => {
-    Promise.all([getLeads({ status, q }), getOutreachStatus().catch(() => null)])
-      .then(([d, o]) => { setData(d); if (o) setOutreach(o); })
-      .catch((e) => setError(e.detail || e.message));
-  }, [status, q]);
+    const id = ++request.current;
+    Promise.all([
+      getLeads({ status, q, limit: pageSize, offset: (page - 1) * pageSize }),
+      getOutreachStatus().catch(() => null),
+    ])
+      .then(([d, o]) => {
+        if (id !== request.current) return;
+        setData(d);
+        if (o) setOutreach(o);
+      })
+      .catch((e) => { if (id === request.current) setError(e.detail || e.message); });
+  }, [status, q, page, pageSize]);
 
   useEffect(() => {
     load();
@@ -264,62 +311,80 @@ export default function Leads() {
   const ids = [...selected];
   const counts = data.counts ?? {};
   const items = data.items ?? [];
+  // Старый бэкенд total не присылает — тогда страница одна.
+  const total = data.total ?? items.length;
+  const loaded = data.items !== null;
+
+  // Список стал короче (удаление, смена статуса) — возвращаемся на последнюю страницу.
+  useEffect(() => {
+    if (!loaded) return;
+    const pages = Math.max(1, Math.ceil(total / pageSize));
+    if (page > pages) setPage(pages);
+  }, [loaded, total, pageSize, page]);
+
+  const written = (counts.contacted ?? 0) + (counts.replied ?? 0);
+  const stages = STATUS.map((st) => ({
+    key: st.key,
+    label: st.label,
+    count: st.key ? counts[st.key] : counts.total,
+    hint: st.key === 'replied' && written > 0
+      ? `${Math.round(((counts.replied ?? 0) / written) * 100)}% от тех, кому написали`
+      : undefined,
+  }));
 
   return (
     <>
-        <div className="container">
-          <div className="my-6 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-xl font-semibold">Лиды</h2>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" onClick={() => setImporting(true)}>Импорт списка</Button>
-              <Button variant="outline" disabled={adding} onClick={() => setAdding(true)}>+ Добавить номер</Button>
-              {ids.length > 0 ? (
-                <>
-                  <Button onClick={() => run(() => startOutreach(ids))}><span>В очередь (<span className="tabular-nums">{ids.length}</span>)</span></Button>
-                  <Button variant="outline" onClick={() => run(() => stopOutreach(ids))}><span>Снять (<span className="tabular-nums">{ids.length}</span>)</span></Button>
-                </>
-              ) : (
-                <Button disabled={!counts.pending} onClick={() => run(() => startOutreach())}>
-                  <span>Запустить прозвон (<span className="inline-block min-w-[1ch] text-center tabular-nums">{counts.pending ?? 0}</span>)</span>
-                </Button>
-              )}
-            </div>
-          </div>
+      <div className="container">
+        <PageHeader title="Лиды">
+          <Button size="sm" variant="outline" onClick={() => setImporting(true)}>
+            <Upload aria-hidden="true" />
+            Импорт списка
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
+            <Plus aria-hidden="true" />
+            Добавить номер
+          </Button>
+          <Button size="sm" disabled={!counts.pending} onClick={() => run(() => startOutreach())}>
+            <Play aria-hidden="true" />
+            <span>Запустить прозвон (<span className="inline-block min-w-[1ch] text-center tabular-nums">{counts.pending ?? 0}</span>)</span>
+          </Button>
+        </PageHeader>
 
-          <div className="mb-4 flex min-h-5 flex-col gap-1" aria-live="polite">
+        <div className="flex flex-col gap-4">
+          <div className="flex min-h-4 flex-col gap-1 text-xs" aria-live="polite">
             <OutreachBar status={outreach} queued={counts.queued ?? 0} />
             <StuckWarning items={items} personas={personas} />
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {error && <p className="leading-4 text-destructive [overflow-wrap:anywhere]">{error}</p>}
           </div>
 
-          {adding && <AddForm personas={personas} onDone={() => { setAdding(false); load(); }} onCancel={() => setAdding(false)} />}
+          <StageTabs
+            aria-label="Статус"
+            items={stages}
+            value={status}
+            total={counts.total}
+            onChange={(key) => { setStatus(key); setPage(1); }}
+          />
 
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Статус">
-              {STATUS.map((st) => {
-                const active = status === st.key;
-                return (
-                  <Button
-                    key={st.key || 'all'}
-                    size="sm"
-                    variant={active ? 'secondary' : 'ghost'}
-                    aria-pressed={active}
-                    onClick={() => setStatus(st.key)}
-                  >
-                    {st.label} <span className="min-w-[2ch] text-right text-xs tabular-nums text-muted-foreground">{st.key ? counts[st.key] ?? 0 : counts.total ?? 0}</span>
-                  </Button>
-                );
-              })}
-            </div>
-            <div className="relative w-full sm:w-auto sm:min-w-[300px]">
-              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-              <Input
-                className="h-8 pl-8"
-                placeholder="поиск: телефон, @username, имя, город"
-                value={qInput}
-                onChange={(e) => setQInput(e.target.value)}
-              />
-            </div>
+          <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-2">
+            <SearchInput
+              className="w-full sm:w-80"
+              aria-label="Поиск лидов"
+              placeholder="Телефон, @username, имя, город"
+              value={qInput}
+              onChange={setQInput}
+            />
+            {ids.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Действия с выбранными">
+                <span className="min-w-[11ch] text-xs tabular-nums text-muted-foreground" role="status">Выбрано: {ids.length}</span>
+                <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => run(() => startOutreach(ids))}>
+                  <span>В очередь (<span className="tabular-nums">{ids.length}</span>)</span>
+                </Button>
+                <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => run(() => stopOutreach(ids))}>
+                  <span>Снять (<span className="tabular-nums">{ids.length}</span>)</span>
+                </Button>
+                <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setSelected(new Set())}>Снять выделение</Button>
+              </div>
+            )}
           </div>
 
           <LeadsTable rows={data.items} query={q} status={status} selected={selected}
@@ -327,13 +392,29 @@ export default function Leads() {
               const next = new Set(previous);
               for (const row of items) { if (checked) next.add(row.id); else next.delete(row.id); }
               return next;
-            })} onClearSelection={() => setSelected(new Set())}
+            })}
             onChat={id => navigate(`/conversation/${id}`)}
             onQueue={ids => run(() => startOutreach(ids))} onUnqueue={ids => run(() => stopOutreach(ids))}
             onReassign={row => run(() => writeFromAnother(row.id))} onDelete={setDeleting}
             onPersonaChange={(id, persona_id) => run(() => updateLead(id, { persona_id }))}
             personas={personas} helpers={{ PersonaSelect, statusLabels: LABEL, statusBadges: BADGE, date: fmtTs }} />
+
+          {loaded ? (
+            <Pager
+              label="Страницы лидов"
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPage={setPage}
+              pageSizes={PAGE_SIZES}
+              onPageSize={(size) => { setPageSize(size); setPage(1); }}
+            />
+          ) : (
+            <div className="min-h-8" />
+          )}
         </div>
+      </div>
+      {adding && <CreateLeadForm personas={personas} PersonaSelect={PersonaSelect} onDone={() => { setAdding(false); load(); }} onCancel={() => setAdding(false)} />}
       {importing && <ImportDialog personas={personas} onClose={() => { setImporting(false); load(); }} />}
       {deleting && (
         <DeleteLeadDialog

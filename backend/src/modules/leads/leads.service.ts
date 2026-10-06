@@ -210,7 +210,7 @@ export class LeadsService {
 
   async list(
     scope: LeadScope | null,
-    filter: { status?: string; q?: string; limit?: number },
+    filter: { status?: string; q?: string; limit?: number; offset?: number },
   ) {
     await this.markReplied();
     const q = filter.q?.trim();
@@ -233,11 +233,16 @@ export class LeadsService {
           : {},
       ],
     };
-    const rows = await this.prisma.phoneNumber.findMany({
-      where,
-      orderBy: { id: 'desc' },
-      take: filter.limit ?? 200,
-    });
+    const [rows, total] = await Promise.all([
+      this.prisma.phoneNumber.findMany({
+        where,
+        orderBy: { id: 'desc' },
+        skip: filter.offset ?? 0,
+        take: filter.limit ?? 200,
+      }),
+      // То же условие, что и у выборки: статус + поиск + область видимости.
+      this.prisma.phoneNumber.count({ where }),
+    ]);
     const [names, personas, managers] = await Promise.all([
       this.accountNames(),
       this.personaNames(),
@@ -245,6 +250,7 @@ export class LeadsService {
     ]);
     return {
       items: rows.map((r) => this.toView(r, names, personas, managers)),
+      total,
       counts: await this.counts(scope),
     };
   }

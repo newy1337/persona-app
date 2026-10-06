@@ -1,9 +1,11 @@
 import { api } from './client';
 
-export function getLeads({ status, q } = {}) {
+export function getLeads({ status, q, limit, offset } = {}) {
   const p = new URLSearchParams();
   if (status) p.set('status', status);
   if (q) p.set('q', q);
+  if (limit != null) p.set('limit', String(limit));
+  if (offset != null) p.set('offset', String(offset));
   const qs = p.toString();
   return api.get(`/api/leads${qs ? `?${qs}` : ''}`);
 }

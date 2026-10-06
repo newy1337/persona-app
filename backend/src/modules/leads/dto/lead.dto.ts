@@ -142,4 +142,10 @@ export class ListLeadsQuery {
   @Min(1)
   @Max(2000)
   limit?: number;
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
 }
