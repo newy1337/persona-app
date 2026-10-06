@@ -18,19 +18,19 @@ export const STATUS_VARIANT = {
 
 /* Сетка аккаунтов: одно значение в ячейке (у аккаунта под именем — ник, у
    состояния — строка под ограничение). Ширины заданы у всех колонок, кроме
-   «Аккаунт» — она забирает остаток. «Регион» и «Пульс» видны с 1536px, на
-   экранах уже они остаются в раскрытии строки. Уже 1160px таблица
+   «Прокси» — она забирает остаток (адрес прокси длинный). «Регион» и «Пульс» видны с 1536px, на
+   экранах уже они остаются в раскрытии строки. Уже 1250px таблица
    прокручивается внутри рамки. */
 const WIDE_ONLY = 'max-2xl:hidden';
 const COLUMNS = [
   { key: 'toggle', label: 'Подробнее', width: '44px', quiet: true },
-  { key: 'account', label: 'Аккаунт' },
+  { key: 'account', label: 'Аккаунт', width: '260px' },
   { key: 'phone', label: 'Телефон', width: '148px' },
   { key: 'persona', label: 'Личность', width: '140px' },
-  { key: 'manager', label: 'Менеджер', width: '124px' },
+  { key: 'manager', label: 'Менеджер', width: '140px' },
   { key: 'region', label: 'Регион', width: '84px', wide: true },
   { key: 'chats', label: 'Диалоги', width: '84px' },
-  { key: 'proxy', label: 'Прокси', width: '168px' },
+  { key: 'proxy', label: 'Прокси' },
   { key: 'state', label: 'Состояние', width: '176px' },
   { key: 'pulse', label: 'Пульс', width: '120px', wide: true },
   { key: 'actions', label: 'Действия', width: '88px', quiet: true },
@@ -52,7 +52,7 @@ const Empty = () => <span className="text-muted-foreground">—</span>;
 function Frame({ children, className, tableProps, ...props }) {
   return (
     <div className={cn('rounded-lg border bg-card', className)} {...props}>
-      <Table className="min-w-[1160px] table-fixed" {...tableProps}>
+      <Table className="min-w-[1250px] table-fixed" {...tableProps}>
         <TableHeader>
           <tr>
             {COLUMNS.map((col) => (

@@ -26,7 +26,7 @@ const WIDE_ONLY = 'max-[1679px]:hidden';
 const COLUMNS = [
   { key: 'lead', label: 'Лид', bars: ['w-28', 'w-24'] },
   { key: 'contact', label: 'Контакт', width: 'w-[160px]', bars: ['w-24'] },
-  { key: 'telegram', label: 'Telegram', width: 'w-[152px]', wide: true, bars: ['w-20'] },
+  { key: 'telegram', label: 'Telegram', width: 'w-[168px]', wide: true, bars: ['w-20'] },
   { key: 'site', label: 'Сайт', width: 'w-[92px]', wide: true, bars: ['w-12'] },
   { key: 'persona', label: 'Личность', width: 'w-[168px]', bars: ['w-24'] },
   { key: 'manager', label: 'Менеджер', width: 'w-[116px]', bars: ['w-16'] },
