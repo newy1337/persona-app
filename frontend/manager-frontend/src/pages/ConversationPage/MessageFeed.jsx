@@ -1,4 +1,8 @@
-import styles from './ConversationPage.module.scss';
+import { ChevronDown, Paperclip } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { AVATAR_BG } from '../../utils/avatar';
 import ClientAvatar, { ACTIVITY_LABEL } from '../../components/ClientAvatar/ClientAvatar';
 import VoicePlayer from '../../components/VoicePlayer/VoicePlayer';
@@ -10,12 +14,32 @@ import {
   withToken,
 } from '../../utils/chat';
 import { markListened as markListenedApi } from '../../api/conversations';
-import EmojiPicker from '../../components/composer/EmojiPicker';
-import composer from '../../components/composer/Composer.module.scss';
+import EmojiPicker, { PICKER_W, PICKER_H } from '../../components/composer/EmojiPicker';
 import { REACTION_EMOJI } from '../../utils/reactions';
 import { ShortIcon } from '../../assets/icons';
 
 const JUMP_SHOW_PX = 400;
+
+// Рамка под фото/видео занимает место ещё до загрузки файла: поздно пришедшая
+// картинка не толкает ленту. Сам файл вписывается в рамку целиком.
+const MEDIA_BOX = 'block aspect-square w-[260px] max-w-full shrink-0 overflow-hidden rounded-lg bg-muted';
+const NOTE_BOX = 'block aspect-square w-[240px] max-w-full shrink-0 overflow-hidden rounded-full bg-muted';
+const MEDIA_ITEM = 'mediaItem block size-full object-contain';
+const NOTE_ITEM = 'mediaItem videoNote block size-full object-cover';
+
+const ROW = 'msgRow flex w-full items-end gap-2';
+const INNER = 'flex min-w-0 flex-1 items-end gap-2.5';
+const CONTENT = 'flex max-w-[724px] min-w-0 flex-col gap-1';
+const AVATAR = 'clientAvatar size-8 shrink-0 rounded-full border text-[10px]';
+const BUBBLE = 'flex min-w-0 flex-col gap-2 rounded-xl border px-3.5 py-2.5 text-sm leading-relaxed [overflow-wrap:anywhere]';
+const BUBBLE_KIND = {
+  client: 'border-transparent bg-muted',
+  bot: 'border-primary/20 bg-primary/10',
+  manager: 'border-l-2 border-l-primary bg-card',
+};
+const TG_MARK = 'pr-0.5 text-[11px] tracking-[-2px]';
+const ROW_TOOL = 'text-muted-foreground';
+const DOT = 'size-1.5 rounded-full bg-primary animate-[typingDot_1.2s_ease-in-out_infinite]';
 
 function fmtTime(ts) {
   if (!ts) return '';
@@ -39,20 +63,20 @@ function MediaContent({ chatId, msg, inbound = null }) {
     const src = withToken(msg.media_url);
     if (msg.media_kind === 'photo' || msg.media_kind === 'sticker') {
       return <>
-        <a href={src} target="_blank" rel="noreferrer"><img className={styles.mediaItem} src={src} alt={caption || 'Вложение'} loading="lazy" /></a>
+        <a className={MEDIA_BOX} href={src} target="_blank" rel="noreferrer"><img className={MEDIA_ITEM} src={src} alt={caption || 'Вложение'} loading="lazy" /></a>
         {label}
       </>;
     }
     if (msg.media_kind === 'video_note') {
       return <>
-        <video className={`${styles.mediaItem} ${styles.videoNote}`} src={src} controls playsInline preload="metadata" />
+        <span className={NOTE_BOX}><video className={NOTE_ITEM} src={src} controls playsInline preload="metadata" /></span>
         {label}
       </>;
     }
     if (msg.media_kind === 'animation' || msg.media_kind === 'video') {
       const gif = msg.media_kind === 'animation';
       return <>
-        <video className={styles.mediaItem} src={src} controls={!gif} autoPlay={gif} loop={gif} muted={gif} playsInline preload="metadata" />
+        <span className={MEDIA_BOX}><video className={MEDIA_ITEM} src={src} controls={!gif} autoPlay={gif} loop={gif} muted={gif} playsInline preload="metadata" /></span>
         {label}
       </>;
     }
@@ -65,8 +89,8 @@ function MediaContent({ chatId, msg, inbound = null }) {
     const named = /^\[[^:\]]+:\s*([^\]]+)\]/.exec(raw)?.[1]?.trim();
     return (
       <>
-        <a className={styles.fileLink} href={src} target="_blank" rel="noreferrer" download={named || undefined}>
-          <span className={styles.fileIcon} aria-hidden="true">📎</span>
+        <a className="inline-flex items-center gap-2 font-medium text-primary underline-offset-4 hover:underline" href={src} target="_blank" rel="noreferrer" download={named || undefined}>
+          <Paperclip className="size-4 shrink-0" aria-hidden="true" />
           {named || caption || 'Файл'}
         </a>
         {named && caption ? <p>{caption}</p> : label}
@@ -81,10 +105,10 @@ function MediaContent({ chatId, msg, inbound = null }) {
     const caption = text.split('\n').slice(1).join('\n').trim();
     const label = caption ? <p>{caption}</p> : null;
     let body = null;
-    if (k === 'photo') body = <img className={styles.mediaItem} src={src} alt="Фото клиента" />;
-    else if (k === 'video_note') body = <video className={`${styles.mediaItem} ${styles.videoNote}`} src={src} controls playsInline preload="metadata" />;
-    else if (k === 'video') body = <video className={styles.mediaItem} src={src} controls playsInline preload="metadata" />;
-    else if (k === 'animation') body = <video className={styles.mediaItem} src={src} autoPlay loop muted playsInline preload="metadata" />;
+    if (k === 'photo') body = <span className={MEDIA_BOX}><img className={MEDIA_ITEM} src={src} alt="Фото клиента" /></span>;
+    else if (k === 'video_note') body = <span className={NOTE_BOX}><video className={NOTE_ITEM} src={src} controls playsInline preload="metadata" /></span>;
+    else if (k === 'video') body = <span className={MEDIA_BOX}><video className={MEDIA_ITEM} src={src} controls playsInline preload="metadata" /></span>;
+    else if (k === 'animation') body = <span className={MEDIA_BOX}><video className={MEDIA_ITEM} src={src} autoPlay loop muted playsInline preload="metadata" /></span>;
     else if (k === 'voice' || k === 'audio' || k === 'audio_note') body = <VoicePlayer src={src} />;
     if (body) return <>{body}{label}</>;
   }
@@ -92,10 +116,10 @@ function MediaContent({ chatId, msg, inbound = null }) {
     return text.split('\n\n').map((para, j) => <p key={j}>{para}</p>);
   }
   if (kind === 'photo') {
-    return <img className={styles.mediaItem} src={src} alt="Фото" />;
+    return <span className={MEDIA_BOX}><img className={MEDIA_ITEM} src={src} alt="Фото" /></span>;
   }
   if (kind === 'video' || kind === 'video_note') {
-    return <video className={styles.mediaItem} src={src} controls preload="metadata" />;
+    return <span className={MEDIA_BOX}><video className={MEDIA_ITEM} src={src} controls preload="metadata" /></span>;
   }
   if (kind === 'audio' || kind === 'voice' || kind === 'audio_note') {
     return <VoicePlayer src={src} />;
@@ -104,8 +128,8 @@ function MediaContent({ chatId, msg, inbound = null }) {
 }
 
 export function pickerPlacement(rect, viewport = { width: window.innerWidth, height: window.innerHeight }) {
-  const PANEL_W = 272;
-  const PANEL_H = 300;
+  const PANEL_W = PICKER_W;
+  const PANEL_H = PICKER_H;
   const left = Math.max(8, Math.min(rect.left, viewport.width - PANEL_W - 8));
   return rect.top > PANEL_H + 16
     ? { left, bottom: viewport.height - rect.top + 6 }
@@ -145,7 +169,7 @@ function MessageFeed({
 }) {
   return (
     <div
-      className={styles.messages}
+      className="messages relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-background px-4 pt-12 pb-4 [scrollbar-gutter:stable] md:px-6"
       ref={messagesRef}
       onScroll={(e) => {
         const el = e.currentTarget;
@@ -156,8 +180,14 @@ function MessageFeed({
         if (reactFor) setReactFor(null);
       }}
     >
+      {/* Нулевая высота (отступы гасят и её, и gap): метка даты висит поверх
+          ленты и не сдвигает сообщения, когда появляется или меняется. */}
       {stickyDate && (
-        <div className={styles.dateSticky} aria-hidden="true">{stickyDate}</div>
+        <div className="dateSticky pointer-events-none sticky top-2 z-[6] -mt-10 mb-7 flex h-0 shrink-0 justify-center" aria-hidden="true">
+          <span className="inline-flex h-7 items-center rounded-full border bg-background/90 px-3 font-mono text-xs whitespace-nowrap text-muted-foreground">
+            {stickyDate}
+          </span>
+        </div>
       )}
       {messages.map((msg, i) => {
         const kind = authorClass(msg);
@@ -168,41 +198,44 @@ function MessageFeed({
             key={`${msg.ts}-${i}`}
             data-idx={i}
             ref={(el) => { rowRefs.current[i] = el; }}
-            className={[
-              styles.msgRow,
-              kind === 'client' ? styles.msgClient : styles.msgAI,
-              kind === 'client' && !isRead ? styles.msgUnread : '',
-              highlight === i ? styles.msgHighlight : '',
-              hits.includes(i) ? styles.msgHit : '',
-              msg.deleted_at ? styles.msgDeleted : '',
-            ].filter(Boolean).join(' ')}
+            className={cn(
+              ROW,
+              kind === 'client' ? 'msgClient' : 'msgAI',
+              highlight === i && 'animate-[msgFlash_2.4s_ease-out] rounded-md',
+            )}
           >
-            <div className={styles.msgInner}>
+            <div className={cn(INNER, kind === 'client' ? 'justify-start' : 'justify-end')}>
               {kind === 'client' && (
-                <ClientAvatar className={styles.clientAvatar} style={{ '--av-bg': AVATAR_BG.blue }} src={data.client_avatar} name={name} />
+                <ClientAvatar className={AVATAR} style={{ '--av-bg': AVATAR_BG.blue }} src={data.client_avatar} name={name} />
               )}
-              <div className={styles.msgContent}>
+              <div className={CONTENT}>
                 {kind !== 'client' && (
-                  <div className={styles.msgMeta}>
+                  <div className="flex items-end justify-end gap-1.5">
                     {kind === 'manager' ? (
-                      <span className={styles.tagManaged}><ShortIcon /> Менеджер</span>
+                      <Badge variant="default" className="tagManaged rounded-full"><ShortIcon /> Менеджер</Badge>
                     ) : (
-                      <span className={styles.tagAI}><ShortIcon /> Бот</span>
+                      <Badge variant="secondary" className="tagAI rounded-full"><ShortIcon /> Бот</Badge>
                     )}
                   </div>
                 )}
                 <div
-                  className={`${styles.msgBubble} ${kind === 'manager' ? styles.msgBubbleManaged : ''} ${kind === 'bot' ? styles.msgBubbleAI : ''}`}
+                  className={cn(
+                    BUBBLE,
+                    BUBBLE_KIND[kind],
+                    kind === 'client' && !isRead && 'border-primary/45',
+                    hits.includes(i) && 'ring-1 ring-warning-foreground/50',
+                    msg.deleted_at && 'line-through opacity-50',
+                  )}
                 >
                   {msg.reply_to && (
-                    <span className={composer.quoted}>
+                    <span className="block truncate rounded-r-md border-l-2 border-border bg-background/50 px-2 py-1 text-xs text-muted-foreground">
                       {(messages.find((x) => x.tg_msg_id === msg.reply_to)?.content ?? 'сообщение').slice(0, 120)}
                     </span>
                   )}
                   {editing && editing.id === msg.id ? (
-                    <div className={styles.editBox} data-testid="edit-box">
-                      <textarea
-                        className={styles.editField}
+                    <div className="flex min-w-[min(360px,70vw)] flex-col gap-1.5" data-testid="edit-box">
+                      <Textarea
+                        className="min-h-16 resize-y bg-background field-sizing-fixed [field-sizing:fixed] dark:bg-background"
                         value={editing.text}
                         autoFocus
                         rows={Math.min(8, Math.max(2, editing.text.split('\n').length))}
@@ -215,71 +248,86 @@ function MessageFeed({
                           if (e.key === 'Escape') setEditing(null);
                         }}
                       />
-                      <div className={styles.editActions}>
-                        <span className={styles.editHint}>Enter — сохранить, Esc — отмена. Изменится и у собеседника.</span>
-                        <button type="button" className={composer.rowTool} onClick={() => setEditing(null)}>Отмена</button>
-                        <button type="button" className={styles.editSave} disabled={busy || !editing.text.trim()} onClick={saveEdit}>
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        <span className="min-w-[140px] flex-1 text-xs text-muted-foreground">Enter — сохранить, Esc — отмена. Изменится и у собеседника.</span>
+                        <Button type="button" variant="ghost" size="xs" onClick={() => setEditing(null)}>Отмена</Button>
+                        <Button type="button" size="xs" disabled={busy || !editing.text.trim()} onClick={saveEdit}>
                           Сохранить
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ) : (
                     <MediaContent chatId={id} msg={msg} inbound={findInboundMedia(msg)} />
                   )}
-                  {msg.reaction && <span className={composer.reactionMark}>{msg.reaction}</span>}
+                  {msg.reaction && (
+                    <span className="inline-flex w-fit items-center gap-1 rounded-full bg-background/60 px-2 text-sm">{msg.reaction}</span>
+                  )}
                 </div>
-                <span className={styles.msgTimeRow}>
+                {/* min-h-7 = высота кнопок строки: строка не меняет рост, когда
+                    у сообщения появляется tg id и вместе с ним кнопки. */}
+                <span className="flex min-h-7 flex-wrap items-center gap-1.5">
                   {tgMark && (
                     <span
-                      className={tgMark.read ? styles.tgRead : kind === 'client' ? styles.msgCheckUnread : styles.tgSent}
+                      className={cn(
+                        'leading-none',
+                        tgMark.read && cn(TG_MARK, 'text-primary'),
+                        !tgMark.read && kind === 'client' && 'text-[8px] text-primary',
+                        !tgMark.read && kind !== 'client' && cn(TG_MARK, 'text-muted-foreground'),
+                      )}
                       title={tgMark.title}
                       data-testid="tg-read"
                     >
                       {tgMark.icon}
                     </span>
                   )}
-                  <span className={styles.msgTime}>{fmtTime(msg.ts)}</span>
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">{fmtTime(msg.ts)}</span>
                   {msg.deleted_at && (
-                    <span className={styles.msgDeletedTag} title="Собеседник удалил сообщение — бот его не читает">
+                    <span className="text-xs text-destructive" title="Собеседник удалил сообщение — бот его не читает">
                       удалено
                     </span>
                   )}
                   {msg.edited_at && !msg.deleted_at && (
-                    <span className={styles.msgEditedTag} title={`Изменено ${fmtTime(msg.edited_at)}`}>изменено</span>
+                    <span className="text-xs text-muted-foreground italic" title={`Изменено ${fmtTime(msg.edited_at)}`}>изменено</span>
                   )}
                   {msg.tg_msg_id && (
-                    <span className={`${composer.rowTools} ${composer.rowToolsShown}`}>
-                      <button
+                    <span className="inline-flex items-center gap-0.5">
+                      <Button
                         type="button"
-                        className={composer.rowTool}
+                        variant="ghost"
+                        size="xs"
+                        className={ROW_TOOL}
                         onClick={() => setReply({ tg_msg_id: msg.tg_msg_id, text: String(msg.content || '') })}
                       >
                         Ответить
-                      </button>
+                      </Button>
                       {canEdit(msg, kind) && (
-                        <button
+                        <Button
                           type="button"
-                          className={composer.rowTool}
+                          variant="ghost"
+                          size="xs"
+                          className={ROW_TOOL}
                           data-testid="edit-message"
                           onClick={() => setEditing({ id: msg.id, text: String(msg.content || '') })}
                         >
                           Изменить
-                        </button>
+                        </Button>
                       )}
                       {kind === 'client' && (
-                        <span className={composer.toolsAnchor}>
-                          <button
+                        <span className="relative inline-flex">
+                          <Button
                             type="button"
-                            className={composer.rowTool}
+                            variant="ghost"
+                            size="xs"
+                            className={ROW_TOOL}
                             onClick={(e) => setReactFor({ id: msg.tg_msg_id, at: pickerPlacement(e.currentTarget.getBoundingClientRect()) })}
                           >
                             {msg.reaction || 'Реакция'}
-                          </button>
+                          </Button>
                           {reactFor?.id === msg.tg_msg_id && (
                             <EmojiPicker
                               only={REACTION_EMOJI}
                               title="Реакция"
-                              className={composer.pickerFixed}
+                              className="fixed bottom-auto left-auto mb-0"
                               style={reactFor.at}
                               onPick={(emoji) => react(msg, emoji)}
                               onClose={() => setReactFor(null)}
@@ -296,23 +344,30 @@ function MessageFeed({
         );
       })}
       {data.client_typing && (
-        <div className={`${styles.msgRow} ${styles.msgClient}`} data-testid="client-typing">
-          <div className={styles.msgInner}>
-            <ClientAvatar className={styles.clientAvatar} style={{ '--av-bg': AVATAR_BG.blue }} src={data.client_avatar} name={name} />
-            <div className={styles.msgContent}>
-              <div className={`${styles.msgBubble} ${styles.typingBubble}`}>
-                <span className={styles.typingText}>{ACTIVITY_LABEL[data.client_typing] ?? 'печатает'}</span>
-                <span className={styles.typingDots} aria-hidden="true"><i /><i /><i /></span>
+        <div className={cn(ROW, 'msgClient')} data-testid="client-typing">
+          <div className={cn(INNER, 'justify-start')}>
+            <ClientAvatar className={AVATAR} style={{ '--av-bg': AVATAR_BG.blue }} src={data.client_avatar} name={name} />
+            <div className={CONTENT}>
+              <div className={cn(BUBBLE, BUBBLE_KIND.client, 'flex-row items-center')}>
+                <span className="text-xs text-muted-foreground">{ACTIVITY_LABEL[data.client_typing] ?? 'печатает'}</span>
+                <span className="inline-flex gap-1" aria-hidden="true">
+                  <i className={DOT} />
+                  <i className={cn(DOT, '[animation-delay:0.15s]')} />
+                  <i className={cn(DOT, '[animation-delay:0.3s]')} />
+                </span>
               </div>
             </div>
           </div>
         </div>
       )}
+      {/* Обёртка нулевой высоты (-mt-3 гасит gap): кнопка появляется поверх ленты. */}
       {jump.show && (
-        <div className={styles.jumpWrap}>
-          <button
+        <div className="pointer-events-none sticky bottom-2 z-[3] -mt-3 flex h-0 shrink-0 justify-end">
+          <Button
             type="button"
-            className={styles.jumpBtn}
+            variant="outline"
+            size="icon"
+            className="pointer-events-auto relative size-10 -translate-y-full rounded-full bg-card shadow-md hover:bg-accent dark:bg-card dark:hover:bg-accent"
             data-testid="jump-down"
             title="К последним сообщениям"
             onClick={() => {
@@ -323,11 +378,13 @@ function MessageFeed({
               setJump({ show: false, unseen: 0 });
             }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-            {jump.unseen > 0 && <span className={styles.jumpCount}>{jump.unseen > 99 ? '99+' : jump.unseen}</span>}
-          </button>
+            <ChevronDown aria-hidden="true" />
+            {jump.unseen > 0 && (
+              <Badge className="absolute -top-1.5 -right-1 h-5 min-w-5 rounded-full px-1 tabular-nums">
+                {jump.unseen > 99 ? '99+' : jump.unseen}
+              </Badge>
+            )}
+          </Button>
         </div>
       )}
     </div>

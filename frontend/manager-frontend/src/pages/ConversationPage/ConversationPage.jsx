@@ -1,9 +1,14 @@
+import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { PanelUX } from '../../ui/PanelUX';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { stageColors } from '../../data/stages';
 import Header from '../../components/Header/Header';
-import styles from './ConversationPage.module.scss';
 import MediaGallery from '../../components/MediaGallery/MediaGallery';
 import Sidebar from './Sidebar';
 import ChatTopBar from './ChatTopBar';
@@ -42,12 +47,83 @@ import {
   uploadFile,
 } from '../../api/conversations';
 import { pauseReasonDetail, pauseReasonLabel } from '../../utils/pauseReason';
-import { BackIcon, ChevronPrevIcon, ChevronNextIcon } from '../../assets/icons';
 
 export { canEdit, pickerPlacement } from './MessageFeed';
 
 export const TOGGLE_COOLDOWN_MS = 2000;
 const MAX_ALBUM = 10;
+
+// Каркас страницы. Те же классы собирают и готовую страницу, и скелетон первой
+// загрузки — поэтому высоты полос совпадают по построению.
+const PAGE = 'flex h-dvh flex-col overflow-hidden bg-background';
+const SUB_HEADER = 'shrink-0 border-b bg-background py-2';
+const SUB_ROW = 'container flex items-center gap-2';
+const BODY = 'flex min-h-0 flex-1';
+const BODY_ROW = 'container flex min-h-0';
+const CHAT = 'flex min-w-0 flex-1 flex-col lg:pl-6';
+const CHAT_FRAME = 'flex min-h-0 flex-1 flex-col border-x bg-background';
+
+const SKELETON_BUBBLES = [
+  ['items-start', 'h-14 w-3/5'],
+  ['items-end', 'h-20 w-1/2'],
+  ['items-start', 'h-10 w-2/5'],
+  ['items-end', 'h-14 w-3/5'],
+  ['items-start', 'h-10 w-1/3'],
+];
+
+/** Первая загрузка: колонка карточки, лента и блок ввода тех же размеров, что у готовой страницы. */
+function PageSkeleton() {
+  return (
+    <>
+      <div className={SUB_HEADER}>
+        <div className={SUB_ROW}>
+          <Skeleton className="mr-auto h-9 w-36" />
+          <Skeleton className="h-9 w-40" />
+        </div>
+      </div>
+      <div className={BODY} role="status" aria-busy="true">
+        <div className={BODY_ROW}>
+          <span className="sr-only">Загрузка…</span>
+          <div className="hidden w-[clamp(360px,34vw,600px)] shrink-0 flex-col gap-4 border-r p-5 lg:flex">
+            <Skeleton className="h-40 w-full rounded-lg" />
+            <Skeleton className="h-28 w-full rounded-lg" />
+            <Skeleton className="h-56 w-full rounded-lg" />
+          </div>
+          <div className={CHAT}>
+            <div className={CHAT_FRAME}>
+              <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
+                <Skeleton className="h-8 flex-1" />
+                <Skeleton className="h-8 w-9" />
+                <Skeleton className="h-8 w-9" />
+                <Skeleton className="h-8 w-9" />
+                <Skeleton className="h-8 w-9" />
+                <Skeleton className="h-8 w-9" />
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-hidden px-4 pt-12 pb-4 md:px-6">
+                {SKELETON_BUBBLES.map(([side, size], i) => (
+                  <div key={i} className={`flex flex-col gap-1 ${side}`}>
+                    <Skeleton className={`rounded-xl ${size}`} />
+                    <Skeleton className="my-2 h-3 w-12" />
+                  </div>
+                ))}
+              </div>
+              <div className="flex shrink-0 items-center justify-between gap-3 border-t px-4 py-3">
+                <div className="flex items-center gap-4">
+                  <Skeleton className="h-[1.15rem] w-8 rounded-full" />
+                  <div className="flex h-[74px] flex-col gap-1.5">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-3 w-64 max-w-full" />
+                  </div>
+                </div>
+                <Skeleton className="h-[26px] w-[136px] rounded-full max-sm:hidden" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
 
 function ConversationPage() {
   const { id } = useParams();
@@ -91,6 +167,9 @@ function ConversationPage() {
     })),
   ];
 
+  const beatsFor = useRef(null);
+  const mediaFor = useRef(null);
+
   const load = useCallback(() => {
     getConversationById(id)
       .then((detail) => {
@@ -104,8 +183,25 @@ function ConversationPage() {
           .catch(() => setPauseStatus(null));
       })
       .catch((e) => setError(e.detail || e.message));
-    getBeats(id).then(setBeats).catch(() => setBeats(null));
-    getInboundMedia(id).then(setInboundMedia).catch(() => setInboundMedia([]));
+    // Сбой повторного запроса не стирает уже показанное: иначе сценарий и медиа
+    // в ленте мигали бы при каждой сетевой ошибке. Данные другого чата при
+    // сбое всё же убираем.
+    getBeats(id)
+      .then((b) => {
+        beatsFor.current = id;
+        setBeats(b);
+      })
+      .catch(() => {
+        if (beatsFor.current !== id) setBeats(null);
+      });
+    getInboundMedia(id)
+      .then((m) => {
+        mediaFor.current = id;
+        setInboundMedia(m);
+      })
+      .catch(() => {
+        if (mediaFor.current !== id) setInboundMedia([]);
+      });
   }, [id]);
 
   useEffect(load, [load]);
@@ -458,17 +554,23 @@ function ConversationPage() {
 
   if (error && !data) {
     return (
-      <div className={styles.page}>
+      <div className={PAGE}>
         <Header />
-        <div className={styles.container}><p className={styles.loadError}>{error}</p></div>
+        <div className="container">
+          <Alert variant="destructive" role="alert" className="my-6">
+            <AlertDescription className="block">
+              <p>{error}</p>
+            </AlertDescription>
+          </Alert>
+        </div>
       </div>
     );
   }
   if (!data) {
     return (
-      <div className={styles.page}>
+      <div className={PAGE}>
         <Header />
-        <div className={styles.container}><p>Загрузка…</p></div>
+        <PageSkeleton />
       </div>
     );
   }
@@ -500,48 +602,50 @@ function ConversationPage() {
   };
 
   return (
-    <div className={styles.page}>
+    <div className={PAGE}>
       <Header liveCount={liveCount} />
 
-      <div className={styles.subHeader}>
-        <div className={styles.container}>
-          <button className={styles.backBtn} onClick={() => navigate('/')}>
-            <BackIcon />
+      <div className={`subHeader ${SUB_HEADER}`}>
+        <div className={SUB_ROW}>
+          <Button variant="outline" className="backBtn mr-auto" onClick={() => navigate('/')}>
+            <ArrowLeft aria-hidden="true" />
             К дашборду
-          </button>
-          <div className={styles.subNav}>
-            <button
-              className={styles.navBtn}
+          </Button>
+          <div className="subNav flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="icon"
               onClick={goPrev}
               disabled={idx <= 0}
               aria-label="Предыдущий чат"
               title="Предыдущий чат"
             >
-              <ChevronPrevIcon />
-            </button>
-            <span className={styles.navLabel}>
-              <span className={styles.navCurrent}>{idx >= 0 ? idx + 1 : '—'}</span> / {chatIds.length || '—'}
-            </span>
-            <button
-              className={styles.navBtn}
+              <ChevronLeft aria-hidden="true" />
+            </Button>
+            <Badge variant="outline" className="h-9 min-w-[72px] px-3 font-mono font-normal tabular-nums text-muted-foreground">
+              <span className="navCurrent font-medium text-foreground">{idx >= 0 ? idx + 1 : '—'}</span> / {chatIds.length || '—'}
+            </Badge>
+            <Button
+              variant="outline"
+              size="icon"
               onClick={goNext}
               disabled={idx === -1 || idx >= chatIds.length - 1}
               aria-label="Следующий чат"
               title="Следующий чат"
             >
-              <ChevronNextIcon />
-            </button>
+              <ChevronRight aria-hidden="true" />
+            </Button>
           </div>
-          <span className={styles.separator}></span>
-          <span className={styles.convId}>
-            ЧАТ <span className={styles.convNumber}>{data.chat_id}</span>
+          <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-8 max-sm:hidden" />
+          <span className="font-mono text-xs tracking-wide whitespace-nowrap text-muted-foreground uppercase max-sm:hidden">
+            ЧАТ <span className="tabular-nums text-foreground">{data.chat_id}</span>
           </span>
         </div>
       </div>
 
-      <div className={styles.body}>
-        <div className={styles.container}>
-          {sidebarOpen && <div className={styles.overlay} onClick={() => setSidebarOpen(false)} />}
+      <div className={BODY}>
+        <div className={BODY_ROW}>
+          {sidebarOpen && <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setSidebarOpen(false)} />}
 
           <Sidebar
             id={id}
@@ -565,100 +669,102 @@ function ConversationPage() {
             sidebarOpen={sidebarOpen}
           />
 
-          <div className={styles.chat}>
-            <ChatTopBar
-              id={id}
-              data={data}
-              name={name}
-              pins={pins}
-              navigate={navigate}
-              busy={busy}
-              setBusy={setBusy}
-              setError={setError}
-              load={load}
-              setSidebarOpen={setSidebarOpen}
-              msgQuery={msgQuery}
-              setMsgQuery={setMsgQuery}
-              hitPos={hitPos}
-              setHitPos={setHitPos}
-              hits={hits}
-              scrollToMessage={scrollToMessage}
-              setGallery={setGallery}
-              exporting={exporting}
-              setExporting={setExporting}
-              exportError={exportError}
-              setExportError={setExportError}
-            />
-
-            <MessageFeed
-              id={id}
-              data={data}
-              name={name}
-              messages={messages}
-              messagesRef={messagesRef}
-              atBottomRef={atBottomRef}
-              rowRefs={rowRefs}
-              readUpTo={readUpTo}
-              highlight={highlight}
-              hits={hits}
-              stickyDate={stickyDate}
-              jump={jump}
-              setJump={setJump}
-              editing={editing}
-              setEditing={setEditing}
-              saveEdit={saveEdit}
-              busy={busy}
-              findInboundMedia={findInboundMedia}
-              setReply={setReply}
-              reactFor={reactFor}
-              setReactFor={setReactFor}
-              react={react}
-            />
-
-            {gallery && (
-              <MediaGallery
-                items={gallery.items}
-                loading={gallery.loading}
-                error={gallery.error}
-                onClose={() => setGallery(null)}
-                onShowInChat={(item) => {
-                  const index = messages.findIndex((m) => m.id === item.id);
-                  if (index >= 0) scrollToMessage(index);
-                  else setError('это сообщение старше загруженной части переписки — выгрузите HTML, чтобы увидеть всё');
-                }}
+          <div className={CHAT}>
+            <div className={CHAT_FRAME}>
+              <ChatTopBar
+                id={id}
+                data={data}
+                name={name}
+                pins={pins}
+                navigate={navigate}
+                busy={busy}
+                setBusy={setBusy}
+                setError={setError}
+                load={load}
+                setSidebarOpen={setSidebarOpen}
+                msgQuery={msgQuery}
+                setMsgQuery={setMsgQuery}
+                hitPos={hitPos}
+                setHitPos={setHitPos}
+                hits={hits}
+                scrollToMessage={scrollToMessage}
+                setGallery={setGallery}
+                exporting={exporting}
+                setExporting={setExporting}
+                exportError={exportError}
+                setExportError={setExportError}
               />
-            )}
 
-            <InputArea
-              id={id}
-              data={data}
-              aiActive={aiActive}
-              toggleAi={toggleAi}
-              busy={busy}
-              setBusy={setBusy}
-              error={error}
-              setError={setError}
-              load={load}
-              pauseReasonRaw={pauseReasonRaw}
-              pauseLabel={pauseLabel}
-              pauseDetail={pauseDetail}
-              reply={reply}
-              setReply={setReply}
-              attachments={attachments}
-              setAttachments={setAttachments}
-              draft={draft}
-              setDraft={setDraft}
-              emojiOpen={emojiOpen}
-              setEmojiOpen={setEmojiOpen}
-              fileInput={fileInput}
-              voiceInput={voiceInput}
-              roundInput={roundInput}
-              send={send}
-              sendGifLink={sendGifLink}
-              pickFiles={pickFiles}
-              sendVoiceFile={sendVoiceFile}
-              sendRoundFile={sendRoundFile}
-            />
+              <MessageFeed
+                id={id}
+                data={data}
+                name={name}
+                messages={messages}
+                messagesRef={messagesRef}
+                atBottomRef={atBottomRef}
+                rowRefs={rowRefs}
+                readUpTo={readUpTo}
+                highlight={highlight}
+                hits={hits}
+                stickyDate={stickyDate}
+                jump={jump}
+                setJump={setJump}
+                editing={editing}
+                setEditing={setEditing}
+                saveEdit={saveEdit}
+                busy={busy}
+                findInboundMedia={findInboundMedia}
+                setReply={setReply}
+                reactFor={reactFor}
+                setReactFor={setReactFor}
+                react={react}
+              />
+
+              {gallery && (
+                <MediaGallery
+                  items={gallery.items}
+                  loading={gallery.loading}
+                  error={gallery.error}
+                  onClose={() => setGallery(null)}
+                  onShowInChat={(item) => {
+                    const index = messages.findIndex((m) => m.id === item.id);
+                    if (index >= 0) scrollToMessage(index);
+                    else setError('это сообщение старше загруженной части переписки — выгрузите HTML, чтобы увидеть всё');
+                  }}
+                />
+              )}
+
+              <InputArea
+                id={id}
+                data={data}
+                aiActive={aiActive}
+                toggleAi={toggleAi}
+                busy={busy}
+                setBusy={setBusy}
+                error={error}
+                setError={setError}
+                load={load}
+                pauseReasonRaw={pauseReasonRaw}
+                pauseLabel={pauseLabel}
+                pauseDetail={pauseDetail}
+                reply={reply}
+                setReply={setReply}
+                attachments={attachments}
+                setAttachments={setAttachments}
+                draft={draft}
+                setDraft={setDraft}
+                emojiOpen={emojiOpen}
+                setEmojiOpen={setEmojiOpen}
+                fileInput={fileInput}
+                voiceInput={voiceInput}
+                roundInput={roundInput}
+                send={send}
+                sendGifLink={sendGifLink}
+                pickFiles={pickFiles}
+                sendVoiceFile={sendVoiceFile}
+                sendRoundFile={sendRoundFile}
+              />
+            </div>
           </div>
         </div>
       </div>
