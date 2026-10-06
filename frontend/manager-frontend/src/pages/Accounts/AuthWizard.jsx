@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { Check, CircleCheck } from 'lucide-react';
 import { authFlow } from '../../api/accounts';
-import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
@@ -28,17 +29,22 @@ function StepBar({ method, status }) {
   const order = steps.map((x) => x.key);
   const idx = Math.max(0, order.indexOf(status === 'failed' ? 'pending' : status));
   return (
-    <div className="flex flex-wrap gap-1.5" aria-label="Шаги входа">
+    <ol className="m-0 flex list-none flex-wrap items-center gap-x-2 gap-y-1 p-0 text-xs leading-4 text-muted-foreground" aria-label="Шаги входа">
       {steps.map((st, i) => (
-        <Badge
+        <li
           key={st.key}
-          variant={i < idx ? 'success' : i === idx ? 'default' : 'outline'}
-          className="h-5 rounded-full px-2"
+          aria-current={i === idx ? 'step' : undefined}
+          className={cn('inline-flex items-center gap-1', i === idx && 'font-medium text-foreground')}
         >
+          {i > 0 && <span aria-hidden="true" className="mr-1 font-normal text-muted-foreground/60">/</span>}
+          {/* Место под галочку занято у каждого шага: строка не сдвигается, когда шаг пройден. */}
+          <span aria-hidden="true" className="inline-flex size-3 items-center justify-center">
+            {i < idx ? <Check className="size-3" /> : <span className={cn('size-1 rounded-full', i === idx ? 'bg-primary' : 'bg-muted-foreground/50')} />}
+          </span>
           {st.label}
-        </Badge>
+        </li>
       ))}
-    </div>
+    </ol>
   );
 }
 
@@ -164,7 +170,7 @@ export default function AuthWizard({ account, onClose }) {
       >
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
           <DialogHeader className="px-6 pt-6 pb-4">
-            <DialogTitle className="text-base">Вход: {account.phone_e164}</DialogTitle>
+            <DialogTitle className="text-base">Вход: <span className="font-mono">{account.phone_e164}</span></DialogTitle>
           </DialogHeader>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 [scrollbar-gutter:stable]">
             <Tabs value={method} onValueChange={switchMethod} activationMode="manual">
@@ -222,8 +228,9 @@ export default function AuthWizard({ account, onClose }) {
                 </Field>
               )}
               {done && (
-                <p className="text-sm text-success-foreground">
-                  Сессия сохранена{job.username ? `, @${job.username}` : ''}. Аккаунт переведён в active.
+                <p className="flex items-start gap-2 text-sm">
+                  <CircleCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-success-foreground" />
+                  <span>Сессия сохранена{job.username ? `, @${job.username}` : ''}. Аккаунт переведён в active.</span>
                 </p>
               )}
               {status === 'failed' && <p className="text-sm text-destructive">Не удалось: {job.error}</p>}
@@ -236,7 +243,7 @@ export default function AuthWizard({ account, onClose }) {
               <Button type="button" onClick={() => close(done)}>Закрыть</Button>
             ) : (
               <>
-                <Button type="button" variant="outline" onClick={() => close(false)}>Отменить</Button>
+                <Button type="button" variant="outline" onClick={() => close(false)}>Отмена</Button>
                 {needsInput && (
                   <Button type="submit" disabled={busy || !value}>
                     {busy ? 'Отправка…' : 'Далее'}
