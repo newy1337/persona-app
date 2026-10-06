@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Play, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { IconAction } from '@/components/IconAction/IconAction';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -21,7 +22,7 @@ const timeFmt = new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', da
 // Сетка и заголовок месяца общие для данных и скелетона — высоты совпадают
 // по построению.
 const GRID = 'grid grid-cols-[repeat(auto-fill,minmax(118px,1fr))] gap-1';
-const MONTH = 'bg-background sticky top-0 z-10 m-0 px-1 pt-2.5 pb-2 text-xs font-semibold';
+const MONTH = 'bg-background sticky top-0 z-10 m-0 px-1 pt-2.5 pb-2 text-xs font-medium';
 const SKELETON_CELLS = Array.from({ length: 9 }, (_, i) => i);
 
 export function groupByMonth(items) {
@@ -113,20 +114,18 @@ export default function MediaGallery({ items, loading, error, onClose, onShowInC
           className="min-h-0 flex-1 gap-0"
         >
           <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2.5 border-b px-4 pt-[calc(14px+env(safe-area-inset-top,0px))] pb-3">
-            <SheetTitle className="m-0 text-base">Медиа</SheetTitle>
+            <SheetTitle className="m-0 text-sm font-medium">Медиа</SheetTitle>
             <div className="min-w-0 flex-1">
               <TabsList>
                 {TABS.map((t) => (
                   <TabsTrigger key={t.id} value={t.id} className="px-2.5">
                     {t.label}
-                    <Badge variant="outline" className="min-w-6 px-1.5 font-mono tabular-nums">{counts[t.id] ?? 0}</Badge>
+                    <span className="min-w-4 text-xs font-normal tabular-nums text-muted-foreground">{counts[t.id] ?? 0}</span>
                   </TabsTrigger>
                 ))}
               </TabsList>
             </div>
-            <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label="Закрыть">
-              <X aria-hidden="true" />
-            </Button>
+            <IconAction icon={X} label="Закрыть" onClick={onClose} />
           </div>
 
           <TabsContent value={tab} className="min-h-0 overflow-y-auto px-3 pt-1 pb-6 [scrollbar-gutter:stable]">
@@ -187,8 +186,9 @@ export default function MediaGallery({ items, loading, error, onClose, onShowInC
                         )}
                         {it.role !== 'user' && (
                           <Badge
+                            variant="secondary"
                             className={cn(
-                              'absolute bottom-1.5 rounded-full px-1.5 py-0',
+                              'absolute bottom-1.5 px-1.5 py-0',
                               it.kind === 'video_note' ? 'left-1/2 -translate-x-1/2' : 'left-1.5',
                             )}
                           >
@@ -212,17 +212,13 @@ export default function MediaGallery({ items, loading, error, onClose, onShowInC
             className="bg-background/95 fixed inset-0 z-[60] flex items-center justify-center px-2 pt-14 pb-4 outline-none sm:px-16"
             onMouseDown={closeOnBackdrop}
           >
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
+            <IconAction
+              icon={ChevronLeft}
+              label="Предыдущее"
               className="absolute top-1/2 left-2.5 z-10 -translate-y-1/2"
               disabled={open === 0}
               onClick={() => setOpen(open - 1)}
-              aria-label="Предыдущее"
-            >
-              <ChevronLeft aria-hidden="true" className="size-6" />
-            </Button>
+            />
             <figure data-backdrop="" className="m-0 flex size-full max-w-5xl flex-col items-center gap-3">
               {/* Сцена фиксированной высоты: подпись и кнопки не прыгают при листании. */}
               <div data-backdrop="" className="flex min-h-0 w-full flex-1 items-center justify-center">
@@ -252,7 +248,7 @@ export default function MediaGallery({ items, loading, error, onClose, onShowInC
                   {current.caption ? ` — ${current.caption}` : ''}
                 </span>
                 <span className="flex items-center gap-2">
-                  <span className="min-w-12 text-right font-mono text-xs tabular-nums">{open + 1} / {shown.length}</span>
+                  <span className="min-w-12 text-right text-xs tabular-nums">{open + 1} / {shown.length}</span>
                   <Button type="button" variant="outline" size="sm" onClick={() => { onShowInChat(current); onClose(); }}>
                     Показать в чате
                   </Button>
@@ -262,27 +258,19 @@ export default function MediaGallery({ items, loading, error, onClose, onShowInC
                 </span>
               </figcaption>
             </figure>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
+            <IconAction
+              icon={ChevronRight}
+              label="Следующее"
               className="absolute top-1/2 right-2.5 z-10 -translate-y-1/2"
               disabled={open === shown.length - 1}
               onClick={() => setOpen(open + 1)}
-              aria-label="Следующее"
-            >
-              <ChevronRight aria-hidden="true" className="size-6" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
+            />
+            <IconAction
+              icon={X}
+              label="Закрыть просмотр"
               className="absolute top-[calc(12px+env(safe-area-inset-top,0px))] right-3 z-10"
               onClick={() => setOpen(-1)}
-              aria-label="Закрыть просмотр"
-            >
-              <X aria-hidden="true" />
-            </Button>
+            />
           </div>
         )}
       </SheetContent>

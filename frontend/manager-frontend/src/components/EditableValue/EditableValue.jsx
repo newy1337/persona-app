@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
+import * as PopoverPrimitive from '@radix-ui/react-popover';
 import { Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent } from '@/components/ui/popover';
 
 /**
  * Значение, которое правится на месте. Обе формы — кнопка и поле — занимают
- * одну и ту же строку высотой h-6, поэтому вход в правку не двигает соседей;
- * ошибка сохранения всплывает под полем и места в потоке не занимает.
+ * одну и ту же строку высотой h-7 и наследуют размер шрифта строки, поэтому
+ * вход в правку не двигает соседей.
+ * Ошибка сохранения показывается во всплывающем слое (портал): её не обрежет
+ * ни один родитель с overflow, и места в потоке она не занимает.
+ * Кольцо фокуса рисуется внутри кнопки (ring-inset) — его тоже нечем обрезать.
  * `label` — подпись строки: из неё собирается aria-label кнопки и поля.
  */
 export default function EditableValue({ value, display, placeholder = '—', title, label, onSave }) {
@@ -24,10 +29,17 @@ export default function EditableValue({ value, display, placeholder = '—', tit
     if (editing) input.current?.focus();
   }, [editing]);
 
+  // На время сохранения поле отключено и теряет фокус; после сбоя возвращаем
+  // его, чтобы можно было поправить значение или выйти по Esc.
+  useEffect(() => {
+    if (error) input.current?.focus();
+  }, [error]);
+
   async function save() {
     if (busy) return;
     if (String(text).trim() === String(value ?? '').trim()) {
       setEditing(false);
+      setError(null);
       return;
     }
     setBusy(true);
@@ -47,7 +59,7 @@ export default function EditableValue({ value, display, placeholder = '—', tit
     return (
       <button
         type="button"
-        className="group/ev inline-flex min-h-6 max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-left align-middle outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="group/ev -mx-1.5 inline-flex h-7 max-w-[calc(100%+0.75rem)] min-w-0 cursor-pointer items-center gap-1.5 rounded-sm px-1.5 text-left align-middle outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset"
         title={title ?? 'Нажмите, чтобы поправить — бот узнает это как факт'}
         aria-label={label && typeof shown === 'string' ? `${label}: ${shown}` : undefined}
         onClick={(e) => {
@@ -65,36 +77,43 @@ export default function EditableValue({ value, display, placeholder = '—', tit
   }
 
   return (
-    <span
-      className="relative inline-flex h-6 w-full max-w-full min-w-0 items-center align-middle"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <Input
-        ref={input}
-        className="h-6 min-w-[90px] rounded-sm px-1.5 py-0 text-xs md:text-xs"
-        value={text}
-        disabled={busy}
-        placeholder="пусто — снять"
-        aria-label={label}
-        aria-invalid={error ? true : undefined}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') void save();
-          if (e.key === 'Escape') {
-            setEditing(false);
-            setError(null);
-          }
-        }}
-        onBlur={() => void save()}
-      />
-      {error && (
+    <Popover open={Boolean(error)}>
+      <PopoverPrimitive.Anchor asChild>
         <span
-          role="alert"
-          className="absolute top-full left-0 z-10 mt-0.5 max-w-full rounded-sm border bg-popover px-1.5 py-0.5 text-[11px] leading-4 text-destructive shadow-md"
+          className="inline-flex h-7 w-full max-w-full min-w-0 items-center align-middle"
+          onClick={(e) => e.stopPropagation()}
         >
-          {error}
+          <Input
+            ref={input}
+            className="h-7 min-w-[90px] rounded-sm px-1.5 py-0 text-[length:inherit] focus-visible:ring-2 focus-visible:ring-inset md:text-[length:inherit]"
+            value={text}
+            disabled={busy}
+            placeholder="пусто — снять"
+            aria-label={label}
+            aria-invalid={error ? true : undefined}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void save();
+              if (e.key === 'Escape') {
+                setEditing(false);
+                setError(null);
+              }
+            }}
+            onBlur={() => void save()}
+          />
         </span>
-      )}
-    </span>
+      </PopoverPrimitive.Anchor>
+      {/* Фокус остаётся в поле: слой с ошибкой его не забирает и не возвращает. */}
+      <PopoverContent
+        role="alert"
+        side="bottom"
+        className="w-auto max-w-[min(18rem,calc(100vw-2rem))] px-2.5 py-1.5 text-xs leading-4 text-destructive [overflow-wrap:anywhere]"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={(e) => e.preventDefault()}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {error}
+      </PopoverContent>
+    </Popover>
   );
 }

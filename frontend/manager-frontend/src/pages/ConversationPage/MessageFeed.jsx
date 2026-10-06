@@ -1,4 +1,4 @@
-import { ChevronDown, Paperclip } from 'lucide-react';
+import { Bot, ChevronDown, Paperclip, UserRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,6 @@ import {
 import { markListened as markListenedApi } from '../../api/conversations';
 import EmojiPicker, { PICKER_W, PICKER_H } from '../../components/composer/EmojiPicker';
 import { REACTION_EMOJI } from '../../utils/reactions';
-import { ShortIcon } from '../../assets/icons';
 
 const JUMP_SHOW_PX = 400;
 
@@ -32,14 +31,16 @@ const INNER = 'flex min-w-0 flex-1 items-end gap-2.5';
 const CONTENT = 'flex max-w-[724px] min-w-0 flex-col gap-1';
 const AVATAR = 'clientAvatar size-8 shrink-0 rounded-full border text-[10px]';
 const BUBBLE = 'flex min-w-0 flex-col gap-2 rounded-xl border px-3.5 py-2.5 text-sm leading-relaxed [overflow-wrap:anywhere]';
+// Пузыри нейтральные: собеседник — серая подложка, наши (бот и менеджер) —
+// карточка с рамкой. Кто именно писал, говорит метка над пузырём.
 const BUBBLE_KIND = {
   client: 'border-transparent bg-muted',
-  bot: 'border-primary/20 bg-primary/10',
-  manager: 'border-l-2 border-l-primary bg-card',
+  bot: 'bg-card',
+  manager: 'bg-card',
 };
-const TG_MARK = 'pr-0.5 text-[11px] tracking-[-2px]';
+const TG_MARK = 'pr-0.5 text-[11px] tracking-tighter';
 const ROW_TOOL = 'text-muted-foreground';
-const DOT = 'size-1.5 rounded-full bg-primary animate-[typingDot_1.2s_ease-in-out_infinite]';
+const DOT = 'size-1.5 rounded-full bg-muted-foreground animate-[typingDot_1.2s_ease-in-out_infinite]';
 
 function fmtTime(ts) {
   if (!ts) return '';
@@ -184,7 +185,7 @@ function MessageFeed({
           ленты и не сдвигает сообщения, когда появляется или меняется. */}
       {stickyDate && (
         <div className="dateSticky pointer-events-none sticky top-2 z-[6] -mt-10 mb-7 flex h-0 shrink-0 justify-center" aria-hidden="true">
-          <span className="inline-flex h-7 items-center rounded-full border bg-background/90 px-3 font-mono text-xs whitespace-nowrap text-muted-foreground">
+          <span className="inline-flex h-6 items-center rounded-full border bg-background px-2.5 text-xs whitespace-nowrap text-muted-foreground">
             {stickyDate}
           </span>
         </div>
@@ -212,9 +213,9 @@ function MessageFeed({
                 {kind !== 'client' && (
                   <div className="flex items-end justify-end gap-1.5">
                     {kind === 'manager' ? (
-                      <Badge variant="default" className="tagManaged rounded-full"><ShortIcon /> Менеджер</Badge>
+                      <Badge variant="outline" className="tagManaged font-normal text-muted-foreground"><UserRound aria-hidden="true" /> Менеджер</Badge>
                     ) : (
-                      <Badge variant="secondary" className="tagAI rounded-full"><ShortIcon /> Бот</Badge>
+                      <Badge variant="outline" className="tagAI font-normal text-muted-foreground"><Bot aria-hidden="true" /> Бот</Badge>
                     )}
                   </div>
                 )}
@@ -222,7 +223,7 @@ function MessageFeed({
                   className={cn(
                     BUBBLE,
                     BUBBLE_KIND[kind],
-                    kind === 'client' && !isRead && 'border-primary/45',
+                    kind === 'client' && !isRead && 'border-foreground/30',
                     hits.includes(i) && 'ring-1 ring-warning-foreground/50',
                     msg.deleted_at && 'line-through opacity-50',
                   )}
@@ -280,7 +281,7 @@ function MessageFeed({
                       {tgMark.icon}
                     </span>
                   )}
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground">{fmtTime(msg.ts)}</span>
+                  <span className="text-xs tabular-nums text-muted-foreground">{fmtTime(msg.ts)}</span>
                   {msg.deleted_at && (
                     <span className="text-xs text-destructive" title="Собеседник удалил сообщение — бот его не читает">
                       удалено
@@ -367,8 +368,9 @@ function MessageFeed({
             type="button"
             variant="outline"
             size="icon"
-            className="pointer-events-auto relative size-10 -translate-y-full rounded-full bg-card shadow-md hover:bg-accent dark:bg-card dark:hover:bg-accent"
+            className="pointer-events-auto relative size-9 -translate-y-full rounded-full bg-card hover:bg-accent dark:bg-card dark:hover:bg-accent"
             data-testid="jump-down"
+            aria-label="К последним сообщениям"
             title="К последним сообщениям"
             onClick={() => {
               const el = messagesRef.current;

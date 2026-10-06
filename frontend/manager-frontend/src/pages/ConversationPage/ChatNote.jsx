@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
+import { Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 
 const when = (ts) => (ts ? new Date(ts * 1000).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
 
-const card = cn('summarySection', 'shrink-0 gap-0 rounded-lg py-0 shadow-none');
+/* Секция сайдбара: без своей рамки и фона, границы даёт divide-y колонки. */
+const block = cn('summarySection', 'shrink-0');
 
 export default function ChatNote({ note, noteBy, noteAt, onSave }) {
   const [text, setText] = useState(note ?? '');
@@ -41,34 +41,32 @@ export default function ChatNote({ note, noteBy, noteAt, onSave }) {
 
   if (!open) {
     return (
-      <Card className={card}>
+      <section className={cn(block, 'px-2.5 py-2')}>
         <Button
           variant="ghost"
           size="sm"
-          className="h-10 w-full justify-start rounded-lg px-4 font-normal text-muted-foreground"
+          className="w-full justify-start font-normal text-muted-foreground"
           onClick={() => setOpen(true)}
           data-testid="note-add"
         >
-          + Заметка о диалоге
+          <Plus aria-hidden="true" />
+          Заметка о диалоге
         </Button>
-      </Card>
+      </section>
     );
   }
 
   return (
-    <Card className={card}>
-      <div className="flex min-h-10 items-center justify-between gap-2 border-b px-4 py-2">
-        <span className="text-sm font-semibold">Заметка</span>
+    <section className={cn(block, 'flex flex-col gap-3 px-5 py-4')}>
+      <div className="flex min-h-5 items-center justify-between gap-2">
+        <h3 className="text-sm font-medium">Заметка</h3>
         {noteAt && (
-          <Badge
-            variant="outline"
-            className="h-5 min-w-0 shrink rounded-full font-mono font-normal text-muted-foreground tabular-nums"
-          >
-            <span className="truncate">{noteBy ? `${noteBy}, ` : ''}{when(noteAt)}</span>
-          </Badge>
+          <span className="min-w-0 truncate text-xs text-muted-foreground tabular-nums">
+            {noteBy ? `${noteBy}, ` : ''}{when(noteAt)}
+          </span>
         )}
       </div>
-      <div className="flex flex-col gap-2 p-4">
+      <div className="flex flex-col gap-2">
         <Textarea
           className="min-h-[88px] resize-y [field-sizing:fixed]"
           value={text}
@@ -80,7 +78,7 @@ export default function ChatNote({ note, noteBy, noteAt, onSave }) {
         />
         <div className="flex min-h-8 items-center gap-2">
           <Button
-            variant={dirty ? 'default' : 'outline'}
+            variant="outline"
             size="sm"
             className="min-w-[104px]"
             onClick={save}
@@ -107,6 +105,6 @@ export default function ChatNote({ note, noteBy, noteAt, onSave }) {
           )}
         </div>
       </div>
-    </Card>
+    </section>
   );
 }

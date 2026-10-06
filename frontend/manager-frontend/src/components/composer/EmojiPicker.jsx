@@ -37,7 +37,7 @@ export default function EmojiPicker({ onPick, onClose, only = null, title = 'Ð­Ð
   return (
     <div
       className={cn(
-        'absolute bottom-full left-0 z-50 mb-2 flex flex-col gap-2.5 overflow-y-auto rounded-lg border bg-popover p-2.5 text-popover-foreground shadow-md [scrollbar-gutter:stable]',
+        'absolute bottom-full left-0 z-50 mb-2 flex flex-col gap-2.5 overflow-y-auto rounded-lg border bg-popover p-2.5 text-popover-foreground shadow-sm [scrollbar-gutter:stable]',
         className,
       )}
       style={{ width: PICKER_W, maxHeight: PICKER_H, ...style }}

@@ -1,18 +1,18 @@
 import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { IconAction } from '@/components/IconAction/IconAction';
+import { useRouteBusy } from '@/components/AppLayout/routeBusy';
 import { PanelUX } from '../../ui/PanelUX';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { stageColors } from '../../data/stages';
 import MediaGallery from '../../components/MediaGallery/MediaGallery';
-import Sidebar from './Sidebar';
-import ChatTopBar from './ChatTopBar';
+import Sidebar, { SIDEBAR, SECTION } from './Sidebar';
+import ChatTopBar, { ChatTopBarSkeleton } from './ChatTopBar';
 import MessageFeed from './MessageFeed';
-import InputArea from './InputArea';
+import InputArea, { InputAreaSkeleton } from './InputArea';
 import {
   goalRows,
   goalNow,
@@ -55,12 +55,13 @@ const MAX_ALBUM = 10;
 // загрузки — поэтому высоты полос совпадают по построению.
 /* Каркас (AppLayout) держит экранную высоту; страница занимает всё под шапкой. */
 const PAGE = 'flex min-h-0 flex-1 flex-col bg-background';
-const SUB_HEADER = 'shrink-0 border-b bg-background py-2';
-const SUB_ROW = 'container flex items-center gap-2';
+const SUB_HEADER = 'shrink-0 border-b bg-background';
+const SUB_ROW = 'container flex h-12 items-center gap-1';
 const BODY = 'flex min-h-0 flex-1';
 const BODY_ROW = 'container flex min-h-0';
-const CHAT = 'flex min-w-0 flex-1 flex-col lg:pl-6';
-const CHAT_FRAME = 'flex min-h-0 flex-1 flex-col border-x bg-background';
+const CHAT = 'flex min-w-0 flex-1 flex-col';
+// Карточка клиента и переписка — один блок в общей рамке с одной линией между ними.
+const CHAT_FRAME = 'flex min-h-0 flex-1 flex-col border-r bg-background max-lg:border-l';
 
 const SKELETON_BUBBLES = [
   ['items-start', 'h-14 w-3/5'],
@@ -70,34 +71,51 @@ const SKELETON_BUBBLES = [
   ['items-start', 'h-10 w-1/3'],
 ];
 
-/** Первая загрузка: колонка карточки, лента и блок ввода тех же размеров, что у готовой страницы. */
+const SKELETON_META = ['w-24', 'w-32', 'w-10', 'w-20', 'w-28', 'w-36', 'w-16'];
+
+/** Первая загрузка: колонка карточки, лента и блок ввода из тех же классов, что у готовой страницы. */
 function PageSkeleton() {
   return (
     <>
       <div className={SUB_HEADER}>
         <div className={SUB_ROW}>
-          <Skeleton className="mr-auto h-9 w-36" />
-          <Skeleton className="h-9 w-40" />
+          <Skeleton className="mr-auto h-8 w-32" />
+          <Skeleton className="h-8 w-[136px]" />
         </div>
       </div>
       <div className={BODY} role="status" aria-busy="true">
         <div className={BODY_ROW}>
           <span className="sr-only">Загрузка…</span>
-          <div className="hidden w-[clamp(360px,34vw,600px)] shrink-0 flex-col gap-4 border-r p-5 lg:flex">
-            <Skeleton className="h-40 w-full rounded-lg" />
-            <Skeleton className="h-28 w-full rounded-lg" />
-            <Skeleton className="h-56 w-full rounded-lg" />
+          <div className={`hidden lg:flex ${SIDEBAR}`}>
+            <div className={SECTION}>
+              <div className="flex items-center gap-3">
+                <Skeleton className="size-12 rounded-full" />
+                <div className="flex flex-col gap-1.5">
+                  <Skeleton className="h-4 w-36" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+              </div>
+              <div className="flex flex-col">
+                {SKELETON_META.map((w, i) => (
+                  <div key={i} className="grid min-h-7 grid-cols-[88px_minmax(0,1fr)] items-center gap-3">
+                    <Skeleton className="h-3 w-14" />
+                    <Skeleton className={`h-3.5 ${w}`} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className={SECTION}>
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+            <div className={SECTION}>
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-28 w-full" />
+            </div>
           </div>
           <div className={CHAT}>
             <div className={CHAT_FRAME}>
-              <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
-                <Skeleton className="h-8 flex-1" />
-                <Skeleton className="h-8 w-9" />
-                <Skeleton className="h-8 w-9" />
-                <Skeleton className="h-8 w-9" />
-                <Skeleton className="h-8 w-9" />
-                <Skeleton className="h-8 w-9" />
-              </div>
+              <ChatTopBarSkeleton />
               <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-hidden px-4 pt-12 pb-4 md:px-6">
                 {SKELETON_BUBBLES.map(([side, size], i) => (
                   <div key={i} className={`flex flex-col gap-1 ${side}`}>
@@ -106,16 +124,7 @@ function PageSkeleton() {
                   </div>
                 ))}
               </div>
-              <div className="flex shrink-0 items-center justify-between gap-3 border-t px-4 py-3">
-                <div className="flex items-center gap-4">
-                  <Skeleton className="h-[1.15rem] w-8 rounded-full" />
-                  <div className="flex h-[74px] flex-col gap-1.5">
-                    <Skeleton className="h-4 w-24" />
-                    <Skeleton className="h-3 w-64 max-w-full" />
-                  </div>
-                </div>
-                <Skeleton className="h-[26px] w-[136px] rounded-full max-sm:hidden" />
-              </div>
+              <InputAreaSkeleton />
             </div>
           </div>
         </div>
@@ -131,6 +140,9 @@ function ConversationPage() {
   const [data, setData] = useState(null);
   const [pauseStatus, setPauseStatus] = useState(null);
   const [beats, setBeats] = useState(null);
+  // Чат, для которого сценарий так и не загрузился: вместо вечного скелетона
+  // сайдбар покажет «не удалось загрузить» и кнопку повтора.
+  const [beatsFailedFor, setBeatsFailedFor] = useState(null);
   const [inboundMedia, setInboundMedia] = useState([]);
 
   const [chats, setChats] = useState(null);
@@ -168,6 +180,26 @@ function ConversationPage() {
   const beatsFor = useRef(null);
   const mediaFor = useRef(null);
 
+  // Сбой повторного запроса не стирает уже показанное: иначе сценарий и медиа
+  // в ленте мигали бы при каждой сетевой ошибке. Данные другого чата при
+  // сбое всё же убираем.
+  const loadBeats = useCallback(
+    () =>
+      getBeats(id)
+        .then((b) => {
+          beatsFor.current = id;
+          setBeats(b);
+          setBeatsFailedFor(null);
+        })
+        .catch(() => {
+          if (beatsFor.current !== id) {
+            setBeats(null);
+            setBeatsFailedFor(id);
+          }
+        }),
+    [id],
+  );
+
   const load = useCallback(() => {
     getConversationById(id)
       .then((detail) => {
@@ -181,17 +213,7 @@ function ConversationPage() {
           .catch(() => setPauseStatus(null));
       })
       .catch((e) => setError(e.detail || e.message));
-    // Сбой повторного запроса не стирает уже показанное: иначе сценарий и медиа
-    // в ленте мигали бы при каждой сетевой ошибке. Данные другого чата при
-    // сбое всё же убираем.
-    getBeats(id)
-      .then((b) => {
-        beatsFor.current = id;
-        setBeats(b);
-      })
-      .catch(() => {
-        if (beatsFor.current !== id) setBeats(null);
-      });
+    loadBeats();
     getInboundMedia(id)
       .then((m) => {
         mediaFor.current = id;
@@ -200,7 +222,19 @@ function ConversationPage() {
       .catch(() => {
         if (mediaFor.current !== id) setInboundMedia([]);
       });
-  }, [id]);
+  }, [id, loadBeats]);
+
+  useRouteBusy(!data && !error);
+
+  // Узкий экран: выдвинутую карточку клиента закрывает и Escape.
+  useEffect(() => {
+    if (!sidebarOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setSidebarOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [sidebarOpen]);
 
   useEffect(load, [load]);
 
@@ -599,45 +633,37 @@ function ConversationPage() {
     <div className={PAGE}>
       <div className={`subHeader ${SUB_HEADER}`}>
         <div className={SUB_ROW}>
-          <Button variant="outline" className="backBtn mr-auto" onClick={() => navigate('/')}>
+          <Button variant="ghost" size="sm" className="backBtn mr-auto -ml-2.5" onClick={() => navigate('/')}>
             <ArrowLeft aria-hidden="true" />
             К дашборду
           </Button>
-          <div className="subNav flex items-center gap-1.5">
-            <Button
-              variant="outline"
-              size="icon"
+          <div className="subNav flex items-center">
+            <IconAction
+              icon={ChevronLeft}
+              label="Предыдущий чат"
               onClick={goPrev}
               disabled={idx <= 0}
-              aria-label="Предыдущий чат"
-              title="Предыдущий чат"
-            >
-              <ChevronLeft aria-hidden="true" />
-            </Button>
-            <Badge variant="outline" className="h-9 min-w-[72px] px-3 font-mono font-normal tabular-nums text-muted-foreground">
+            />
+            <span className="min-w-[56px] px-1 text-center text-xs tabular-nums text-muted-foreground">
               <span className="navCurrent font-medium text-foreground">{idx >= 0 ? idx + 1 : '—'}</span> / {chatIds.length || '—'}
-            </Badge>
-            <Button
-              variant="outline"
-              size="icon"
+            </span>
+            <IconAction
+              icon={ChevronRight}
+              label="Следующий чат"
               onClick={goNext}
               disabled={idx === -1 || idx >= chatIds.length - 1}
-              aria-label="Следующий чат"
-              title="Следующий чат"
-            >
-              <ChevronRight aria-hidden="true" />
-            </Button>
+            />
           </div>
-          <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-8 max-sm:hidden" />
-          <span className="font-mono text-xs tracking-wide whitespace-nowrap text-muted-foreground uppercase max-sm:hidden">
-            ЧАТ <span className="tabular-nums text-foreground">{data.chat_id}</span>
+          <span className="ml-2 text-xs whitespace-nowrap text-muted-foreground max-sm:hidden">
+            Чат <span className="font-mono tabular-nums">{data.chat_id}</span>
           </span>
         </div>
       </div>
 
       <div className={BODY}>
         <div className={BODY_ROW}>
-          {sidebarOpen && <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setSidebarOpen(false)} />}
+          {/* Затемнение z-40, выдвижная карточка (Sidebar) — z-50: она всегда поверх. */}
+          {sidebarOpen && <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" aria-hidden="true" onClick={() => setSidebarOpen(false)} />}
 
           <Sidebar
             id={id}
@@ -654,11 +680,14 @@ function ConversationPage() {
             beats={beats}
             scenarioBeats={scenarioBeats}
             telemetryRows={telemetryRows}
+            scenarioFailed={!beats && beatsFailedFor === id}
+            onRetryScenario={loadBeats}
             busy={busy}
             setBusy={setBusy}
             load={load}
             scrollToMessage={scrollToMessage}
             sidebarOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
           />
 
           <div className={CHAT}>

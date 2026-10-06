@@ -1032,3 +1032,99 @@ describe('несколько фото, «Медиа», архив и «вниз�
     prompt.mockRestore();
   });
 });
+
+describe('состояния, которые раньше не было видно', () => {
+  const PAUSED = { chat_id: 111, is_paused: true, archived: false, funnel_stage: 'rapport', pinned_facts: {}, first_seen: 1000, messages: [], funnel_events: [] };
+
+  beforeEach(() => {
+    getConversationById.mockReset();
+    getConversationById.mockResolvedValue(PAUSED);
+  });
+
+  const scenarioBox = () =>
+    [...container.querySelectorAll('[class*="summarySection"]')].find((el) => el.textContent.includes('Сценарий'));
+
+  it('сценарий не загрузился: вместо вечного скелетона — «Не удалось загрузить» и повтор', async () => {
+    getBeatsMock.mockReset();
+    getBeatsMock.mockRejectedValue(new Error('boom'));
+    await renderPage();
+    expect(scenarioBox().getAttribute('aria-busy')).toBeNull();
+    expect(scenarioBox().textContent).toContain('Не удалось загрузить');
+    const retry = container.querySelector('[data-testid="scenario-retry"]');
+    expect(retry).toBeTruthy();
+
+    getBeatsMock.mockResolvedValue({ beats: [{ id: 'B2', title: 'Бит', status: 'delivered', day: 1 }], delivered: 1, total: 1 });
+    const before = getBeatsMock.mock.calls.length;
+    await act(async () => {
+      retry.click();
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(getBeatsMock.mock.calls.length).toBe(before + 1);
+    expect(container.querySelector('[data-testid="scenario-failed"]')).toBeNull();
+    expect(scenarioBox().textContent).toContain('1 / 1');
+  });
+
+  it('сценарий ещё грузится: скелетон, а не сообщение о сбое', async () => {
+    getBeatsMock.mockReset();
+    getBeatsMock.mockReturnValue(new Promise(() => {}));
+    await renderPage();
+    expect(scenarioBox().getAttribute('aria-busy')).toBe('true');
+    expect(container.querySelector('[data-testid="scenario-failed"]')).toBeNull();
+  });
+
+  it('ошибка отправки показана в полосе режима и скрывается кнопкой «Скрыть ошибку»', async () => {
+    const { sendMessage } = await import('../../api/conversations');
+    vi.mocked(sendMessage).mockRejectedValueOnce(new Error('телеграм не ответил'));
+    await renderPage();
+    const textarea = container.querySelector('textarea');
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(textarea, 'привет');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const sendBtn = [...container.querySelectorAll('button')].find((b) => /Отправить/.test(b.textContent));
+    await act(async () => {
+      sendBtn.click();
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const box = container.querySelector('[data-testid="input-error"]');
+    expect(box.querySelector('[role="alert"]').textContent).toBe('телеграм не ответил');
+    expect(container.textContent).toContain('РУЧНОЙ РЕЖИМ');
+    await act(async () => {
+      navButton('Скрыть ошибку').click();
+    });
+    expect(container.querySelector('[data-testid="input-error"]')).toBeNull();
+    expect(container.textContent).toContain('Чат за тобой');
+  });
+
+  it('кнопка карточки клиента названа; на узком экране карточка открывается и закрывается', async () => {
+    await renderPage();
+    const sidebar = container.querySelector('aside[class*="sidebar"]');
+    expect(sidebar.className).toContain('max-lg:z-50');
+    expect(sidebar.className).toContain('max-lg:-translate-x-full');
+    await act(async () => {
+      navButton('Карточка клиента').click();
+    });
+    expect(sidebar.className).toContain('max-lg:translate-x-0');
+    const overlay = sidebar.previousElementSibling;
+    expect(overlay.className).toContain('z-40');
+    await act(async () => {
+      navButton('Закрыть карточку').click();
+    });
+    expect(sidebar.className).toContain('max-lg:-translate-x-full');
+
+    await act(async () => {
+      navButton('Карточка клиента').click();
+    });
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(sidebar.className).toContain('max-lg:-translate-x-full');
+  });
+
+  it('у поля сообщения рамка фокуса на всём блоке ввода', async () => {
+    await renderPage();
+    const frame = container.querySelector('textarea').closest('[class*="focus-within:ring"]');
+    expect(frame).toBeTruthy();
+  });
+});
