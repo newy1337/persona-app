@@ -12,6 +12,12 @@ export default defineConfig(({ mode }) => {
   return {
     base: '/',
     plugins: [react(), tailwind()],
+    // Vite 8 трансформирует JSX через oxc и эту секцию игнорирует (о чём и
+    // предупреждает в dev), а vitest 2 по-прежнему идёт через esbuild —
+    // без неё тесты без `import React` падают. Убирать до обновления vitest нельзя.
+    esbuild: {
+      jsx: 'automatic',
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src'),
