@@ -1,7 +1,18 @@
 import { useState } from 'react';
 import { setAccountProxy } from '../../api/accounts';
 import { parseProxyLine } from '../../utils/proxyLine';
-import s from '../../styles/AdminPage.module.scss';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
 
 export const EMPTY_PROXY = { type: 'socks5', host: '', port: '', username: '', password: '', secret: '' };
 
@@ -16,7 +27,13 @@ export function proxyPayload(p) {
   };
 }
 
-export function ProxyFields({ value, onChange }) {
+/**
+ * Поля прокси: строка «одной строкой» плюс разобранные поля. Рендерится
+ * фрагментом внутри сетки вызывающей стороны (форма добавления или диалог),
+ * поэтому первое поле занимает всю ширину через col-span-full.
+ * autoFocus — только внутри ProxyDialog; в форме добавления фокус держит телефон.
+ */
+export function ProxyFields({ value, onChange, autoFocus = false }) {
   const set = (patch) => onChange({ ...value, ...patch });
   const [line, setLine] = useState('');
   const [parsed, setParsed] = useState(null);
@@ -32,56 +49,47 @@ export function ProxyFields({ value, onChange }) {
     if (r.ok) onChange({ ...EMPTY_PROXY, ...r.proxy });
   };
 
+  const lineError = parsed && !parsed.ok ? `Не разобрал: ${parsed.error}` : undefined;
+  const lineHint = parsed?.ok
+    ? `Распознано: ${parsed.proxy.type.toUpperCase()} ${parsed.proxy.host}:${parsed.proxy.port}${parsed.proxy.username ? ` · логин ${parsed.proxy.username}` : ''} — проверьте поля ниже`
+    : undefined;
+
   return (
     <>
-      <label className={s.label}>
-        Одной строкой
-        <input
-          className={`${s.field} ${s.mono}`}
+      <Field label="Одной строкой" className="col-span-full" error={lineError} hint={lineHint}>
+        <Input
+          className="font-mono"
           value={line}
           onChange={(e) => applyLine(e.target.value)}
           placeholder="1.2.3.4:1080:логин:пароль или socks5://логин:пароль@хост:порт"
-          autoFocus
+          autoFocus={autoFocus}
         />
-      </label>
-      {parsed && !parsed.ok && <p className={s.error}>Не разобрал: {parsed.error}</p>}
-      {parsed?.ok && (
-        <p className={s.hint} style={{ margin: 0 }}>
-          Распознано: {parsed.proxy.type.toUpperCase()} {parsed.proxy.host}:{parsed.proxy.port}
-          {parsed.proxy.username ? ` · логин ${parsed.proxy.username}` : ''} — проверьте поля ниже
-        </p>
-      )}
-      <label className={s.label}>
-        Тип
-        <select className={s.select} value={value.type} onChange={(e) => set({ type: e.target.value })}>
+      </Field>
+      <Field label="Тип">
+        <NativeSelect value={value.type} onChange={(e) => set({ type: e.target.value })}>
           <option value="socks5">SOCKS5</option>
           <option value="mtproto">MTProto</option>
           <option value="socks4">SOCKS4</option>
-        </select>
-      </label>
-      <label className={s.label}>
-        Хост
-        <input className={s.field} value={value.host} onChange={(e) => set({ host: e.target.value })} placeholder="1.2.3.4" />
-      </label>
-      <label className={s.label}>
-        Порт
-        <input className={s.field} inputMode="numeric" value={value.port} onChange={(e) => set({ port: e.target.value })} placeholder="1080" />
-      </label>
+        </NativeSelect>
+      </Field>
+      <Field label="Хост">
+        <Input value={value.host} onChange={(e) => set({ host: e.target.value })} placeholder="1.2.3.4" />
+      </Field>
+      <Field label="Порт">
+        <Input className="tabular-nums" inputMode="numeric" value={value.port} onChange={(e) => set({ port: e.target.value })} placeholder="1080" />
+      </Field>
       {value.type === 'mtproto' ? (
-        <label className={s.label}>
-          Secret
-          <input className={s.field} value={value.secret} onChange={(e) => set({ secret: e.target.value })} />
-        </label>
+        <Field label="Secret">
+          <Input className="font-mono" value={value.secret} onChange={(e) => set({ secret: e.target.value })} />
+        </Field>
       ) : (
         <>
-          <label className={s.label}>
-            Логин
-            <input className={s.field} value={value.username} onChange={(e) => set({ username: e.target.value })} />
-          </label>
-          <label className={s.label}>
-            Пароль
-            <input className={s.field} type="password" value={value.password} onChange={(e) => set({ password: e.target.value })} />
-          </label>
+          <Field label="Логин">
+            <Input value={value.username} onChange={(e) => set({ username: e.target.value })} />
+          </Field>
+          <Field label="Пароль">
+            <Input type="password" value={value.password} onChange={(e) => set({ password: e.target.value })} />
+          </Field>
         </>
       )}
     </>
@@ -123,24 +131,34 @@ export default function ProxyDialog({ account, onClose }) {
   }
 
   return (
-    <div className={s.overlay} onMouseDown={(e) => e.target === e.currentTarget && onClose(false)}>
-      <form className={s.modal} onSubmit={submit}>
-        <h3 className={s.modalTitle}>Прокси: {account.phone_e164}</h3>
-        {account.proxy_label && (
-          <p className={s.modalText}>Сейчас: <span className={s.mono}>{account.proxy_label}</span> — новый заменит его.</p>
-        )}
-        <p className={s.modalText}>
-          После сохранения аккаунт переподключится через этот прокси. Не подключится — будет видно по статусу «онлайн».
-        </p>
-        <ProxyFields value={proxy} onChange={setProxy} />
-        {error && <p className={s.error}>{error}</p>}
-        <div className={s.modalActions}>
-          <button type="button" className={s.btn} onClick={() => onClose(false)}>Отмена</button>
-          <button type="submit" className={s.btnPrimary} disabled={busy || !proxyValid(proxy)}>
-            {busy ? 'Сохранение…' : 'Сохранить'}
-          </button>
-        </div>
-      </form>
-    </div>
+    <Dialog open onOpenChange={(open) => !open && onClose(false)}>
+      <DialogContent portal={false} showCloseButton={false} className="flex flex-col gap-0 overflow-hidden p-0 sm:max-w-[400px]">
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <DialogTitle className="text-base">Прокси: {account.phone_e164}</DialogTitle>
+            <DialogDescription>
+              После сохранения аккаунт переподключится через этот прокси. Не подключится — будет видно по статусу «онлайн».
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 [scrollbar-gutter:stable]">
+            <p className="min-h-4 text-xs text-muted-foreground">
+              {account.proxy_label && (
+                <>Сейчас: <span className="font-mono text-foreground">{account.proxy_label}</span> — новый заменит его.</>
+              )}
+            </p>
+            <div className="grid grid-cols-2 gap-x-3">
+              <ProxyFields value={proxy} onChange={setProxy} autoFocus />
+            </div>
+            <p className="min-h-4 text-xs text-destructive">{error}</p>
+          </div>
+          <DialogFooter className="px-6 pt-4 pb-6">
+            <Button type="button" variant="outline" onClick={() => onClose(false)}>Отмена</Button>
+            <Button type="submit" disabled={busy || !proxyValid(proxy)}>
+              {busy ? 'Сохранение…' : 'Сохранить'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,10 +1,14 @@
 import { PanelUX } from '../../ui/PanelUX';
 import { useEffect, useRef, useState } from 'react';
 import { getAccountPrivacy, setAccountPrivacy, updateAccount, updateAccountProfile, uploadAccountAvatar } from '../../api/accounts';
-import s from '../../styles/AdminPage.module.scss';
-import acc from './Accounts.module.scss';
 import ClientAvatar from '../../components/ClientAvatar/ClientAvatar';
-import { AVATAR_BG } from '../../utils/avatar';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 
 export function splitName(displayName) {
   const parts = String(displayName || '').trim().split(/\s+/).filter(Boolean);
@@ -48,6 +52,7 @@ export default function EditAccountDialog({ account, personas, onClose }) {
   const personaChanged = f.persona_id !== account.persona_id;
   const quota = String(f.daily_msg_quota).trim();
   const quotaValid = quota === '' || (/^\d+$/.test(quota) && Number(quota) >= 1 && Number(quota) <= 1000);
+  const cancel = () => onClose(avatarUrl !== account.avatar_url);
 
   async function submit(e) {
     e.preventDefault();
@@ -76,122 +81,141 @@ export default function EditAccountDialog({ account, personas, onClose }) {
     }
   }
 
-  return (
-    <div className={s.overlay} onMouseDown={(e) => e.target === e.currentTarget && onClose(avatarUrl !== account.avatar_url)}>
-      <form className={s.modal} onSubmit={submit}>
-        <h3 className={s.modalTitle}>Аккаунт {account.username ? `@${account.username}` : account.phone_e164}</h3>
+  const lastSeenSuffix = lastSeen.busy
+    ? ' — сохраняю…'
+    : lastSeen.hidden === null && account.online && !lastSeen.error
+      ? ' — загрузка…'
+      : '';
 
-        <fieldset className={acc.profileBox} disabled={!account.online || busy}>
-          <legend className={acc.profileLegend}>Профиль в Telegram{account.online ? '' : ' — аккаунт не в сети'}</legend>
-          <div className={acc.profilePhotoRow}>
-            <ClientAvatar
-              className={acc.profileAvatar}
-              style={{ '--av-bg': AVATAR_BG.purple }}
-              src={avatarUrl}
-              name={account.display_name || account.username || '?'}
-            />
-            <input
-              ref={photoInput}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              hidden
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                e.target.value = '';
-                if (!file) return;
-                setPhotoBusy(true);
-                setError(null);
-                try {
-                  const r = await PanelUX.run(`avatar:${account.id}`, ['Загружаем фото…', 'Фото обновлено'], () => uploadAccountAvatar(account.id, file));
-                  setAvatarUrl(r.avatar_url);
-                } catch (err) {
-                  setError(err.detail || err.message);
-                } finally {
-                  setPhotoBusy(false);
-                }
-              }}
-            />
-            <button type="button" className={s.btnSm} disabled={photoBusy} onClick={() => photoInput.current?.click()}>
-              {photoBusy ? 'Загрузка…' : 'Сменить фото'}
-            </button>
-          </div>
-          <div className={acc.profileNames}>
-            <label className={s.label}>
-              Имя
-              <input className={s.field} maxLength={64} value={profile.first} onChange={(e) => setProfile((v) => ({ ...v, first: e.target.value }))} />
-            </label>
-            <label className={s.label}>
-              Фамилия
-              <input className={s.field} maxLength={64} placeholder="необязательно" value={profile.last} onChange={(e) => setProfile((v) => ({ ...v, last: e.target.value }))} />
-            </label>
-          </div>
-          <label className={s.label}>
-            Юзернейм
-            <input
-              className={s.field}
-              maxLength={33}
-              placeholder="без ника"
-              value={profile.username}
-              onChange={(e) => setProfile((v) => ({ ...v, username: e.target.value }))}
-            />
-          </label>
-          <label className={s.check} title="Настройка приватности Telegram: собеседники не видят, когда аккаунт был в сети">
-            <input
-              type="checkbox"
-              data-testid="hide-last-seen"
-              checked={Boolean(lastSeen.hidden)}
-              disabled={lastSeen.hidden === null || lastSeen.busy}
-              onChange={(e) => toggleLastSeen(e.target.checked)}
-            />
-            Скрывать «был в сети»{lastSeen.busy ? ' — сохраняю…' : lastSeen.hidden === null && account.online && !lastSeen.error ? ' — загрузка…' : ''}
-          </label>
-          {lastSeen.error && <p className={s.error} style={{ margin: 0 }}>{lastSeen.error}</p>}
-        </fieldset>
-        <label className={s.label}>
-          Личность
-          <select className={s.select} value={f.persona_id} onChange={(e) => set({ persona_id: e.target.value })}>
-            {!personas.some((p) => p.slug === account.persona_id) && (
-              <option value={account.persona_id}>{account.persona_id} — нет такой личности</option>
+  return (
+    <Dialog open onOpenChange={(open) => !open && cancel()}>
+      <DialogContent
+        portal={false}
+        showCloseButton={false}
+        aria-describedby={undefined}
+        className="flex flex-col gap-0 overflow-hidden p-0 sm:max-w-[400px]"
+      >
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <DialogTitle className="text-base">
+              Аккаунт {account.username ? `@${account.username}` : account.phone_e164}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-6 [scrollbar-gutter:stable]">
+            <fieldset
+              className="mb-3 flex min-w-0 flex-col gap-1 rounded-lg border p-4 pt-2 disabled:opacity-60"
+              disabled={!account.online || busy}
+            >
+              <legend className="px-1.5 text-xs text-muted-foreground">
+                Профиль в Telegram{account.online ? '' : ' — аккаунт не в сети'}
+              </legend>
+              <div className="mb-3 flex items-center gap-3">
+                <ClientAvatar
+                  className="flex size-14 shrink-0 items-center justify-center rounded-full border bg-muted text-base font-bold text-muted-foreground"
+                  src={avatarUrl}
+                  name={account.display_name || account.username || '?'}
+                />
+                <input
+                  ref={photoInput}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  hidden
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (!file) return;
+                    setPhotoBusy(true);
+                    setError(null);
+                    try {
+                      const r = await PanelUX.run(`avatar:${account.id}`, ['Загружаем фото…', 'Фото обновлено'], () => uploadAccountAvatar(account.id, file));
+                      setAvatarUrl(r.avatar_url);
+                    } catch (err) {
+                      setError(err.detail || err.message);
+                    } finally {
+                      setPhotoBusy(false);
+                    }
+                  }}
+                />
+                <Button type="button" variant="outline" size="sm" disabled={photoBusy} onClick={() => photoInput.current?.click()}>
+                  {photoBusy ? 'Загрузка…' : 'Сменить фото'}
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3">
+                <Field label="Имя">
+                  <Input maxLength={64} value={profile.first} onChange={(e) => setProfile((v) => ({ ...v, first: e.target.value }))} />
+                </Field>
+                <Field label="Фамилия">
+                  <Input maxLength={64} placeholder="необязательно" value={profile.last} onChange={(e) => setProfile((v) => ({ ...v, last: e.target.value }))} />
+                </Field>
+              </div>
+              <Field label="Юзернейм">
+                <Input
+                  maxLength={33}
+                  placeholder="без ника"
+                  value={profile.username}
+                  onChange={(e) => setProfile((v) => ({ ...v, username: e.target.value }))}
+                />
+              </Field>
+              <div
+                className="flex items-center gap-2"
+                title="Настройка приватности Telegram: собеседники не видят, когда аккаунт был в сети"
+              >
+                <Checkbox
+                  id="hide-last-seen"
+                  data-testid="hide-last-seen"
+                  checked={Boolean(lastSeen.hidden)}
+                  disabled={lastSeen.hidden === null || lastSeen.busy}
+                  onCheckedChange={(checked) => toggleLastSeen(checked === true)}
+                />
+                <Label htmlFor="hide-last-seen" className="font-normal">
+                  Скрывать «был в сети»{lastSeenSuffix}
+                </Label>
+              </div>
+              <p className="min-h-4 text-xs text-destructive">{lastSeen.error}</p>
+            </fieldset>
+            <Field label="Личность">
+              <NativeSelect value={f.persona_id} onChange={(e) => set({ persona_id: e.target.value })}>
+                {!personas.some((p) => p.slug === account.persona_id) && (
+                  <option value={account.persona_id}>{account.persona_id} — нет такой личности</option>
+                )}
+                {personas.map((p) => (
+                  <option key={p.slug} value={p.slug} disabled={!p.enabled}>
+                    {p.name} ({p.slug}){p.enabled ? '' : ' — выключена'}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            {personaChanged && (
+              <p className="mb-2 text-xs text-destructive">
+                {account.chats > 0
+                  ? `У аккаунта ${account.chats} диалог(ов) — со следующего сообщения их все поведёт новая личность, с её именем и биографией. `
+                  : 'Диалогов у аккаунта пока нет. '}
+                Лиды, которых он взял под другую личность и ещё не написал, перейдут аккаунтам нужной личности.
+              </p>
             )}
-            {personas.map((p) => (
-              <option key={p.slug} value={p.slug} disabled={!p.enabled}>
-                {p.name} ({p.slug}){p.enabled ? '' : ' — выключена'}
-              </option>
-            ))}
-          </select>
-        </label>
-        {personaChanged && (
-          <p className={s.error} style={{ margin: 0 }}>
-            {account.chats > 0
-              ? `У аккаунта ${account.chats} диалог(ов) — со следующего сообщения их все поведёт новая личность, с её именем и биографией. `
-              : 'Диалогов у аккаунта пока нет. '}
-            Лиды, которых он взял под другую личность и ещё не написал, перейдут аккаунтам нужной личности.
-          </p>
-        )}
-        <label className={s.label}>
-          Назначение
-          <select className={s.select} value={f.purpose} onChange={(e) => set({ purpose: e.target.value })}>
-            <option value="prod">prod</option>
-            <option value="test">test</option>
-          </select>
-        </label>
-        <label className={s.label}>
-          Лимит сообщений/день
-          <input
-            className={s.field}
-            inputMode="numeric"
-            placeholder="без лимита"
-            value={f.daily_msg_quota}
-            onChange={(e) => set({ daily_msg_quota: e.target.value })}
-          />
-        </label>
-        {!quotaValid && <p className={s.error} style={{ margin: 0 }}>Лимит — число от 1 до 1000 или пусто</p>}
-        {error && <p className={s.error}>{error}</p>}
-        <div className={s.modalActions}>
-          <button type="button" className={s.btn} onClick={() => onClose(avatarUrl !== account.avatar_url)}>Отмена</button>
-          <button type="submit" className={s.btnPrimary} disabled={busy || !quotaValid}>{busy ? 'Сохранение…' : 'Сохранить'}</button>
-        </div>
-      </form>
-    </div>
+            <Field label="Назначение">
+              <NativeSelect value={f.purpose} onChange={(e) => set({ purpose: e.target.value })}>
+                <option value="prod">prod</option>
+                <option value="test">test</option>
+              </NativeSelect>
+            </Field>
+            <Field label="Лимит сообщений/день" error={quotaValid ? undefined : 'Лимит — число от 1 до 1000 или пусто'}>
+              <Input
+                className="tabular-nums"
+                inputMode="numeric"
+                placeholder="без лимита"
+                value={f.daily_msg_quota}
+                onChange={(e) => set({ daily_msg_quota: e.target.value })}
+              />
+            </Field>
+            <p className="min-h-4 text-xs text-destructive">{error}</p>
+          </div>
+          <DialogFooter className="px-6 pt-4 pb-6">
+            <Button type="button" variant="outline" onClick={cancel}>Отмена</Button>
+            <Button type="submit" disabled={busy || !quotaValid}>{busy ? 'Сохранение…' : 'Сохранить'}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

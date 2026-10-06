@@ -15,8 +15,15 @@ import EditAccountDialog from './EditAccountDialog';
 import { getPersonas } from '../../api/personas';
 import { getLeadPersonas } from '../../api/leads';
 import ProxyDialog, { EMPTY_PROXY, ProxyFields, proxyPayload, proxyValid } from './ProxyDialog';
-import s from '../../styles/AdminPage.module.scss';
 import ClientAvatar from '../../components/ClientAvatar/ClientAvatar';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeCheckbox } from '@/components/ui/native-checkbox';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const STATUS_LABEL = {
   unauthorized: 'нет сессии',
@@ -30,13 +37,6 @@ export function accountStatusLabel(a) {
   if (a.status === 'unauthorized' && a.lost_at) return 'сессия завершена';
   return STATUS_LABEL[a.status] ?? a.status;
 }
-const BADGE = {
-  unauthorized: s.badgeUnauthorized,
-  active: s.badgeActive,
-  paused: s.badgePaused,
-  banned: s.badgeBanned,
-  retired: s.badgeRetired,
-};
 
 function fmtTs(ts) {
   if (!ts) return '—';
@@ -74,47 +74,72 @@ function AddForm({ personas, onDone, onCancel }) {
   }
 
   return (
-    <form className={s.form} onSubmit={submit}>
-      <label className={s.label}>
-        Телефон (E.164)
-        <input className={s.field} autoFocus placeholder="+79001234567" value={f.phone_e164} onChange={(e) => set({ phone_e164: e.target.value })} />
-      </label>
-      <label className={s.label}>
-        Личность
-        <select className={s.select} value={f.persona_id} onChange={(e) => set({ persona_id: e.target.value })}>
-          {!personas.some((p) => p.slug === f.persona_id) && <option value={f.persona_id}>{f.persona_id}</option>}
-          {personas.filter((p) => p.enabled).map((p) => (
-            <option key={p.slug} value={p.slug}>{p.name} ({p.slug})</option>
-          ))}
-        </select>
-      </label>
-      <label className={s.label}>
-        Назначение
-        <select className={s.select} value={f.purpose} onChange={(e) => set({ purpose: e.target.value })}>
-          <option value="prod">prod</option>
-          <option value="test">test</option>
-        </select>
-      </label>
-      <label className={s.label}>
-        Лимит сообщений/день
-        <input className={s.field} inputMode="numeric" placeholder="без лимита" value={f.daily_msg_quota} onChange={(e) => set({ daily_msg_quota: e.target.value })} />
-      </label>
-      <label className={`${s.check} ${s.label}`} style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'end' }}>
-        <input type="checkbox" checked={f.withProxy} onChange={(e) => set({ withProxy: e.target.checked })} />
-        Задать прокси сразу
-      </label>
-      {f.withProxy && <ProxyFields value={f.proxy} onChange={(proxy) => set({ proxy })} />}
-      {error && <p className={`${s.error} ${s.formFull}`} style={{ justifyContent: 'flex-start' }}>{error}</p>}
-      <div className={s.formFull}>
-        <button type="button" className={s.btn} onClick={onCancel}>Отмена</button>
-        <button type="submit" className={s.btnPrimary} disabled={busy || !valid}>{busy ? 'Добавление…' : 'Добавить'}</button>
-      </div>
-    </form>
+    <Card className="mb-4 gap-0 py-0">
+      <CardContent className="p-4">
+        <form className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-x-3 gap-y-1" onSubmit={submit}>
+          <Field label="Телефон (E.164)">
+            <Input className="font-mono tabular-nums" autoFocus placeholder="+79001234567" value={f.phone_e164} onChange={(e) => set({ phone_e164: e.target.value })} />
+          </Field>
+          <Field label="Личность">
+            <NativeSelect value={f.persona_id} onChange={(e) => set({ persona_id: e.target.value })}>
+              {!personas.some((p) => p.slug === f.persona_id) && <option value={f.persona_id}>{f.persona_id}</option>}
+              {personas.filter((p) => p.enabled).map((p) => (
+                <option key={p.slug} value={p.slug}>{p.name} ({p.slug})</option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field label="Назначение">
+            <NativeSelect value={f.purpose} onChange={(e) => set({ purpose: e.target.value })}>
+              <option value="prod">prod</option>
+              <option value="test">test</option>
+            </NativeSelect>
+          </Field>
+          <Field label="Лимит сообщений/день">
+            <Input className="tabular-nums" inputMode="numeric" placeholder="без лимита" value={f.daily_msg_quota} onChange={(e) => set({ daily_msg_quota: e.target.value })} />
+          </Field>
+          {/* Чекбокс выровнен по контролам: та же высота h-9 и та же пустая строка сообщения снизу. */}
+          <div className="flex flex-col justify-end gap-1.5">
+            <Label className="h-9 cursor-pointer font-normal">
+              <NativeCheckbox checked={f.withProxy} onChange={(e) => set({ withProxy: e.target.checked })} />
+              Задать прокси сразу
+            </Label>
+            <span aria-hidden className="min-h-4" />
+          </div>
+          {f.withProxy && <ProxyFields value={f.proxy} onChange={(proxy) => set({ proxy })} />}
+          <p className="col-span-full min-h-4 text-xs text-destructive">{error}</p>
+          <div className="col-span-full flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onCancel}>Отмена</Button>
+            <Button type="submit" disabled={busy || !valid}>{busy ? 'Добавление…' : 'Добавить'}</Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Три строки высоты настоящей строки таблицы (аватар size-9 + p-3), пока
+// первый ответ не пришёл. Дальше список никогда не подменяется текстом.
+function TableSkeleton() {
+  return (
+    <div role="status" aria-label="Загрузка аккаунтов" className="rounded-lg border bg-card">
+      <div className="h-10 border-b" />
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="flex h-[69px] items-center gap-2.5 border-b p-3 last:border-b-0">
+          <Skeleton className="size-9 shrink-0 rounded-full" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <Skeleton className="h-3.5 w-40 max-w-full" />
+            <Skeleton className="h-3 w-24 max-w-full" />
+          </div>
+          <Skeleton className="h-5 w-16 rounded-md" />
+          <Skeleton className="ml-auto h-8 w-40 max-w-[40%]" />
+        </div>
+      ))}
+    </div>
   );
 }
 
 export default function Accounts() {
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(null);
   const [online, setOnline] = useState({});
   const [error, setError] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -134,6 +159,7 @@ export default function Accounts() {
       );
   }, []);
 
+  // При перезапросе прежний список остаётся на месте: ошибка не обнуляет items.
   const load = useCallback(() => {
     Promise.all([getAccounts(), getLiveState().catch(() => null)])
       .then(([list, state]) => {
@@ -167,22 +193,29 @@ export default function Accounts() {
   }
 
   return (
-    <div className="app mr-accounts">
+    <div className="app">
       <Header />
       <main className="main">
         <div className="container">
-          <div className={s.head}>
-            <h2 className={s.title}>Telegram-аккаунты</h2>
-            {!adding && <button className={s.btnPrimary} onClick={() => setAdding(true)}>+ Добавить аккаунт</button>}
+          <div className="my-6 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-semibold">Telegram-аккаунты</h2>
+            <Button disabled={adding} onClick={() => setAdding(true)}>+ Добавить аккаунт</Button>
           </div>
           {adding && <AddForm personas={personas} onDone={() => { setAdding(false); load(); }} onCancel={() => setAdding(false)} />}
-          {error && <p className={s.error}>{error}</p>}
-          {flash && <p className={s.ok} style={{ margin: '0 0 12px', fontSize: 13 }}>{flash}</p>}
+          {/* Фиксированный слот под ошибку/уведомление: таблица не прыгает, когда они появляются. */}
+          <div className="mb-3 min-h-5 text-sm">
+            {error && <p className="text-destructive">{error}</p>}
+            {flash && <p className="text-success-foreground">{flash}</p>}
+          </div>
 
-          <AccountsTable rows={items} alive={online} onEdit={setEditing} onLogin={setAuth}
-            onProxy={setProxyFor} onStatus={(row, status) => run(() => setAccountStatus(row.id, status, 'operator:web'))}
-            onClearFlood={row => run(() => clearAccountFlood(row.id))} onDelete={remove}
-            helpers={{ Avatar: ClientAvatar, statusLabel: accountStatusLabel, statusClasses: BADGE, date: fmtTs }} />
+          {items === null ? (
+            <TableSkeleton />
+          ) : (
+            <AccountsTable rows={items} alive={online} onEdit={setEditing} onLogin={setAuth}
+              onProxy={setProxyFor} onStatus={(row, status) => run(() => setAccountStatus(row.id, status, 'operator:web'))}
+              onClearFlood={row => run(() => clearAccountFlood(row.id))} onDelete={remove}
+              helpers={{ Avatar: ClientAvatar, statusLabel: accountStatusLabel, statusClasses: {}, date: fmtTs }} />
+          )}
         </div>
       </main>
 

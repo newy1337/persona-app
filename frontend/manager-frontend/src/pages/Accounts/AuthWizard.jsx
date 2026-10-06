@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { authFlow } from '../../api/accounts';
-import s from '../../styles/AdminPage.module.scss';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const STEPS = {
   phone: [
@@ -22,11 +28,15 @@ function StepBar({ method, status }) {
   const order = steps.map((x) => x.key);
   const idx = Math.max(0, order.indexOf(status === 'failed' ? 'pending' : status));
   return (
-    <div className={s.steps}>
+    <div className="flex flex-wrap gap-1.5" aria-label="Шаги входа">
       {steps.map((st, i) => (
-        <span key={st.key} className={i < idx ? s.stepDone : i === idx ? s.stepActive : s.step}>
+        <Badge
+          key={st.key}
+          variant={i < idx ? 'success' : i === idx ? 'default' : 'outline'}
+          className="h-5 rounded-full px-2"
+        >
           {st.label}
-        </span>
+        </Badge>
       ))}
     </div>
   );
@@ -34,34 +44,25 @@ function StepBar({ method, status }) {
 
 // Картинку рисует сервер: токен входа — это ключ, через чужой генератор его
 // пропускать нельзя, а панель обходится без лишней зависимости.
+// Белое поле обязательно — камера не читает код на тёмном. Размер фиксирован,
+// чтобы окно не прыгало, когда код приходит или обновляется.
 function QrCode({ svg }) {
-  if (!svg) return <p className={s.modalText}>Готовим код…</p>;
   return (
     <div
-      className={s.qr}
       data-testid="login-qr"
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
-  );
-}
-
-function MethodPicker({ value, onChange, disabled }) {
-  return (
-    <div className={s.actions} role="group" aria-label="Способ входа">
-      {[
-        ['phone', 'По коду из Telegram'],
-        ['qr', 'По QR-коду'],
-      ].map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          className={`${s.btnSm} ${value === key ? s.btnSelected : ''}`}
-          disabled={disabled}
-          onClick={() => onChange(key)}
-        >
-          {label}
-        </button>
-      ))}
+      className="mx-auto flex h-[240px] w-[220px] shrink-0 items-center justify-center rounded-lg bg-white p-2.5"
+    >
+      {svg ? (
+        <div
+          className="w-full leading-none [&_svg]:block [&_svg]:h-auto [&_svg]:w-full"
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      ) : (
+        <>
+          <Skeleton className="size-[200px] rounded-md" />
+          <span className="sr-only">Готовим код…</span>
+        </>
+      )}
     </div>
   );
 }
@@ -73,10 +74,15 @@ export default function AuthWizard({ account, onClose }) {
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   const jobRef = useRef(null);
+  // Переключение способа: Radix Tabs зовёт onValueChange по mousedown, а
+  // onClick нужен для клавиатуры/синтетических кликов — ref не даёт
+  // отменить одно и то же задание дважды.
+  const switchingRef = useRef(null);
 
   useEffect(() => {
     let timer;
     let alive = true;
+    switchingRef.current = null;
     setJob(null);
     setError(null);
     setValue('');
@@ -129,7 +135,8 @@ export default function AuthWizard({ account, onClose }) {
 
   // Переключение способа бросает начатое задание и начинает новое.
   async function switchMethod(next) {
-    if (next === method || busy) return;
+    if (next === method || busy || switchingRef.current === next) return;
+    switchingRef.current = next;
     const id = jobRef.current;
     if (id && job?.status !== 'ok' && job?.status !== 'failed') {
       await authFlow.cancel(id).catch(() => {});
@@ -145,64 +152,98 @@ export default function AuthWizard({ account, onClose }) {
   const needsInput = status === 'need_code' || status === 'need_2fa';
 
   return (
-    <div className={s.overlay} onMouseDown={(e) => e.target === e.currentTarget && close(false)}>
-      <form className={s.modal} onSubmit={submit}>
-        <h3 className={s.modalTitle}>Вход: {account.phone_e164}</h3>
-        {!over && <MethodPicker value={method} onChange={switchMethod} disabled={busy} />}
-        <StepBar method={method} status={status} />
+    <Dialog open onOpenChange={(open) => !open && close(done)}>
+      <DialogContent
+        portal={false}
+        showCloseButton={false}
+        aria-describedby={undefined}
+        className="flex flex-col gap-0 overflow-hidden p-0 sm:max-w-[400px]"
+      >
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <DialogTitle className="text-base">Вход: {account.phone_e164}</DialogTitle>
+          </DialogHeader>
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 [scrollbar-gutter:stable]">
+            <Tabs value={method} onValueChange={switchMethod} activationMode="manual">
+              <TabsList className="grid w-full grid-cols-2" aria-label="Способ входа">
+                <TabsTrigger value="phone" disabled={busy || over} onClick={() => switchMethod('phone')}>
+                  По коду из Telegram
+                </TabsTrigger>
+                <TabsTrigger value="qr" disabled={busy || over} onClick={() => switchMethod('qr')}>
+                  По QR-коду
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <StepBar method={method} status={status} />
 
-        {status === 'pending' && (
-          <p className={s.modalText}>
-            {method === 'qr'
-              ? 'Подключаемся к Telegram, запрашиваем код…'
-              : 'Подключаемся к Telegram, ждём отправки кода…'}
-          </p>
-        )}
-        {status === 'need_qr' && (
-          <>
-            <QrCode svg={job?.qr_svg} />
-            <p className={s.modalText}>
-              В Telegram на телефоне этого аккаунта: Настройки → Устройства → Подключить
-              устройство, и наведите камеру на код. Код сам обновляется, пока его не
-              отсканировали.
-            </p>
-          </>
-        )}
-        {status === 'need_code' && (
-          <label className={s.label}>
-            Код из Telegram / SMS
-            <input className={s.field} autoFocus inputMode="numeric" value={value} onChange={(e) => setValue(e.target.value)} />
-          </label>
-        )}
-        {status === 'need_2fa' && (
-          <label className={s.label}>
-            Облачный пароль (2FA)
-            <input className={s.field} autoFocus type="password" value={value} onChange={(e) => setValue(e.target.value)} />
-          </label>
-        )}
-        {done && (
-          <p className={`${s.modalText} ${s.ok}`}>
-            Сессия сохранена{job.username ? `, @${job.username}` : ''}. Аккаунт переведён в active.
-          </p>
-        )}
-        {status === 'failed' && <p className={s.error}>Не удалось: {job.error}</p>}
-        {error && <p className={s.error}>{error}</p>}
-
-        <div className={s.modalActions}>
-          {over ? (
-            <button type="button" className={s.btnPrimary} onClick={() => close(done)}>Закрыть</button>
-          ) : (
-            <>
-              <button type="button" className={s.btn} onClick={() => close(false)}>Отменить</button>
-              {needsInput && (
-                <button type="submit" className={s.btnPrimary} disabled={busy || !value}>
-                  {busy ? 'Отправка…' : 'Далее'}
-                </button>
+            <div className="flex min-h-[112px] flex-col gap-3">
+              {status === 'pending' && (
+                <p className="text-sm text-muted-foreground">
+                  {method === 'qr'
+                    ? 'Подключаемся к Telegram, запрашиваем код…'
+                    : 'Подключаемся к Telegram, ждём отправки кода…'}
+                </p>
               )}
-            </>
-          )}
-        </div>
-      </form>
-    </div>
+              {status === 'need_qr' && (
+                <>
+                  <QrCode svg={job?.qr_svg} />
+                  <p className="text-sm text-muted-foreground">
+                    В Telegram на телефоне этого аккаунта: Настройки → Устройства → Подключить
+                    устройство, и наведите камеру на код. Код сам обновляется, пока его не
+                    отсканировали.
+                  </p>
+                </>
+              )}
+              {status === 'need_code' && (
+                <Field label="Код из Telegram / SMS">
+                  <Input
+                    autoFocus
+                    type="password"
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                    className="font-mono tracking-widest"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                  />
+                </Field>
+              )}
+              {status === 'need_2fa' && (
+                <Field label="Облачный пароль (2FA)">
+                  <Input
+                    autoFocus
+                    type="password"
+                    autoComplete="one-time-code"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                  />
+                </Field>
+              )}
+              {done && (
+                <p className="text-sm text-success-foreground">
+                  Сессия сохранена{job.username ? `, @${job.username}` : ''}. Аккаунт переведён в active.
+                </p>
+              )}
+              {status === 'failed' && <p className="text-sm text-destructive">Не удалось: {job.error}</p>}
+            </div>
+            <p className="min-h-4 text-xs text-destructive">{error}</p>
+          </div>
+
+          <DialogFooter className="px-6 pt-4 pb-6">
+            {over ? (
+              <Button type="button" onClick={() => close(done)}>Закрыть</Button>
+            ) : (
+              <>
+                <Button type="button" variant="outline" onClick={() => close(false)}>Отменить</Button>
+                {needsInput && (
+                  <Button type="submit" disabled={busy || !value}>
+                    {busy ? 'Отправка…' : 'Далее'}
+                  </Button>
+                )}
+              </>
+            )}
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
