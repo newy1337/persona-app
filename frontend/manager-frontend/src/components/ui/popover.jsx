@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import * as PopoverPrimitive from '@radix-ui/react-popover';
 import { cn } from '@/lib/utils';
 
@@ -6,9 +7,22 @@ const PopoverTrigger = (props) => (
   <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
 );
 
-function PopoverContent({ className, align = 'start', sideOffset = 4, ...props }) {
+/**
+ * portal / container — как у DialogContent: при portal={false} содержимое
+ * остаётся в дереве React рядом с триггером, container задаёт узел портала.
+ */
+function PopoverContent({
+  className,
+  align = 'start',
+  sideOffset = 4,
+  portal = true,
+  container,
+  ...props
+}) {
+  const Wrapper = portal ? PopoverPrimitive.Portal : Fragment;
+  const wrapperProps = portal && container ? { container } : {};
   return (
-    <PopoverPrimitive.Portal>
+    <Wrapper {...wrapperProps}>
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}
@@ -19,7 +33,7 @@ function PopoverContent({ className, align = 'start', sideOffset = 4, ...props }
         )}
         {...props}
       />
-    </PopoverPrimitive.Portal>
+    </Wrapper>
   );
 }
 

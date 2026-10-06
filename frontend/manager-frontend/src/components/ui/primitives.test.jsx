@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Alert, AlertDescription, AlertTitle } from './alert';
 import { Avatar, AvatarFallback, AvatarImage } from './avatar';
 import { Badge } from './badge';
 import { Button } from './button';
@@ -25,8 +26,10 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from './dropdown-menu';
+import { Field } from './field';
 import { Input } from './input';
 import { Label } from './label';
+import { NativeCheckbox } from './native-checkbox';
 import { NativeSelect } from './native-select';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
 import { ScrollArea, ScrollBar } from './scroll-area';
@@ -52,7 +55,17 @@ import {
 } from './sheet';
 import { Skeleton } from './skeleton';
 import { Switch } from './switch';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+  denseTable,
+  stickyLastCol,
+} from './table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';
 import { Textarea } from './textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from './tooltip';
@@ -342,5 +355,141 @@ describe('примитивы shadcn монтируются в этом прое�
     expect(content.className).toContain('left-0');
     expect(content.textContent).toContain('Панель');
     expect(content.textContent).toContain('Закрыть');
+  });
+
+  it('кнопка xs и бейджи success/warning получают свои классы', async () => {
+    const el = await mount(
+      <>
+        <Button size="xs">Мелкая</Button>
+        <Badge variant="success">готово</Badge>
+        <Badge variant="warning">внимание</Badge>
+      </>,
+    );
+    const btn = el.querySelector('button');
+    expect(btn?.className).toContain('h-7');
+    expect(btn.className).toContain('text-xs');
+    const [ok, warn] = el.querySelectorAll('[data-slot="badge"]');
+    expect(ok.className).toContain('bg-success');
+    expect(ok.className).toContain('text-success-foreground');
+    expect(warn.className).toContain('bg-warning');
+    expect(warn.className).toContain('text-warning-foreground');
+  });
+
+  it('подвал таблицы и общие наборы классов', async () => {
+    const el = await mount(
+      <Table className={`${stickyLastCol} ${denseTable}`}>
+        <TableBody>
+          <TableRow>
+            <TableCell>ячейка</TableCell>
+          </TableRow>
+        </TableBody>
+        <TableFooter>
+          <TableRow>
+            <TableCell>итого</TableCell>
+          </TableRow>
+        </TableFooter>
+      </Table>,
+    );
+    const foot = el.querySelector('tfoot');
+    expect(foot?.getAttribute('data-slot')).toBe('table-footer');
+    expect(foot.textContent).toContain('итого');
+    const table = el.querySelector('table');
+    expect(table.className).toContain('[&_td:last-child]:sticky');
+    expect(table.className).toContain('text-xs');
+  });
+
+  it('поле: подпись оборачивает контрол, слот подсказки всегда есть', async () => {
+    const el = await mount(
+      <>
+        <Field label="Имя" hint="Как в паспорте">
+          <Input defaultValue="Аня" />
+        </Field>
+        <Field label="Телефон" error="Обязательное поле">
+          <Input defaultValue="" />
+        </Field>
+      </>,
+    );
+    const [withHint, withError] = el.querySelectorAll('label');
+    expect(withHint.querySelector('input')?.value).toBe('Аня');
+    expect(withHint.textContent).toContain('Имя');
+    const hint = withHint.querySelector('[data-slot="field-message"]');
+    expect(hint?.className).toContain('min-h-4');
+    expect(hint.textContent).toBe('Как в паспорте');
+    expect(hint.className).toContain('text-muted-foreground');
+    const error = withError.querySelector('[data-slot="field-message"]');
+    expect(error?.textContent).toBe('Обязательное поле');
+    expect(error.className).toContain('text-destructive');
+  });
+
+  it('нативный чекбокс переключает .checked', async () => {
+    const el = await mount(<NativeCheckbox aria-label="флажок" />);
+    const box = el.querySelector('input[type="checkbox"]');
+    expect(box?.checked).toBe(false);
+    expect(box.className).toContain('accent-primary');
+    await act(async () => box.click());
+    expect(box.checked).toBe(true);
+  });
+
+  it('уведомление: role=status и варианты', async () => {
+    const el = await mount(
+      <>
+        <Alert>
+          <svg aria-hidden="true" />
+          <AlertTitle>Заголовок</AlertTitle>
+          <AlertDescription>Описание</AlertDescription>
+        </Alert>
+        <Alert variant="destructive" role="alert">
+          <AlertTitle>Ошибка</AlertTitle>
+        </Alert>
+        <Alert variant="warning">
+          <AlertTitle>Внимание</AlertTitle>
+        </Alert>
+      </>,
+    );
+    const [plain, danger, warn] = el.querySelectorAll('[data-slot="alert"]');
+    expect(plain.getAttribute('role')).toBe('status');
+    expect(plain.querySelector('[data-slot="alert-title"]')?.textContent).toBe('Заголовок');
+    expect(plain.querySelector('[data-slot="alert-description"]')?.textContent).toBe('Описание');
+    expect(danger.getAttribute('role')).toBe('alert');
+    expect(danger.className).toContain('text-destructive');
+    expect(warn.getAttribute('role')).toBe('status');
+    expect(warn.className).toContain('bg-warning');
+  });
+
+  it('диалог, панель и поповер без портала остаются внутри хоста', async () => {
+    const el = await mount(
+      <>
+        <Dialog open>
+          <DialogContent portal={false} showCloseButton={false}>
+            <DialogTitle>Встроенное окно</DialogTitle>
+            <DialogDescription>Текст</DialogDescription>
+          </DialogContent>
+        </Dialog>
+        <Sheet open>
+          <SheetContent portal={false}>
+            <SheetTitle>Встроенная панель</SheetTitle>
+            <SheetDescription>Текст панели</SheetDescription>
+          </SheetContent>
+        </Sheet>
+        <Popover open>
+          <PopoverTrigger asChild>
+            <Button>Открыть</Button>
+          </PopoverTrigger>
+          <PopoverContent portal={false}>Встроенный поповер</PopoverContent>
+        </Popover>
+      </>,
+    );
+    const dialog = el.querySelector('[data-slot="dialog-content"]');
+    expect(dialog).toBeTruthy();
+    expect(dialog.getAttribute('role')).toBe('dialog');
+    expect(dialog.textContent).toContain('Встроенное окно');
+    expect(dialog.textContent).not.toContain('Закрыть');
+    expect(el.querySelector('[data-slot="dialog-overlay"]')).toBeTruthy();
+    const sheet = el.querySelector('[data-slot="sheet-content"]');
+    expect(sheet?.textContent).toContain('Встроенная панель');
+    expect(sheet.textContent).toContain('Закрыть');
+    expect(el.querySelector('[data-slot="popover-content"]')?.textContent).toBe(
+      'Встроенный поповер',
+    );
   });
 });

@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { XIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -6,10 +7,29 @@ const Dialog = (props) => <DialogPrimitive.Root data-slot="dialog" {...props} />
 const DialogTrigger = (props) => <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />;
 const DialogClose = (props) => <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 
-function DialogContent({ className, children, ...props }) {
+/**
+ * portal — рисовать ли окно через DialogPrimitive.Portal (по умолчанию да).
+ * При portal={false} оверлей и содержимое остаются в дереве React там, где
+ * стоит <Dialog>: это нужно страницам, которые держат окно внутри своего
+ * контейнера (тесты ищут его внутри хоста). container — узел для портала.
+ * showCloseButton — крестик в правом верхнем углу.
+ */
+function DialogContent({
+  className,
+  children,
+  portal = true,
+  container,
+  showCloseButton = true,
+  ...props
+}) {
+  const Wrapper = portal ? DialogPrimitive.Portal : Fragment;
+  const wrapperProps = portal && container ? { container } : {};
   return (
-    <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50" />
+    <Wrapper {...wrapperProps}>
+      <DialogPrimitive.Overlay
+        data-slot="dialog-overlay"
+        className="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50"
+      />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
@@ -19,12 +39,17 @@ function DialogContent({ className, children, ...props }) {
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="ring-offset-background focus:ring-ring absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden">
-          <XIcon className="size-4" />
-          <span className="sr-only">Закрыть</span>
-        </DialogPrimitive.Close>
+        {showCloseButton && (
+          <DialogPrimitive.Close
+            data-slot="dialog-close"
+            className="ring-offset-background focus:ring-ring absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden"
+          >
+            <XIcon className="size-4" />
+            <span className="sr-only">Закрыть</span>
+          </DialogPrimitive.Close>
+        )}
       </DialogPrimitive.Content>
-    </DialogPrimitive.Portal>
+    </Wrapper>
   );
 }
 

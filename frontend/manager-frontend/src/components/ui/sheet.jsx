@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import * as SheetPrimitive from '@radix-ui/react-dialog';
 import { XIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -20,9 +21,22 @@ function SheetOverlay({ className, ...props }) {
   );
 }
 
-function SheetContent({ className, children, side = 'right', ...props }) {
+/**
+ * portal / container — как у DialogContent: при portal={false} панель
+ * остаётся в дереве React внутри хоста, container задаёт узел портала.
+ */
+function SheetContent({
+  className,
+  children,
+  side = 'right',
+  portal = true,
+  container,
+  ...props
+}) {
+  const Wrapper = portal ? SheetPortal : Fragment;
+  const wrapperProps = portal && container ? { container } : {};
   return (
-    <SheetPortal>
+    <Wrapper {...wrapperProps}>
       <SheetOverlay />
       <SheetPrimitive.Content
         data-slot="sheet-content"
@@ -46,7 +60,7 @@ function SheetContent({ className, children, side = 'right', ...props }) {
           <span className="sr-only">Закрыть</span>
         </SheetPrimitive.Close>
       </SheetPrimitive.Content>
-    </SheetPortal>
+    </Wrapper>
   );
 }
 
