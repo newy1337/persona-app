@@ -56,9 +56,9 @@ export function TriggersEditor({ initial, onSave }) {
 
   return (
     <form className="flex flex-col gap-3" onSubmit={save} aria-label="Стоп-фразы">
-      <ol className="flex list-decimal flex-col gap-1.5 pl-6 marker:text-xs marker:text-muted-foreground">
+      <ol className="flex list-none flex-col gap-1.5">
         {draft.map((value, i) => (
-          <li key={i} className="flex items-center gap-2 pl-1">
+          <li key={i} className="flex items-center gap-2">
             <Input
               className="flex-1"
               value={value}
@@ -108,15 +108,19 @@ export function TriggersEditor({ initial, onSave }) {
 function TriggersSkeleton() {
   return (
     <div className="flex flex-col gap-3" role="status" aria-label="Загружаем…">
-      <div className="flex flex-col gap-1.5 pl-7">
-        <Skeleton className="h-9 w-full" />
-        <Skeleton className="h-9 w-full" />
-        <Skeleton className="h-9 w-full" />
+      <div className="flex flex-col gap-1.5">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex items-center gap-2">
+            <Skeleton className="h-9 flex-1" />
+            <Skeleton className="size-9 shrink-0" />
+          </div>
+        ))}
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Skeleton className="h-9 w-40" />
         <Skeleton className="h-9 w-28" />
       </div>
+      <div className="min-h-5" />
     </div>
   );
 }

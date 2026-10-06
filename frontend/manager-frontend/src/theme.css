@@ -125,8 +125,9 @@
   }
 }
 
-/* Каркас приложения. App.scss пока определяет те же .app / .container вне
-   слоёв — неслоёные правила побеждают, пока W3 его не удалит; так и задумано. */
+/* Каркас приложения: единственное определение .app / .main / .container.
+   Правила лежат в слое components, поэтому утилиты на том же элементе
+   (pt-4, pb-8 и т.п.) их перекрывают. */
 @layer components {
   .app {
     @apply flex min-h-dvh flex-col bg-background;
@@ -140,6 +141,10 @@
   .page-x {
     @apply w-full px-4 md:px-10 xl:px-[72px] min-[1680px]:px-[104px];
   }
+
+  .container {
+    @apply relative;
+  }
 }
 
 /* Класс `container` у страниц совпал со встроенной утилитой Tailwind, которая
@@ -149,6 +154,13 @@
    любой утилиты, включая её медиа-варианты. */
 .container {
   max-width: none;
+}
+
+/* Radix Dialog (react-remove-scroll) при открытии окна добавляет body отступ на
+   ширину полосы прокрутки. Место под неё уже держит html через
+   scrollbar-gutter: stable, так что отступ удвоил бы зазор — обнуляем. */
+html body[data-scroll-locked] {
+  margin-right: 0 !important;
 }
 
 /* Анимации страниц: подключаются через animate-[msgFlash_1.6s_ease-out],

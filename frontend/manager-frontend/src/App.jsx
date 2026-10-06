@@ -12,7 +12,6 @@ import Settings from './pages/Settings/Settings';
 import Login from './pages/Login/Login';
 import { api, getToken } from './api/client';
 import { Skeleton } from '@/components/ui/skeleton';
-import './App.scss';
 
 /* Каркас страницы на время загрузки: шапка той же высоты и место под заголовок,
    чтобы при появлении данных ничего не прыгало. */

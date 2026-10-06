@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { ChevronDown, LogOut, MessagesSquare, Search, SlidersHorizontal } from 'lucide-react';
-import { api, setTokens } from '../../api/client';
+import { api, getToken, setTokens } from '../../api/client';
 import { getStats } from '../../api/stats';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -116,6 +116,65 @@ const navClass = ({ isActive }) =>
     isActive && 'bg-primary/15 text-foreground',
   );
 
+const NAV = [
+  { to: '/', end: true, label: 'Диалоги', roles: ['admin', 'manager'] },
+  { to: '/leads', label: 'Лиды', roles: ['admin', 'manager'] },
+  { to: '/voice', label: 'Войсер' },
+  { to: '/personas', label: 'Личности', roles: ['admin'] },
+  { to: '/accounts', label: 'Аккаунты', roles: ['admin', 'manager'] },
+  { to: '/managers', label: 'Менеджеры', roles: ['admin'] },
+  { to: '/stats', label: 'Статистика', roles: ['admin'] },
+  { to: '/settings', label: 'Настройки', roles: ['admin'] },
+];
+
+/* Заглушка того же размера, что и будущий текст: подпись рисуется прозрачным
+   псевдоэлементом из data-label, поэтому ширина совпадает по построению, а в
+   textContent ничего не попадает. */
+const GHOST_TEXT = 'animate-pulse bg-accent text-transparent before:content-[attr(data-label)]';
+
+/* Шапка монтируется заново на каждой странице, а /auth/me отвечает не сразу.
+   Чтобы блоки не появлялись и не меняли ширину, помним, кто вошёл: в памяти
+   вкладки — для мгновенного показа, в localStorage — для первого кадра после
+   перезагрузки. Запись привязана к хвосту токена: с тем же токеном показываем
+   её сразу, с другим она задаёт только размеры заглушек. */
+const KNOWN_KEY = 'panel_header_me';
+const tokenTag = () => String(getToken() || '').slice(-24);
+let memory = null;
+
+function readKnown() {
+  if (memory) return memory;
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(KNOWN_KEY) || 'null');
+    return saved && typeof saved.role === 'string' ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function remember(patch) {
+  const tag = tokenTag();
+  // Без токена (тесты, гость) ничего не запоминаем.
+  if (!tag) return;
+  memory = { ...(memory?.tag === tag ? memory : null), ...patch, tag };
+  try {
+    const { id, username, role } = memory;
+    if (role) window.localStorage.setItem(KNOWN_KEY, JSON.stringify({ tag, id, username, role }));
+  } catch {
+    // хранилище недоступно — остаётся память вкладки
+  }
+}
+
+/** При выходе оставляем только роль — по ней строятся заглушки следующего входа. */
+function forget() {
+  const role = memory?.role ?? readKnown()?.role;
+  memory = null;
+  try {
+    if (role) window.localStorage.setItem(KNOWN_KEY, JSON.stringify({ role }));
+  } catch {
+    // хранилище недоступно
+  }
+}
+
 function Header({
   liveCount,
   query = '',
@@ -125,25 +184,44 @@ function Header({
   accounts = [],
 }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [me, setMe] = useState(null);
+  // known — последний известный пользователь; fresh — запись от текущего токена.
+  const [known] = useState(readKnown);
+  const fresh = Boolean(known?.tag) && known.tag === tokenTag();
+  const [me, setMe] = useState(() => (fresh ? known : null));
+  const [pending, setPending] = useState(true);
   const [leaving, setLeaving] = useState(false);
-  const [ownLive, setOwnLive] = useState(null);
+  const [ownLive, setOwnLive] = useState(() => (fresh ? known.live ?? null : null));
   const searchable = typeof onQueryChange === 'function';
 
   useEffect(() => {
-    api.get('/auth/me').then(setMe).catch(() => setMe(null));
+    api.get('/auth/me')
+      .then((user) => {
+        setMe(user);
+        if (user) remember({ id: user.id, username: user.username, role: user.role });
+      })
+      .catch(() => setMe(null))
+      .finally(() => setPending(false));
   }, []);
 
   useEffect(() => {
     if (liveCount !== undefined || !me || me.role === 'voice') return undefined;
-    const pull = () => getStats().then((s) => setOwnLive(s?.active_now ?? 0)).catch(() => {});
+    const pull = () => getStats().then((s) => {
+      const value = s?.active_now ?? 0;
+      setOwnLive(value);
+      remember({ live: value });
+    }).catch(() => {});
     pull();
     const t = setInterval(() => document.visibilityState === 'visible' && pull(), 30000);
     return () => clearInterval(t);
   }, [liveCount, me]);
   const live = liveCount ?? ownLive;
+  // Пока /auth/me не ответил, размеры блоков берём по последнему известному
+  // пользователю; если его нет — по менеджеру (самая частая роль).
+  const waiting = !me && pending;
+  const shape = me ?? (waiting ? known ?? { role: 'manager' } : null);
   // Войсеру статистика не отдаётся — для него пилюля не рисуется вовсе.
-  const livePill = !(liveCount === undefined && me?.role === 'voice');
+  const livePill = !(liveCount === undefined && shape?.role === 'voice');
+  const withBell = ['manager', 'admin'].includes(shape?.role);
   const activeFilters = Number(Boolean(filters.lead)) + Number(Boolean(filters.account));
 
   return (
@@ -163,7 +241,11 @@ function Header({
           <span className="h-8 w-px shrink-0 bg-border max-[479px]:hidden" aria-hidden="true" />
 
           {livePill && (live === null ? (
-            <Skeleton className="h-7 w-[108px]" />
+            <Badge variant="outline" className="h-7 animate-pulse gap-1.5 border-transparent bg-accent px-2.5 font-mono" aria-hidden="true">
+              <span className="size-1.5 shrink-0" />
+              <span className="text-xs font-normal tracking-[0.04em] text-transparent before:content-['LIVE']" />
+              <span className="min-w-[2ch] text-sm font-medium" />
+            </Badge>
           ) : (
             <Badge variant="outline" className="h-7 gap-1.5 px-2.5 font-mono" title="Диалогов с сообщениями за последние сутки">
               <span className="size-1.5 shrink-0 rounded-full bg-primary animate-[livePulse_2s_ease-in-out_infinite]" aria-hidden="true" />
@@ -174,14 +256,17 @@ function Header({
         </div>
 
         <nav className="flex min-h-9 min-w-0 items-center gap-0.5 overflow-x-auto py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-[1180px]:order-10 max-[1180px]:-mx-1 max-[1180px]:basis-full">
-          {me && me.role !== 'voice' && <NavLink to="/" end className={navClass}>Диалоги</NavLink>}
-          {me && me.role !== 'voice' && <NavLink to="/leads" className={navClass}>Лиды</NavLink>}
-          {me && <NavLink to="/voice" className={navClass}>Войсер</NavLink>}
-          {me && me.role === 'admin' && <NavLink to="/personas" className={navClass}>Личности</NavLink>}
-          {me && (me.role === 'admin' || me.role === 'manager') && <NavLink to="/accounts" className={navClass}>Аккаунты</NavLink>}
-          {me && me.role === 'admin' && <NavLink to="/managers" className={navClass}>Менеджеры</NavLink>}
-          {me && me.role === 'admin' && <NavLink to="/stats" className={navClass}>Статистика</NavLink>}
-          {me && me.role === 'admin' && <NavLink to="/settings" className={navClass}>Настройки</NavLink>}
+          {me && NAV.filter((item) => !item.roles || item.roles.includes(me.role)).map((item) => (
+            <NavLink key={item.to} to={item.to} end={item.end} className={navClass}>{item.label}</NavLink>
+          ))}
+          {waiting && NAV.filter((item) => !item.roles || item.roles.includes(shape.role)).map((item) => (
+            <span
+              key={item.to}
+              className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'pointer-events-none', GHOST_TEXT)}
+              data-label={item.label}
+              aria-hidden="true"
+            />
+          ))}
         </nav>
 
         {searchable && (
@@ -227,18 +312,29 @@ function Header({
         )}
 
         <div className="ml-auto flex shrink-0 items-center gap-4 max-[479px]:gap-2">
-          {me && ['manager', 'admin'].includes(me.role) && <VoiceNotifications key={me.id} userId={me.id} />}
+          {withBell && (me
+            ? <VoiceNotifications key={me.id} userId={me.id} />
+            : <Skeleton className="size-9 shrink-0" aria-hidden="true" />)}
           <Clock />
           <span className="hidden h-8 w-px shrink-0 bg-border min-[1680px]:block" aria-hidden="true" />
 
           <div className="flex items-center gap-2.5">
             <div className="flex flex-col items-end gap-0.5 max-[1279px]:hidden">
-              <span className="text-[13px] leading-4 font-semibold">{me?.username || '—'}</span>
-              <span className="min-h-4 text-[11px] leading-4 text-muted-foreground">{me?.role || ''}</span>
+              {waiting ? (
+                <>
+                  <span className={cn('min-w-12 rounded-sm text-[13px] leading-4 font-semibold', GHOST_TEXT)} data-label={shape.username || ''} aria-hidden="true" />
+                  <span className={cn('min-h-4 min-w-10 rounded-sm text-[11px] leading-4', GHOST_TEXT)} data-label={shape.role || ''} aria-hidden="true" />
+                </>
+              ) : (
+                <>
+                  <span className="text-[13px] leading-4 font-semibold">{me?.username || '—'}</span>
+                  <span className="min-h-4 text-[11px] leading-4 text-muted-foreground">{me?.role || ''}</span>
+                </>
+              )}
             </div>
             <span className="relative inline-flex shrink-0">
               <Avatar className="size-9">
-                <AvatarFallback className="text-xs font-semibold">{initials(me?.username) || '—'}</AvatarFallback>
+                <AvatarFallback className={cn('text-xs font-semibold', waiting && 'animate-pulse')}>{waiting ? '' : initials(me?.username) || '—'}</AvatarFallback>
               </Avatar>
               <span className="absolute right-0 bottom-0 size-2.5 rounded-full bg-success-foreground ring-2 ring-background" aria-hidden="true" />
             </span>
@@ -256,6 +352,7 @@ function Header({
                   await api.post('/auth/logout').catch(() => {});
                 } finally {
                   setTokens(null);
+                  forget();
                   window.location.reload();
                 }
               }}

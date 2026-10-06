@@ -6,11 +6,6 @@ import { cn } from '../lib/utils';
 import { createActionStore, readableError } from './action-store';
 export { createActionStore, readableError, actionLabels } from './action-store';
 
-/* Компенсация ширины полосы прокрутки от react-remove-scroll (внутри Radix
-   Dialog) не нужна: html уже держит место под неё через scrollbar-gutter: stable,
-   и лишний margin-right сдвигал бы страницу на 15px при открытии окна. */
-const SCROLL_LOCK_FIX = 'html body[data-scroll-locked]{margin-right:0!important}';
-
 export function createPanelUX({ React, api }) {
   const h = React.createElement;
   const { useState, useRef, useSyncExternalStore } = React;
@@ -35,7 +30,10 @@ export function createPanelUX({ React, api }) {
     updateConfirmation();
     current?.resolve(value);
   }
-  function Modal({ title, children, footer, onClose, busy = false, wide = false }) {
+  // described — в children есть DialogDescription (confirm, удаление лида): тогда
+  // Radix сам связывает окно с описанием. У окон-форм описания нет, и связь
+  // снимаем явно, иначе Radix предупреждает в консоли.
+  function Modal({ title, children, footer, onClose, busy = false, wide = false, described = false }) {
     const closeRef = useRef(onClose), busyRef = useRef(busy);
     closeRef.current = onClose; busyRef.current = busy;
     // Кто открыл окно — туда и возвращаем фокус при закрытии. Снимок берём
@@ -48,7 +46,7 @@ export function createPanelUX({ React, api }) {
         showCloseButton: false,
         className: cn('flex max-h-[calc(100dvh-3rem)] flex-col gap-0 overflow-hidden p-0', wide && 'sm:max-w-2xl'),
         'aria-busy': busy,
-        'aria-describedby': undefined,
+        ...(described ? null : { 'aria-describedby': undefined }),
         onOpenAutoFocus: event => {
           const target = event.currentTarget?.querySelector?.('[data-autofocus]');
           if (target) { event.preventDefault(); target.focus(); }
@@ -76,7 +74,6 @@ export function createPanelUX({ React, api }) {
     const question = useSyncExternalStore(subscribeConfirmation, () => confirmation);
     const noticeList = state.notices;
     return h(React.Fragment, null,
-      h('style', null, SCROLL_LOCK_FIX),
       h('div', { className: 'pointer-events-none fixed top-[calc(var(--header-h)+1rem)] right-5 z-[70] grid w-[min(380px,calc(100vw-2.5rem))] gap-2', 'aria-label': 'Результаты действий' },
         noticeList.map(item => h('div', {
           key: item.id,
@@ -91,7 +88,7 @@ export function createPanelUX({ React, api }) {
         item.status === 'pending'
           ? h('span', { className: 'size-7 shrink-0', 'aria-hidden': true })
           : h(Button, { type: 'button', variant: 'ghost', size: 'icon', className: 'size-7', 'aria-label': 'Закрыть уведомление', onClick: () => store.dismiss(item.id) }, h(X, { className: 'size-4' }))))),
-      question && h(Modal, { title: question.title || 'Подтвердите действие', onClose: () => answer(false), footer: h(React.Fragment, null,
+      question && h(Modal, { title: question.title || 'Подтвердите действие', described: true, onClose: () => answer(false), footer: h(React.Fragment, null,
         h(Button, { type: 'button', variant: 'outline', 'data-autofocus': true, onClick: () => answer(false) }, 'Отмена'),
         h(Button, { type: 'button', variant: question.danger ? 'destructive' : 'default', onClick: () => answer(true) }, question.confirmLabel || 'Подтвердить')) },
       h(DialogDescription, { className: 'whitespace-pre-line [overflow-wrap:anywhere]' }, question.message)));
@@ -106,7 +103,7 @@ export function createPanelUX({ React, api }) {
       catch (e) { setError(readableError(e)); }
       finally { lock.current = false; setBusy(false); }
     }
-    return h(Modal, { title: `Удалить лид ${lead.phone_e164 || '@' + lead.username}?`, busy, onClose: onCancel, footer: h(React.Fragment, null,
+    return h(Modal, { title: `Удалить лид ${lead.phone_e164 || '@' + lead.username}?`, described: true, busy, onClose: onCancel, footer: h(React.Fragment, null,
       h(Button, { type: 'button', variant: 'outline', disabled: busy, 'data-autofocus': true, onClick: onCancel }, 'Отмена'),
       h(Button, { type: 'button', variant: 'destructive', disabled: busy, onClick: submit }, busy ? 'Удаляем…' : telegram ? 'Удалить с перепиской' : 'Удалить')) },
     h(DialogDescription, { className: 'whitespace-pre-line [overflow-wrap:anywhere]' }, lead.telegram_user_id ? 'Удалятся переписка в панели, память бота и карточка. Если добавить этого человека снова, знакомство начнётся заново.' : 'Удалится только запись лида в базе.'),
