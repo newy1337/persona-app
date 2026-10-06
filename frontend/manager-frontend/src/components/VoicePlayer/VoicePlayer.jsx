@@ -115,7 +115,7 @@ export default function VoicePlayer({ src, onListened = null }) {
       </Button>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div
-          className="flex h-[22px] cursor-pointer items-center gap-0.5"
+          className="flex h-5 cursor-pointer items-center gap-0.5"
           ref={waveRef}
           onClick={seek}
           role="slider"
@@ -135,25 +135,27 @@ export default function VoicePlayer({ src, onListened = null }) {
             />
           ))}
         </div>
-        <span
-          className={cn(
-            'min-w-[72px] font-mono text-[11px] leading-4 tabular-nums',
-            failed ? 'text-destructive' : 'text-muted-foreground',
-          )}
-        >
-          {timeLabel}
-        </span>
+        <div className="flex h-[18px] items-center justify-between gap-2">
+          <span
+            className={cn(
+              'min-w-[72px] font-mono text-[11px] leading-4 tabular-nums',
+              failed ? 'text-destructive' : 'text-muted-foreground',
+            )}
+          >
+            {timeLabel}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            className="h-[18px] min-w-[36px] rounded-full px-1.5 font-mono text-[10px] tabular-nums"
+            onClick={() => setSpeed((v) => SPEEDS[(SPEEDS.indexOf(v) + 1) % SPEEDS.length])}
+            title="Скорость"
+          >
+            {speed}×
+          </Button>
+        </div>
       </div>
-      <Button
-        type="button"
-        variant="outline"
-        size="xs"
-        className="min-w-[44px] font-mono tabular-nums"
-        onClick={() => setSpeed((v) => SPEEDS[(SPEEDS.indexOf(v) + 1) % SPEEDS.length])}
-        title="Скорость"
-      >
-        {speed}×
-      </Button>
     </div>
   );
 }

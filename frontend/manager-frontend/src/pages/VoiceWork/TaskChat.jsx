@@ -91,7 +91,7 @@ export function TaskChat({ task }) {
     return () => { active = false; clearInterval(timer); document.removeEventListener('visibilitychange', visible); };
   }, [task.id, task.chatId, task.status, before, refresh]);
   useEffect(() => { if (stick.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight; }, [data]);
-  if (!task.chatId) return <Alert><AlertDescription>Диалог не привязан к заданию. Попросите менеджера выбрать переписку в карточке задания.</AlertDescription></Alert>;
+  if (!task.chatId) return <Alert role="note"><AlertDescription>Диалог не привязан к заданию. Попросите менеджера выбрать переписку в карточке задания.</AlertDescription></Alert>;
   const scrollerClass = 'flex h-[42vh] min-h-[220px] flex-col gap-3 overflow-y-auto py-1 pr-2 pl-0.5 [overscroll-behavior:contain] [scrollbar-gutter:stable]';
   return <section className="flex min-w-0 flex-col gap-3" aria-label="Переписка по заданию">
     <div className="flex flex-wrap items-center justify-between gap-2"><div><strong className="text-sm font-medium">Переписка · {task.contactLabel}</strong><p className={cn(muted, 'min-h-4 tabular-nums')}>Только просмотр · обновление каждые 5 секунд{updated && ` · ${updated.toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow' })}`}</p></div>
@@ -102,7 +102,7 @@ export function TaskChat({ task }) {
         <Button type="button" variant="outline" size="sm" onClick={() => { setBefore(null); setTrail([]); }}>К последним</Button></>}
     </div>
     {error && <p className={errorLine} role="alert">{error}{data && ' Показаны ранее загруженные сообщения.'}</p>}
-    {!data && <div role="status" className={scrollerClass} aria-busy={loading} aria-label="Загружаем переписку…">
+    {!data && <div className={scrollerClass} aria-busy={loading} {...(loading ? { role: 'status', 'aria-label': 'Загружаем переписку…' } : {})}>
       {loading && <><span className="sr-only">Загружаем переписку…</span><Skeleton className="h-14 w-3/5 rounded-lg" /><Skeleton className="h-14 w-1/2 self-end rounded-lg" /><Skeleton className="h-14 w-2/3 rounded-lg" /></>}
     </div>}
     {data && <div className={scrollerClass} aria-busy={loading} ref={scroller} onScroll={e => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>

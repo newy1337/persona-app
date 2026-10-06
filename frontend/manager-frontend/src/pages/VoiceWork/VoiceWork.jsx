@@ -73,9 +73,9 @@ function CreateTask({ options, context, onClose, onCreated }) {
     <form id="voice-task-form" onSubmit={submit} className="grid min-w-0 gap-x-4 gap-y-2 sm:grid-cols-2">
       <Field label="Тип задания"><NativeSelect value={form.kind} onChange={e => set('kind', e.target.value)}><option value="voice">Записать голосовое</option><option value="call">Звонок</option></NativeSelect></Field>
       {form.kind === 'voice' && <Field label="Режим голосового"><NativeSelect value={form.voice_mode} disabled={busy} onChange={e => set('voice_mode', e.target.value)}><option value="library">В библиотеку</option><option value="once">Одноразовое — сразу в диалог</option></NativeSelect></Field>}
-      {form.kind === 'voice' && <Alert className="sm:col-span-2"><AlertDescription className="min-h-10">{form.voice_mode === 'once' ? 'После записи войсером голосовое автоматически отправится в выбранный диалог. Дополнительное подтверждение менеджера не требуется.' : 'Запись сохранится в библиотеке. Позже её можно выбрать и отправить в любой доступный вам диалог.'}</AlertDescription></Alert>}
+      {form.kind === 'voice' && <Alert role="note" className="sm:col-span-2"><AlertDescription className="min-h-10">{form.voice_mode === 'once' ? 'После записи войсером голосовое автоматически отправится в выбранный диалог. Дополнительное подтверждение менеджера не требуется.' : 'Запись сохранится в библиотеке. Позже её можно выбрать и отправить в любой доступный вам диалог.'}</AlertDescription></Alert>}
       <Field label="Менеджер"><NativeSelect value={form.manager_id} onChange={e => setForm(old => ({ ...old, manager_id: e.target.value, chat_id: '' }))} required>{options.managers.map(m => <option key={m.id} value={m.id}>{m.username}{m.region ? ` · ${m.region}` : ''}</option>)}</NativeSelect></Field>
-      <Alert className="sm:col-span-2"><AlertDescription className="block min-h-5 text-foreground">Войсер: <strong className="font-medium">{manager?.voicer_name || 'не назначен'}</strong>{manager?.voicer_id ? !manager.bot_linked && <span className={cn(warn, 'block')}>Telegram ещё не подключён — задание будет ждать в очереди</span> : <span className={cn(muted, 'block')}>Администратор назначает войсера в разделе «Менеджеры»</span>}</AlertDescription></Alert>
+      <Alert role="note" className="sm:col-span-2"><AlertDescription className="block min-h-5 text-foreground">Войсер: <strong className="font-medium">{manager?.voicer_name || 'не назначен'}</strong>{manager?.voicer_id ? !manager.bot_linked && <span className={cn(warn, 'block')}>Telegram ещё не подключён — задание будет ждать в очереди</span> : <span className={cn(muted, 'block')}>Администратор назначает войсера в разделе «Менеджеры»</span>}</AlertDescription></Alert>
       {field('title', 'Название записи / задания', { required: true, maxLength: 160, placeholder: 'Сообщения для Димы · Доброе утро', full: true })}
       <Field label="Личность"><NativeSelect value={form.persona_slug} onChange={e => setForm(old => ({ ...old, persona_slug: e.target.value, chat_id: '' }))} required>{options.personas.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}</NativeSelect></Field>
       {field('contact_label', form.kind === 'voice' && form.voice_mode === 'library' ? 'Собеседник (необязательно)' : 'Собеседник', { required: form.kind === 'call', maxLength: 160, placeholder: 'Дима' })}
@@ -139,7 +139,7 @@ function TaskDetail({ task: initial, role, bot, initialView, onClose, onChange }
     <div className="flex min-h-[200px] flex-col gap-3.5 text-sm">
       <p className={prose}>{task.personaName} · {task.contactLabel}<br />Менеджер: {task.managerName} · Войсер: {task.voicerName}</p>
       {task.voiceMode === 'once' && <DeliveryStatus delivery={task.delivery} /> }
-      {task.source === 'bot' && <Alert><AlertDescription>Заявка создана ботом по ситуации в диалоге. После записи голосовое отправится автоматически.{task.autoExpiresAt && ` Актуально до ${date(task.autoExpiresAt)}.`}</AlertDescription></Alert>}
+      {task.source === 'bot' && <Alert role="note"><AlertDescription>Заявка создана ботом по ситуации в диалоге. После записи голосовое отправится автоматически.{task.autoExpiresAt && ` Актуально до ${date(task.autoExpiresAt)}.`}</AlertDescription></Alert>}
       {voice && task.kind === 'call' && <CallPanel task={task} onActive={setCalling} />}
       {task.kind === 'call' && <CallBrief task={task} />}
       {task.contactRef && <p className={prose}><strong className="font-medium">Контакт:</strong> {task.contactRef}</p>}
@@ -220,9 +220,10 @@ export default function VoiceWork() {
     setCreating(true);
     setContext(previous => { const next = new URLSearchParams(previous); next.delete('compose'); return next; }, { replace: true });
   }, [composeRequested, setContext]);
-  const [items, setItems] = useState(null), [total, setTotal] = useState(0), [page, setPage] = useState(1), [status, setStatus] = useState('active');
+  const [items, setItems] = useState(null), [shown, setShown] = useState(tab), [total, setTotal] = useState(0), [page, setPage] = useState(1), [status, setStatus] = useState('active');
   const [query, setQuery] = useState(''), [search, setSearch] = useState(''), [error, setError] = useState(''), [loading, setLoading] = useState(true);
-  const sequence = useRef(0);
+  const sequence = useRef(0), shownRef = useRef(shown);
+  shownRef.current = shown;
   const [detailError, setDetailError] = useState('');
   useEffect(() => { const timer = setTimeout(() => { setSearch(query); setPage(1); }, 250); return () => clearTimeout(timer); }, [query]);
   const load = useCallback(async () => {
@@ -231,8 +232,13 @@ export default function VoiceWork() {
       const params = new URLSearchParams({ q: search, page: String(page), status });
       const [opts, result] = await Promise.all([api.get('/api/voicer/options'), api.get(`/api/voicer/${tab === 'tasks' ? 'tasks' : 'recordings'}?${params}`)]);
       if (current !== sequence.current) return;
-      setOptions(opts); setItems(result.items); setTotal(result.total); setError('');
-    } catch (e) { if (current === sequence.current) setError(errorText(e)); }
+      setOptions(opts); setItems(result.items); setShown(tab); setTotal(result.total); setError('');
+    } catch (e) {
+      if (current !== sequence.current) return;
+      setError(errorText(e));
+      // Карточки другого раздела нельзя оставлять под новой вкладкой: после неудачи показываем пустое состояние.
+      if (shownRef.current !== tab) setItems(null);
+    }
     finally { if (current === sequence.current) setLoading(false); }
   }, [tab, page, status, search]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -253,19 +259,20 @@ export default function VoiceWork() {
     setDetail(null); setDetailError('');
     if (requestedTask) { const next = new URLSearchParams(context); next.delete('task'); next.delete('view'); setContext(next, { replace: true }); }
   }
-  const changeTab = next => { if (next === tab) return; setTab(next); setPage(1); setItems(null); setLoading(true); };
+  const changeTab = next => { if (next === tab) return; setTab(next); setPage(1); setLoading(true); };
+  const retry = () => { setLoading(true); load(); };
   const manager = options && options.role !== 'voice';
   const pages = Math.max(1, Math.ceil(total / PAGE));
-  const emptyText = tab === 'library' ? 'Записей пока нет. Они появятся после выполнения заданий в Telegram.' : search || status !== 'active' ? 'По выбранным условиям заданий нет.' : 'Очередь пуста. Здесь появятся задания на голосовые и звонки.';
+  const emptyText = shown === 'library' ? 'Записей пока нет. Они появятся после выполнения заданий в Telegram.' : search || status !== 'active' ? 'По выбранным условиям заданий нет.' : 'Очередь пуста. Здесь появятся задания на голосовые и звонки.';
   return <div className="app"><Header /><main className="main"><div className="container">
     <div className="my-6 flex min-w-0 flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-semibold">Войсер</h2><p className={muted}>Голосовые, звонки и готовые записи</p></div><div className="flex min-h-9 flex-wrap items-center gap-2">
       {context.get('chat') && options?.role !== 'voice' && <Button asChild variant="outline"><Link to={`/conversation/${context.get('chat')}`}>Вернуться в диалог</Link></Button>}
       {!options && <Skeleton className="h-9 w-[148px]" />}
       {manager && <Button type="button" onClick={() => setCreating(true)}><Plus />Новое задание</Button>}
     </div></div>
-    {options?.role === 'voice' && <Alert className="mb-4 min-h-[52px]"><AlertDescription className="flex w-full flex-row flex-wrap items-center justify-between gap-3 text-foreground"><span>{options.linked ? `Telegram подключён${options.telegram_username ? ': @' + options.telegram_username : ''}` : 'Подключите Telegram, чтобы получать задания и отправлять записи'}</span><VoiceBotLink userId={options.user_id} linked={options.linked} onChange={load} /></AlertDescription></Alert>}
+    {options?.role === 'voice' && <Alert role="note" className="mb-4 min-h-[52px]"><AlertDescription className="flex w-full flex-row flex-wrap items-center justify-between gap-3 text-foreground"><span>{options.linked ? `Telegram подключён${options.telegram_username ? ': @' + options.telegram_username : ''}` : 'Подключите Telegram, чтобы получать задания и отправлять записи'}</span><VoiceBotLink userId={options.user_id} linked={options.linked} onChange={load} /></AlertDescription></Alert>}
     {options?.bot.error && <Alert variant="warning" className="mb-4 min-h-10" role="status"><AlertDescription>{options.bot.error}</AlertDescription></Alert>}
-    {options && !options.bot.configured && <Alert variant="warning" className="mb-4 min-h-10"><AlertDescription>Бот не настроен. Задания сохраняются, но уведомления пока не отправляются.</AlertDescription></Alert>}
+    {options && !options.bot.configured && <Alert variant="warning" role="note" className="mb-4 min-h-10"><AlertDescription>Бот не настроен. Задания сохраняются, но уведомления пока не отправляются.</AlertDescription></Alert>}
     <div className="my-4 flex flex-wrap items-center gap-2">
       <Tabs value={tab} onValueChange={changeTab} className="gap-0">
         <TabsList className="h-8" aria-label="Раздел озвучки">
@@ -276,12 +283,14 @@ export default function VoiceWork() {
       <div className="relative min-w-0 flex-[1_1_240px]"><Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" /><Input className="h-8 pl-8" type="search" aria-label="Поиск заданий и записей" placeholder="Поиск по названию" value={query} onChange={e => setQuery(e.target.value)} /></div>
       {tab === 'tasks' && <NativeSelect className="h-8 w-auto" aria-label="Статус заданий" value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="active">Активные</option>{Object.entries(states).filter(([key]) => key !== 'ready').map(([key, label]) => <option key={key} value={key}>{label}</option>)}<option value="all">Все</option></NativeSelect>}
     </div>
-    {error && <Alert variant="destructive" role="alert" className="mb-4"><AlertDescription className="flex w-full flex-row flex-wrap items-center gap-2">{error} <Button type="button" variant="outline" size="sm" onClick={load}>Повторить</Button></AlertDescription></Alert>}
+    {error && <Alert variant="destructive" role="alert" className="mb-4"><AlertDescription className="flex w-full flex-row flex-wrap items-center gap-2">{error} <Button type="button" variant="outline" size="sm" disabled={loading} onClick={retry}>Повторить</Button></AlertDescription></Alert>}
     {detailError && <p role="alert" className={cn(errorLine, 'mb-4')}>{detailError}</p>}
-    {items === null ? <div role="status" className={gridClass} aria-label="Загружаем…"><span className="sr-only">Загружаем…</span>{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="min-h-[260px] rounded-lg" />)}</div>
-      : !items.length ? <Card className={cn(cardClass, 'items-center justify-center px-6 py-10 text-center', muted)}><p className="leading-relaxed">{emptyText}</p>{manager && tab === 'tasks' && <Button type="button" onClick={() => setCreating(true)}><Plus />Новое задание</Button>}</Card> : <>
-      <p className={cn(caption, 'mb-3 min-h-4')}>Найдено: <span className="tabular-nums">{total}</span>. {tab === 'tasks' && 'Порядок: приоритет, затем время создания.'}</p>
-      <div className={gridClass} aria-busy={loading}>{items.map(item => tab === 'library' ? <Recording key={item.id} item={item} role={options.role} context={context} onChange={load} onOpen={open} /> : <Card key={item.id} className={cardClass}>
+    {items === null ? (loading
+      ? <div role="status" className={gridClass} aria-label="Загружаем…"><span className="sr-only">Загружаем…</span>{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="min-h-[260px] rounded-lg" />)}</div>
+      : <div className={gridClass} aria-hidden="true"><div className="min-h-[260px] rounded-lg border border-dashed" /></div>)
+      : !items.length ? <Card className={cn(cardClass, 'items-center justify-center px-6 py-10 text-center', muted)}><p className="leading-relaxed">{emptyText}</p>{manager && shown === 'tasks' && <Button type="button" onClick={() => setCreating(true)}><Plus />Новое задание</Button>}</Card> : <>
+      <p className={cn(caption, 'mb-3 min-h-4')}>Найдено: <span className="tabular-nums">{total}</span>. {shown === 'tasks' && 'Порядок: приоритет, затем время создания.'}</p>
+      <div className={cn(gridClass, shown !== tab && 'opacity-60')} aria-busy={loading}>{items.map(item => shown === 'library' ? <Recording key={`r${item.id}`} item={item} role={options.role} context={context} onChange={load} onOpen={open} /> : <Card key={`t${item.id}`} className={cardClass}>
         <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex flex-wrap items-center gap-1.5"><Badge variant="outline" className="tabular-nums">#{item.id} · {modeLabel(item)}</Badge>{item.source === 'bot' && <Badge variant="secondary">Заявка бота</Badge>}{item.priority > 0 && <Badge variant={item.priority === 2 ? 'destructive' : 'warning'}>{item.priority === 2 ? 'Срочно' : 'Повышенный приоритет'}</Badge>}</div><Badge variant={stateVariant(item.status)}>{states[item.status]}</Badge></div>
         <h3 className="text-base leading-snug font-medium">{item.title}</h3><p className={cn(muted, 'leading-relaxed')}>{item.personaName} · {item.contactLabel}<br />{item.managerName} → {item.voicerName}</p>
         <p className="line-clamp-3 text-sm leading-relaxed whitespace-pre-wrap">{item.script || item.instructions}</p>
