@@ -1,61 +1,73 @@
-import s from '../../styles/AdminPage.module.scss';
-import p from './Stats.module.scss';
-
-const shortDay = (d) => d.slice(5).split('-').reverse().join('.');
-const num = (x) => (x ?? 0).toLocaleString('ru-RU');
+import { CardDescription } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { cn } from '@/lib/utils';
+import { EDGE, NUM, Section, TD, TH, num, shortDay } from './StatsUi';
 
 export default function StagesTable({ data }) {
   const { stages, days, totals, reached } = data;
   return (
-    <div className={p.managers}>
-      <p className={s.hint}>
-        Чат засчитывается в этап один раз — в день, когда впервые до него дошёл; пройденные
-        этапы остаются, откат назад ничего не снимает. Архив отдельно: по дням — сколько чатов
-        отправили в архив, «всего» — сколько чатов в архиве сейчас.
-      </p>
-      <div className={s.tableWrap}>
-        <table className={s.table} aria-label="Этапы сделки по дням" data-testid="stages-table">
-          <thead>
-            <tr>
-              <th scope="col">День</th>
-              {stages.map((st) => (
-                <th key={st.id} scope="col" className={p.numCell}>{st.label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {days.length === 0 && (
-              <tr>
-                <td colSpan={stages.length + 1} className={s.empty}>За период этапы не менялись</td>
-              </tr>
-            )}
-            {days.map((d) => (
-              <tr key={d.day} className={p.dayRow}>
-                <td className={p.dayName}>{shortDay(d.day)}</td>
-                {stages.map((st) => (
-                  <td key={st.id} className={p.numCell}>
-                    {d.counts[st.id] ? num(d.counts[st.id]) : <span className={s.muted}>—</span>}
-                  </td>
-                ))}
-              </tr>
+    <Section
+      title="Этапы сделки по дням"
+      flush
+      description={
+        <CardDescription className="text-xs">
+          Чат засчитывается в этап один раз — в день, когда впервые до него дошёл; пройденные
+          этапы остаются, откат назад ничего не снимает. Архив отдельно: по дням — сколько чатов
+          отправили в архив, «всего» — сколько чатов в архиве сейчас.
+        </CardDescription>
+      }
+    >
+      <Table className={EDGE} aria-label="Этапы сделки по дням" data-testid="stages-table">
+        <TableHeader>
+          <TableRow>
+            <TableHead scope="col" className={TH}>День</TableHead>
+            {stages.map((st) => (
+              <TableHead key={st.id} scope="col" className={cn(TH, 'text-right')}>{st.label}</TableHead>
             ))}
-          </tbody>
-          <tfoot>
-            <tr className={p.totalRow}>
-              <td>За период</td>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {days.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={stages.length + 1} className={cn(TD, 'text-muted-foreground')}>
+                За период этапы не менялись
+              </TableCell>
+            </TableRow>
+          )}
+          {days.map((d) => (
+            <TableRow key={d.day}>
+              <TableCell className={cn(TD, 'text-muted-foreground tabular-nums')}>{shortDay(d.day)}</TableCell>
               {stages.map((st) => (
-                <td key={st.id} className={p.numCell}>{num(totals[st.id])}</td>
+                <TableCell key={st.id} className={cn(TD, NUM)}>
+                  {d.counts[st.id] ? num(d.counts[st.id]) : <span className="text-muted-foreground">—</span>}
+                </TableCell>
               ))}
-            </tr>
-            <tr className={p.totalRow}>
-              <td>Всего</td>
-              {stages.map((st) => (
-                <td key={st.id} className={p.numCell}>{num(reached[st.id])}</td>
-              ))}
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>
+            </TableRow>
+          ))}
+        </TableBody>
+        <TableFooter>
+          <TableRow>
+            <TableCell className={TD}>За период</TableCell>
+            {stages.map((st) => (
+              <TableCell key={st.id} className={cn(TD, NUM)}>{num(totals[st.id])}</TableCell>
+            ))}
+          </TableRow>
+          <TableRow>
+            <TableCell className={TD}>Всего</TableCell>
+            {stages.map((st) => (
+              <TableCell key={st.id} className={cn(TD, NUM)}>{num(reached[st.id])}</TableCell>
+            ))}
+          </TableRow>
+        </TableFooter>
+      </Table>
+    </Section>
   );
 }

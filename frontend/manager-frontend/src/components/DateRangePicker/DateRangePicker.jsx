@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import s from './DateRangePicker.module.scss';
+import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 const MSK_OFFSET_MS = 3 * 3600 * 1000;
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+// Сетка месяца всегда 6 недель — высота панели не меняется от месяца к месяцу.
+const GRID_CELLS = 42;
 
 export const mskToday = (now = Date.now()) => new Date(now + MSK_OFFSET_MS).toISOString().slice(0, 10);
 
@@ -53,37 +57,41 @@ export function monthGrid(monthDay) {
 
 function Month({ monthDay, from, to, today, onPick }) {
   const title = `${MONTHS[Number(monthDay.slice(5, 7)) - 1]} ${monthDay.slice(0, 4)}`;
+  const cells = monthGrid(monthDay);
+  while (cells.length < GRID_CELLS) cells.push(null);
   return (
-    <div className={s.month}>
-      <div className={s.monthTitle}>{title}</div>
-      <div className={s.week}>
+    <div className="w-[224px]">
+      <div className="mb-1.5 text-center text-sm font-medium">{title}</div>
+      <div className="grid grid-cols-7 gap-0.5">
         {WEEKDAYS.map((w) => (
-          <span key={w} className={s.weekday}>{w}</span>
+          <span key={w} className="pb-0.5 text-center text-[11px] text-muted-foreground">{w}</span>
         ))}
       </div>
-      <div className={s.days}>
-        {monthGrid(monthDay).map((day, i) =>
-          day === null ? (
-            <span key={`x${i}`} />
-          ) : (
-            <button
+      <div className="grid grid-cols-7 gap-0.5">
+        {cells.map((day, i) => {
+          if (day === null) return <span key={`x${i}`} className="size-8" />;
+          const edge = day === from || day === to;
+          const inside = from && to && day > from && day < to;
+          return (
+            <Button
               key={day}
               type="button"
-              className={[
-                s.day,
-                day === from || day === to ? s.dayEdge : '',
-                from && to && day > from && day < to ? s.dayInside : '',
-                day === today ? s.dayToday : '',
-                day > today ? s.dayFuture : '',
-              ].join(' ')}
+              variant="ghost"
+              className={cn(
+                'size-8 p-0 text-xs font-normal tabular-nums',
+                edge && 'bg-primary font-semibold text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
+                inside && 'rounded-none bg-primary/15 hover:bg-primary/25',
+                day === today && !edge && 'ring-1 ring-primary/60 ring-inset',
+                day > today && 'text-muted-foreground',
+              )}
               disabled={day > today}
               onClick={() => onPick(day)}
               title={human(day)}
             >
               {Number(day.slice(8, 10))}
-            </button>
-          ),
-        )}
+            </Button>
+          );
+        })}
       </div>
     </div>
   );
@@ -95,88 +103,119 @@ export default function DateRangePicker({ from, to, firstDay = null, onChange })
   const [anchor, setAnchor] = useState(null);
   const [leftMonth, setLeftMonth] = useState(monthStart(to || today));
   const box = useRef(null);
+  const trigger = useRef(null);
+  const panel = useRef(null);
   const list = useMemo(() => presets(today, firstDay), [today, firstDay]);
   const active = list.find((p) => p.from === from && p.to === to);
 
+  // Закрытие по выбору или Escape возвращает фокус на кнопку; клик мимо панели — нет.
+  const close = () => {
+    setOpen(false);
+    trigger.current?.focus({ preventScroll: true });
+  };
+
   useEffect(() => {
     if (!open) return undefined;
+    panel.current?.focus({ preventScroll: true });
     const onDown = (e) => {
       if (box.current && !box.current.contains(e.target)) setOpen(false);
     };
-    const onKey = (e) => e.key === 'Escape' && setOpen(false);
+    const onKey = (e) => e.key === 'Escape' && close();
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function pick(day) {
     if (anchor && day >= anchor) {
       onChange({ from: anchor, to: day });
       setAnchor(null);
-      setOpen(false);
+      close();
       return;
     }
     setAnchor(day);
   }
 
   return (
-    <div className={s.wrap} ref={box}>
-      <button
+    <div className="relative" ref={box}>
+      <Button
+        ref={trigger}
         type="button"
-        className={s.field}
+        variant="outline"
+        className="min-w-[180px] justify-start"
         data-testid="range-button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
         onClick={() => {
           setAnchor(null);
           setLeftMonth(shiftMonth(monthStart(to || today), -1));
           setOpen((v) => !v);
         }}
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-          <rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" />
-        </svg>
-        <span className={s.fieldText}>
+        <Calendar aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate text-left tabular-nums">
           {active ? active.label : from === to ? human(from) : `${human(from)} — ${human(to)}`}
         </span>
-        <span className={s.caret} aria-hidden="true">▾</span>
-      </button>
+        <ChevronDown className="opacity-60" aria-hidden="true" />
+      </Button>
 
       {open && (
-        <div className={s.panel} role="dialog" aria-label="Выбор периода">
-          <div className={s.presets}>
+        <div
+          ref={panel}
+          tabIndex={-1}
+          role="dialog"
+          aria-label="Выбор периода"
+          className="absolute top-[calc(100%+6px)] right-0 z-50 flex max-h-[calc(100vh-120px)] overflow-auto rounded-lg border bg-popover text-popover-foreground shadow-md outline-hidden [scrollbar-gutter:stable] max-md:right-auto max-md:left-0 max-md:max-w-[calc(100vw-32px)] max-md:flex-col"
+        >
+          <div className="flex min-w-[190px] flex-col gap-0.5 border-r bg-muted/30 p-2 max-md:flex-row max-md:flex-wrap max-md:border-r-0 max-md:border-b">
             {list.map((p) => (
-              <button
+              <Button
                 key={p.key}
                 type="button"
-                className={`${s.preset} ${active?.key === p.key ? s.presetActive : ''}`}
+                variant="ghost"
+                size="sm"
+                aria-pressed={active?.key === p.key}
+                className="justify-start aria-pressed:bg-secondary aria-pressed:text-secondary-foreground"
                 onClick={() => {
                   onChange({ from: p.from, to: p.to });
-                  setOpen(false);
+                  close();
                 }}
               >
                 {p.label}
-              </button>
+              </Button>
             ))}
           </div>
-          <div className={s.calendars}>
-            <div className={s.navRow}>
-              <button type="button" className={s.navBtn} onClick={() => setLeftMonth(shiftMonth(leftMonth, -1))} aria-label="Предыдущий месяц">‹</button>
-              <span className={s.hint}>
+          <div className="px-3 pt-2.5 pb-3">
+            <div className="mb-1.5 flex items-center gap-2.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                onClick={() => setLeftMonth(shiftMonth(leftMonth, -1))}
+                aria-label="Предыдущий месяц"
+              >
+                <ChevronLeft aria-hidden="true" />
+              </Button>
+              <span className="min-h-4 flex-1 truncate text-center text-xs text-muted-foreground">
                 {anchor ? `Начало: ${human(anchor)} — выберите конец` : 'Выберите начало и конец периода'}
               </span>
-              <button
+              <Button
                 type="button"
-                className={s.navBtn}
+                variant="ghost"
+                size="icon"
+                className="size-7"
                 disabled={shiftMonth(leftMonth, 1) >= monthStart(today)}
                 onClick={() => setLeftMonth(shiftMonth(leftMonth, 1))}
                 aria-label="Следующий месяц"
               >
-                ›
-              </button>
+                <ChevronRight aria-hidden="true" />
+              </Button>
             </div>
-            <div className={s.months}>
+            <div className="flex gap-4 max-md:flex-col max-md:gap-2.5">
               {[leftMonth, shiftMonth(leftMonth, 1)].map((m) => (
                 <Month key={m} monthDay={m} from={anchor ?? from} to={anchor ? null : to} today={today} onPick={pick} />
               ))}

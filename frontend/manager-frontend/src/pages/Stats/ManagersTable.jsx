@@ -1,14 +1,11 @@
 import { useMemo, useState } from 'react';
-import s from '../../styles/AdminPage.module.scss';
-import p from './Stats.module.scss';
+import { ArrowDown, ChevronDown, ChevronRight } from 'lucide-react';
+import { CardDescription } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { cn } from '@/lib/utils';
 import { DEAL_STAGES } from '../../data/dealStages';
+import { EDGE, NUM, Section, TD, TH, kilo, money, num, pct, shortDay } from './StatsUi';
 
-
-const money = (x) => (x >= 1 ? `$${x.toFixed(2)}` : `$${(x ?? 0).toFixed(4)}`);
-const num = (x) => (x ?? 0).toLocaleString('ru-RU');
-const kilo = (x) => (x >= 1e6 ? `${(x / 1e6).toFixed(1)} млн` : x >= 1e3 ? `${(x / 1e3).toFixed(1)} тыс.` : String(x ?? 0));
-const pct = (x) => `${Math.round((x ?? 0) * 100)}%`;
-const shortDay = (d) => d.slice(5).split('-').reverse().join('.');
 const tokensOf = (t) => (t ? t.input + t.cache_read + t.cache_write : 0);
 
 const COLUMNS = [
@@ -22,58 +19,64 @@ const COLUMNS = [
   { id: 'stages_total', title: 'Этапы', hint: 'Сколько чатов менеджера перешло в этап за период' },
 ];
 
+const Muted = ({ children }) => <span className="text-muted-foreground">{children}</span>;
+const Dash = () => <Muted>—</Muted>;
+
 const stagesTotal = (st) => DEAL_STAGES.reduce((n, s) => n + (st?.[s.id] ?? 0), 0);
 function StagesCell({ stages }) {
   const parts = DEAL_STAGES.filter((s) => stages?.[s.id]).map((s) => `${s.label.toLowerCase()} ${stages[s.id]}`);
   const title = DEAL_STAGES.map((s) => `${s.label}: ${stages?.[s.id] ?? 0}`).join('\n');
   return (
-    <td className={p.numCell} title={title} data-testid="stages-cell">
-      {parts.length ? parts.join(' · ') : <span className={s.muted}>—</span>}
-    </td>
+    <TableCell className={cn(TD, NUM)} title={title} data-testid="stages-cell">
+      {parts.length ? parts.join(' · ') : <Dash />}
+    </TableCell>
   );
 }
 
 function Cells({ row, share }) {
+  const c = cn(TD, NUM);
   return (
     <>
-      <td className={p.numCell}>
+      <TableCell className={c}>
         {money(row.cost_usd)}
-        {share !== null && <span className={s.muted}> · {pct(share)}</span>}
-      </td>
-      <td className={p.numCell}>
+        {share !== null && <Muted> · {pct(share)}</Muted>}
+      </TableCell>
+      <TableCell className={c}>
         {num(row.calls)}
-        <span className={s.muted}> · {kilo(tokensOf(row.tokens))}</span>
-      </td>
-      <td className={p.numCell}>{row.leads_uploaded ? num(row.leads_uploaded) : <span className={s.muted}>—</span>}</td>
-      <td className={p.numCell}>
+        <Muted> · {kilo(tokensOf(row.tokens))}</Muted>
+      </TableCell>
+      <TableCell className={c}>{row.leads_uploaded ? num(row.leads_uploaded) : <Dash />}</TableCell>
+      <TableCell className={c}>
         {row.leads_uploaded ? (
           <>
             {num(row.leads_valid)}
-            <span className={s.muted}> · {pct(row.leads_valid / row.leads_uploaded)}</span>
+            <Muted> · {pct(row.leads_valid / row.leads_uploaded)}</Muted>
           </>
         ) : (
-          <span className={s.muted}>—</span>
+          <Dash />
         )}
-      </td>
-      <td className={p.numCell}>
+      </TableCell>
+      <TableCell className={c}>
         {row.leads_valid ? (
           <>
             {num(row.leads_replied)}
-            <span className={s.muted}> · {pct(row.leads_replied / row.leads_valid)}</span>
+            <Muted> · {pct(row.leads_replied / row.leads_valid)}</Muted>
           </>
         ) : (
-          <span className={s.muted}>—</span>
+          <Dash />
         )}
-      </td>
-      <td className={p.numCell}>{num(row.active_chats)}</td>
-      <td className={p.numCell}>
-        {num(row.messages_out)} ↑<span className={s.muted}> / {num(row.messages_in)} ↓</span>
-        {row.manual_share > 0 && <span className={s.muted}> · руками {pct(row.manual_share)}</span>}
-      </td>
+      </TableCell>
+      <TableCell className={c}>{num(row.active_chats)}</TableCell>
+      <TableCell className={c}>
+        {num(row.messages_out)} ↑<Muted> / {num(row.messages_in)} ↓</Muted>
+        {row.manual_share > 0 && <Muted> · руками {pct(row.manual_share)}</Muted>}
+      </TableCell>
       <StagesCell stages={row.stages} />
     </>
   );
 }
+
+const TITLE = 'По менеджерам';
 
 export default function ManagersTable({ rows }) {
   const [open, setOpen] = useState(() => new Set());
@@ -110,72 +113,94 @@ export default function ManagersTable({ rows }) {
       return next;
     });
 
+  const onRowKey = (e, id) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    toggle(id);
+  };
+
   if (!rows?.length) {
     return (
-      <section className={p.card}>
-        <h3 className={p.cardTitle}>По менеджерам</h3>
-        <p className={s.muted}>За период работы не было</p>
-      </section>
+      <Section title={TITLE}>
+        <p className="text-sm text-muted-foreground">За период работы не было</p>
+      </Section>
     );
   }
 
   return (
-    <section className={p.card}>
-      <h3 className={p.cardTitle}>По менеджерам</h3>
-      <p className={s.hint}>Нажмите на строку — раскроются дни. Заголовок столбца сортирует таблицу.</p>
-      <div className={s.tableWrap}>
-        <table className={`${s.table} ${p.managers}`}>
-          <thead>
-            <tr>
-              <th>Менеджер</th>
-              {COLUMNS.map((c) => (
-                <th
-                  key={c.id}
-                  title={c.hint}
-                  className={`${p.sortable} ${sort === c.id ? p.sorted : ''}`}
-                  onClick={() => setSort(c.id)}
-                >
-                  {c.title}
-                  {sort === c.id && <span className={p.caret}> ▾</span>}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((r) => {
-              const id = r.manager_id ?? 'none';
-              const shown = open.has(id);
-              return [
-                <tr key={id} className={p.rowClickable} onClick={() => toggle(id)} data-testid={`manager-row-${id}`}>
-                  <td>
-                    <span className={p.caret} aria-hidden="true">{shown ? '▾' : '▸'}</span>
-                    {r.username}
-                  </td>
-                  <Cells row={r} share={total.cost_usd ? r.cost_usd / total.cost_usd : null} />
-                </tr>,
-                ...(shown
-                  ? r.days.map((d) => (
-                      <tr key={`${id}-${d.day}`} className={p.dayRow} data-testid={`manager-day-${id}-${d.day}`}>
-                        <td className={p.dayName}>{shortDay(d.day)}</td>
-                        <Cells row={d} share={r.cost_usd ? d.cost_usd / r.cost_usd : null} />
-                      </tr>
-                    ))
-                  : []),
-                shown && !r.days.length && (
-                  <tr key={`${id}-empty`} className={p.dayRow} data-testid={`manager-day-${id}-none`}>
-                    <td className={p.dayName}>—</td>
-                    <td colSpan={COLUMNS.length} className={s.muted}>Дней с работой нет</td>
-                  </tr>
-                ),
-              ];
-            })}
-            <tr className={p.totalRow}>
-              <td>Итого</td>
-              <Cells row={total} share={null} />
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <Section
+      title={TITLE}
+      flush
+      description={
+        <CardDescription className="text-xs">
+          Нажмите на строку — раскроются дни. Заголовок столбца сортирует таблицу.
+        </CardDescription>
+      }
+    >
+      <Table className={EDGE}>
+        <TableHeader>
+          <TableRow>
+            <TableHead className={TH}>Менеджер</TableHead>
+            {COLUMNS.map((c) => (
+              <TableHead
+                key={c.id}
+                title={c.hint}
+                aria-sort={sort === c.id ? 'descending' : 'none'}
+                className={cn(TH, 'cursor-pointer select-none text-right hover:text-foreground', sort === c.id && 'text-foreground')}
+                onClick={() => setSort(c.id)}
+              >
+                {c.title}
+                <span className="ml-1 inline-flex w-3.5 justify-center align-[-2px]" aria-hidden="true">
+                  {sort === c.id && <ArrowDown className="size-3.5" />}
+                </span>
+              </TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {sorted.map((r) => {
+            const id = r.manager_id ?? 'none';
+            const shown = open.has(id);
+            return [
+              <TableRow
+                key={id}
+                className="cursor-pointer"
+                tabIndex={0}
+                aria-expanded={shown}
+                onClick={() => toggle(id)}
+                onKeyDown={(e) => onRowKey(e, id)}
+                data-testid={`manager-row-${id}`}
+              >
+                <TableCell className={cn(TD, 'whitespace-nowrap')}>
+                  <span className="mr-1.5 inline-flex w-3.5 justify-center align-[-2px] text-muted-foreground" aria-hidden="true">
+                    {shown ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                  </span>
+                  {r.username}
+                </TableCell>
+                <Cells row={r} share={total.cost_usd ? r.cost_usd / total.cost_usd : null} />
+              </TableRow>,
+              ...(shown
+                ? r.days.map((d) => (
+                    <TableRow key={`${id}-${d.day}`} className="bg-muted/30 text-xs" data-testid={`manager-day-${id}-${d.day}`}>
+                      <TableCell className={cn(TD, 'pl-8 text-muted-foreground tabular-nums whitespace-nowrap')}>{shortDay(d.day)}</TableCell>
+                      <Cells row={d} share={r.cost_usd ? d.cost_usd / r.cost_usd : null} />
+                    </TableRow>
+                  ))
+                : []),
+              shown && !r.days.length && (
+                <TableRow key={`${id}-empty`} className="bg-muted/30 text-xs" data-testid={`manager-day-${id}-none`}>
+                  <TableCell className={cn(TD, 'pl-8 text-muted-foreground tabular-nums')}>—</TableCell>
+                  <TableCell colSpan={COLUMNS.length} className={cn(TD, 'text-muted-foreground')}>Дней с работой нет</TableCell>
+                </TableRow>
+              ),
+            ];
+          })}
+          <TableRow className="border-t bg-muted/30 font-semibold hover:bg-muted/30">
+            <TableCell className={TD}>Итого</TableCell>
+            <Cells row={total} share={null} />
+          </TableRow>
+        </TableBody>
+      </Table>
+    </Section>
   );
 }

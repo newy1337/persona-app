@@ -1,8 +1,12 @@
 import { PanelUX } from '../../ui/PanelUX';
 import { useEffect, useState } from 'react';
 import { getPrices, putPrices, resetPrices } from '../../api/usage';
-import s from '../../styles/AdminPage.module.scss';
-import p from './Stats.module.scss';
+import { Button } from '@/components/ui/button';
+import { CardDescription } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { cn } from '@/lib/utils';
+import { EDGE, Section, TD, TH } from './StatsUi';
 
 const FIELDS = [
   ['input', 'вход'],
@@ -10,6 +14,8 @@ const FIELDS = [
   ['cache_write', 'запись кеша'],
   ['cache_read', 'чтение кеша'],
 ];
+
+const TITLE = 'Цены моделей';
 
 export default function PricesEditor({ onChanged, onError }) {
   const [table, setTable] = useState(null);
@@ -28,7 +34,13 @@ export default function PricesEditor({ onChanged, onError }) {
     load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!table || !draft) return <p className={s.empty}>Загружаю цены…</p>;
+  if (!table || !draft) {
+    return (
+      <Section title={TITLE} className="min-h-[200px]">
+        <p className="text-sm text-muted-foreground" aria-busy="true">Загружаю цены…</p>
+      </Section>
+    );
+  }
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(table.models);
   const set = (model, field, value) =>
@@ -64,44 +76,49 @@ export default function PricesEditor({ onChanged, onError }) {
   }
 
   return (
-    <div className={p.prices}>
-      <p className={s.hint}>
-        USD за 1 млн токенов. {table.is_default ? 'Сейчас работают умолчания — сверьте с актуальным прайс-листом.' : 'Своя таблица.'}
-        {table.note && <> {table.note}</>}
-      </p>
-      <div className={s.tableWrap}>
-        <table className={s.table}>
-          <thead>
-            <tr>
-              <th>Модель</th>
-              {FIELDS.map(([, label]) => <th key={label}>{label}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {Object.entries(draft).map(([model, price]) => (
-              <tr key={model}>
-                <td className={s.mono}>{model}</td>
-                {FIELDS.map(([field]) => (
-                  <td key={field}>
-                    <input
-                      className={`${s.field} ${p.priceInput}`}
-                      inputMode="decimal"
-                      value={price[field]}
-                      onChange={(e) => set(model, field, e.target.value)}
-                    />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className={s.actions} style={{ justifyContent: 'flex-end' }}>
-        <button className={s.btn} disabled={busy || table.is_default} onClick={reset}>Вернуть умолчания</button>
-        <button className={s.btnPrimary} disabled={busy || !dirty} onClick={save}>
+    <Section
+      title={TITLE}
+      className="min-h-[200px]"
+      flush
+      description={
+        <CardDescription className="text-xs">
+          USD за 1 млн токенов. {table.is_default ? 'Сейчас работают умолчания — сверьте с актуальным прайс-листом.' : 'Своя таблица.'}
+          {table.note && <> {table.note}</>}
+        </CardDescription>
+      }
+    >
+      <Table className={EDGE}>
+        <TableHeader>
+          <TableRow>
+            <TableHead className={TH}>Модель</TableHead>
+            {FIELDS.map(([, label]) => <TableHead key={label} className={TH}>{label}</TableHead>)}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {Object.entries(draft).map(([model, price]) => (
+            <TableRow key={model}>
+              <TableCell className={cn(TD, 'py-2 align-middle font-mono text-xs')}>{model}</TableCell>
+              {FIELDS.map(([field]) => (
+                <TableCell key={field} className={cn(TD, 'py-2 align-middle')}>
+                  <Input
+                    className="h-8 w-24 font-mono text-xs tabular-nums md:text-xs"
+                    inputMode="decimal"
+                    aria-label={`${model}: ${FIELDS.find(([f]) => f === field)[1]}`}
+                    value={price[field]}
+                    onChange={(e) => set(model, field, e.target.value)}
+                  />
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <div className="flex items-center justify-end gap-2 border-t p-4">
+        <Button variant="outline" disabled={busy || table.is_default} onClick={reset}>Вернуть умолчания</Button>
+        <Button disabled={busy || !dirty} onClick={save} className="min-w-[148px]">
           {busy ? 'Сохранение…' : 'Сохранить цены'}
-        </button>
+        </Button>
       </div>
-    </div>
+    </Section>
   );
 }
