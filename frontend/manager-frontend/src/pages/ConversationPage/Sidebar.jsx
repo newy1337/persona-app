@@ -87,7 +87,9 @@ function ScenarioToggle({ open, onToggle, children }) {
   );
 }
 
-/* Строка «подпись — значение»: высота 28px и для текста, и для поля правки. */
+/* Строка «подпись — значение»: высота 28px и для текста, и для поля правки.
+   Править можно только то, что отмечено карандашом и пунктиром (EditableValue)
+   или стоит видимым полем («Этап»); остальные строки — обычный текст. */
 export const META_ROW = 'grid min-h-7 grid-cols-[68px_minmax(0,1fr)] items-center gap-2 text-sm';
 const metaRow = META_ROW;
 const metaLabel = 'text-xs text-muted-foreground';
@@ -285,10 +287,9 @@ function Sidebar({
           </div>
           <div className={metaRow} data-testid="deal-stage">
             <span className={metaLabel}>Этап</span>
-            {/* Без рамки, как значения соседних строк: читается текстом со стрелкой. */}
+            {/* Здесь это поле формы, а не ячейка таблицы: обычный select с рамкой, 32px. */}
             <NativeSelect
-              variant="ghost"
-              className="-mx-1.5 h-7 w-[calc(100%+0.75rem)] min-w-0 pl-1.5"
+              className="my-0.5 min-w-0"
               aria-label="Этап сделки"
               value={pins.deal_stage || ''}
               disabled={busy}
@@ -339,7 +340,7 @@ function Sidebar({
               <EditableValue
                 label="Город"
                 value={pins.city || ''}
-                display={pins.city || dbCity || '—'}
+                display={pins.city || dbCity}
                 onSave={async (v) => { await pinFact(id, 'city', v); load(); }}
               />
             </span>
@@ -384,7 +385,7 @@ function Sidebar({
               <EditableValue
                 label="Семья"
                 value={pins.family || ''}
-                display={familyLabel(pins) || '—'}
+                display={familyLabel(pins)}
                 onSave={async (v) => { await pinFact(id, 'family', v); load(); }}
               />
             </span>

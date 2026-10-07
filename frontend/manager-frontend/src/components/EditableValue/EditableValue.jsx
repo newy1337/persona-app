@@ -13,8 +13,13 @@ import { Popover, PopoverContent } from '@/components/ui/popover';
  * ни один родитель с overflow, и места в потоке она не занимает.
  * Кольцо фокуса рисуется внутри кнопки (ring-inset) — его тоже нечем обрезать.
  * `label` — подпись строки: из неё собирается aria-label кнопки и поля.
+ * Что значение можно править, видно сразу: под ним пунктирная линия, рядом
+ * карандаш (он на месте всегда, не только при наведении). Пустое значение
+ * читается как «добавить». Обычный текст без правки этих примет не несёт.
  */
-export default function EditableValue({ value, display, placeholder = '—', title, label, onSave }) {
+export const EMPTY_LABEL = 'добавить';
+
+export default function EditableValue({ value, display, placeholder = EMPTY_LABEL, title, label, onSave }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value ?? '');
   const [busy, setBusy] = useState(false);
@@ -58,11 +63,13 @@ export default function EditableValue({ value, display, placeholder = '—', tit
   }
 
   if (!editing) {
-    const shown = display ?? (value || placeholder);
+    const shown = display || value || placeholder;
+    const empty = !display && !value;
     return (
       <button
         type="button"
-        className="group/ev -mx-1.5 inline-flex h-7 max-w-[calc(100%+0.75rem)] min-w-0 cursor-pointer items-center gap-1.5 rounded-sm px-1.5 text-left align-middle outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset"
+        data-empty={empty ? '' : undefined}
+        className="-mx-1.5 inline-flex h-7 max-w-[calc(100%+0.75rem)] min-w-0 cursor-pointer items-center gap-1.5 rounded-sm px-1.5 text-left align-middle outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset"
         title={title ?? 'Нажмите, чтобы поправить — бот узнает это как факт'}
         aria-label={label && typeof shown === 'string' ? `${label}: ${shown}` : undefined}
         onClick={(e) => {
@@ -70,11 +77,17 @@ export default function EditableValue({ value, display, placeholder = '—', tit
           setEditing(true);
         }}
       >
-        <span className={cn('min-w-0 truncate', !value && 'text-muted-foreground')}>{shown}</span>
-        <Pencil
-          aria-hidden="true"
-          className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/ev:opacity-100 group-focus-visible/ev:opacity-100"
-        />
+        {/* Линия стоит под самим значением (не под всей строкой): строки карточки
+            не превращаются в разлинованную таблицу. */}
+        <span
+          className={cn(
+            'min-w-0 truncate border-b border-dashed border-input leading-5',
+            !value && 'text-muted-foreground',
+          )}
+        >
+          {shown}
+        </span>
+        <Pencil aria-hidden="true" className="size-3 shrink-0 text-muted-foreground/70" />
       </button>
     );
   }

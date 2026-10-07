@@ -192,11 +192,90 @@ describe('ConversationPage: «К дашборду» и каркас страни
     expect(classes(body)).toEqual(expect.arrayContaining(['min-h-0', 'flex-1', 'overflow-y-auto']));
   });
 
-  it('полоса режима — одна строка 40px: подсказка и «что дальше» в одной обрезаемой строке, полный текст в title', async () => {
+  it('блок ввода — подвал колонки чата: линия сверху, отступы px-4 py-3, колонка той же ширины, что у ленты', async () => {
+    getConversationById.mockResolvedValueOnce({
+      ...PAUSED,
+      messages: [{ id: 1, tg_msg_id: 10, ts: 1000, role: 'user', author: 'llm', content: 'привет' }],
+    });
+    await renderPage();
+    const classes = (el) => el.className.split(' ');
+    const input = container.querySelector('[class*="inputArea"]');
+    expect(classes(input)).toEqual(expect.arrayContaining(['shrink-0', 'border-t', 'bg-background', 'px-4', 'py-3']));
+    // Лента и подвал выровнены: одинаковые боковые отступы и одна центральная колонка.
+    const feed = container.querySelector('[class*="messages"]');
+    for (const pad of ['px-4', 'md:px-6']) {
+      expect(classes(feed)).toContain(pad);
+      expect(classes(input)).toContain(pad);
+    }
+    const column = input.firstElementChild;
+    expect(input.children.length).toBe(1);
+    expect(classes(column)).toEqual(expect.arrayContaining(['mx-auto', 'w-full', 'max-w-3xl']));
+    expect(classes(container.querySelector('[class*="msgRow"]'))).toEqual(
+      expect.arrayContaining(['mx-auto', 'w-full', 'max-w-3xl']),
+    );
+    // В колонке — полоса режима и под ней блок с полем; оба внутри подвала.
+    const strip = column.querySelector('[class*="modeStrip"]');
+    const composer = column.querySelector('[class*="composer"]');
+    expect(strip.parentElement).toBe(column);
+    expect(composer.parentElement).toBe(column);
+    expect(strip.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('режим бота: в подвале одна строка — тумблер, подпись и строка состояния; поля нет', async () => {
+    getConversationById.mockResolvedValueOnce({ ...PAUSED, is_paused: false });
+    await renderPage();
+    const input = container.querySelector('[class*="inputArea"]');
+    const column = input.firstElementChild;
+    expect(column.children.length).toBe(1);
+    const strip = column.firstElementChild;
+    expect(strip.className).toContain('modeStrip');
+    expect(strip.querySelector('[class*="aiToggle"]')).toBeTruthy();
+    expect(strip.querySelector('[data-testid="mode-status"]')).toBeTruthy();
+    expect(input.querySelector('textarea')).toBeNull();
+  });
+
+  it('поле сообщения: с трёх строк, растёт до max-h и дальше прокручивается; кнопки — строкой под текстом', async () => {
+    getConversationById.mockResolvedValueOnce(PAUSED);
+    await renderPage();
+    const composer = container.querySelector('[class*="composer"]');
+    expect(composer.className.split(' ')).toEqual(expect.arrayContaining(['rounded-lg', 'border']));
+    const field = composer.querySelector('textarea');
+    expect(field.getAttribute('rows')).toBe('3');
+    expect(field.className.split(' ')).toEqual(expect.arrayContaining(['min-h-[76px]', 'max-h-60', 'resize-none']));
+    // Под полем — одна строка: вложения слева, «Отправить» справа.
+    const tools = composer.querySelector('[class*="composerTools"]');
+    expect(field.compareDocumentPosition(tools) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tools.className.split(' ')).toContain('justify-between');
+    expect(tools.querySelector('button[aria-label="Прикрепить файлы"]')).toBeTruthy();
+    expect(tools.querySelector('button[aria-label="Эмодзи"]')).toBeTruthy();
+    expect(tools.querySelector('button[aria-label="Голосовое"]')).toBeTruthy();
+    const send = tools.lastElementChild;
+    expect(send.textContent).toContain('Отправить');
+    expect(send.className.split(' ')).toContain('bg-primary');
+  });
+
+  it('полоса ответа открывается внутри блока с полем, над текстом', async () => {
+    getConversationById.mockResolvedValueOnce({
+      ...PAUSED,
+      messages: [{ id: 1, tg_msg_id: 10, ts: 1000, role: 'user', author: 'llm', content: 'привет' }],
+    });
+    await renderPage();
+    const replyButton = [...container.querySelectorAll('[class*="msgRow"] button')].find((b) => b.textContent === 'Ответить');
+    await act(async () => {
+      replyButton.click();
+    });
+    const composer = container.querySelector('[class*="composer"]');
+    const bar = container.querySelector('button[aria-label="Не отвечать"]').parentElement;
+    expect(composer.contains(bar)).toBe(true);
+    expect(bar.textContent).toContain('привет');
+    expect(bar.compareDocumentPosition(composer.querySelector('textarea')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('полоса режима — одна строка 32px: подсказка и «что дальше» в одной обрезаемой строке, полный текст в title', async () => {
     getConversationById.mockResolvedValueOnce({ ...PAUSED, next_bot_action: { kind: 'none' } });
     await renderPage();
     const strip = container.querySelector('[class*="modeStrip"]');
-    expect(strip.className.split(' ')).toContain('h-10');
+    expect(strip.className.split(' ')).toContain('h-8');
     const line = strip.querySelector('[data-testid="mode-status"]');
     expect(line.className.split(' ')).toContain('truncate');
     const next = line.querySelector('[data-testid="next-bot-action"]').textContent;
@@ -214,8 +293,58 @@ describe('ConversationPage: «К дашборду» и каркас страни
     const row = container.querySelector('[class*="msgRow"]');
     expect(row.className.split(' ')).toEqual(expect.arrayContaining(['mx-auto', 'w-full', 'max-w-3xl']));
     const meta = row.querySelector('[class*="msgMeta"]');
-    expect(meta.className.split(' ')).toEqual(expect.arrayContaining(['h-7', 'whitespace-nowrap']));
+    expect(meta.className.split(' ')).toEqual(expect.arrayContaining(['h-4', 'whitespace-nowrap']));
     expect(meta.className).not.toContain('flex-wrap');
+  });
+
+  it('под пузырём время видно всегда, а действия проявляются при наведении или фокусе и остаются в DOM', async () => {
+    getConversationById.mockResolvedValueOnce({
+      ...PAUSED,
+      messages: [
+        { id: 1, tg_msg_id: 10, ts: 1000, role: 'user', author: 'llm', content: 'привет', tg_read: true },
+        { id: 2, tg_msg_id: 11, ts: 1005, role: 'assistant', author: 'operator:7', content: 'здравствуйте', tg_read: true },
+      ],
+    });
+    await renderPage();
+    const rows = [...container.querySelectorAll('[class*="msgRow"]')];
+    const texts = [['Ответить', 'Реакция'], ['Ответить', 'Изменить']];
+    rows.forEach((row, i) => {
+      expect(row.className.split(' ')).toContain('group');
+      const meta = row.querySelector('[class*="msgMeta"]');
+      const actions = meta.querySelector('[class*="msgActions"]');
+      expect(actions.className.split(' ')).toEqual(
+        expect.arrayContaining([
+          'opacity-0',
+          'group-hover:opacity-100',
+          'group-focus-within:opacity-100',
+          '[@media(hover:none)]:opacity-100',
+        ]),
+      );
+      // Действия — настоящие кнопки: из обхода клавиатурой не выпадают.
+      const buttons = [...actions.querySelectorAll('button')];
+      expect(buttons.map((b) => b.textContent)).toEqual(texts[i]);
+      for (const b of buttons) expect(b.getAttribute('tabindex')).toBeNull();
+      // Время и галочки лежат вне скрываемого блока.
+      const mark = meta.querySelector('[data-testid="tg-read"]');
+      expect(mark.textContent).toBe('✓✓');
+      expect(actions.contains(mark)).toBe(false);
+      const time = [...meta.children].find((el) => /^\d{2}:\d{2}$/.test(el.textContent));
+      expect(time).toBeTruthy();
+      expect(actions.contains(time)).toBe(false);
+    });
+  });
+
+  it('дата над лентой — тихая подпись без рамки и «пилюли»', async () => {
+    getConversationById.mockResolvedValueOnce({
+      ...PAUSED,
+      messages: [{ id: 1, tg_msg_id: 10, ts: 1000, role: 'user', author: 'llm', content: 'привет' }],
+    });
+    await renderPage();
+    const label = container.querySelector('[class*="dateSticky"]').firstElementChild;
+    const cls = label.className.split(' ');
+    expect(cls).toContain('text-muted-foreground');
+    expect(cls).not.toContain('border');
+    expect(cls).not.toContain('rounded-full');
   });
 });
 
@@ -534,14 +663,52 @@ describe('ConversationPage: чат — разбивка ходов и галоч
       .map((r) => r.querySelector('[data-testid="tg-read"]'))
       .map((m) => (m ? m.textContent : null));
 
-  it('идущие подряд не слипаются: у каждого клиентского сообщения свой аватар, у бота/менеджера — своя метка', async () => {
+  it('подряд идущие одного автора — группа: аватар у последнего клиентского, у бота и менеджера — своя подпись', async () => {
     await renderChat();
     const r = rows();
     expect(r.length).toBe(4);
-    expect(r[0].querySelector('[class*="clientAvatar"]')).toBeTruthy();
+    // Два клиентских подряд — одна группа: аватар один, у её последнего сообщения.
+    expect(r[0].querySelector('[class*="clientAvatar"]')).toBeNull();
     expect(r[1].querySelector('[class*="clientAvatar"]')).toBeTruthy();
+    // Бот и менеджер — разные авторы, у каждого своя группа со своей подписью.
     expect(r[2].querySelector('[class*="tagAI"]')).toBeTruthy();
     expect(r[3].querySelector('[class*="tagManaged"]')).toBeTruthy();
+    // Внутри группы 2px, между группами 12px.
+    const gap = (el) => el.className.split(' ').filter((c) => c === 'mt-3' || c === 'mt-0.5');
+    expect(r.map(gap)).toEqual([['mt-3'], ['mt-0.5'], ['mt-3'], ['mt-3']]);
+  });
+
+  it('два сообщения бота подряд: одна подпись «Бот» над первым, не рамкой-бейджем; у группы клиента один аватар', async () => {
+    vi.mocked(getConversationById).mockResolvedValueOnce({
+      ...CHAT_PAYLOAD,
+      messages: [
+        { role: 'assistant', author: 'llm', ts: 1000, content: 'привет', tg_msg_id: 1 },
+        { role: 'assistant', author: 'llm', ts: 1005, content: 'как ты?', tg_msg_id: 2 },
+        { role: 'user', author: 'llm', ts: 1010, content: 'норм', tg_msg_id: 3 },
+        { role: 'user', author: 'llm', ts: 1015, content: 'а ты', tg_msg_id: 4 },
+        { role: 'user', author: 'llm', ts: 1020, content: '?', tg_msg_id: 5 },
+        { role: 'assistant', author: 'llm', ts: 1025, content: 'тоже', tg_msg_id: 6 },
+      ],
+    });
+    await renderPage();
+    const r = rows();
+    expect(r.length).toBe(6);
+    const tags = container.querySelectorAll('[class*="tagAI"]');
+    expect(tags.length).toBe(2);
+    expect(r[0].contains(tags[0])).toBe(true);
+    expect(r[1].querySelector('[class*="tagAI"]')).toBeNull();
+    expect(r[5].contains(tags[1])).toBe(true);
+    expect(tags[0].textContent).toContain('Бот');
+    expect(tags[0].getAttribute('data-slot')).not.toBe('badge');
+    expect(tags[0].className.split(' ')).not.toContain('border');
+    expect(tags[0].className.split(' ')).toContain('text-muted-foreground');
+    const avatars = container.querySelectorAll('[class*="clientAvatar"]');
+    expect(avatars.length).toBe(1);
+    expect(r[4].contains(avatars[0])).toBe(true);
+    const gap = (el) => el.className.split(' ').filter((c) => c === 'mt-3' || c === 'mt-0.5');
+    expect(r.map(gap)).toEqual([['mt-3'], ['mt-0.5'], ['mt-3'], ['mt-0.5'], ['mt-0.5'], ['mt-3']]);
+    // Сами сообщения никуда не делись: у каждого свой пузырь с текстом.
+    expect(r.map((x) => x.textContent.includes('Ответить'))).toEqual(Array(6).fill(true));
   });
 
   it('улика-путь рисуется миниатюрой с подписью «кадр отправлен», а не сырым путём', async () => {
@@ -601,6 +768,50 @@ describe('ConversationPage: чат — разбивка ходов и галоч
     expect(container.querySelector('[data-testid="client-typing"]')?.textContent).toContain('записывает голосовое');
   });
 
+  it('«печатает» продолжает группу собеседника: аватар один и стоит у этой строки', async () => {
+    vi.mocked(getConversationById).mockResolvedValueOnce({
+      ...CHAT_PAYLOAD,
+      messages: CHAT_PAYLOAD.messages.slice(0, 2),
+      client_typing: 'typing',
+    });
+    await renderPage();
+    const typing = container.querySelector('[data-testid="client-typing"]');
+    const avatars = container.querySelectorAll('[class*="clientAvatar"]');
+    expect(avatars.length).toBe(1);
+    expect(typing.contains(avatars[0])).toBe(true);
+    expect(typing.className.split(' ')).toContain('mt-0.5');
+  });
+
+  it('лента стала ниже (вырос блок ввода): если стояла у последних сообщений — остаётся у них, иначе не трогаем', async () => {
+    const observers = [];
+    const Original = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(cb) { this.cb = cb; this.targets = []; observers.push(this); }
+      observe(el) { this.targets.push(el); }
+      unobserve() {}
+      disconnect() { this.targets = []; }
+    };
+    try {
+      await renderChat();
+      const feed = container.querySelector('[class*="messages"]');
+      const watcher = observers.find((o) => o.targets.includes(feed));
+      expect(watcher).toBeTruthy();
+      Object.defineProperty(feed, 'scrollHeight', { configurable: true, value: 900 });
+      Object.defineProperty(feed, 'clientHeight', { configurable: true, value: 300 });
+      // Стоим внизу: после сжатия ленты последние сообщения остаются на виду.
+      feed.scrollTop = 0;
+      act(() => watcher.cb([]));
+      expect(feed.scrollTop).toBe(900);
+      // Человек ушёл вверх читать историю — прокрутку не трогаем.
+      feed.scrollTop = 100;
+      act(() => feed.dispatchEvent(new Event('scroll', { bubbles: true })));
+      act(() => watcher.cb([]));
+      expect(feed.scrollTop).toBe(100);
+    } finally {
+      globalThis.ResizeObserver = Original;
+    }
+  });
+
   it('аватарка из Telegram вместо инициалов; не загрузилась — снова инициалы', async () => {
     vi.mocked(getConversationById).mockResolvedValueOnce({ ...CHAT_PAYLOAD, client_avatar: '/api/conversations/111/avatar?v=1' });
     await renderPage();
@@ -648,11 +859,13 @@ describe('ConversationPage: лента — дата, разбивка, гало�
     expect(sticky.textContent).toContain('2026');
   });
 
-  it('идущие подряд — отдельные блоки: аватар у каждого клиентского; без tg id галочек нет (21.08)', async () => {
+  it('аватар один на группу клиентских сообщений; без tg id галочек нет (21.08)', async () => {
     window.localStorage.clear();
     withMessages(msgs);
     await renderPage();
-    expect(container.querySelectorAll('[class*="clientAvatar"]').length).toBe(3);
+    // Три клиентских сообщения — две группы (два подряд и одно после бота).
+    expect(container.querySelectorAll('[class*="msgClient"]').length).toBe(3);
+    expect(container.querySelectorAll('[class*="clientAvatar"]').length).toBe(2);
     expect(container.querySelectorAll('[data-testid="tg-read"]').length).toBe(0);
   });
 
@@ -852,11 +1065,33 @@ describe('left block: lead card folded into the top card', () => {
     expect(card.textContent).toContain('в разводе');
   });
 
-  it('семья: прочерк, когда данных нет', async () => {
+  it('семья: «добавить», когда данных нет — значение правится, прочерк остаётся у нередактируемых', async () => {
     withPins({});
     await renderPage();
     const card = container.querySelector('[class*="agentCard"]');
-    expect(card.textContent).toMatch(/Семья\s*—/);
+    expect(card.textContent).toMatch(/Семья\s*добавить/);
+    expect(card.textContent).toMatch(/Контакт\s*—/);
+  });
+
+  it('видно, что правится: у возраста, города, сайта и семьи — карандаш; у стадии, контакта и аккаунта — обычный текст; «Этап» — поле с рамкой', async () => {
+    withPins({ age: 46, city: 'Воронеж' });
+    await renderPage();
+    const card = container.querySelector('[class*="agentCard"]');
+    const rowOf = (label) =>
+      [...card.querySelectorAll('span')].find((el) => el.textContent === label && el.children.length === 0).parentElement;
+    for (const label of ['Возраст', 'Город', 'Сайт', 'Семья']) {
+      const button = rowOf(label).querySelector('button');
+      expect(button, label).toBeTruthy();
+      expect(button.querySelector('svg'), label).toBeTruthy();
+    }
+    expect(rowOf('Сайт').querySelector('button').getAttribute('aria-label')).toBe('Сайт: добавить');
+    for (const label of ['Стадия', 'Контакт', 'Аккаунт']) {
+      expect(rowOf(label).querySelector('button'), label).toBeNull();
+      expect(rowOf(label).querySelector('svg'), label).toBeNull();
+    }
+    const stage = card.querySelector('[data-testid="deal-stage"] select');
+    expect(stage.className.split(' ')).toEqual(expect.arrayContaining(['h-8', 'border-input']));
+    expect(stage.className).not.toContain('border-transparent');
   });
 
   it('сигналы: в верхней карточке, не в отдельной секции', async () => {

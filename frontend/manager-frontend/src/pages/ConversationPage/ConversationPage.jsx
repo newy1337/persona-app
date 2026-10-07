@@ -112,11 +112,11 @@ function PageSkeleton() {
         <div className={CHAT}>
           <div className={CHAT_FRAME}>
             <ChatTopBarSkeleton />
-            <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-hidden px-4 pt-12 pb-4 md:px-6">
+            <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-hidden px-4 pt-9 pb-3 md:px-6">
               {SKELETON_BUBBLES.map(([side, size], i) => (
-                <div key={i} className={`mx-auto flex w-full max-w-3xl flex-col gap-1 ${side}`}>
-                  <Skeleton className={`rounded-xl ${size}`} />
-                  <Skeleton className="my-2 h-3 w-12" />
+                <div key={i} className={`mx-auto flex w-full max-w-3xl flex-col gap-0.5 ${side}`}>
+                  <Skeleton className={`rounded-2xl ${size}`} />
+                  <Skeleton className="my-0.5 h-3 w-12" />
                 </div>
               ))}
             </div>

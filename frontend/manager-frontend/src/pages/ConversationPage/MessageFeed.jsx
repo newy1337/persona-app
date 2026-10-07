@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Bot, ChevronDown, Paperclip, UserRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -27,21 +28,36 @@ const MEDIA_ITEM = 'mediaItem block size-full object-contain';
 const NOTE_ITEM = 'mediaItem videoNote block size-full object-cover';
 
 // Колонка сообщений стоит по центру ленты и не шире max-w-3xl: на широком экране
-// собеседник и бот не разъезжаются по краям. Пузырь — не шире ~75% колонки.
-const ROW = 'msgRow mx-auto flex w-full max-w-3xl shrink-0 items-end gap-2';
-const INNER = 'flex min-w-0 flex-1 items-end gap-2.5';
-const CONTENT = 'flex max-w-[88%] min-w-0 flex-col gap-1 sm:max-w-[75%]';
+// собеседник и бот не разъезжаются по краям. Пузырь — не шире 70% колонки.
+// Подряд идущие сообщения одного автора — одна группа: между пузырями группы
+// 2px (GROUP_NEXT), между группами 12px (GROUP_FIRST). Обёрток у групп нет —
+// строки остаются прямыми детьми ленты: от этого зависят прокрутка и «прочитано».
+const ROW = 'msgRow group mx-auto flex w-full max-w-3xl shrink-0 items-end gap-2';
+const GROUP_FIRST = 'mt-3';
+const GROUP_NEXT = 'mt-0.5';
+const INNER = 'flex min-w-0 flex-1 items-end gap-2';
+const CONTENT = 'flex max-w-[85%] min-w-0 flex-col gap-0.5 sm:max-w-[70%]';
 const AVATAR = 'clientAvatar size-8 shrink-0 rounded-full border text-[10px]';
-const BUBBLE = 'flex min-w-0 flex-col gap-2 rounded-xl border px-3.5 py-2.5 text-sm leading-relaxed [overflow-wrap:anywhere]';
+// Аватар стоит только у последнего сообщения группы; у остальных — пустое место той же ширины.
+const AVATAR_GAP = 'size-8 shrink-0';
+const BUBBLE = 'flex max-w-full min-w-0 flex-col gap-1.5 rounded-2xl border px-3 py-1.5 text-sm leading-5 [overflow-wrap:anywhere]';
 // Пузыри нейтральные: собеседник — серая подложка, наши (бот и менеджер) —
-// карточка с рамкой. Кто именно писал, говорит метка над пузырём.
+// карточка с рамкой. Кто именно писал, говорит подпись над первым пузырём группы.
 const BUBBLE_KIND = {
   client: 'border-transparent bg-muted',
   bot: 'bg-card',
   manager: 'bg-card',
 };
-const TG_MARK = 'pr-0.5 text-[11px] tracking-tighter';
-const ROW_TOOL = 'text-muted-foreground';
+const TAG = 'flex h-4 items-center gap-1 px-1 text-[11px] leading-4 text-muted-foreground [&_svg]:size-3';
+// Строка под пузырём — 16px: галочки и время видны всегда.
+const META = 'msgMeta flex h-4 items-center gap-1.5 px-1 text-[11px] leading-4 whitespace-nowrap';
+// Действия («Ответить», «Изменить», «Реакция») проявляются при наведении на
+// строку сообщения или фокусе внутри неё; на экранах без наведения видны всегда.
+// Из DOM и из обхода клавиатурой они не уходят.
+const ACTIONS =
+  'msgActions inline-flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100';
+const ROW_TOOL = 'h-4 rounded-sm px-1 text-[11px] font-normal text-muted-foreground';
+const TG_MARK = 'pr-0.5 tracking-tighter';
 const DOT = 'size-1.5 rounded-full bg-muted-foreground animate-[typingDot_1.2s_ease-in-out_infinite]';
 
 function fmtTime(ts) {
@@ -170,9 +186,24 @@ function MessageFeed({
   setReactFor,
   react,
 }) {
+  // Блок ввода растёт (поле, полоса ответа, вложения) — лента становится ниже.
+  // Если она стояла у последних сообщений, оставляем её там же.
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => {
+      if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [messagesRef, atBottomRef]);
+
+  const kinds = messages.map(authorClass);
+  const typing = Boolean(data.client_typing);
+
   return (
     <div
-      className="messages relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-background px-4 pt-12 pb-4 [scrollbar-gutter:stable] md:px-6"
+      className="messages relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-background px-4 pt-9 pb-3 [scrollbar-gutter:stable] md:px-6"
       ref={messagesRef}
       onScroll={(e) => {
         const el = e.currentTarget;
@@ -183,19 +214,73 @@ function MessageFeed({
         if (reactFor) setReactFor(null);
       }}
     >
-      {/* Нулевая высота (отступы гасят и её, и gap): метка даты висит поверх
-          ленты и не сдвигает сообщения, когда появляется или меняется. */}
+      {/* Нулевая высота (отступы гасят друг друга): дата висит поверх ленты и
+          не сдвигает сообщения, когда появляется или меняется. Это тихая
+          подпись без рамки; полупрозрачный фон нужен только для читаемости
+          поверх пузырей. */}
       {stickyDate && (
-        <div className="dateSticky pointer-events-none sticky top-2 z-[6] -mt-10 mb-7 flex h-0 shrink-0 justify-center" aria-hidden="true">
-          <span className="inline-flex h-6 items-center rounded-full border bg-background px-2.5 text-xs whitespace-nowrap text-muted-foreground">
+        <div className="dateSticky pointer-events-none sticky top-2 z-[6] -mt-7 mb-7 flex h-0 shrink-0 justify-center" aria-hidden="true">
+          <span className="inline-flex h-5 items-center rounded-sm bg-background/85 px-2 text-[11px] whitespace-nowrap text-muted-foreground">
             {stickyDate}
           </span>
         </div>
       )}
       {messages.map((msg, i) => {
-        const kind = authorClass(msg);
+        const kind = kinds[i];
+        const ours = kind !== 'client';
+        const groupFirst = kinds[i - 1] !== kind;
+        // «Печатает» продолжает группу собеседника: аватар тогда стоит у той строки.
+        const groupLast = kinds[i + 1] !== kind && !(typing && !ours && i === messages.length - 1);
         const isRead = i <= readUpTo;
         const tgMark = telegramReadMark(msg, kind);
+        const actions = msg.tg_msg_id && (
+          <span className={cn(ACTIONS, reactFor?.id === msg.tg_msg_id && 'opacity-100')}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className={ROW_TOOL}
+              onClick={() => setReply({ tg_msg_id: msg.tg_msg_id, text: String(msg.content || '') })}
+            >
+              Ответить
+            </Button>
+            {canEdit(msg, kind) && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                className={ROW_TOOL}
+                data-testid="edit-message"
+                onClick={() => setEditing({ id: msg.id, text: String(msg.content || '') })}
+              >
+                Изменить
+              </Button>
+            )}
+            {!ours && (
+              <span className="relative inline-flex">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  className={ROW_TOOL}
+                  onClick={(e) => setReactFor({ id: msg.tg_msg_id, at: pickerPlacement(e.currentTarget.getBoundingClientRect()) })}
+                >
+                  {msg.reaction || 'Реакция'}
+                </Button>
+                {reactFor?.id === msg.tg_msg_id && (
+                  <EmojiPicker
+                    only={REACTION_EMOJI}
+                    title="Реакция"
+                    className="fixed bottom-auto left-auto mb-0"
+                    style={reactFor.at}
+                    onPick={(emoji) => react(msg, emoji)}
+                    onClose={() => setReactFor(null)}
+                  />
+                )}
+              </span>
+            )}
+          </span>
+        );
         return (
           <div
             key={`${msg.ts}-${i}`}
@@ -203,29 +288,30 @@ function MessageFeed({
             ref={(el) => { rowRefs.current[i] = el; }}
             className={cn(
               ROW,
-              kind === 'client' ? 'msgClient' : 'msgAI',
+              groupFirst ? GROUP_FIRST : GROUP_NEXT,
+              ours ? 'msgAI' : 'msgClient',
               highlight === i && 'animate-[msgFlash_2.4s_ease-out] rounded-md',
             )}
           >
-            <div className={cn(INNER, kind === 'client' ? 'justify-start' : 'justify-end')}>
-              {kind === 'client' && (
-                <ClientAvatar className={AVATAR} style={{ '--av-bg': AVATAR_BG.blue }} src={data.client_avatar} name={name} />
-              )}
-              <div className={CONTENT}>
-                {kind !== 'client' && (
-                  <div className="flex items-end justify-end gap-1.5">
-                    {kind === 'manager' ? (
-                      <Badge variant="outline" className="tagManaged font-normal text-muted-foreground"><UserRound aria-hidden="true" /> Менеджер</Badge>
-                    ) : (
-                      <Badge variant="outline" className="tagAI font-normal text-muted-foreground"><Bot aria-hidden="true" /> Бот</Badge>
-                    )}
-                  </div>
-                )}
+            <div className={cn(INNER, ours ? 'justify-end' : 'justify-start')}>
+              {!ours &&
+                (groupLast ? (
+                  <ClientAvatar className={AVATAR} style={{ '--av-bg': AVATAR_BG.blue }} src={data.client_avatar} name={name} />
+                ) : (
+                  <span className={AVATAR_GAP} aria-hidden="true" />
+                ))}
+              <div className={cn(CONTENT, ours ? 'items-end' : 'items-start')}>
+                {ours && groupFirst &&
+                  (kind === 'manager' ? (
+                    <span className={cn('tagManaged', TAG)}><UserRound aria-hidden="true" /> Менеджер</span>
+                  ) : (
+                    <span className={cn('tagAI', TAG)}><Bot aria-hidden="true" /> Бот</span>
+                  ))}
                 <div
                   className={cn(
                     BUBBLE,
                     BUBBLE_KIND[kind],
-                    kind === 'client' && !isRead && 'border-foreground/30',
+                    !ours && !isRead && 'border-foreground/30',
                     hits.includes(i) && 'ring-1 ring-warning-foreground/50',
                     msg.deleted_at && 'line-through opacity-50',
                   )}
@@ -266,16 +352,18 @@ function MessageFeed({
                     <span className="inline-flex w-fit items-center gap-1 rounded-full bg-background/60 px-2 text-sm">{msg.reaction}</span>
                   )}
                 </div>
-                {/* Всегда одна строка h-7 (высота её кнопок): она не меняет рост,
-                    когда у сообщения появляется tg id и вместе с ним кнопки. */}
-                <span className="msgMeta flex h-7 items-center gap-1.5 whitespace-nowrap">
+                {/* Всегда одна строка 16px: она не меняет рост, когда у сообщения
+                    появляется tg id и вместе с ним действия. У наших сообщений
+                    действия стоят слева от времени — время остаётся у края пузыря. */}
+                <span className={META}>
+                  {ours && actions}
                   {tgMark && (
                     <span
                       className={cn(
                         'leading-none',
                         tgMark.read && cn(TG_MARK, 'text-primary'),
-                        !tgMark.read && kind === 'client' && 'text-[8px] text-primary',
-                        !tgMark.read && kind !== 'client' && cn(TG_MARK, 'text-muted-foreground'),
+                        !tgMark.read && !ours && 'text-[8px] text-primary',
+                        !tgMark.read && ours && cn(TG_MARK, 'text-muted-foreground'),
                       )}
                       title={tgMark.title}
                       data-testid="tg-read"
@@ -283,74 +371,30 @@ function MessageFeed({
                       {tgMark.icon}
                     </span>
                   )}
-                  <span className="text-xs tabular-nums text-muted-foreground">{fmtTime(msg.ts)}</span>
+                  <span className="tabular-nums text-muted-foreground">{fmtTime(msg.ts)}</span>
                   {msg.deleted_at && (
-                    <span className="text-xs text-destructive" title="Собеседник удалил сообщение — бот его не читает">
+                    <span className="text-destructive" title="Собеседник удалил сообщение — бот его не читает">
                       удалено
                     </span>
                   )}
                   {msg.edited_at && !msg.deleted_at && (
-                    <span className="text-xs text-muted-foreground italic" title={`Изменено ${fmtTime(msg.edited_at)}`}>изменено</span>
+                    <span className="text-muted-foreground italic" title={`Изменено ${fmtTime(msg.edited_at)}`}>изменено</span>
                   )}
-                  {msg.tg_msg_id && (
-                    <span className="inline-flex items-center gap-0.5">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="xs"
-                        className={ROW_TOOL}
-                        onClick={() => setReply({ tg_msg_id: msg.tg_msg_id, text: String(msg.content || '') })}
-                      >
-                        Ответить
-                      </Button>
-                      {canEdit(msg, kind) && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="xs"
-                          className={ROW_TOOL}
-                          data-testid="edit-message"
-                          onClick={() => setEditing({ id: msg.id, text: String(msg.content || '') })}
-                        >
-                          Изменить
-                        </Button>
-                      )}
-                      {kind === 'client' && (
-                        <span className="relative inline-flex">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="xs"
-                            className={ROW_TOOL}
-                            onClick={(e) => setReactFor({ id: msg.tg_msg_id, at: pickerPlacement(e.currentTarget.getBoundingClientRect()) })}
-                          >
-                            {msg.reaction || 'Реакция'}
-                          </Button>
-                          {reactFor?.id === msg.tg_msg_id && (
-                            <EmojiPicker
-                              only={REACTION_EMOJI}
-                              title="Реакция"
-                              className="fixed bottom-auto left-auto mb-0"
-                              style={reactFor.at}
-                              onPick={(emoji) => react(msg, emoji)}
-                              onClose={() => setReactFor(null)}
-                            />
-                          )}
-                        </span>
-                      )}
-                    </span>
-                  )}
+                  {!ours && actions}
                 </span>
               </div>
             </div>
           </div>
         );
       })}
-      {data.client_typing && (
-        <div className={cn(ROW, 'msgClient')} data-testid="client-typing">
+      {typing && (
+        <div
+          className={cn(ROW, kinds.at(-1) === 'client' ? GROUP_NEXT : GROUP_FIRST, 'msgClient')}
+          data-testid="client-typing"
+        >
           <div className={cn(INNER, 'justify-start')}>
             <ClientAvatar className={AVATAR} style={{ '--av-bg': AVATAR_BG.blue }} src={data.client_avatar} name={name} />
-            <div className={CONTENT}>
+            <div className={cn(CONTENT, 'items-start')}>
               <div className={cn(BUBBLE, BUBBLE_KIND.client, 'flex-row items-center')}>
                 <span className="text-xs text-muted-foreground">{ACTIVITY_LABEL[data.client_typing] ?? 'печатает'}</span>
                 <span className="inline-flex gap-1" aria-hidden="true">
@@ -363,9 +407,9 @@ function MessageFeed({
           </div>
         </div>
       )}
-      {/* Обёртка нулевой высоты (-mt-3 гасит gap): кнопка появляется поверх ленты. */}
+      {/* Обёртка нулевой высоты: кнопка появляется поверх ленты и её не двигает. */}
       {jump.show && (
-        <div className="pointer-events-none sticky bottom-2 z-[3] -mt-3 flex h-0 shrink-0 justify-end">
+        <div className="pointer-events-none sticky bottom-2 z-[3] flex h-0 shrink-0 justify-end">
           <Button
             type="button"
             variant="outline"

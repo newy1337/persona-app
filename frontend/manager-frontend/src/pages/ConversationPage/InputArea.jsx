@@ -17,23 +17,31 @@ const NEXT_DOT = {
   warn: 'bg-warning-foreground',
 };
 
-// Блок ввода не сжимается: ленте достаётся всё, что осталось над ним.
-const AREA = 'inputArea shrink-0 border-t bg-background';
-// Полоса режима — одна строка 40px: тумблер, подпись и одна обрезаемая строка
+// Блок ввода — подвал колонки чата. Он не сжимается: ленте достаётся всё, что
+// осталось над ним. Отступы py-3 оставляют 12px между содержимым и нижним краем
+// окна; горизонтальные отступы и колонка (COLUMN) — те же, что у ленты.
+const AREA = 'inputArea shrink-0 border-t bg-background px-4 py-3 md:px-6';
+const COLUMN = 'inputColumn mx-auto flex w-full max-w-3xl flex-col gap-2';
+// Полоса режима — одна строка 32px: тумблер, подпись и одна обрезаемая строка
 // (подсказка · что дальше · почему молчит); полный текст — в title. Те же классы
 // собирают скелетон первой загрузки — высоты совпадают по построению.
-const STRIP = 'modeStrip flex h-10 min-w-0 items-center gap-3 px-4';
+const STRIP = 'modeStrip flex h-8 min-w-0 items-center gap-3';
 const DOT = 'size-1.5 shrink-0 rounded-full';
 const SEP = ' · ';
+
+/** Высота поля: от трёх строк (76px) до примерно десяти (240px), дальше прокрутка внутри. */
+export const COMPOSER_ROWS = 3;
 
 /** Первая загрузка: полоса режима тех же размеров, что у готовой страницы. */
 export function InputAreaSkeleton() {
   return (
     <div className={AREA}>
-      <div className={STRIP}>
-        <Skeleton className="h-[1.15rem] w-8 rounded-full" />
-        <Skeleton className="h-4 w-28" />
-        <Skeleton className="h-3 w-56 max-w-full max-sm:hidden" />
+      <div className={COLUMN}>
+        <div className={STRIP}>
+          <Skeleton className="h-[1.15rem] w-8 rounded-full" />
+          <Skeleton className="h-4 w-28" />
+          <Skeleton className="h-3 w-56 max-w-full max-sm:hidden" />
+        </div>
       </div>
     </div>
   );
@@ -77,7 +85,7 @@ function InputArea({
   const pauseText = pauseLabel ? `Почему молчит: ${pauseLabel}${pauseDetail ? ` — ${pauseDetail}` : ''}` : '';
   const status = [hint, nextAction?.text, pauseText].filter(Boolean).join(SEP);
 
-  // Поле растёт вместе с текстом: от одной строки до max-h (около шести), дальше
+  // Поле растёт вместе с текстом: от трёх строк до max-h (около десяти), дальше
   // прокручивается внутри себя. Высоту считаем сами — так одинаково во всех браузерах.
   const field = useRef(null);
   useLayoutEffect(() => {
@@ -89,6 +97,7 @@ function InputArea({
 
   return (
     <div className={AREA}>
+      <div className={COLUMN}>
       <div className={STRIP}>
         <Switch
           className="aiToggle"
@@ -160,9 +169,9 @@ function InputArea({
       </div>
 
       {!aiActive && (
-        <div className="px-4 pb-3">
-          {/* Рамка той же ширины, что колонка сообщений. Кольцо фокуса — на всём блоке. */}
-          <div className="composer mx-auto w-full max-w-3xl rounded-lg border transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
+          /* Один блок в рамке, как в мессенджере: сверху полосы ответа и вложений,
+             под ними поле, внизу строка кнопок. Кольцо фокуса — на всём блоке. */
+          <div className="composer w-full rounded-lg border transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25">
             {reply && (
               <div className="flex h-9 items-center gap-2.5 rounded-t-lg border-b bg-muted/40 pr-1 pl-3 text-xs text-muted-foreground">
                 <span className="shrink-0">Ответ на:</span>
@@ -208,10 +217,26 @@ function InputArea({
                 <IconAction icon={X} label="Убрать все" size="icon-xs" onClick={() => setAttachments([])} />
               </div>
             )}
-            {/* Одна строка: вложения, поле и «Отправить». Поле растёт вверх, кнопки
-                остаются у нижнего края. */}
-            <div className="flex items-end gap-1 p-1">
-              <div className="flex shrink-0 items-center">
+            {/* Своего кольца у поля нет: фокус показывает рамка всего блока (focus-within). */}
+            <Textarea
+              ref={field}
+              className="block max-h-60 min-h-[76px] w-full resize-none rounded-none border-0 bg-transparent px-3 py-2 text-sm leading-5 shadow-none field-sizing-fixed [field-sizing:fixed] [scrollbar-gutter:stable] focus-visible:ring-0 dark:bg-transparent"
+              rows={COMPOSER_ROWS}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Сообщение…"
+              title="Enter — отправить, Shift+Enter — перенос строки"
+              aria-label="Сообщение"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  send({ voice: false });
+                }
+              }}
+            />
+            {/* Строка кнопок под текстом: слева вложения, справа «Отправить». */}
+            <div className="composerTools flex items-center justify-between gap-2 px-1.5 pb-1.5">
+              <div className="flex min-w-0 items-center">
                 <input
                   type="file"
                   ref={fileInput}
@@ -281,23 +306,6 @@ function InputArea({
                   onClick={() => roundInput.current?.click()}
                 />
               </div>
-              {/* Своего кольца у поля нет: фокус показывает рамка всего блока (focus-within). */}
-              <Textarea
-                ref={field}
-                className="max-h-[132px] min-h-8 min-w-0 flex-1 resize-none rounded-none border-0 bg-transparent px-1.5 py-1.5 text-sm leading-5 shadow-none field-sizing-fixed [field-sizing:fixed] focus-visible:ring-0 dark:bg-transparent"
-                rows={1}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Сообщение…"
-                title="Enter — отправить, Shift+Enter — перенос строки"
-                aria-label="Сообщение"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    send({ voice: false });
-                  }
-                }}
-              />
               <Button
                 type="button"
                 size="sm"
@@ -310,8 +318,8 @@ function InputArea({
               </Button>
             </div>
           </div>
-        </div>
       )}
+      </div>
     </div>
   );
 }
