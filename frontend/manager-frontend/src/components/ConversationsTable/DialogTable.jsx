@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DEAL_STAGES, dealStageLabel } from '../../data/dealStages';
+import { ColumnFilter } from '../ColumnFilter/ColumnFilter';
 import { ColumnPicker } from '../ColumnPicker/ColumnPicker';
 import { IconAction } from '../IconAction/IconAction';
-import { CELL, HEAD_CELL, LINE_1, LINE_2, useDialogColumns } from './rowLayout';
+import { CELL, HEAD_CELL, LINE_1, LINE_2, WAITS_TEXT, accountLabel, useDialogColumns } from './rowLayout';
 
 function TgLink({ username }) {
   return (
@@ -65,48 +66,68 @@ function lastSeen(ts) {
  * (у собеседника под именем возраст и город). Вся строка открывает диалог, с
  * клавиатуры — кнопка «Открыть». Колонки выбирает пользователь — «Настроить поля»
  * в заголовке действий; значение скрытой колонки остаётся в подсказке собеседника.
+ * Рядом с названием колонки — воронка её фильтра: filters = { defs, state, onChange }.
  */
-export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, onHide, onDealStage = null, helpers }) {
+export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, onHide, onDealStage = null, filters = null, helpers }) {
   const { Avatar, Stage, isNew, unreadLabel, presence, nextAction, accountLost, typingLabels } = helpers;
   const prefs = useDialogColumns();
-  const { columns, has } = prefs;
+  const { columns, has, admin } = prefs;
 
   return (
     <div data-testid="dialogs-list" className="w-full min-w-0 rounded-lg border bg-card">
       <Table aria-label={archived ? 'Архив диалогов' : 'Мои диалоги'} className="table-fixed" style={{ minWidth: prefs.minWidth }}>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            {columns.map((col) => (
-              <TableHead
-                key={col.key}
-                scope="col"
-                style={{ width: col.width }}
-                {...(col.sort
-                  ? { 'aria-sort': sort.col === col.sort ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none' }
-                  : {})}
-                className={HEAD_CELL}
-              >
-                {col.sort ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    className="-ml-2 font-medium text-muted-foreground hover:text-foreground"
-                    onClick={() => onSort(col.sort)}
-                  >
-                    {col.label}
-                    <SortIcon sort={sort} col={col.sort} />
-                  </Button>
-                ) : col.key === 'actions' ? (
-                  <div className="flex items-center justify-end">
-                    <span className="sr-only">{col.label}</span>
-                    <ColumnPicker prefs={prefs} />
-                  </div>
-                ) : (
-                  col.label
-                )}
-              </TableHead>
-            ))}
+            {columns.map((col, index) => {
+              const def = filters?.defs[col.key];
+              return (
+                <TableHead
+                  key={col.key}
+                  scope="col"
+                  style={{ width: col.width }}
+                  {...(col.sort
+                    ? { 'aria-sort': sort.col === col.sort ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none' }
+                    : {})}
+                  className={HEAD_CELL}
+                >
+                  {col.key === 'actions' ? (
+                    <div className="flex items-center justify-end">
+                      <span className="sr-only">{col.label}</span>
+                      <ColumnPicker prefs={prefs} />
+                    </div>
+                  ) : (
+                    // Название сжимается первым: воронка не выезжает за колонку.
+                    <div className="flex min-w-0 items-center gap-1">
+                      {col.sort ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          className="-ml-2 min-w-0 shrink font-medium text-muted-foreground hover:text-foreground"
+                          onClick={() => onSort(col.sort)}
+                        >
+                          <span className="truncate">{col.label}</span>
+                          <SortIcon sort={sort} col={col.sort} />
+                        </Button>
+                      ) : (
+                        <span className="truncate">{col.label}</span>
+                      )}
+                      {def && (
+                        <span className="-mr-1.5 flex shrink-0">
+                          <ColumnFilter
+                            label={col.label}
+                            def={def}
+                            value={filters.state[col.key]}
+                            onChange={(value) => filters.onChange(col.key, value)}
+                            align={index * 2 > columns.length ? 'end' : 'start'}
+                          />
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </TableHead>
+              );
+            })}
           </TableRow>
         </TableHeader>
 
@@ -130,11 +151,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
               .join(' · ');
             const LeadIcon = row.is_paused ? User : Bot;
             const lost = row.account_lost ? accountLost(row.account_lost, { short: true }) : null;
-            const account = row.account_username
-              ? `@${row.account_username}`
-              : row.account_id
-                ? `Аккаунт #${row.account_id}`
-                : 'Аккаунт удалён';
+            const account = accountLabel(row);
             const accountTitle = [account, row.account_lost ? accountLost(row.account_lost) : null].filter(Boolean).join(' · ');
             const ownerTitle = `Менеджер: ${row.manager_username || 'не назначен'} · Регион: ${row.region_code || 'не задан'}`;
             const last = lastSeen(row.last_message_ts);
@@ -148,8 +165,9 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
               !has('stage') && row.stage?.title && `Стадия: ${row.stage.title}`,
               !has('deal') && row.deal_stage && `Этап: ${dealStageLabel(row.deal_stage)}`,
               !has('lead') && `Ведёт: ${row.is_paused ? 'менеджер' : 'бот'}`,
-              !has('next') && (fresh ? 'клиент ждёт ответа' : nextFull),
-              !has('manager') && ownerTitle,
+              !has('next') && (fresh ? WAITS_TEXT : nextFull),
+              // «Менеджер» и «Регион» — только админу: остальным их нет и в подсказке.
+              admin && !has('manager') && ownerTitle,
               !has('account') && `Аккаунт: ${accountTitle}`,
               !has('last') && last.full && `Последнее: ${last.full}`,
             ]
@@ -271,7 +289,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                     {fresh ? (
                       <>
                         <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning-foreground" />
-                        <span className="truncate">клиент ждёт ответа</span>
+                        <span className="truncate">{WAITS_TEXT}</span>
                       </>
                     ) : next?.text ? (
                       <span className="truncate text-muted-foreground">{next.text}</span>
@@ -336,7 +354,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
           {rows.length === 0 && (
             <TableRow className="hover:bg-transparent">
               <TableCell colSpan={columns.length} className="h-24 p-4 text-center text-sm whitespace-normal text-muted-foreground">
-                {totalRows === 0 ? (archived ? 'В архиве пусто' : 'Диалогов нет') : 'Ничего не найдено — сбросьте поиск и фильтры'}
+                {totalRows === 0 ? (archived ? 'В архиве пусто' : 'Диалогов нет') : 'Ничего не найдено — сбросьте фильтры'}
               </TableCell>
             </TableRow>
           )}

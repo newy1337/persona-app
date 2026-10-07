@@ -16,6 +16,7 @@ vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
 
 import ConversationsTable from './ConversationsTable';
 import TableSkeleton from '../TableSkeleton/TableSkeleton';
+import { MeContext } from '../AppLayout/me';
 
 const KEY = 'panel_columns_dialogs';
 // 06.10.2026 22:15 по Москве.
@@ -44,6 +45,7 @@ const setWide = (matches) => {
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   setWide(false);
   host = document.createElement('div');
   document.body.append(host);
@@ -98,14 +100,14 @@ describe('таблица диалогов: настройка полей', () =>
     await draw();
     expect(heads()).toEqual(['Собеседник', 'Контакт', 'Стадия', 'Этап', 'Ведёт', 'Что дальше', 'Менеджер', 'Аккаунт', 'Последнее', 'Действия']);
     expect(cells().length).toBe(heads().length);
-    expect(host.querySelector('table').style.minWidth).toBe('1276px');
+    expect(host.querySelector('table').style.minWidth).toBe('1296px');
   });
 
   it('на широком экране «Регион» виден и минимальную ширину не увеличивает', async () => {
     setWide(true);
     await draw();
     expect(heads()).toContain('Регион');
-    expect(host.querySelector('table').style.minWidth).toBe('1276px');
+    expect(host.querySelector('table').style.minWidth).toBe('1296px');
   });
 
   it('в меню нет обязательных колонок: собеседника и действия скрыть нельзя', async () => {
@@ -126,7 +128,7 @@ describe('таблица диалогов: настройка полей', () =>
     expect(host.textContent).not.toContain('@anna_t');
     expect(cellOf('Собеседник').querySelector('[title]').getAttribute('title')).toContain('@anna_t');
     expect(JSON.parse(localStorage.getItem(KEY))).toEqual({ contact: false });
-    expect(host.querySelector('table').style.minWidth).toBe('1136px');
+    expect(host.querySelector('table').style.minWidth).toBe('1156px');
   });
 
   it('явное включение показывает «Регион» и на узком экране', async () => {
@@ -135,14 +137,14 @@ describe('таблица диалогов: настройка полей', () =>
     expect(box('Регион').getAttribute('aria-checked')).toBe('false');
     await click(box('Регион'));
     expect(cellOf('Регион').textContent).toBe('0077');
-    expect(host.querySelector('table').style.minWidth).toBe('1348px');
+    expect(host.querySelector('table').style.minWidth).toBe('1388px');
   });
 
   it('без гибкой «Что дальше» минимальная ширина — сумма оставшихся колонок', async () => {
     localStorage.setItem(KEY, JSON.stringify({ next: false }));
     await draw();
     expect(heads()).not.toContain('Что дальше');
-    expect(host.querySelector('table').style.minWidth).toBe('1164px');
+    expect(host.querySelector('table').style.minWidth).toBe('1184px');
   });
 
   it('пустое состояние занимает все видимые колонки', async () => {
@@ -162,7 +164,7 @@ describe('заглушка списка диалогов', () => {
     expect(rows.length).toBe(3);
     expect([...head.children].map((el) => el.textContent)).toEqual(['Собеседник', 'Стадия', 'Этап', 'Ведёт', 'Что дальше', 'Менеджер', 'Регион', 'Аккаунт', 'Последнее', '']);
     for (const row of rows) expect(row.children.length).toBe(head.children.length);
-    expect(head.style.minWidth).toBe('1208px');
+    expect(head.style.minWidth).toBe('1248px');
   });
 
   it('те же колонки, что у таблицы после загрузки', async () => {
@@ -171,5 +173,54 @@ describe('заглушка списка диалогов', () => {
     const count = lines()[0].children.length;
     await draw({ ready: true });
     expect(heads().length).toBe(count);
+  });
+});
+
+describe('«Менеджер» и «Регион» — только у админа', () => {
+  const MANAGER = { id: 7, username: 'olga', role: 'manager' };
+  const as = (me, node) => act(async () => root.render(<MeContext.Provider value={me}>{node}</MeContext.Provider>));
+
+  it('менеджеру колонок нет: ни в заголовке, ни в строках, ни в настройке полей, ни в фильтрах', async () => {
+    setWide(true);
+    localStorage.setItem(KEY, JSON.stringify({ region: true }));
+    await as(MANAGER, <ConversationsTable rows={ROWS} />);
+    expect(heads()).toEqual(['Собеседник', 'Контакт', 'Стадия', 'Этап', 'Ведёт', 'Что дальше', 'Аккаунт', 'Последнее', 'Действия']);
+    expect(cells().length).toBe(heads().length);
+    expect(host.textContent).not.toContain('olga');
+    expect(host.textContent).not.toContain('0077');
+    expect(host.querySelector('button[aria-label="Фильтр: Менеджер"]')).toBeNull();
+    expect(host.querySelector('button[aria-label="Фильтр: Регион"]')).toBeNull();
+    expect(host.querySelector('table').style.minWidth).toBe('1188px');
+    await openPicker();
+    expect(boxes().map((item) => item.textContent)).toEqual(['Контакт', 'Стадия', 'Этап', 'Ведёт', 'Что дальше', 'Аккаунт', 'Последнее']);
+  });
+
+  it('менеджеру их нет и в подсказке собеседника, а оставшийся фильтр по ним не действует и не виден', async () => {
+    sessionStorage.setItem('panel_filters_dialogs', JSON.stringify({ manager: ['someone'], region: ['0001'] }));
+    await as(MANAGER, <ConversationsTable rows={ROWS} />);
+    expect(cells().length).toBe(heads().length);
+    const hint = cellOf('Собеседник').querySelector('[title]').getAttribute('title');
+    expect(hint).not.toContain('Менеджер');
+    expect(hint).not.toContain('Регион');
+    expect(host.textContent).toContain('ВСЕГО: 1');
+    expect(host.querySelector('[aria-label="Заданные фильтры"]')).toBeNull();
+  });
+
+  it('заглушка менеджера — без этих колонок', async () => {
+    setWide(true);
+    await as(MANAGER, <TableSkeleton rows={2} />);
+    const [head, ...rows] = [...host.querySelectorAll('[role="status"] > div')];
+    expect([...head.children].map((el) => el.textContent)).toEqual(['Собеседник', 'Контакт', 'Стадия', 'Этап', 'Ведёт', 'Что дальше', 'Аккаунт', 'Последнее', '']);
+    for (const row of rows) expect(row.children.length).toBe(head.children.length);
+    expect(head.style.minWidth).toBe('1188px');
+  });
+
+  it('админу и таблице вне каркаса колонки видны', async () => {
+    setWide(true);
+    await as({ id: 1, username: 'root', role: 'admin' }, <ConversationsTable rows={ROWS} />);
+    expect(heads()).toEqual(expect.arrayContaining(['Менеджер', 'Регион']));
+    expect(cellOf('Менеджер').textContent).toBe('olga');
+    await draw();
+    expect(heads()).toEqual(expect.arrayContaining(['Менеджер', 'Регион']));
   });
 });

@@ -1,4 +1,9 @@
 import { tableMinWidth, useColumnPrefs } from '../ColumnPicker/columnPrefs';
+import { optionsFrom } from '../ColumnFilter/filters';
+import { useIsAdmin } from '../AppLayout/me';
+import { DEAL_STAGES } from '../../data/dealStages';
+import { stageColors } from '../../data/stages';
+import { nextActionLabel } from '../../utils/scenario';
 
 // Раскладка списка диалогов — сетка из узких колонок: одно значение в ячейке и
 // в одну линию, только у собеседника под именем вторая короткая. Её делят
@@ -6,13 +11,14 @@ import { tableMinWidth, useColumnPrefs } from '../ColumnPicker/columnPrefs';
 // ячейки, поэтому появление данных ничего не сдвигает.
 //
 // Ширины (px) заданы у всех колонок, кроме «Что дальше» — она забирает остаток.
-// «Регион» по умолчанию виден с 1536px: на экранах уже он остаётся в подсказке
-// колонки «Менеджер». Какие колонки показывать, пользователь выбирает сам —
-// «Настроить поля» в заголовке колонки действий; собеседника и действия скрыть
-// нельзя.
+// «Регион» по умолчанию виден с 1536px. Какие колонки показывать, пользователь
+// выбирает сам — «Настроить поля» в заголовке колонки действий; собеседника и
+// действия скрыть нельзя. «Менеджер» и «Регион» (adminOnly) есть только у
+// админа: менеджеру они всегда одинаковые и лишь занимают место.
 //
-// «Последнее» — 116px: 92px под «06.10, 22:15» (Inter 14px, моноширинные
-// цифры — около 87px). «Действия» — 88px: 12 + две кнопки по 32 + 12.
+// В заголовке рядом с названием стоит воронка фильтра (24px), поэтому ширина
+// колонки — это ещё и «название + стрелка сортировки + воронка»: «Последнее» —
+// 136px, «Регион» — 92px. «Действия» — 88px: 12 + две кнопки по 32 + 12.
 export const COLUMNS = [
   { key: 'who', label: 'Собеседник', sort: 'name', width: 184, required: true, bars: ['w-24', 'w-28'] },
   { key: 'contact', label: 'Контакт', width: 140, bars: ['w-24'] },
@@ -20,22 +26,31 @@ export const COLUMNS = [
   { key: 'deal', label: 'Этап', width: 136, bars: ['w-20'] },
   { key: 'lead', label: 'Ведёт', width: 112, bars: ['w-14'] },
   { key: 'next', label: 'Что дальше', bars: ['w-24'] },
-  { key: 'manager', label: 'Менеджер', width: 108, bars: ['w-20'] },
-  { key: 'region', label: 'Регион', width: 72, show: 'wide', bars: ['w-8'] },
+  { key: 'manager', label: 'Менеджер', width: 108, adminOnly: true, bars: ['w-20'] },
+  { key: 'region', label: 'Регион', width: 92, show: 'wide', adminOnly: true, bars: ['w-8'] },
   { key: 'account', label: 'Аккаунт', width: 120, bars: ['w-20'] },
-  { key: 'last', label: 'Последнее', sort: 'time', width: 116, bars: ['w-20'] },
+  { key: 'last', label: 'Последнее', sort: 'time', width: 136, bars: ['w-20'] },
   { key: 'actions', label: 'Действия', width: 88, required: true, quiet: true, bars: [] },
 ];
+// Описание колонок для всех, кроме админа. Отбирается один раз: дальше им
+// пользуются и настройка полей, и фильтры, и заглушка.
+const COMMON_COLUMNS = COLUMNS.filter((col) => !col.adminOnly);
 
 // То же, что брейкпоинт 2xl.
 const WIDE_QUERY = '(min-width: 96rem)';
 // Меньше этого «Что дальше» не сжимается — дальше таблица прокручивается.
 const FLEX_MIN_WIDTH = 112;
 
+/** Все колонки, доступные вошедшему пользователю (видимые и скрытые им). */
+export function useDialogColumnList() {
+  return useIsAdmin() ? COLUMNS : COMMON_COLUMNS;
+}
+
 /** Видимые колонки списка диалогов — общие для таблицы и её заглушки. */
 export function useDialogColumns() {
-  const prefs = useColumnPrefs('dialogs', COLUMNS, { wide: WIDE_QUERY });
-  return { ...prefs, minWidth: tableMinWidth(prefs.columns, FLEX_MIN_WIDTH) };
+  const admin = useIsAdmin();
+  const prefs = useColumnPrefs('dialogs', admin ? COLUMNS : COMMON_COLUMNS, { wide: WIDE_QUERY });
+  return { ...prefs, admin, minWidth: tableMinWidth(prefs.columns, FLEX_MIN_WIDTH) };
 }
 
 export const HEAD_CELL = 'h-9 px-3 text-xs font-medium text-muted-foreground';
@@ -43,3 +58,142 @@ export const HEAD_CELL = 'h-9 px-3 text-xs font-medium text-muted-foreground';
 export const CELL = 'h-[52px] px-3 py-0 align-middle';
 export const LINE_1 = 'flex h-5 min-w-0 items-center gap-2 text-sm';
 export const LINE_2 = 'flex h-4 min-w-0 items-center gap-1.5 text-xs text-muted-foreground';
+
+// ── Значения ячеек, по которым и рисуют, и фильтруют ────────────────────────
+
+/** Клиент написал в чат на ручном режиме — ждёт ответа менеджера. */
+export const waitsForManager = (row) => Boolean(row.is_paused) && (row.unread_count ?? 0) > 0;
+
+export const WAITS_TEXT = 'клиент ждёт ответа';
+
+/** Отправляющий аккаунт так, как он подписан в колонке «Аккаунт». */
+export function accountLabel(row) {
+  if (row.account_username) return `@${row.account_username}`;
+  return row.account_id ? `Аккаунт #${row.account_id}` : 'Аккаунт удалён';
+}
+
+/** Текст ячейки «Что дальше». */
+export function nextText(row) {
+  if (waitsForManager(row)) return WAITS_TEXT;
+  return nextActionLabel(row.next_bot_action, undefined, { short: true })?.text ?? '';
+}
+
+// ── Фильтры колонок ─────────────────────────────────────────────────────────
+
+const picked = (value) => (Array.isArray(value) ? value.map(String) : []);
+
+// Выбранный вариант не пропадает из списка, даже если строк с ним не осталось.
+function keepPicked(options, value, emptyLabel) {
+  const have = new Set(options.map((o) => String(o.value)));
+  const lost = picked(value).filter((v) => !have.has(v));
+  if (!lost.length) return options;
+  return [...options, ...lost.map((v) => ({ value: v, label: v === '' ? emptyLabel : v, count: 0 }))];
+}
+
+// Стадии — те, что есть в строках, в порядке воронки. seen помнит название и
+// место стадии, чтобы выбранная стадия осталась подписанной, когда её строки ушли.
+function stageOptions(rows, value, seen) {
+  const counts = new Map();
+  for (const row of rows) {
+    const st = row.stage;
+    if (!st?.id) continue;
+    const id = String(st.id);
+    seen.set(id, { label: st.title, index: st.index });
+    counts.set(id, (counts.get(id) || 0) + 1);
+  }
+  return [...new Set([...counts.keys(), ...picked(value)])]
+    .map((id) => {
+      const known = seen.get(id);
+      return {
+        value: id,
+        label: known?.label ?? id,
+        color: known ? stageColors(known.index).color : undefined,
+        count: counts.get(id) || 0,
+        order: known?.index ?? Number.MAX_SAFE_INTEGER,
+      };
+    })
+    .sort((a, b) => a.order - b.order);
+}
+
+function dealOptions(rows) {
+  const counts = new Map();
+  for (const row of rows) {
+    const id = row.deal_stage || '';
+    counts.set(id, (counts.get(id) || 0) + 1);
+  }
+  return [...DEAL_STAGES.map((st) => ({ value: st.id, label: st.label })), { value: '', label: 'не указан' }].map(
+    (option) => ({ ...option, count: counts.get(option.value) || 0 }),
+  );
+}
+
+// Строка, где клиент ждёт ответа, подходит и под «Менеджер», и под «Клиент ждёт ответа».
+function leadOf(row) {
+  if (!row.is_paused) return ['bot'];
+  return waitsForManager(row) ? ['manager', 'waits'] : ['manager'];
+}
+
+function leadOptions(rows) {
+  const counts = { bot: 0, manager: 0, waits: 0 };
+  for (const row of rows) {
+    for (const key of leadOf(row)) counts[key] += 1;
+  }
+  return [
+    { value: 'bot', label: 'Бот', count: counts.bot },
+    { value: 'manager', label: 'Менеджер', count: counts.manager },
+    { value: 'waits', label: 'Клиент ждёт ответа', count: counts.waits },
+  ];
+}
+
+const managerOf = (row) => row.manager_username || '';
+const regionOf = (row) => row.region_code || '';
+
+// Фильтр колонки: (все строки списка, текущее значение, память стадий) -> def.
+const FILTERS = {
+  who: () => ({ type: 'text', placeholder: 'Имя, город или возраст', get: (row) => [row.name, row.city, row.age] }),
+  contact: () => ({
+    type: 'text',
+    placeholder: 'Ник, телефон или ID',
+    get: (row) => [row.client_username && `@${row.client_username}`, row.phone, `ID ${row.chat_id}`],
+  }),
+  stage: (rows, value, seen) => ({
+    type: 'options',
+    get: (row) => row.stage?.id ?? '',
+    options: stageOptions(rows, value, seen),
+  }),
+  deal: (rows) => ({ type: 'options', get: (row) => row.deal_stage || '', options: dealOptions(rows) }),
+  lead: (rows) => ({ type: 'options', get: leadOf, options: leadOptions(rows) }),
+  next: () => ({ type: 'text', get: nextText }),
+  manager: (rows, value) => ({
+    type: 'options',
+    get: managerOf,
+    options: keepPicked(optionsFrom(rows, managerOf, { empty: 'не назначен' }), value, 'не назначен'),
+  }),
+  region: (rows, value) => ({
+    type: 'options',
+    get: regionOf,
+    options: keepPicked(optionsFrom(rows, regionOf, { empty: 'не задан' }), value, 'не задан'),
+  }),
+  account: (rows, value) => ({
+    type: 'options',
+    get: accountLabel,
+    options: keepPicked(optionsFrom(rows, accountLabel), value),
+  }),
+  last: () => ({ type: 'period', get: (row) => row.last_message_ts }),
+};
+
+/**
+ * Фильтры колонок списка диалогов: { ключ колонки: def }. Одни и те же объекты
+ * читают заголовок таблицы, плашки и applyFilters.
+ *   rows    — ВСЕ строки списка (не отобранные): варианты не прыгают при отборе;
+ *   state   — значения фильтров;
+ *   columns — колонки, доступные пользователю (useDialogColumnList), включая скрытые;
+ *   seen    — Map, живущий вместе со списком: названия уже встречавшихся стадий.
+ */
+export function dialogFilterDefs(rows, state, columns, seen = new Map()) {
+  const defs = {};
+  for (const col of columns) {
+    const make = FILTERS[col.key];
+    if (make) defs[col.key] = make(rows ?? [], state?.[col.key], seen);
+  }
+  return defs;
+}

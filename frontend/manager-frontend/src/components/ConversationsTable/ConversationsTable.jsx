@@ -6,11 +6,15 @@ import { DialogTable } from './DialogTable';
 import TableSkeleton from '../TableSkeleton/TableSkeleton';
 import ClientAvatar, { ACTIVITY_LABEL } from '../ClientAvatar/ClientAvatar';
 import { Pager } from '../Pager/Pager';
-import { StageTabs } from '../StageTabs/StageTabs';
-import { stageColors, stageFilters } from '../../data/stages';
-import { matchesQuery, matchesHeadFilters } from '../../utils/search';
+import { FilterChips } from '../ColumnFilter/FilterChips';
+import { applyFilters, isActive } from '../ColumnFilter/filters';
+import { useColumnFilters } from '../ColumnFilter/useColumnFilters';
+import { stageColors } from '../../data/stages';
 import { accountLostLabel, presenceLabel } from '../../utils/telegramStatus';
 import { nextActionLabel } from '../../utils/scenario';
+import { dialogFilterDefs, useDialogColumnList, waitsForManager } from './rowLayout';
+
+export { waitsForManager };
 
 function fmtTime(ts) {
   return ts ? new Date(ts * 1000).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -47,8 +51,6 @@ function StatusBadge({ stage }) {
   );
 }
 
-export const waitsForManager = (row) => Boolean(row.is_paused) && (row.unread_count ?? 0) > 0;
-
 export function newLabel(n) {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -59,15 +61,16 @@ export function newLabel(n) {
 function ConversationsTable({
   ready = true,
   rows = [],
-  query = '',
-  headFilters = { lead: '', account: '' },
-  onlyNew = false,
   showHidden = false,
   onHide = null,
   onDealStage = null,
   headerExtra = null,
 }) {
-  const [activeFilter, setActiveFilter] = useState(null);
+  const [filterState, setFilter, resetFilters] = useColumnFilters('dialogs');
+  const columnList = useDialogColumnList();
+  // Названия стадий, которые уже встречались: выбранная стадия остаётся
+  // подписанной и после того, как её строки ушли из списка.
+  const [seenStages] = useState(() => new Map());
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [sort, setSort] = useState({ col: null, dir: 'asc' });
@@ -81,13 +84,24 @@ function ConversationsTable({
     );
   }
 
-  const filtered = rows.filter(
-    (c) =>
-      (!activeFilter || c.stage?.id === activeFilter) &&
-      (!onlyNew || waitsForManager(c)) &&
-      matchesQuery(c, query) &&
-      matchesHeadFilters(c, headFilters),
+  // Фильтры строятся по всем строкам списка и по всем доступным колонкам —
+  // скрытая в настройке полей колонка продолжает фильтровать.
+  const filterDefs = useMemo(
+    () => dialogFilterDefs(rows, filterState, columnList, seenStages),
+    [rows, filterState, columnList, seenStages],
   );
+  const filterColumns = useMemo(
+    () => columnList.filter((col) => filterDefs[col.key]).map((col) => ({ ...col, filter: filterDefs[col.key] })),
+    [columnList, filterDefs],
+  );
+  // Значение для колонки, которой у пользователя нет (например, осталось от
+  // админа в этой же вкладке), фильтром не считается.
+  const filterKey = filterColumns
+    .filter((col) => isActive(filterState[col.key]))
+    .map((col) => `${col.key}=${JSON.stringify(filterState[col.key])}`)
+    .join('&');
+  const hasFilters = filterKey !== '';
+  const filtered = applyFilters(rows, filterDefs, filterState);
 
   const sorted = sort.col
     ? [...filtered].sort((a, b) => {
@@ -114,9 +128,9 @@ function ConversationsTable({
   // странице, которой больше нет.
   useEffect(() => {
     setPage(1);
-    // Зависимости — только значения: объект фильтров пересоздаётся на каждой
-    // отрисовке, и по нему страница сбрасывалась бы сразу после переключения.
-  }, [query, headFilters.lead, headFilters.account, activeFilter, onlyNew, showHidden, pageSize]);
+    // Зависимость — строка с заданными фильтрами, а не их объект: опрос
+    // списка страницу не сбрасывает.
+  }, [filterKey, showHidden, pageSize]);
   const current = Math.min(page, pages);
   const visible = useMemo(
     () => sorted.slice((current - 1) * pageSize, current * pageSize),
@@ -124,47 +138,29 @@ function ConversationsTable({
   );
 
   const loading = !ready && rows.length === 0;
-  const stageItems = useMemo(() => {
-    const counts = new Map();
-    for (const row of rows) {
-      const id = row.stage?.id;
-      if (id) counts.set(id, (counts.get(id) || 0) + 1);
-    }
-    return [
-      { key: '', label: 'Все', count: loading ? null : rows.length },
-      ...stageFilters(rows).map((f) => ({ key: f.key, label: f.label, count: counts.get(f.key) || 0, hint: f.label })),
-    ];
-  }, [rows, loading]);
 
   return (
     <section className="flex flex-col gap-3">
       <div className="flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1">
         <h2 className="text-sm font-medium">{showHidden ? 'Архив' : 'Мои диалоги'}</h2>
-        {/* Одна и та же кнопка в обоих состояниях: без фильтра по стадии она
-            выглядит обычным текстом, с фильтром — сбрасывает его. */}
+        {/* Одна и та же кнопка в обоих состояниях: без фильтров она выглядит
+            обычным текстом, с фильтрами — сбрасывает их все. */}
         <Button
           type="button"
-          variant={activeFilter ? 'secondary' : 'ghost'}
+          variant={hasFilters ? 'secondary' : 'ghost'}
           size="xs"
           className="min-w-20 justify-start font-normal tabular-nums text-muted-foreground disabled:opacity-100"
-          disabled={!activeFilter}
-          onClick={() => setActiveFilter(null)}
-          title={activeFilter ? 'Сбросить фильтр по стадии' : undefined}
+          disabled={!hasFilters}
+          onClick={resetFilters}
+          title={hasFilters ? 'Сбросить все фильтры' : undefined}
         >
-          {filtered.length === rows.length
-            ? `ВСЕГО: ${total}${truncated ? ` · показаны последние ${rows.length}` : ''}`
-            : `НАЙДЕНО: ${filtered.length} из ${rows.length}`}
+          {hasFilters
+            ? `НАЙДЕНО: ${filtered.length} из ${rows.length}`
+            : `ВСЕГО: ${total}${truncated ? ` · показаны последние ${rows.length}` : ''}`}
         </Button>
+        <FilterChips columns={filterColumns} state={filterState} onChange={setFilter} onReset={resetFilters} />
         {headerExtra && <div className="ml-auto flex min-w-0 items-center">{headerExtra}</div>}
       </div>
-
-      <StageTabs
-        aria-label="Стадии диалогов"
-        items={stageItems}
-        value={activeFilter ?? ''}
-        onChange={(key) => setActiveFilter(key && key !== activeFilter ? key : null)}
-        total={rows.length}
-      />
 
       {loading ? (
         <TableSkeleton rows={8} label="Загружаем диалоги…" />
@@ -178,6 +174,7 @@ function ConversationsTable({
           onOpen={(id) => navigate(`/conversation/${id}`)}
           onHide={onHide}
           onDealStage={onDealStage}
+          filters={{ defs: filterDefs, state: filterState, onChange: setFilter }}
           helpers={{
             Avatar: ClientAvatar,
             Stage: StatusBadge,

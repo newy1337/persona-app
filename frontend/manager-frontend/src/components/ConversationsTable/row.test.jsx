@@ -32,6 +32,7 @@ let root;
 
 beforeEach(() => {
   navigate.mockClear();
+  window.sessionStorage.clear();
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
@@ -46,8 +47,6 @@ const draw = async (props = {}) =>
   act(async () => root.render(<ConversationsTable rows={LIST} {...props} />));
 
 const dataRows = () => [...host.querySelectorAll('tbody tr')];
-const tabs = () => [...host.querySelectorAll('[role="group"][aria-label="Стадии диалогов"] button')];
-const tab = (label) => tabs().find((b) => b.textContent.startsWith(label));
 
 describe('строка диалога', () => {
   it('клик по строке и кнопка «Открыть» ведут в диалог', async () => {
@@ -129,51 +128,7 @@ describe('строка диалога', () => {
   });
 });
 
-describe('воронка стадий над таблицей', () => {
-  it('первым идёт «Все», дальше стадии со своими числами', async () => {
-    await draw();
-    expect(tabs().map((b) => b.textContent)).toEqual(['Все3', 'Знакомство1', 'Разговорились2']);
-    expect(tab('Все').getAttribute('aria-pressed')).toBe('true');
-  });
-
-  it('сегмент фильтрует строки, счётчик пишет «НАЙДЕНО», повторный клик снимает фильтр', async () => {
-    await draw();
-    await act(async () => tab('Разговорились').click());
-    expect(dataRows().length).toBe(2);
-    expect(host.textContent).toContain('НАЙДЕНО: 2 из 3');
-    expect(tab('Разговорились').getAttribute('aria-pressed')).toBe('true');
-    await act(async () => tab('Разговорились').click());
-    expect(dataRows().length).toBe(3);
-    expect(host.textContent).toContain('ВСЕГО: 3');
-  });
-
-  it('счётчик в шапке сбрасывает фильтр по стадии и выключен без него', async () => {
-    await draw();
-    const counter = () => [...host.querySelectorAll('button')].find((b) => /ВСЕГО|НАЙДЕНО/.test(b.textContent));
-    expect(counter().disabled).toBe(true);
-    await act(async () => tab('Знакомство').click());
-    expect(counter().disabled).toBe(false);
-    await act(async () => counter().click());
-    expect(dataRows().length).toBe(3);
-    expect(tab('Все').getAttribute('aria-pressed')).toBe('true');
-  });
-
-  it('«Все» снимает фильтр', async () => {
-    await draw();
-    await act(async () => tab('Знакомство').click());
-    expect(dataRows().length).toBe(1);
-    await act(async () => tab('Все').click());
-    expect(dataRows().length).toBe(3);
-  });
-});
-
-describe('внешние условия отбора', () => {
-  it('onlyNew оставляет только чаты на ручном режиме с новыми сообщениями', async () => {
-    await draw({ onlyNew: true });
-    expect(dataRows().length).toBe(1);
-    expect(dataRows()[0].getAttribute('data-chat-id')).toBe('2');
-  });
-
+describe('шапка таблицы', () => {
   it('headerExtra встаёт в шапку таблицы', async () => {
     await draw({ headerExtra: <span data-testid="extra">подсказка</span> });
     expect(host.querySelector('h2').parentElement.querySelector('[data-testid="extra"]')).not.toBeNull();
