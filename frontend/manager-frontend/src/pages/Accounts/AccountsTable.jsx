@@ -2,6 +2,11 @@ import { Fragment, useState } from 'react';
 import { ChevronRight, Globe, LogIn, LogOut, Pause, Pencil, Play, TimerOff, Trash2 } from 'lucide-react';
 import { PanelUX as ux } from '../../ui/PanelUX';
 import { cn } from '@/lib/utils';
+import { useIsAdmin } from '@/components/AppLayout/me';
+import { ColumnFilter } from '@/components/ColumnFilter/ColumnFilter';
+import { FilterChips } from '@/components/ColumnFilter/FilterChips';
+import { applyFilters, isActive, optionsFrom } from '@/components/ColumnFilter/filters';
+import { useColumnFilters } from '@/components/ColumnFilter/useColumnFilters';
 import { ColumnPicker } from '@/components/ColumnPicker/ColumnPicker';
 import { tableMinWidth, useColumnPrefs } from '@/components/ColumnPicker/columnPrefs';
 import { IconAction } from '@/components/IconAction/IconAction';
@@ -33,17 +38,88 @@ const COLUMNS = [
   { key: 'account', label: 'Аккаунт', width: 260, required: true },
   { key: 'phone', label: 'Телефон', width: 148 },
   { key: 'persona', label: 'Личность', width: 140 },
-  { key: 'manager', label: 'Менеджер', width: 140 },
-  { key: 'region', label: 'Регион', width: 84, show: 'wide' },
+  { key: 'manager', label: 'Менеджер', width: 140, adminOnly: true },
+  { key: 'region', label: 'Регион', width: 84, show: 'wide', adminOnly: true },
   { key: 'chats', label: 'Диалоги', width: 84 },
   { key: 'proxy', label: 'Прокси' },
-  { key: 'state', label: 'Состояние', width: 176 },
-  { key: 'pulse', label: 'Пульс', width: 120, show: 'wide' },
+  { key: 'state', label: 'Состояние', width: 176, filterAlign: 'end' },
+  { key: 'pulse', label: 'Пульс', width: 120, show: 'wide', filterAlign: 'end' },
   { key: 'actions', label: 'Действия', width: 88, required: true, quiet: true },
 ];
+// «Менеджер» и «Регион» нужны только админу: остальным их нет нигде — ни в
+// сетке, ни в настройке полей, ни в фильтрах.
+const PUBLIC_COLUMNS = COLUMNS.filter((col) => !col.adminOnly);
 
-/** Видимые колонки — общие для таблицы и её заглушки. */
-const useAccountColumns = () => useColumnPrefs('accounts', COLUMNS, { wide: WIDE_QUERY });
+/**
+ * Колонки таблицы — общие для неё и её заглушки: all — все колонки, доступные
+ * этому пользователю, columns — видимые сейчас.
+ */
+function useAccountColumns() {
+  const admin = useIsAdmin();
+  const all = admin ? COLUMNS : PUBLIC_COLUMNS;
+  const prefs = useColumnPrefs('accounts', all, { wide: WIDE_QUERY });
+  return { ...prefs, all, admin };
+}
+
+// ── Фильтры колонок ──────────────────────────────────────────────────────────
+const ONLINE = 'В сети';
+const OFFLINE = 'Не в сети';
+const personaOf = (row) => row.persona_name || row.persona_id || '';
+const displayName = (row) =>
+  row.display_name || (row.username ? `@${row.username}` : row.phone_e164 || `Аккаунт #${row.id}`);
+const isOnline = (row, alive) => Boolean(alive?.[row.id] ?? row.online);
+
+/** Выбранное значение остаётся в списке, даже если строк с ним больше нет. */
+function keepPicked(options, value, empty = '—') {
+  if (!Array.isArray(value)) return options;
+  const have = new Set(options.map((o) => String(o.value)));
+  const lost = value.map(String).filter((v) => !have.has(v));
+  return lost.length ? [...options, ...lost.map((v) => ({ value: v, label: v === '' ? empty : v, count: 0 }))] : options;
+}
+
+/**
+ * Описания фильтров по ключам колонок. Варианты списков собираются из ВСЕХ
+ * строк, а не из отфильтрованных — список не меняется, пока человек выбирает.
+ */
+function filterDefs(rows, alive, statusLabel, state) {
+  const fromRows = (key, get, empty) => ({
+    type: 'options',
+    get,
+    options: keepPicked(optionsFrom(rows, get, { empty }), state[key], empty),
+  });
+  const count = (test) => rows.filter(test).length;
+  const proxySet = (row) => !row.needs_proxy_setup;
+  const online = (row) => isOnline(row, alive);
+  return {
+    account: { type: 'text', placeholder: 'Имя или @ник', get: (row) => [displayName(row), row.username && `@${row.username}`] },
+    phone: { type: 'text', placeholder: 'Номер содержит…', get: (row) => row.phone_e164 },
+    persona: fromRows('persona', personaOf, 'Без личности'),
+    manager: fromRows('manager', (row) => row.manager_username || '', 'без менеджера'),
+    region: fromRows('region', (row) => row.region_code || '', 'не задан'),
+    proxy: {
+      type: 'options',
+      get: (row) => (proxySet(row) ? 'set' : 'unset'),
+      options: [
+        { value: 'set', label: 'задан', count: count(proxySet) },
+        { value: 'unset', label: 'не задан', count: count((row) => !proxySet(row)) },
+      ],
+    },
+    // Один список: подписи состояния (как на бейдже) и присутствие в сети.
+    state: {
+      type: 'options',
+      get: (row) => [statusLabel(row), online(row) ? ONLINE : OFFLINE],
+      options: keepPicked(
+        [
+          ...optionsFrom(rows, statusLabel),
+          { value: ONLINE, label: ONLINE, count: count(online) },
+          { value: OFFLINE, label: OFFLINE, count: count((row) => !online(row)) },
+        ],
+        state.state,
+      ),
+    },
+    pulse: { type: 'period', get: (row) => row.last_heartbeat_at },
+  };
+}
 
 // ── Каркас строки ────────────────────────────────────────────────────────────
 // Настоящая строка и строка-заглушка первой загрузки собираются ОДНИМ каркасом:
@@ -58,8 +134,24 @@ const AVATAR_BOX = 'size-8 shrink-0 rounded-full';
 const SLOT = 'block size-8 shrink-0';
 const Empty = () => <span className="text-muted-foreground">—</span>;
 
-/** prefs — выбор колонок; picker: показывать ли «Настроить поля» (в заглушке кнопки нет). */
-function Frame({ children, className, tableProps, prefs, picker = false, ...props }) {
+/**
+ * Строка над таблицей: слева заданные фильтры, справа счётчик. Её высота
+ * занята всегда — и в заглушке, и без фильтров, — поэтому таблица не прыгает.
+ */
+function Shell({ bar, children }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex min-h-8 items-center gap-3">{bar}</div>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * prefs — выбор колонок; picker: показывать ли «Настроить поля» (в заглушке кнопки нет);
+ * filters — { defs, state, onChange }: воронки в заголовках (в заглушке их нет).
+ */
+function Frame({ children, className, tableProps, prefs, picker = false, filters, ...props }) {
   return (
     <div className={cn('rounded-lg border bg-card', className)} {...props}>
       <Table className="table-fixed" style={{ minWidth: tableMinWidth(prefs.columns, FLEX_MIN_WIDTH) }} {...tableProps}>
@@ -80,7 +172,19 @@ function Frame({ children, className, tableProps, prefs, picker = false, ...prop
                 ) : col.quiet ? (
                   <span className="sr-only">{col.label}</span>
                 ) : (
-                  col.label
+                  // Название сжимается раньше, чем воронка выйдет за колонку.
+                  <div className="flex min-w-0 items-center gap-1">
+                    <span className="min-w-0 truncate">{col.label}</span>
+                    {filters?.defs[col.key] && (
+                      <ColumnFilter
+                        label={col.label}
+                        def={filters.defs[col.key]}
+                        value={filters.state[col.key]}
+                        onChange={(value) => filters.onChange(col.key, value)}
+                        align={col.filterAlign}
+                      />
+                    )}
+                  </div>
                 )}
               </TableHead>
             ))}
@@ -146,6 +250,7 @@ export function AccountsTableSkeleton({ rows = 3 }) {
   const prefs = useAccountColumns();
   const one = (width) => <div className={ONE}><Bar className={cn('max-w-full', width)} /></div>;
   return (
+    <Shell>
     <Frame prefs={prefs} role="status" aria-label="Загрузка аккаунтов" tableProps={{ 'aria-hidden': true }}>
       {Array.from({ length: rows }, (_, i) => (
         <RowShell
@@ -180,10 +285,19 @@ export function AccountsTableSkeleton({ rows = 3 }) {
         />
       ))}
     </Frame>
+    </Shell>
   );
 }
 
 const stop = (e) => e.stopPropagation();
+
+function Count({ children }) {
+  return (
+    <span data-testid="accounts-count" className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+      {children}
+    </span>
+  );
+}
 
 export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus, onClearFlood, onDelete, helpers }) {
   const pending = ux.useActions().pending;
@@ -191,7 +305,8 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
   const [expanded, setExpanded] = useState(() => new Set());
   const { Avatar, statusLabel, date } = helpers;
   const prefs = useAccountColumns();
-  const { columns, has } = prefs;
+  const { columns, has, all, admin } = prefs;
+  const [filterState, setFilter, resetFilters] = useColumnFilters('accounts');
 
   const toggle = (id) =>
     setExpanded((prev) => {
@@ -200,27 +315,56 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
       return next;
     });
 
+  // Фильтр есть только у колонок, доступных пользователю; скрытая в настройке
+  // полей колонка фильтр сохраняет — он виден в плашках над таблицей.
+  const everyDef = filterDefs(rows, alive, statusLabel, filterState);
+  const filterColumns = all.filter((col) => everyDef[col.key]).map((col) => ({ key: col.key, label: col.label, filter: everyDef[col.key] }));
+  const defs = Object.fromEntries(filterColumns.map((col) => [col.key, col.filter]));
+  const filtered = filterColumns.some((col) => isActive(filterState[col.key]));
+  const shown = applyFilters(rows, defs, filterState);
+  const tableProps = { 'aria-label': 'Telegram-аккаунты' };
+
   if (!rows.length) {
     return (
-      <Frame prefs={prefs} picker tableProps={{ 'aria-label': 'Telegram-аккаунты' }}>
-        <tr>
-          <td colSpan={columns.length} className="px-3 py-10 text-center text-sm text-muted-foreground">
-            Аккаунтов нет. Добавьте номер, затем войдите — код придёт в Telegram.
-          </td>
-        </tr>
-      </Frame>
+      <Shell bar={<Count>Аккаунтов: 0</Count>}>
+        <Frame prefs={prefs} picker tableProps={tableProps}>
+          <tr>
+            <td colSpan={columns.length} className="px-3 py-10 text-center text-sm text-muted-foreground">
+              Аккаунтов нет. Добавьте номер, затем войдите — код придёт в Telegram.
+            </td>
+          </tr>
+        </Frame>
+      </Shell>
     );
   }
 
   return (
-    <Frame prefs={prefs} picker tableProps={{ 'aria-label': 'Telegram-аккаунты' }}>
-      {rows.map((row) => {
+    <Shell
+      bar={(
+        <>
+          <FilterChips className="flex-1" columns={filterColumns} state={filterState} onChange={setFilter} onReset={resetFilters} />
+          <Count>{filtered ? `Найдено: ${shown.length} из ${rows.length}` : `Аккаунтов: ${rows.length}`}</Count>
+        </>
+      )}
+    >
+    <Frame prefs={prefs} picker tableProps={tableProps} filters={{ defs, state: filterState, onChange: setFilter }}>
+      {!shown.length && (
+        <tr>
+          <td colSpan={columns.length} className="px-3 py-10 text-center text-sm text-muted-foreground">
+            По этим условиям аккаунтов нет.{' '}
+            <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={resetFilters}>
+              Сбросить фильтры
+            </Button>
+          </td>
+        </tr>
+      )}
+      {shown.map((row) => {
         const busy = pending.some(
           (key) => key.split(':').slice(1).join(':') === `/api/tg-accounts/${row.id}` || key.includes(`/api/tg-accounts/${row.id}/`),
         );
-        const name = row.display_name || (row.username ? `@${row.username}` : row.phone_e164 || `Аккаунт #${row.id}`);
-        const online = Boolean(alive[row.id] ?? row.online);
-        const presence = online ? 'В сети' : 'Не в сети';
+        const name = displayName(row);
+        const online = isOnline(row, alive);
+        const presence = online ? ONLINE : OFFLINE;
         const open = expanded.has(row.id);
         const loginNeeded = row.status === 'unauthorized' || row.status === 'banned';
         const detailsId = `account-details-${row.id}`;
@@ -233,12 +377,12 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
           { label: 'ID аккаунта', value: `#${row.id}`, mono: true },
           !has('phone') && { label: 'Телефон', value: row.phone_e164 || '—', mono: Boolean(row.phone_e164) },
           !has('persona') && { label: 'Личность', value: row.persona_name || row.persona_id || 'Без личности' },
-          !has('manager') && { label: 'Менеджер', value: row.manager_username || 'без менеджера' },
+          admin && !has('manager') && { label: 'Менеджер', value: row.manager_username || 'без менеджера' },
           !has('state') && { label: 'Состояние', value: [statusLabel(row), note].filter(Boolean).join(' · ') },
           { label: 'Диалогов', value: row.chats ?? 0 },
           { label: 'Прокси', value: proxy, mono: Boolean(row.proxy_label) && !row.needs_proxy_setup },
           { label: 'Назначение', value: row.purpose === 'test' ? 'Тестовый' : row.purpose === 'prod' ? 'Рабочий' : row.purpose || '—' },
-          { label: 'Регион', value: row.region_code || 'не задан' },
+          admin && { label: 'Регион', value: row.region_code || 'не задан' },
           { label: 'Последний вход', value: date(row.last_login_at) },
           { label: 'Пульс', value: date(row.last_heartbeat_at) },
           { label: 'Лимит сообщений в день', value: row.daily_msg_quota ?? 'Без лимита' },
@@ -417,5 +561,6 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
         );
       })}
     </Frame>
+    </Shell>
   );
 }
