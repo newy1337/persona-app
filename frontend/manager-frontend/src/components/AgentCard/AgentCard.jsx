@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { Bot, Clock, OctagonAlert, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useIsAdmin } from '../AppLayout/me';
 import { Badge } from '@/components/ui/badge';
 import ClientAvatar, { ACTIVITY_LABEL } from '../ClientAvatar/ClientAvatar';
 import { PRIORITY_COLORS, priorityColor, stageColors } from '../../data/stages';
@@ -88,6 +89,8 @@ function AgentCard({ agent, showAlert = false }) {
   const hot = priorityColor(vbrosPhase) === PRIORITY_COLORS.hot;
   const LeadIcon = isManager ? User : Bot;
   const lead = isManager ? 'Менеджер' : 'Бот';
+  // Чей это диалог, интересно только админу: менеджер видит лишь свои.
+  const admin = useIsAdmin();
   const online = clientPresence?.kind === 'online';
   const unread = unreadCount ?? 0;
 
@@ -109,8 +112,8 @@ function AgentCard({ agent, showAlert = false }) {
     !showAlert && unread > 0 ? `Непрочитанных: ${unread}` : null,
     stageTitle,
     `Ведёт: ${lead}`,
-    `Менеджер: ${managerUsername || 'не назначен'}`,
-    `Регион: ${regionCode || 'не задан'}`,
+    admin ? `Менеджер: ${managerUsername || 'не назначен'}` : null,
+    admin ? `Регион: ${regionCode || 'не задан'}` : null,
     showAlert ? `Ждёт: ${time}` : `Последнее сообщение: ${time}`,
   ]
     .filter(Boolean)
@@ -206,7 +209,7 @@ function AgentCard({ agent, showAlert = false }) {
       <div data-testid="agent-lead" className="flex min-w-0 items-center gap-1.5 text-xs">
         <LeadIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
         <span className={cn('hidden shrink-0', showAlert ? '@min-[440px]:inline' : '@min-[360px]:inline')}>{lead}</span>
-        {managerUsername ? (
+        {admin && managerUsername ? (
           <span
             className={cn(
               'hidden min-w-0 truncate text-muted-foreground',

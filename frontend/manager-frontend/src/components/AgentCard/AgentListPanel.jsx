@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,11 @@ function AgentListPanel({ title, count, agents, showAlert = false, loading = fal
   const bodyId = useId();
   const canExpand = agents.length > COLLAPSED_ROWS;
   const expanded = open && canExpand;
+  // Список сократился до трёх строк — раскрытие сбрасываем: иначе следующая
+  // четвёртая строка сама раздвинула бы панель и сдвинула таблицу под ней.
+  useEffect(() => {
+    if (!canExpand) setOpen(false);
+  }, [canExpand]);
 
   return (
     <section className="@container min-w-0 overflow-hidden rounded-lg border bg-card">
