@@ -130,10 +130,10 @@ describe('очередь «Ждут менеджера»: компактная �
     expect(list(host).textContent).toBe('Ничего не найдено — сбросьте фильтры и поиск');
   });
 
-  it('в строке очереди есть стадия диалога и кто ведёт', () => {
+  it('в строке очереди есть стадия диалога, а слова «Менеджер» нет', () => {
     const host = render([agent(1, 'hold_armed')]);
     expect(host.querySelector('[data-testid="agent-stage"]').textContent).toBe('стало привычкой');
-    expect(host.querySelector('[data-testid="agent-lead"]').textContent).toContain('Менеджер');
+    expect(host.querySelector('[data-testid="agent-lead"]').textContent).not.toContain('Менеджер');
   });
 
   it('листания и выбора числа строк больше нет', () => {

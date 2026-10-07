@@ -113,7 +113,7 @@ describe('AgentCard: одна строка вместо карточки', () =>
     expect(card(host).className).toContain('h-10');
   });
 
-  it('показывает стадию диалога и кто ведёт, логин менеджера — рядом', () => {
+  it('показывает стадию диалога; вместо «кто ведёт» — логин менеджера, слова «Менеджер» нет', () => {
     const host = render({
       chat_id: 11,
       name: 'Олег',
@@ -127,8 +127,7 @@ describe('AgentCard: одна строка вместо карточки', () =>
       stage: { id: 'warm', title: 'стало привычкой', index: 3, total: 5 },
     });
     expect(host.querySelector('[data-testid="agent-stage"]').textContent).toBe('стало привычкой');
-    expect(host.querySelector('[data-testid="agent-lead"]').textContent).toContain('Менеджер');
-    expect(host.querySelector('[data-testid="agent-lead"]').textContent).toContain('anna');
+    expect(host.querySelector('[data-testid="agent-lead"]').textContent).toBe('anna');
     expect(host.textContent).toContain('43 года · Питер');
     // Полная атрибуция и этап остаются в подсказке строки.
     expect(card(host).title).toContain('Менеджер: anna');
@@ -136,9 +135,10 @@ describe('AgentCard: одна строка вместо карточки', () =>
     expect(card(host).title).toContain('этап 3 из 5');
   });
 
-  it('бота ведёт бот; без менеджера и стадии — прочерк и «не назначен» в подсказке', () => {
+  it('без менеджера и стадии — «не назначен» и прочерк; кто ведёт остаётся в подсказке', () => {
     const host = render({ chat_id: 12, name: 'Олег', queue_reason: 'qual_gap', waiting_since: 1, is_paused: false });
-    expect(host.querySelector('[data-testid="agent-lead"]').textContent).toBe('Бот');
+    expect(host.querySelector('[data-testid="agent-lead"]').textContent).toBe('не назначен');
+    expect(card(host).title).toContain('Ведёт: Бот');
     expect(host.querySelector('[data-testid="agent-stage"]').textContent).toBe('—');
     expect(card(host).title).toContain('Менеджер: не назначен');
   });

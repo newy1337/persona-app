@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Hourglass } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { NativeCheckbox } from '@/components/ui/native-checkbox';
@@ -34,6 +35,7 @@ function NeedManagerAssist({ agents = [], query = '', headFilters = {}, loading 
   return (
     <AgentListPanel
       title="Ждут менеджера"
+      icon={Hourglass}
       count={filtered.length}
       agents={filtered}
       showAlert

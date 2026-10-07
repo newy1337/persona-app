@@ -42,11 +42,16 @@ export const REASON_LABEL = {
 /**
  * Сетка строки. Колонки после имени — фиксированной ширины, поэтому строки
  * одной панели стоят ровно, как таблица. На узкой панели (container query по
- * самой панели) сначала уходит стадия, потом логин менеджера, потом слово
- * «Бот» / «Менеджер» — остаётся значок.
+ * самой панели) сначала уходит логин менеджера, потом стадия.
+ *
+ * В очереди «Ждут менеджера» колонки «кто ведёт» нет: отвечать должен
+ * менеджер, это и так понятно. Админу вместо неё показан логин менеджера,
+ * за которым закреплён диалог.
  */
 const QUEUE_GRID =
-  'grid-cols-[minmax(0,1fr)_132px_16px_52px] @min-[440px]:grid-cols-[minmax(0,1fr)_132px_84px_52px] @min-[560px]:grid-cols-[minmax(0,1fr)_132px_150px_52px] @min-[660px]:grid-cols-[minmax(0,1fr)_132px_112px_150px_52px]';
+  'grid-cols-[minmax(0,1fr)_132px_52px] @min-[480px]:grid-cols-[minmax(0,1fr)_132px_120px_52px]';
+const QUEUE_GRID_ADMIN =
+  'grid-cols-[minmax(0,1fr)_132px_52px] @min-[480px]:grid-cols-[minmax(0,1fr)_132px_120px_52px] @min-[620px]:grid-cols-[minmax(0,1fr)_132px_120px_120px_52px]';
 const LIVE_GRID =
   'grid-cols-[minmax(0,1fr)_36px_16px_52px] @min-[360px]:grid-cols-[minmax(0,1fr)_36px_84px_52px] @min-[460px]:grid-cols-[minmax(0,1fr)_36px_150px_52px] @min-[560px]:grid-cols-[minmax(0,1fr)_36px_112px_150px_52px]';
 
@@ -131,7 +136,7 @@ function AgentCard({ agent, showAlert = false }) {
         'agentCard',
         ROW_HEIGHT,
         'grid cursor-pointer items-center gap-3 px-3 text-sm outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50',
-        showAlert ? QUEUE_GRID : LIVE_GRID,
+        showAlert ? (admin ? QUEUE_GRID_ADMIN : QUEUE_GRID) : LIVE_GRID,
       )}
     >
       <div className="flex min-w-0 items-center gap-2">
@@ -189,7 +194,7 @@ function AgentCard({ agent, showAlert = false }) {
         data-testid="agent-stage"
         className={cn(
           'hidden min-w-0 items-center gap-1.5 text-xs text-muted-foreground',
-          showAlert ? '@min-[660px]:flex' : '@min-[560px]:flex',
+          showAlert ? '@min-[480px]:flex' : '@min-[560px]:flex',
         )}
       >
         {stage?.title ? (
@@ -206,20 +211,24 @@ function AgentCard({ agent, showAlert = false }) {
         )}
       </div>
 
-      <div data-testid="agent-lead" className="flex min-w-0 items-center gap-1.5 text-xs">
-        <LeadIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-        <span className={cn('hidden shrink-0', showAlert ? '@min-[440px]:inline' : '@min-[360px]:inline')}>{lead}</span>
-        {admin && managerUsername ? (
-          <span
-            className={cn(
-              'hidden min-w-0 truncate text-muted-foreground',
-              showAlert ? '@min-[560px]:inline' : '@min-[460px]:inline',
-            )}
-          >
-            · {managerUsername}
-          </span>
-        ) : null}
-      </div>
+      {showAlert ? (
+        admin && (
+          <div data-testid="agent-lead" className="hidden min-w-0 items-center gap-1.5 text-xs @min-[620px]:flex">
+            <User aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className={cn('truncate', !managerUsername && 'text-muted-foreground')}>
+              {managerUsername || 'не назначен'}
+            </span>
+          </div>
+        )
+      ) : (
+        <div data-testid="agent-lead" className="flex min-w-0 items-center gap-1.5 text-xs">
+          <LeadIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+          <span className="hidden shrink-0 @min-[360px]:inline">{lead}</span>
+          {admin && managerUsername ? (
+            <span className="hidden min-w-0 truncate text-muted-foreground @min-[460px]:inline">· {managerUsername}</span>
+          ) : null}
+        </div>
+      )}
 
       <span className="flex items-center justify-end gap-1 whitespace-nowrap text-xs text-muted-foreground">
         <Clock aria-hidden="true" className="size-3 shrink-0" />

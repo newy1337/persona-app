@@ -13,7 +13,7 @@ export const COLLAPSED_ROWS = 3;
  * всегда ровно в три строки и прокручивается внутри себя, поэтому опрос не
  * двигает страницу; «Все N» раскрывает его до 60% высоты окна.
  */
-function AgentListPanel({ title, count, agents, showAlert = false, loading = false, emptyText, children }) {
+function AgentListPanel({ title, icon: Icon, count, agents, showAlert = false, loading = false, emptyText, children }) {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   const canExpand = agents.length > COLLAPSED_ROWS;
@@ -27,6 +27,7 @@ function AgentListPanel({ title, count, agents, showAlert = false, loading = fal
   return (
     <section className="@container min-w-0 overflow-hidden rounded-lg border bg-card">
       <div className="flex h-9 items-center gap-2 border-b px-3">
+        {Icon && <Icon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
         <h2 className="min-w-0 truncate text-sm font-medium">{title}</h2>
         <Badge variant="outline" className="h-5 min-w-7 font-normal tabular-nums text-muted-foreground">
           {count}
