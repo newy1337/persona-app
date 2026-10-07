@@ -27,10 +27,14 @@ function AgentListPanel({ title, icon: Icon, count, agents, loading = false, emp
 
       <div data-testid="agent-list" className="max-h-[400px] overflow-y-auto [scrollbar-gutter:stable]">
         {agents.length ? (
-          // -mb-px прячет нижнюю линию последнего ряда под рамку панели.
-          <div className="-mb-px grid lg:grid-cols-2">
+          // Линии — сверху ячеек, у первого ряда их нет: так под последним рядом
+          // не остаётся лишней линии и список не получает прокрутку в один пиксель.
+          <div className="grid lg:grid-cols-2">
             {agents.map((agent) => (
-              <div key={agent.chat_id} className="@container min-w-0 border-b lg:odd:border-r">
+              <div
+                key={agent.chat_id}
+                className="@container min-w-0 border-t first:border-t-0 lg:odd:border-r lg:[&:nth-child(2)]:border-t-0"
+              >
                 <AgentCard agent={agent} />
               </div>
             ))}
