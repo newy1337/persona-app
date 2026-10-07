@@ -18,7 +18,7 @@ const persona = (id) => ({
   ...list.items[id - 1],
   card_lines: 10, examples: 3, storylines: 2, edited_prompts: 1,
   generator_model: null, judge_model: null,
-  sections: { prompts: { opener: 'привет' }, rhythm: {}, persona: { name: 'Настя' }, variables: {} },
+  sections: { prompts: { opener: 'привет' }, rhythm: {}, persona: { name: 'Настя', _name: 'как зовут в переписке' }, variables: {} },
 });
 const defaults = {
   keys: ['opener'],
@@ -127,5 +127,58 @@ describe('страница личностей', () => {
     const dialog = host.querySelector('[role="dialog"]');
     expect(dialog.textContent).toContain('Новая личность');
     expect([...dialog.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Отмена', 'Создать']);
+  });
+});
+
+describe('страница личностей без описаний полей', () => {
+  const openTab = async (name) => {
+    const tab = [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent === name);
+    await act(async () => {
+      tab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+    });
+    await flush();
+  };
+  const tooltip = () => document.querySelector('[role="tooltip"]');
+
+  it('под заголовком страницы и под полями нет строк с описанием', () => {
+    expect(host.querySelector('h1').parentElement.querySelector('p')).toBeNull();
+    expect(host.querySelector('[data-slot="field-message"]')).toBeNull();
+    expect(host.textContent).not.toContain('с чего начинает');
+    expect(host.textContent).not.toContain('Правка действует');
+  });
+
+  it('пояснение к промпту открывается значком «?» рядом с названием', async () => {
+    const help = byLabel('Пояснение: Первое сообщение');
+    expect(help).not.toBeNull();
+    expect(byLabel('Пояснение: Промпты')).not.toBeNull();
+    expect(tooltip()).toBeNull();
+
+    await act(async () => help.focus());
+    expect(tooltip().textContent).toContain('с чего начинает');
+  });
+
+  it('ритм: единица измерения в подписи, пояснения — за значками', async () => {
+    await openTab('Ритм');
+    const labels = [...host.querySelectorAll('[data-slot="field"]')].map((f) => f.textContent);
+    expect(labels).toContain('Разогрев, мин');
+    expect(labels).toContain('Пауза в потоке, сек');
+    for (const name of ['Ритм', 'Задержка ответа', 'Разогрев', 'Пауза в потоке', 'Утреннее сообщение']) {
+      expect(byLabel(`Пояснение: ${name}`)).not.toBeNull();
+    }
+    expect(host.querySelector('[data-slot="field-message"]')).toBeNull();
+    expect(host.textContent).not.toContain('от его первого сообщения');
+
+    await act(async () => byLabel('Пояснение: Разогрев').focus());
+    expect(tooltip().textContent).toContain('от его первого сообщения');
+  });
+
+  it('карточка: заметка автора к полю — за значком, ключ документа — в title подписи', async () => {
+    await openTab('Карточка');
+    const name = host.querySelector('span[title="name"]');
+    expect(name.textContent).toBe('Имя');
+    expect(name.parentElement.textContent).toBe('Имя');
+
+    await act(async () => byLabel('Пояснение: Имя').focus());
+    expect(tooltip().textContent).toContain('как зовут в переписке');
   });
 });

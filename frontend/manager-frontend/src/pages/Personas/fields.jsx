@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ArrowDown, ArrowUp, ChevronRight, Plus, X } from 'lucide-react';
+import { HelpHint } from '@/components/HelpHint/HelpHint';
 import { IconAction } from '@/components/IconAction/IconAction';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -85,15 +86,17 @@ export function hintFor(parent, key) {
 const isPlain = (v) => v === null || typeof v !== 'object';
 const isLongText = (v) => typeof v === 'string' && (v.length > 60 || v.includes('\n'));
 
-/** Строка «подпись слева — значение справа»; общая для DocEditor и ObjectEditor. */
+/**
+ * Строка «подпись слева — значение справа»; общая для DocEditor и ObjectEditor.
+ * Ключ документа — в title подписи, заметка автора к полю — за значком «?».
+ */
 export function FieldRow({ parent, k, children }) {
   const hint = hintFor(parent, k);
   return (
     <div className="grid items-start gap-1.5 md:grid-cols-[minmax(150px,210px)_minmax(0,1fr)] md:gap-3.5">
-      <div className="flex flex-col gap-0.5 md:pt-1.5">
-        <span className="text-sm font-medium">{label(k)}</span>
-        {label(k) !== k && <span className="font-mono text-xs text-muted-foreground">{k}</span>}
-        {hint && <span className="text-xs leading-snug text-muted-foreground">{hint}</span>}
+      <div className="flex items-center gap-1 md:pt-1.5">
+        <span className="min-w-0 text-sm font-medium" title={label(k) !== k ? k : undefined}>{label(k)}</span>
+        {hint && <HelpHint label={label(k)}>{hint}</HelpHint>}
       </div>
       <div className="min-w-0">{children}</div>
     </div>

@@ -10,25 +10,24 @@ import { NativeSelect } from '@/components/ui/native-select';
 import VersionsTable, { useVersions } from './Versions';
 import { EditorBar, SaveBar } from './EditorBar';
 import { drafts } from './drafts';
+import { Labeled } from './help';
 import { TIMEZONES, rhythmSummary } from './rhythm';
 
 const DRAFT_DELAY_MS = 600;
 
-function Num({ label, hint, value, onChange, min = 0, max = 1440, step = 1, unit }) {
+// Единица измерения стоит в подписи («Разогрев, мин»), пояснение — за «?».
+function Num({ label, help, value, onChange, min = 0, max = 1440, step = 1, unit }) {
   return (
-    <Field label={label} hint={hint}>
-      <span className="flex items-center gap-1.5">
-        <Input
-          type="number"
-          className="max-w-30 tabular-nums"
-          min={min}
-          max={max}
-          step={step}
-          value={value ?? ''}
-          onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
-        />
-        {unit && <span className="text-xs text-muted-foreground">{unit}</span>}
-      </span>
+    <Field label={<Labeled label={unit ? `${label}, ${unit}` : label} name={label} help={help} />}>
+      <Input
+        type="number"
+        className="max-w-30 tabular-nums"
+        min={min}
+        max={max}
+        step={step}
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
+      />
     </Field>
   );
 }
@@ -51,20 +50,19 @@ function Time({ label, value, onChange }) {
 }
 
 // Блок настроек — раздел с линией сверху: рамка в рамке блока личности не нужна.
-function Block({ title, toggle, hint, children }) {
+function Block({ title, toggle, help, children }) {
   return (
-    <section className="flex flex-col gap-2.5 border-t pt-4">
+    <section className="flex flex-col gap-3 border-t pt-4">
       <header className="flex min-h-5 items-center justify-between gap-2">
-        <span className="text-sm font-medium">{title}</span>
+        <Labeled label={title} help={help} className="text-sm font-medium" />
         {toggle}
       </header>
-      {hint && <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>}
       {children}
     </section>
   );
 }
 
-const Pair = ({ children }) => <div className="grid grid-cols-2 gap-2.5">{children}</div>;
+const Pair = ({ children }) => <div className="grid grid-cols-2 gap-3">{children}</div>;
 
 export default function RhythmEditor({ persona, onSaved, onError }) {
   const server = useMemo(() => persona.sections.rhythm ?? {}, [persona.sections.rhythm]);
@@ -195,18 +193,14 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
     <div className="flex flex-1 flex-col gap-4">
       <EditorBar
         summary={rhythmSummary(draft)}
-        hint="Правка действует со следующего сообщения, перезапуск не нужен. Окна утра и прощания — по часам выбранного пояса; утро и прощание слушаются общего выключателя инициативы в настройках."
+        helpLabel="Ритм"
+        help="Правка действует со следующего сообщения, перезапуск не нужен. Окна утра и прощания — по часам выбранного пояса; утро и прощание слушаются общего выключателя инициативы в настройках."
         draftAt={draftAt}
         dirty={dirty}
         versions={versions}
         onReset={reset}
       >
-        <IconAction
-          icon={RotateCcw}
-          label="Как по умолчанию"
-          hint="Как по умолчанию: подставить цифры — сохранит обычная кнопка"
-          onClick={applyDefaults}
-        />
+        <IconAction icon={RotateCcw} label="Как по умолчанию" hint="Как по умолчанию: подставить цифры — сохранит обычная кнопка" onClick={applyDefaults} />
       </EditorBar>
 
       <VersionsTable versions={versions.versions} loading={versions.loading} onRestore={versions.restore} />
@@ -215,12 +209,12 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
         <Block
           title="Задержка ответа"
           toggle={<Toggle checked={rd.enabled !== false} onChange={(v) => set(['reply_delay', 'enabled'], v)}>включена</Toggle>}
-          hint="Сначала отвечает быстро, дальше — как занятой человек."
+          help="Сначала отвечает быстро, дальше — как занятой человек."
         >
           <Num
             label="Разогрев"
             unit="мин"
-            hint="от его первого сообщения"
+            help="от его первого сообщения"
             value={rd.warmup_minutes}
             onChange={(v) => set(['reply_delay', 'warmup_minutes'], v)}
           />
@@ -236,7 +230,7 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
             label="Пауза в потоке"
             unit="сек"
             max={600}
-            hint="пишет несколько сообщений подряд — ответ ждёт, пока замолчит, и уходит одним"
+            help="пишет несколько сообщений подряд — ответ ждёт, пока замолчит, и уходит одним"
             value={rd.burst_seconds}
             onChange={(v) => set(['reply_delay', 'burst_seconds'], v)}
           />
@@ -245,7 +239,7 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
         <Block
           title="После молчания"
           toggle={<Toggle checked={as.enabled !== false} onChange={(v) => set(['after_silence', 'enabled'], v)}>включено</Toggle>}
-          hint="Бот написал, а собеседник молчал дольше порога — отвечает не сразу. Ночь и разговор, закрытый «спокойной ночи», молчанием не считаются. Следующий ответ — снова обычный."
+          help="Бот написал, а собеседник молчал дольше порога — отвечает не сразу. Ночь и разговор, закрытый «спокойной ночи», молчанием не считаются. Следующий ответ — снова обычный."
         >
           <Num label="Молчал дольше" unit="ч" max={72} step={0.5} value={as.silence_hours} onChange={(v) => set(['after_silence', 'silence_hours'], v)} />
           <Pair>
@@ -257,7 +251,7 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
         <Block
           title="Утреннее сообщение"
           toggle={<Toggle checked={morning.enabled !== false} onChange={(v) => set(['morning', 'enabled'], v)}>включено</Toggle>}
-          hint="Одно в день, в случайную минуту окна — у каждого собеседника свою. Написал первым этим утром — она просто ответит на его сообщение. Текст — промпт «Утреннее сообщение»."
+          help="Одно в день, в случайную минуту окна — у каждого собеседника свою. Написал первым этим утром — она просто ответит на его сообщение. Текст — промпт «Утреннее сообщение»."
         >
           <Pair>
             <Time label="С" value={morning.from} onChange={(v) => set(['morning', 'from'], v)} />
@@ -268,7 +262,7 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
         <Block
           title="Прощание на ночь"
           toggle={<Toggle checked={goodnight.enabled !== false} onChange={(v) => set(['goodnight', 'enabled'], v)}>включено</Toggle>}
-          hint="Если сегодня общались и разговор затих. Попрощался первым — ответит взаимно, своё прощание не шлёт. «До» раньше «с» — окно через полночь. Текст — промпт «Прощание на ночь»."
+          help="Если сегодня общались и разговор затих. Попрощался первым — ответит взаимно, своё прощание не шлёт. «До» раньше «с» — окно через полночь. Текст — промпт «Прощание на ночь»."
         >
           <Pair>
             <Time label="С" value={goodnight.from} onChange={(v) => set(['goodnight', 'from'], v)} />
@@ -279,7 +273,7 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
         <Block
           title="«Печатает…»"
           toggle={<Toggle checked={draft.typing?.enabled !== false} onChange={(v) => set(['typing', 'enabled'], v)}>включено</Toggle>}
-          hint="Перед каждой частью ответа — статус набора на время, зависящее от длины. Набор идёт заходами с короткими паузами, как у человека, который печатает, задумывается и дописывает."
+          help="Перед каждой частью ответа — статус набора на время, зависящее от длины. Набор идёт заходами с короткими паузами, как у человека, который печатает, задумывается и дописывает."
         >
           <Num
             label="Скорость набора"
@@ -309,7 +303,7 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
               отвечать
             </Toggle>
           }
-          hint="Пришли, пока аккаунт был не в сети или без ответа, — например, при входе в аккаунт. Ответ не как на свежее: через «ответ через» из «После молчания», не ночью, и она коротко извиняется за паузу."
+          help="Пришли, пока аккаунт был не в сети или без ответа, — например, при входе в аккаунт. Ответ не как на свежее: через «ответ через» из «После молчания», не ночью, и она коротко извиняется за паузу."
         >
           <Num
             label="Старое — старше"
@@ -342,8 +336,9 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
             onChange={(v) => set(['skip_if_silent_days'], v)}
           />
           <Num
-            label="Сама пишет подряд, пока он не ответил (утро, прощание, «куда пропал»)"
+            label="Сама пишет подряд, пока он не ответил"
             unit="сообщ."
+            help="утро, прощание, «куда пропал»"
             max={5}
             value={draft.max_unanswered}
             onChange={(v) => set(['max_unanswered'], v)}

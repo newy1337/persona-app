@@ -1,4 +1,5 @@
 import { History, Undo2 } from 'lucide-react';
+import { HelpHint } from '@/components/HelpHint/HelpHint';
 import { IconAction } from '@/components/IconAction/IconAction';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,16 +12,20 @@ const DOT = "inline-flex items-center gap-1.5 before:size-1.5 before:shrink-0 be
 /**
  * Верхняя полоса редактора секции: слева необязательный переключатель
  * (leading) и сводка, справа — действия секции (children) и два общих для всех
- * секций действия-иконки: история версий и отмена правок. Под полосой —
- * подсказка и фиксированная строка под заметку о черновике: она занимает
- * место всегда, чтобы редактор не прыгал, когда черновик появляется.
+ * секций действия-иконки: история версий и отмена правок. Пояснение к секции
+ * (help) спрятано за значком «?» рядом со сводкой. Под полосой — фиксированная
+ * строка под заметку о черновике: она занимает место всегда, чтобы редактор
+ * не прыгал, когда черновик появляется.
  */
-export function EditorBar({ leading, summary, hint, draftAt, dirty, versions, onReset, children }) {
+export function EditorBar({ leading, summary, help, helpLabel, draftAt, dirty, versions, onReset, children }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex min-h-8 flex-wrap items-center gap-2">
         {leading}
-        <span className="min-w-0 text-xs text-muted-foreground tabular-nums">{summary}</span>
+        <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground tabular-nums">
+          <span className="min-w-0">{summary}</span>
+          {help && <HelpHint label={helpLabel}>{help}</HelpHint>}
+        </span>
         <div className="ml-auto flex flex-wrap items-center gap-1">
           {children}
           {versions && (
@@ -35,7 +40,6 @@ export function EditorBar({ leading, summary, hint, draftAt, dirty, versions, on
           {onReset && <IconAction icon={Undo2} label="Отменить правки" disabled={!dirty} onClick={onReset} />}
         </div>
       </div>
-      {hint && <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>}
       <p className="min-h-4 text-xs text-muted-foreground" role="status">
         {draftAt && dirty && (
           <span className={cn(DOT, 'before:bg-warning-foreground')}>

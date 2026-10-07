@@ -163,7 +163,8 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
     <div className="flex flex-1 flex-col gap-4">
       <EditorBar
         summary={`${defined.size} переменн. · в текстах используется ${[...used.keys()].length}`}
-        hint={
+        helpLabel="Переменные"
+        help={
           <>
             Напишите <span className="font-mono">{'{site}'}</span> в любой вкладке — промпты, карточка, цели, сюжеты, день, биты —
             и задайте значение здесь. Бот увидит значение, в редакторах останется <span className="font-mono">{'{site}'}</span>.

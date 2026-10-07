@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { putSection } from '../../api/personas';
 import { Badge } from '@/components/ui/badge';
 import { Download, RotateCcw, Upload } from 'lucide-react';
+import { HelpHint } from '@/components/HelpHint/HelpHint';
 import { IconAction } from '@/components/IconAction/IconAction';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
@@ -160,7 +161,8 @@ export default function PromptsEditor({ persona, defaults, onSaved, onError }) {
     <div className="flex flex-1 flex-col gap-4">
       <EditorBar
         summary={`${defaults.keys.length} текстов · ${changed > 0 ? `${changed} отличается от кода` : 'как в коде'}`}
-        hint={
+        helpLabel="Промпты"
+        help={
           <>
             Правка действует со следующего ответа, перезапуск не нужен.{' '}
             <span className="font-mono">{'{name}'}</span> заменяется именем личности, свои{' '}
@@ -173,12 +175,7 @@ export default function PromptsEditor({ persona, defaults, onSaved, onError }) {
         onReset={reset}
       >
         <IconAction icon={Download} label="Выгрузить в файл" hint="Выгрузить в файл: скачать тексты одним файлом" onClick={exportFile} />
-        <IconAction
-          icon={Upload}
-          label="Загрузить из файла"
-          hint="Загрузить из файла — применит обычное сохранение"
-          onClick={() => filePicker.current?.click()}
-        />
+        <IconAction icon={Upload} label="Загрузить из файла" hint="Загрузить из файла — применит обычное сохранение" onClick={() => filePicker.current?.click()} />
         <input
           ref={filePicker}
           type="file"
@@ -203,22 +200,16 @@ export default function PromptsEditor({ persona, defaults, onSaved, onError }) {
             <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
               <span className="flex items-center gap-2 text-sm font-medium">
                 {label.title}
+                {label.hint && <HelpHint label={label.title}>{label.hint}</HelpHint>}
                 <Badge variant="outline" className={cn('h-5 font-normal text-muted-foreground', same && 'invisible')}>изменён</Badge>
               </span>
               <div className="flex items-center gap-1">
                 <span className="min-w-16 text-right text-xs text-muted-foreground tabular-nums">
                   {value.length} симв.
                 </span>
-                <IconAction
-                  icon={RotateCcw}
-                  label="Текст из кода"
-                  hint="Подставить в поле текст, зашитый в коде"
-                  disabled={same}
-                  onClick={() => set(key, defaults.defaults[key])}
-                />
+                <IconAction icon={RotateCcw} label="Текст из кода" hint="Подставить в поле текст, зашитый в коде" disabled={same} onClick={() => set(key, defaults.defaults[key])} />
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">{label.hint}</p>
             <Textarea
               className="field-sizing-fixed resize-y leading-relaxed"
               rows={SHORT.has(key) ? 2 : 12}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { HelpHint } from '@/components/HelpHint/HelpHint';
 import { Button } from '@/components/ui/button';
 import { FieldRow, ValueEditor, hintFor, label } from './fields';
 
@@ -70,7 +71,10 @@ export default function DocEditor({ doc, onChange }) {
         ) : active && active in doc ? (
           <>
             {hintFor(doc, active) && (
-              <p className="mb-3 text-xs leading-relaxed text-muted-foreground">{hintFor(doc, active)}</p>
+              <div className="mb-3 flex items-center gap-1 text-sm font-medium">
+                {label(active)}
+                <HelpHint label={label(active)}>{hintFor(doc, active)}</HelpHint>
+              </div>
             )}
             <ValueEditor value={doc[active]} onChange={(v) => onChange({ ...doc, [active]: v })} />
           </>

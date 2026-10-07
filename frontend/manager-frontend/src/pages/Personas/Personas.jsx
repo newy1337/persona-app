@@ -23,7 +23,6 @@ import {
   Dialog,
   DialogContent,
   DialogError,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -63,12 +62,9 @@ const TABS = [
 function CreateDialog({ open, personas, onDone, onCancel }) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onCancel(); }}>
-      <DialogContent portal={false} showCloseButton={false}>
+      <DialogContent portal={false} showCloseButton={false} aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Новая личность</DialogTitle>
-          <DialogDescription>
-            Кем говорит бот. Документы можно скопировать у существующей личности.
-          </DialogDescription>
         </DialogHeader>
         <CreateForm personas={personas} onDone={onDone} onCancel={onCancel} />
       </DialogContent>
@@ -149,14 +145,14 @@ const BODY_BOX = 'flex min-h-[60vh] flex-col';
 const PLAIN_BADGE = 'h-5 border-transparent px-0 font-normal text-muted-foreground';
 
 const MODEL_FIELDS = [
-  { key: 'generator', column: 'generator_model', label: 'Модель ответов', hint: 'пишет реплики клиенту' },
-  { key: 'judge', column: 'judge_model', label: 'Модель судей', hint: 'план диалога и проверка ответа — два вызова на реплику' },
+  { key: 'generator', column: 'generator_model', label: 'Модель ответов' },
+  { key: 'judge', column: 'judge_model', label: 'Модель судей' },
 ];
 
-function ModelSelect({ label, hint, value, options, fallback, onChange }) {
+function ModelSelect({ label, value, options, fallback, onChange }) {
   const fallbackLabel = options.find((o) => o.id === fallback)?.label ?? fallback;
   return (
-    <Field label={label} hint={hint} className={MODEL_FIELD}>
+    <Field label={label} className={MODEL_FIELD}>
       <NativeSelect value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
         <option value="">по умолчанию — {fallbackLabel}</option>
         {options.map((o) => (
@@ -180,13 +176,12 @@ function ListSkeleton() {
   );
 }
 
-// Те же Field с настоящими подписью и подсказкой — высота ряда совпадает с
-// готовым, даже когда подсказка переносится на вторую строку.
+// Те же Field с настоящей подписью — высота ряда совпадает с готовым.
 function ModelsSkeleton() {
   return (
     <div className={MODELS_BOX} role="status" aria-label="Загружаю модели">
       {MODEL_FIELDS.map((m) => (
-        <Field key={m.key} label={m.label} hint={m.hint} className={MODEL_FIELD}>
+        <Field key={m.key} label={m.label} className={MODEL_FIELD}>
           <Skeleton className="h-8 w-full" />
         </Field>
       ))}
@@ -373,10 +368,7 @@ export default function Personas() {
 
   return (
     <div className="container pb-8">
-      <PageHeader
-        title="Личности"
-        description="Кем говорит бот. Одна личность может стоять на нескольких аккаунтах; правки действуют со следующего ответа."
-      >
+      <PageHeader title="Личности">
         <Button variant="outline" disabled={creating} onClick={() => setCreating(true)}>
           <Plus aria-hidden="true" />
           Новая личность
@@ -509,7 +501,6 @@ export default function Personas() {
                       <ModelSelect
                         key={m.key}
                         label={m.label}
-                        hint={m.hint}
                         value={persona[m.column]}
                         options={models[m.key]}
                         fallback={models.defaults[m.key]}
