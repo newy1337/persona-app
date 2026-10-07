@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { CircleAlert, ListPlus, ListX, MessageSquare, MoreHorizontal, RotateCcw, Send, Shuffle, Trash2 } from 'lucide-react';
+import { CircleAlert, ListPlus, ListX, MessageSquare, MoreHorizontal, RotateCcw, Shuffle, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PanelUX as ux } from '../../ui/PanelUX';
+import { ColumnPicker } from '../../components/ColumnPicker/ColumnPicker';
+import { tableMinWidth, useColumnPrefs } from '../../components/ColumnPicker/columnPrefs';
 import { IconAction } from '../../components/IconAction/IconAction';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -18,21 +20,28 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 const SKELETON_ROWS = 8;
 
-/* Сетка лидов: одно значение в ячейке, ширины колонок фиксированы (опрос и
-   листание ничего не двигают), «Лид» забирает остаток. «Telegram» и «Сайт»
-   видны с 1680px; на экранах уже сайт дописывается под имя, а профиль
-   открывается из меню «Ещё». Уже 1200px таблица прокручивается внутри рамки. */
-const WIDE_ONLY = 'max-[1679px]:hidden';
+/* Сетка лидов: одно значение в ячейке, ширины колонок (px) фиксированы (опрос
+   и листание ничего не двигают), «Лид» забирает остаток. «Telegram» и «Сайт»
+   по умолчанию видны с 1680px. Какие колонки показывать, пользователь выбирает
+   сам — «Настроить поля» в заголовке колонки действий; чекбокс, лида и действия
+   скрыть нельзя. Значение скрытой колонки остаётся в подсказке лида, сайт ещё
+   и дописывается под имя. Уже минимальной ширины таблица прокручивается
+   внутри рамки. */
+const WIDE_QUERY = '(min-width: 1680px)';
+// Меньше этого «Лид» не сжимается.
+const FLEX_MIN_WIDTH = 180;
 const COLUMNS = [
-  { key: 'lead', label: 'Лид', bars: ['w-28', 'w-24'] },
-  { key: 'contact', label: 'Контакт', width: 'w-[160px]', bars: ['w-24'] },
-  { key: 'telegram', label: 'Telegram', width: 'w-[168px]', wide: true, bars: ['w-20'] },
-  { key: 'site', label: 'Сайт', width: 'w-[92px]', wide: true, bars: ['w-12'] },
-  { key: 'persona', label: 'Личность', width: 'w-[168px]', bars: ['w-24'] },
-  { key: 'manager', label: 'Менеджер', width: 'w-[116px]', bars: ['w-16'] },
-  { key: 'account', label: 'Аккаунт', width: 'w-[152px]', bars: ['w-20'] },
-  { key: 'status', label: 'Статус', width: 'w-[164px]', bars: ['w-20'] },
-  { key: 'contacted', label: 'Написали', width: 'w-[128px]', bars: ['w-16'] },
+  { key: 'select', label: 'Выбор', width: 36, required: true, bars: [] },
+  { key: 'lead', label: 'Лид', required: true, bars: ['w-28', 'w-24'] },
+  { key: 'contact', label: 'Контакт', width: 160, bars: ['w-24'] },
+  { key: 'telegram', label: 'Telegram', width: 168, show: 'wide', bars: ['w-20'] },
+  { key: 'site', label: 'Сайт', width: 92, show: 'wide', bars: ['w-12'] },
+  { key: 'persona', label: 'Личность', width: 168, bars: ['w-24'] },
+  { key: 'manager', label: 'Менеджер', width: 116, bars: ['w-16'] },
+  { key: 'account', label: 'Аккаунт', width: 152, bars: ['w-20'] },
+  { key: 'status', label: 'Статус', width: 164, bars: ['w-20'] },
+  { key: 'contacted', label: 'Написали', width: 128, bars: ['w-16'] },
+  { key: 'actions', label: 'Действия', width: 96, required: true, bars: [] },
 ];
 
 /* Высоту строки (52px) задаёт ячейка: в неё помещаются две короткие линии или
@@ -84,17 +93,19 @@ function ErrorDetails({ name, text }) {
   );
 }
 
-function SkeletonRow() {
+function SkeletonRow({ columns }) {
   return (
     <TableRow className="hover:bg-transparent" aria-hidden="true">
-      <TableCell className={cn(cell, 'pr-0')}><Skeleton className="size-4" /></TableCell>
-      {COLUMNS.map((col) => (
-        <TableCell key={col.key} className={cn(cell, col.wide && WIDE_ONLY)}>
-          <div className={line1}><Skeleton className={cn('h-3.5', col.bars[0])} /></div>
-          {col.bars[1] && <div className="flex h-4 items-center"><Skeleton className={cn('h-3', col.bars[1])} /></div>}
-        </TableCell>
-      ))}
-      <TableCell className={cell}><div className="flex items-center justify-end"><Skeleton className="size-5" /></div></TableCell>
+      {columns.map((col) => {
+        if (col.key === 'select') return <TableCell key={col.key} className={cn(cell, 'pr-0')}><Skeleton className="size-4" /></TableCell>;
+        if (col.key === 'actions') return <TableCell key={col.key} className={cell}><div className="flex items-center justify-end"><Skeleton className="size-5" /></div></TableCell>;
+        return (
+          <TableCell key={col.key} className={cell}>
+            <div className={line1}><Skeleton className={cn('h-3.5', col.bars[0])} /></div>
+            {col.bars[1] && <div className="flex h-4 items-center"><Skeleton className={cn('h-3', col.bars[1])} /></div>}
+          </TableCell>
+        );
+      })}
     </TableRow>
   );
 }
@@ -102,6 +113,8 @@ function SkeletonRow() {
 export function LeadsTable({ rows, query, status, selected, onToggle, onSelectVisible, onChat, onQueue, onUnqueue, onReassign, onDelete, onPersonaChange, personas, helpers }) {
   const { PersonaSelect, statusLabels, statusBadges, date } = helpers;
   const busy = ux.useActions().pending.some(key => key.includes('/api/leads'));
+  const prefs = useColumnPrefs('leads', COLUMNS, { wide: WIDE_QUERY });
+  const { columns, has } = prefs;
   const loading = rows == null;
   const list = rows ?? [];
   const allSelected = list.length > 0 && list.every(row => selected.has(row.id));
@@ -117,29 +130,41 @@ export function LeadsTable({ rows, query, status, selected, onToggle, onSelectVi
   return (
     <div data-testid="leads-list" className="min-w-0 w-full rounded-lg border bg-card">
       <div role="status" className="sr-only">{loading ? 'Загружаем лидов…' : ''}</div>
-      <Table className="min-w-[1200px] table-fixed" aria-label="Лиды" aria-busy={loading}>
+      <Table className="table-fixed" style={{ minWidth: tableMinWidth(columns, FLEX_MIN_WIDTH) }} aria-label="Лиды" aria-busy={loading}>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead scope="col" className={cn(headCell, 'w-9 pr-0')}>
-              <SelectAllCheckbox
-                className="block"
-                aria-label="Выбрать лидов на странице"
-                checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-                disabled={list.length === 0}
-                onCheckedChange={checked => onSelectVisible(checked === true)}
-              />
-            </TableHead>
-            {COLUMNS.map((col) => (
-              <TableHead key={col.key} scope="col" className={cn(headCell, col.width, col.wide && WIDE_ONLY)}>{col.label}</TableHead>
+            {columns.map((col) => (
+              <TableHead
+                key={col.key}
+                scope="col"
+                style={col.width ? { width: col.width } : undefined}
+                className={cn(headCell, col.key === 'select' && 'pr-0', col.key === 'actions' && 'px-2')}
+              >
+                {col.key === 'select' ? (
+                  <SelectAllCheckbox
+                    className="block"
+                    aria-label="Выбрать лидов на странице"
+                    checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                    disabled={list.length === 0}
+                    onCheckedChange={checked => onSelectVisible(checked === true)}
+                  />
+                ) : col.key === 'actions' ? (
+                  <div className="flex items-center justify-end">
+                    <span className="sr-only">{col.label}</span>
+                    <ColumnPicker prefs={prefs} />
+                  </div>
+                ) : (
+                  col.label
+                )}
+              </TableHead>
             ))}
-            <TableHead scope="col" className={cn(headCell, 'w-[96px]')}><span className="sr-only">Действия</span></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {loading && Array.from({ length: SKELETON_ROWS }, (_, i) => <SkeletonRow key={i} />)}
+          {loading && Array.from({ length: SKELETON_ROWS }, (_, i) => <SkeletonRow key={i} columns={columns} />)}
           {!loading && list.length === 0 && (
             <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={COLUMNS.length + 2} className="h-32 px-4 text-center text-sm whitespace-normal text-muted-foreground">
+              <TableCell colSpan={columns.length} className="h-32 px-4 text-center text-sm whitespace-normal text-muted-foreground">
                 {query || status ? 'По этим условиям лидов нет. Измените поиск или фильтр.' : 'Лидов пока нет. Добавьте контакт или импортируйте список.'}
               </TableCell>
             </TableRow>
@@ -154,16 +179,25 @@ export function LeadsTable({ rows, query, status, selected, onToggle, onSelectVi
             const badge = statusBadges[row.status] ?? { variant: 'outline' };
             const about = [row.age ? `${row.age} лет` : null, row.city].filter(Boolean).join(' · ');
             const telegram = row.telegram_username ? `@${row.telegram_username}` : row.telegram_user_id ? String(row.telegram_user_id) : null;
+            const personaText = row.persona_name || row.persona_id || 'Не указана';
+            const sender = senderId ? `${senderUsername ? `@${senderUsername} ` : ''}#${senderId}` : 'автоматически';
+            const senderLabel = row.preferred_account_id && !row.first_contact_at ? 'Выбран: ' : 'Аккаунт: ';
+            const ownerTitle = `Менеджер: ${row.manager_username || 'не назначен'} · Регион: ${row.region_code || 'не задан'}`;
+            const statusText = statusLabels[row.status] || row.status;
+            // Значения скрытых колонок не пропадают: они дописываются в подсказку лида.
             const leadTitle = [
               row.first_name || `Лид #${row.id}`,
               about,
               row.site ? `сайт: ${row.site}` : null,
               `лид #${row.id}`,
               telegram ? `Telegram: ${telegram}` : null,
+              !has('contact') && [row.phone_e164, row.username ? `@${row.username}` : null].filter(Boolean).join(', '),
+              !has('persona') && `Личность: ${personaText}`,
+              !has('manager') && ownerTitle,
+              !has('account') && `${senderLabel}${sender}`,
+              !has('status') && `Статус: ${[statusText, row.last_error].filter(Boolean).join(' — ')}`,
+              !has('contacted') && (row.first_contact_at ? `Написали: ${date(row.first_contact_at)}` : 'Ещё не писали'),
             ].filter(Boolean).join(' · ');
-            const personaText = row.persona_name || row.persona_id || 'Не указана';
-            const sender = senderId ? `${senderUsername ? `@${senderUsername} ` : ''}#${senderId}` : 'автоматически';
-            const senderLabel = row.preferred_account_id && !row.first_contact_at ? 'Выбран: ' : 'Аккаунт: ';
             return (
               <TableRow key={row.id} data-state={isSelected ? 'selected' : undefined} data-lead-id={row.id} data-lead-status={row.status}>
                 <TableCell className={cn(cell, 'pr-0')}>
@@ -178,85 +212,101 @@ export function LeadsTable({ rows, query, status, selected, onToggle, onSelectVi
                   </div>
                   <div className={line2}>
                     {about || (row.first_name ? `лид #${row.id}` : 'без имени')}
-                    {row.site && <span className="min-[1680px]:hidden">{` · ${row.site}`}</span>}
+                    {row.site && !has('site') && ` · ${row.site}`}
                   </div>
                 </TableCell>
 
-                <TableCell className={cell}>
-                  {row.phone_e164 && (
-                    <div className={line1}><span className="truncate font-mono text-xs">{row.phone_e164}</span></div>
-                  )}
-                  {row.username && (
-                    <div className={row.phone_e164 ? line2 : cn(line1, 'text-sm')}>
-                      <span className="truncate"><TelegramLink username={row.username} /></span>
+                {has('contact') && (
+                  <TableCell className={cell}>
+                    {row.phone_e164 && (
+                      <div className={line1}><span className="truncate font-mono text-xs">{row.phone_e164}</span></div>
+                    )}
+                    {row.username && (
+                      <div className={row.phone_e164 ? line2 : cn(line1, 'text-sm')}>
+                        <span className="truncate"><TelegramLink username={row.username} /></span>
+                      </div>
+                    )}
+                    {!row.phone_e164 && !row.username && <Empty />}
+                  </TableCell>
+                )}
+
+                {has('telegram') && (
+                  <TableCell className={cell}>
+                    <div className={one} title={telegram ? `Профиль, найденный в Telegram: ${telegram}` : 'В Telegram ещё не найден'}>
+                      {row.telegram_username ? (
+                        <span className="truncate"><TelegramLink username={row.telegram_username} /></span>
+                      ) : row.telegram_user_id ? (
+                        <span className="truncate font-mono text-xs">{String(row.telegram_user_id)}</span>
+                      ) : (
+                        <Empty />
+                      )}
                     </div>
-                  )}
-                  {!row.phone_e164 && !row.username && <Empty />}
-                </TableCell>
+                  </TableCell>
+                )}
 
-                <TableCell className={cn(cell, WIDE_ONLY)}>
-                  <div className={one} title={telegram ? `Профиль, найденный в Telegram: ${telegram}` : 'В Telegram ещё не найден'}>
-                    {row.telegram_username ? (
-                      <span className="truncate"><TelegramLink username={row.telegram_username} /></span>
-                    ) : row.telegram_user_id ? (
-                      <span className="truncate font-mono text-xs">{String(row.telegram_user_id)}</span>
-                    ) : (
-                      <Empty />
-                    )}
-                  </div>
-                </TableCell>
+                {has('site') && (
+                  <TableCell className={cell}>
+                    <div className={one}>
+                      {row.site ? <span className="truncate" title={row.site}>{row.site}</span> : <Empty />}
+                    </div>
+                  </TableCell>
+                )}
 
-                <TableCell className={cn(cell, WIDE_ONLY)}>
-                  <div className={one}>
-                    {row.site ? <span className="truncate" title={row.site}>{row.site}</span> : <Empty />}
-                  </div>
-                </TableCell>
+                {has('persona') && (
+                  <TableCell className={cell}>
+                    <div className="flex h-8 min-w-0 items-center">
+                      {row.first_contact_at || row.preferred_account_id ? (
+                        <span className="truncate text-sm" title={row.preferred_account_id ? `${personaText} — личность выбранного аккаунта` : personaText}>{personaText}</span>
+                      ) : (
+                        <label className="-ml-2 block min-w-0 flex-1">
+                          <span className="sr-only">{`Личность лида: ${name}`}</span>
+                          <PersonaSelect personas={personas} variant="ghost" value={pendingPersona[row.id] ?? row.persona_id} className="h-8 text-ellipsis" disabled={busy} onChange={persona => changePersona(row.id, persona)} />
+                        </label>
+                      )}
+                    </div>
+                  </TableCell>
+                )}
 
-                <TableCell className={cell}>
-                  <div className="flex h-8 min-w-0 items-center">
-                    {row.first_contact_at || row.preferred_account_id ? (
-                      <span className="truncate text-sm" title={row.preferred_account_id ? `${personaText} — личность выбранного аккаунта` : personaText}>{personaText}</span>
-                    ) : (
-                      <label className="-ml-2 block min-w-0 flex-1">
-                        <span className="sr-only">{`Личность лида: ${name}`}</span>
-                        <PersonaSelect personas={personas} variant="ghost" value={pendingPersona[row.id] ?? row.persona_id} className="h-8 text-ellipsis" disabled={busy} onChange={persona => changePersona(row.id, persona)} />
-                      </label>
-                    )}
-                  </div>
-                </TableCell>
+                {has('manager') && (
+                  <TableCell className={cell}>
+                    <div className={one} title={ownerTitle}>
+                      <span className={cn('truncate', !row.manager_username && 'text-muted-foreground')}>{row.manager_username || 'не назначен'}</span>
+                    </div>
+                  </TableCell>
+                )}
 
-                <TableCell className={cell}>
-                  <div className={one} title={`Менеджер: ${row.manager_username || 'не назначен'} · Регион: ${row.region_code || 'не задан'}`}>
-                    <span className={cn('truncate', !row.manager_username && 'text-muted-foreground')}>{row.manager_username || 'не назначен'}</span>
-                  </div>
-                </TableCell>
+                {has('account') && (
+                  <TableCell className={cell}>
+                    <div className={one} title={`${senderLabel}${sender}`}>
+                      {senderId ? (
+                        <span className="truncate">
+                          {senderUsername ? <TelegramLink username={senderUsername} /> : <span className="font-mono text-xs">{`#${senderId}`}</span>}
+                        </span>
+                      ) : (
+                        <span className="truncate text-muted-foreground">автоматически</span>
+                      )}
+                    </div>
+                  </TableCell>
+                )}
 
-                <TableCell className={cell}>
-                  <div className={one} title={`${senderLabel}${sender}`}>
-                    {senderId ? (
-                      <span className="truncate">
-                        {senderUsername ? <TelegramLink username={senderUsername} /> : <span className="font-mono text-xs">{`#${senderId}`}</span>}
-                      </span>
-                    ) : (
-                      <span className="truncate text-muted-foreground">автоматически</span>
-                    )}
-                  </div>
-                </TableCell>
+                {has('status') && (
+                  <TableCell className={cell}>
+                    <div className={cn(one, 'gap-1')}>
+                      <Badge variant={badge.variant} className={cn('h-5 min-w-0 shrink', badge.className)}>
+                        <span className="truncate">{statusText}</span>
+                      </Badge>
+                      {row.last_error && <ErrorDetails name={name} text={row.last_error} />}
+                    </div>
+                  </TableCell>
+                )}
 
-                <TableCell className={cell}>
-                  <div className={cn(one, 'gap-1')}>
-                    <Badge variant={badge.variant} className={cn('h-5 min-w-0 shrink', badge.className)}>
-                      <span className="truncate">{statusLabels[row.status] || row.status}</span>
-                    </Badge>
-                    {row.last_error && <ErrorDetails name={name} text={row.last_error} />}
-                  </div>
-                </TableCell>
-
-                <TableCell className={cell}>
-                  <div className={cn(one, 'tabular-nums')} title={row.first_contact_at ? `Написали: ${date(row.first_contact_at)}` : 'Ещё не писали'}>
-                    {row.first_contact_at ? <span className="truncate">{date(row.first_contact_at)}</span> : <Empty />}
-                  </div>
-                </TableCell>
+                {has('contacted') && (
+                  <TableCell className={cell}>
+                    <div className={cn(one, 'tabular-nums')} title={row.first_contact_at ? `Написали: ${date(row.first_contact_at)}` : 'Ещё не писали'}>
+                      {row.first_contact_at ? <span className="truncate">{date(row.first_contact_at)}</span> : <Empty />}
+                    </div>
+                  </TableCell>
+                )}
 
                 <TableCell className={cn(cell, 'px-2')}>
                   <div className="flex h-8 items-center justify-end gap-0.5">
@@ -280,15 +330,7 @@ export function LeadsTable({ rows, query, status, selected, onToggle, onSelectVi
                             </span>
                           </DropdownMenuItem>
                         )}
-                        {row.telegram_username && (
-                          <DropdownMenuItem asChild>
-                            <a href={`https://t.me/${row.telegram_username}`} target="_blank" rel="noreferrer">
-                              <Send aria-hidden="true" />
-                              <span className="truncate">{`Профиль в Telegram: @${row.telegram_username}`}</span>
-                            </a>
-                          </DropdownMenuItem>
-                        )}
-                        {(canReassign || row.telegram_username) && <DropdownMenuSeparator />}
+                        {canReassign && <DropdownMenuSeparator />}
                         <DropdownMenuItem variant="destructive" onSelect={() => onDelete(row)}>
                           <Trash2 aria-hidden="true" />
                           Удалить

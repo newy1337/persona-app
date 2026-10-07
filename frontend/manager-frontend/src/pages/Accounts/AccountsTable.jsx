@@ -2,6 +2,8 @@ import { Fragment, useState } from 'react';
 import { ChevronRight, Globe, LogIn, LogOut, Pause, Pencil, Play, TimerOff, Trash2 } from 'lucide-react';
 import { PanelUX as ux } from '../../ui/PanelUX';
 import { cn } from '@/lib/utils';
+import { ColumnPicker } from '@/components/ColumnPicker/ColumnPicker';
+import { tableMinWidth, useColumnPrefs } from '@/components/ColumnPicker/columnPrefs';
 import { IconAction } from '@/components/IconAction/IconAction';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,24 +19,31 @@ export const STATUS_VARIANT = {
 };
 
 /* Сетка аккаунтов: одно значение в ячейке (у аккаунта под именем — ник, у
-   состояния — строка под ограничение). Ширины заданы у всех колонок, кроме
-   «Прокси» — она забирает остаток (адрес прокси длинный). «Регион» и «Пульс» видны с 1536px, на
-   экранах уже они остаются в раскрытии строки. Уже 1250px таблица
-   прокручивается внутри рамки. */
-const WIDE_ONLY = 'max-2xl:hidden';
+   состояния — строка под ограничение). Ширины (px) заданы у всех колонок, кроме
+   «Прокси» — она забирает остаток (адрес прокси длинный). «Регион» и «Пульс»
+   по умолчанию видны с 1536px. Какие колонки показывать, пользователь выбирает
+   сам — «Настроить поля» в заголовке колонки действий; раскрытие, аккаунт и
+   действия скрыть нельзя. Значение скрытой колонки остаётся в раскрытии
+   строки. Уже минимальной ширины таблица прокручивается внутри рамки. */
+const WIDE_QUERY = '(min-width: 96rem)';
+// Меньше этого «Прокси» не сжимается.
+const FLEX_MIN_WIDTH = 170;
 const COLUMNS = [
-  { key: 'toggle', label: 'Подробнее', width: '44px', quiet: true },
-  { key: 'account', label: 'Аккаунт', width: '260px' },
-  { key: 'phone', label: 'Телефон', width: '148px' },
-  { key: 'persona', label: 'Личность', width: '140px' },
-  { key: 'manager', label: 'Менеджер', width: '140px' },
-  { key: 'region', label: 'Регион', width: '84px', wide: true },
-  { key: 'chats', label: 'Диалоги', width: '84px' },
+  { key: 'toggle', label: 'Подробнее', width: 44, required: true, quiet: true },
+  { key: 'account', label: 'Аккаунт', width: 260, required: true },
+  { key: 'phone', label: 'Телефон', width: 148 },
+  { key: 'persona', label: 'Личность', width: 140 },
+  { key: 'manager', label: 'Менеджер', width: 140 },
+  { key: 'region', label: 'Регион', width: 84, show: 'wide' },
+  { key: 'chats', label: 'Диалоги', width: 84 },
   { key: 'proxy', label: 'Прокси' },
-  { key: 'state', label: 'Состояние', width: '176px' },
-  { key: 'pulse', label: 'Пульс', width: '120px', wide: true },
-  { key: 'actions', label: 'Действия', width: '88px', quiet: true },
+  { key: 'state', label: 'Состояние', width: 176 },
+  { key: 'pulse', label: 'Пульс', width: 120, show: 'wide' },
+  { key: 'actions', label: 'Действия', width: 88, required: true, quiet: true },
 ];
+
+/** Видимые колонки — общие для таблицы и её заглушки. */
+const useAccountColumns = () => useColumnPrefs('accounts', COLUMNS, { wide: WIDE_QUERY });
 
 // ── Каркас строки ────────────────────────────────────────────────────────────
 // Настоящая строка и строка-заглушка первой загрузки собираются ОДНИМ каркасом:
@@ -49,20 +58,30 @@ const AVATAR_BOX = 'size-8 shrink-0 rounded-full';
 const SLOT = 'block size-8 shrink-0';
 const Empty = () => <span className="text-muted-foreground">—</span>;
 
-function Frame({ children, className, tableProps, ...props }) {
+/** prefs — выбор колонок; picker: показывать ли «Настроить поля» (в заглушке кнопки нет). */
+function Frame({ children, className, tableProps, prefs, picker = false, ...props }) {
   return (
     <div className={cn('rounded-lg border bg-card', className)} {...props}>
-      <Table className="min-w-[1250px] table-fixed" {...tableProps}>
+      <Table className="table-fixed" style={{ minWidth: tableMinWidth(prefs.columns, FLEX_MIN_WIDTH) }} {...tableProps}>
         <TableHeader>
           <tr>
-            {COLUMNS.map((col) => (
+            {prefs.columns.map((col) => (
               <TableHead
                 key={col.key}
                 scope="col"
                 style={col.width ? { width: col.width } : undefined}
-                className={cn('h-9 px-3 text-xs font-medium text-muted-foreground', col.wide && WIDE_ONLY)}
+                className="h-9 px-3 text-xs font-medium text-muted-foreground"
               >
-                {col.quiet ? <span className="sr-only">{col.label}</span> : col.label}
+                {col.key === 'actions' ? (
+                  <div className="flex items-center justify-end">
+                    <span className="sr-only">{col.label}</span>
+                    {picker && <ColumnPicker prefs={prefs} />}
+                  </div>
+                ) : col.quiet ? (
+                  <span className="sr-only">{col.label}</span>
+                ) : (
+                  col.label
+                )}
               </TableHead>
             ))}
           </tr>
@@ -74,13 +93,13 @@ function Frame({ children, className, tableProps, ...props }) {
 }
 
 /** cells — содержимое по ключам колонок, cellProps — атрибуты отдельных ячеек. */
-function RowShell({ className, cells, cellProps = {}, ...props }) {
+function RowShell({ columns, className, cells, cellProps = {}, ...props }) {
   return (
     <tr className={cn(ROW, className)} {...props}>
-      {COLUMNS.map((col) => (
+      {columns.map((col) => (
         <TableCell
           key={col.key}
-          className={cn(CELL, col.key === 'toggle' && 'pr-0', col.wide && WIDE_ONLY)}
+          className={cn(CELL, col.key === 'toggle' && 'pr-0')}
           {...cellProps[col.key]}
         >
           {cells[col.key]}
@@ -124,12 +143,14 @@ function Bar({ className }) {
  * дальше список никогда не подменяется ни ею, ни текстом.
  */
 export function AccountsTableSkeleton({ rows = 3 }) {
+  const prefs = useAccountColumns();
   const one = (width) => <div className={ONE}><Bar className={cn('max-w-full', width)} /></div>;
   return (
-    <Frame role="status" aria-label="Загрузка аккаунтов" tableProps={{ 'aria-hidden': true }}>
+    <Frame prefs={prefs} role="status" aria-label="Загрузка аккаунтов" tableProps={{ 'aria-hidden': true }}>
       {Array.from({ length: rows }, (_, i) => (
         <RowShell
           key={i}
+          columns={prefs.columns}
           cells={{
             toggle: <span className={SLOT} />,
             account: (
@@ -169,6 +190,8 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
   // Раскрытые строки — по id аккаунта: несколько сразу, и опрос их не закрывает.
   const [expanded, setExpanded] = useState(() => new Set());
   const { Avatar, statusLabel, date } = helpers;
+  const prefs = useAccountColumns();
+  const { columns, has } = prefs;
 
   const toggle = (id) =>
     setExpanded((prev) => {
@@ -179,9 +202,9 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
 
   if (!rows.length) {
     return (
-      <Frame tableProps={{ 'aria-label': 'Telegram-аккаунты' }}>
+      <Frame prefs={prefs} picker tableProps={{ 'aria-label': 'Telegram-аккаунты' }}>
         <tr>
-          <td colSpan={COLUMNS.length} className="px-3 py-10 text-center text-sm text-muted-foreground">
+          <td colSpan={columns.length} className="px-3 py-10 text-center text-sm text-muted-foreground">
             Аккаунтов нет. Добавьте номер, затем войдите — код придёт в Telegram.
           </td>
         </tr>
@@ -190,7 +213,7 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
   }
 
   return (
-    <Frame tableProps={{ 'aria-label': 'Telegram-аккаунты' }}>
+    <Frame prefs={prefs} picker tableProps={{ 'aria-label': 'Telegram-аккаунты' }}>
       {rows.map((row) => {
         const busy = pending.some(
           (key) => key.split(':').slice(1).join(':') === `/api/tg-accounts/${row.id}` || key.includes(`/api/tg-accounts/${row.id}/`),
@@ -205,8 +228,13 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
         const proxy = row.needs_proxy_setup ? 'не задан' : row.proxy_label || row.proxy_geo || 'задан';
         const owner = `${row.manager_username || 'без менеджера'}${row.region_code ? ` · регион ${row.region_code}` : ''}`;
         const note = row.flood_until ? `Ограничен до ${date(row.flood_until)}` : lost ? row.lost_reason || '' : '';
+        // Значения скрытых колонок не пропадают: они добавляются в раскрытие строки.
         const facts = [
           { label: 'ID аккаунта', value: `#${row.id}`, mono: true },
+          !has('phone') && { label: 'Телефон', value: row.phone_e164 || '—', mono: Boolean(row.phone_e164) },
+          !has('persona') && { label: 'Личность', value: row.persona_name || row.persona_id || 'Без личности' },
+          !has('manager') && { label: 'Менеджер', value: row.manager_username || 'без менеджера' },
+          !has('state') && { label: 'Состояние', value: [statusLabel(row), note].filter(Boolean).join(' · ') },
           { label: 'Диалогов', value: row.chats ?? 0 },
           { label: 'Прокси', value: proxy, mono: Boolean(row.proxy_label) && !row.needs_proxy_setup },
           { label: 'Назначение', value: row.purpose === 'test' ? 'Тестовый' : row.purpose === 'prod' ? 'Рабочий' : row.purpose || '—' },
@@ -214,10 +242,11 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
           { label: 'Последний вход', value: date(row.last_login_at) },
           { label: 'Пульс', value: date(row.last_heartbeat_at) },
           { label: 'Лимит сообщений в день', value: row.daily_msg_quota ?? 'Без лимита' },
-        ];
+        ].filter(Boolean);
         return (
           <Fragment key={row.id}>
             <RowShell
+              columns={columns}
               data-account-id={row.id}
               className={cn('cursor-pointer transition-colors hover:bg-muted/50', open && 'border-b-0 bg-muted/30')}
               // Клик по строке раскрывает её; выделение текста мышью раскрытием не считается.
@@ -330,7 +359,7 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
             />
             {open && (
               <tr className="border-b bg-muted/30 last:border-b-0">
-                <td colSpan={COLUMNS.length} className="px-3 pt-1 pb-3 pl-14 whitespace-normal">
+                <td colSpan={columns.length} className="px-3 pt-1 pb-3 pl-14 whitespace-normal">
                   <div id={detailsId} role="region" aria-label={`Подробности: ${name}`}>
                     <dl className="m-0 grid max-w-5xl grid-cols-4 gap-x-6 gap-y-3">
                       {facts.map(({ label, value, mono }) => (

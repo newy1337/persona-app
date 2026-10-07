@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DEAL_STAGES, dealStageLabel } from '../../data/dealStages';
+import { ColumnPicker } from '../ColumnPicker/ColumnPicker';
 import { IconAction } from '../IconAction/IconAction';
-import { CELL, COLUMNS, HEAD_CELL, LINE_1, LINE_2, TABLE_MIN_WIDTH, WIDE_ONLY } from './rowLayout';
+import { CELL, HEAD_CELL, LINE_1, LINE_2, useDialogColumns } from './rowLayout';
 
 function TgLink({ username }) {
   return (
@@ -30,9 +31,9 @@ function SortIcon({ sort, col }) {
 const Empty = () => <span className="text-muted-foreground">—</span>;
 
 /** Ячейка в одну линию: текст обрезается, полное значение — в title. */
-function Cell({ col, title, className, children, ...props }) {
+function Cell({ title, className, children, ...props }) {
   return (
-    <TableCell className={cn(CELL, COLUMNS.find((c) => c.key === col)?.wide && WIDE_ONLY, className)} {...props}>
+    <TableCell className={cn(CELL, className)} {...props}>
       <div className="flex min-w-0 items-center gap-1.5 text-sm" title={title}>
         {children}
       </div>
@@ -40,20 +41,42 @@ function Cell({ col, title, className, children, ...props }) {
   );
 }
 
+const MSK = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: 'Europe/Moscow',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+/** Время последнего сообщения по Москве: «06.10, 22:15», в подсказке — с годом. */
+function lastSeen(ts) {
+  if (!ts) return { text: '—' };
+  const p = Object.fromEntries(MSK.formatToParts(new Date(ts * 1000)).map((part) => [part.type, part.value]));
+  return {
+    text: `${p.day}.${p.month}, ${p.hour}:${p.minute}`,
+    full: `${p.day}.${p.month}.${p.year}, ${p.hour}:${p.minute}`,
+  };
+}
+
 /**
  * Таблица диалогов — сетка: каждое значение в своей колонке и в одну линию
- * (у собеседника под именем возраст и город, у времени — дата). Вся строка
- * открывает диалог, с клавиатуры — кнопка «Открыть».
+ * (у собеседника под именем возраст и город). Вся строка открывает диалог, с
+ * клавиатуры — кнопка «Открыть». Колонки выбирает пользователь — «Настроить поля»
+ * в заголовке действий; значение скрытой колонки остаётся в подсказке собеседника.
  */
 export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, onHide, onDealStage = null, helpers }) {
-  const { Avatar, Stage, isNew, unreadLabel, presence, nextAction, time, date, accountLost, typingLabels } = helpers;
+  const { Avatar, Stage, isNew, unreadLabel, presence, nextAction, accountLost, typingLabels } = helpers;
+  const prefs = useDialogColumns();
+  const { columns, has } = prefs;
 
   return (
     <div data-testid="dialogs-list" className="w-full min-w-0 rounded-lg border bg-card">
-      <Table aria-label={archived ? 'Архив диалогов' : 'Мои диалоги'} className={cn('table-fixed', TABLE_MIN_WIDTH)}>
+      <Table aria-label={archived ? 'Архив диалогов' : 'Мои диалоги'} className="table-fixed" style={{ minWidth: prefs.minWidth }}>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            {COLUMNS.map((col) => (
+            {columns.map((col) => (
               <TableHead
                 key={col.key}
                 scope="col"
@@ -61,7 +84,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                 {...(col.sort
                   ? { 'aria-sort': sort.col === col.sort ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none' }
                   : {})}
-                className={cn(HEAD_CELL, col.wide && WIDE_ONLY)}
+                className={HEAD_CELL}
               >
                 {col.sort ? (
                   <Button
@@ -74,8 +97,13 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                     {col.label}
                     <SortIcon sort={sort} col={col.sort} />
                   </Button>
+                ) : col.key === 'actions' ? (
+                  <div className="flex items-center justify-end">
+                    <span className="sr-only">{col.label}</span>
+                    <ColumnPicker prefs={prefs} />
+                  </div>
                 ) : (
-                  <span className={cn(col.quiet && 'sr-only')}>{col.label}</span>
+                  col.label
                 )}
               </TableHead>
             ))}
@@ -97,7 +125,6 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
             const age = row.age ? `${row.age} лет` : null;
             const idLabel = `ID ${row.chat_id}`;
             const about = [age, row.city].filter(Boolean).join(' · ');
-            const whoTitle = [who, warning, about, online?.text].filter(Boolean).join(' · ');
             const contactTitle = [row.client_username ? `@${row.client_username}` : null, row.phone, idLabel]
               .filter(Boolean)
               .join(' · ');
@@ -108,6 +135,26 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
               : row.account_id
                 ? `Аккаунт #${row.account_id}`
                 : 'Аккаунт удалён';
+            const accountTitle = [account, row.account_lost ? accountLost(row.account_lost) : null].filter(Boolean).join(' · ');
+            const ownerTitle = `Менеджер: ${row.manager_username || 'не назначен'} · Регион: ${row.region_code || 'не задан'}`;
+            const last = lastSeen(row.last_message_ts);
+            // Значения скрытых колонок не пропадают: они дописываются в подсказку собеседника.
+            const whoTitle = [
+              who,
+              warning,
+              about,
+              online?.text,
+              !has('contact') && contactTitle,
+              !has('stage') && row.stage?.title && `Стадия: ${row.stage.title}`,
+              !has('deal') && row.deal_stage && `Этап: ${dealStageLabel(row.deal_stage)}`,
+              !has('lead') && `Ведёт: ${row.is_paused ? 'менеджер' : 'бот'}`,
+              !has('next') && (fresh ? 'клиент ждёт ответа' : nextFull),
+              !has('manager') && ownerTitle,
+              !has('account') && `Аккаунт: ${accountTitle}`,
+              !has('last') && last.full && `Последнее: ${last.full}`,
+            ]
+              .filter(Boolean)
+              .join(' · ');
 
             return (
               <TableRow
@@ -155,107 +202,118 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                   </div>
                 </TableCell>
 
-                <Cell col="contact" title={contactTitle}>
-                  {row.client_username ? (
-                    <TgLink username={row.client_username} />
-                  ) : (
-                    <span className="truncate font-mono text-xs tabular-nums">{row.phone || idLabel}</span>
-                  )}
-                </Cell>
+                {has('contact') && (
+                  <Cell title={contactTitle}>
+                    {row.client_username ? (
+                      <TgLink username={row.client_username} />
+                    ) : (
+                      <span className="truncate font-mono text-xs tabular-nums">{row.phone || idLabel}</span>
+                    )}
+                  </Cell>
+                )}
 
-                <Cell col="stage">
-                  <Stage stage={row.stage} />
-                </Cell>
+                {has('stage') && (
+                  <Cell>
+                    <Stage stage={row.stage} />
+                  </Cell>
+                )}
 
-                <Cell col="deal">
-                  {onDealStage ? (
-                    <div
-                      data-testid="deal-stage"
-                      className="min-w-0 flex-1"
-                      title={row.deal_note || undefined}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <NativeSelect
-                        aria-label={`Этап сделки: ${row.name || row.chat_id}`}
-                        variant="ghost"
-                        className={cn('-ml-2 h-7 text-ellipsis', !row.deal_stage && 'text-muted-foreground')}
-                        value={row.deal_stage || ''}
-                        onChange={(e) => {
-                          const stage = e.target.value;
-                          if (stage) onDealStage(row.chat_id, stage, row);
-                        }}
+                {has('deal') && (
+                  <Cell>
+                    {onDealStage ? (
+                      <div
+                        data-testid="deal-stage"
+                        className="min-w-0 flex-1"
+                        title={row.deal_note || undefined}
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        <option value="">{row.deal_stage ? '— не задан' : 'Нужно указать этап'}</option>
-                        {DEAL_STAGES.map((st) => (
-                          <option key={st.id} value={st.id}>{st.label}</option>
-                        ))}
-                      </NativeSelect>
-                    </div>
-                  ) : row.deal_stage ? (
-                    <span
-                      data-testid="deal-stage"
-                      className="min-w-0 truncate"
-                      title={[dealStageLabel(row.deal_stage), row.deal_note].filter(Boolean).join(' · ')}
-                    >
-                      <span className="sr-only">Этап: </span>
-                      {dealStageLabel(row.deal_stage)}
-                      {row.deal_note ? <span className="text-muted-foreground">{` · ${row.deal_note}`}</span> : null}
+                        <NativeSelect
+                          aria-label={`Этап сделки: ${row.name || row.chat_id}`}
+                          variant="ghost"
+                          className={cn('-ml-2 h-7 text-ellipsis', !row.deal_stage && 'text-muted-foreground')}
+                          value={row.deal_stage || ''}
+                          onChange={(e) => {
+                            const stage = e.target.value;
+                            if (stage) onDealStage(row.chat_id, stage, row);
+                          }}
+                        >
+                          <option value="">{row.deal_stage ? '— не задан' : 'Нужно указать этап'}</option>
+                          {DEAL_STAGES.map((st) => (
+                            <option key={st.id} value={st.id}>{st.label}</option>
+                          ))}
+                        </NativeSelect>
+                      </div>
+                    ) : row.deal_stage ? (
+                      <span
+                        data-testid="deal-stage"
+                        className="min-w-0 truncate"
+                        title={[dealStageLabel(row.deal_stage), row.deal_note].filter(Boolean).join(' · ')}
+                      >
+                        <span className="sr-only">Этап: </span>
+                        {dealStageLabel(row.deal_stage)}
+                        {row.deal_note ? <span className="text-muted-foreground">{` · ${row.deal_note}`}</span> : null}
+                      </span>
+                    ) : (
+                      <Empty />
+                    )}
+                  </Cell>
+                )}
+
+                {has('lead') && (
+                  <Cell>
+                    <LeadIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{row.is_paused ? 'Менеджер' : 'Бот'}</span>
+                  </Cell>
+                )}
+
+                {has('next') && (
+                  <Cell title={fresh ? 'Клиент написал — ждёт ответа менеджера' : nextFull}>
+                    {fresh ? (
+                      <>
+                        <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning-foreground" />
+                        <span className="truncate">клиент ждёт ответа</span>
+                      </>
+                    ) : next?.text ? (
+                      <span className="truncate text-muted-foreground">{next.text}</span>
+                    ) : (
+                      <Empty />
+                    )}
+                  </Cell>
+                )}
+
+                {has('manager') && (
+                  <Cell title={ownerTitle}>
+                    <span className={cn('truncate', !row.manager_username && 'text-muted-foreground')}>
+                      {row.manager_username || 'не назначен'}
                     </span>
-                  ) : (
-                    <Empty />
-                  )}
-                </Cell>
+                  </Cell>
+                )}
 
-                <Cell col="lead">
-                  <LeadIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{row.is_paused ? 'Менеджер' : 'Бот'}</span>
-                </Cell>
+                {has('region') && (
+                  <Cell>
+                    {row.region_code ? <span className="truncate tabular-nums">{row.region_code}</span> : <Empty />}
+                  </Cell>
+                )}
 
-                <Cell col="next" title={fresh ? 'Клиент написал — ждёт ответа менеджера' : nextFull}>
-                  {fresh ? (
-                    <>
-                      <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning-foreground" />
-                      <span className="truncate">клиент ждёт ответа</span>
-                    </>
-                  ) : next?.text ? (
-                    <span className="truncate text-muted-foreground">{next.text}</span>
-                  ) : (
-                    <Empty />
-                  )}
-                </Cell>
+                {has('account') && (
+                  <Cell title={accountTitle}>
+                    {lost ? (
+                      <span className="truncate text-destructive">{lost}</span>
+                    ) : row.account_username ? (
+                      <TgLink username={row.account_username} />
+                    ) : (
+                      <span className="truncate text-muted-foreground">{account}</span>
+                    )}
+                  </Cell>
+                )}
 
-                <Cell
-                  col="manager"
-                  title={`Менеджер: ${row.manager_username || 'не назначен'} · Регион: ${row.region_code || 'не задан'}`}
-                >
-                  <span className={cn('truncate', !row.manager_username && 'text-muted-foreground')}>
-                    {row.manager_username || 'не назначен'}
-                  </span>
-                </Cell>
+                {has('last') && (
+                  <Cell title={last.full}>
+                    <span className="truncate tabular-nums">{last.text}</span>
+                  </Cell>
+                )}
 
-                <Cell col="region">
-                  {row.region_code ? <span className="truncate tabular-nums">{row.region_code}</span> : <Empty />}
-                </Cell>
-
-                <Cell
-                  col="account"
-                  title={[account, row.account_lost ? accountLost(row.account_lost) : null].filter(Boolean).join(' · ')}
-                >
-                  {lost ? (
-                    <span className="truncate text-destructive">{lost}</span>
-                  ) : row.account_username ? (
-                    <TgLink username={row.account_username} />
-                  ) : (
-                    <span className="truncate text-muted-foreground">{account}</span>
-                  )}
-                </Cell>
-
-                <TableCell className={CELL}>
-                  <div className={cn(LINE_1, 'tabular-nums')}>{time(row.last_message_ts)}</div>
-                  <div className={cn(LINE_2, 'tabular-nums')}>{date(row.last_message_ts)}</div>
-                </TableCell>
-
-                <TableCell className={cn(CELL, 'px-2')} onClick={(e) => e.stopPropagation()}>
+                <TableCell className={CELL} onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-end">
                     {onHide && (
                       <IconAction
@@ -277,7 +335,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
           })}
           {rows.length === 0 && (
             <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={COLUMNS.length} className="h-24 p-4 text-center text-sm whitespace-normal text-muted-foreground">
+              <TableCell colSpan={columns.length} className="h-24 p-4 text-center text-sm whitespace-normal text-muted-foreground">
                 {totalRows === 0 ? (archived ? 'В архиве пусто' : 'Диалогов нет') : 'Ничего не найдено — сбросьте поиск и фильтры'}
               </TableCell>
             </TableRow>
