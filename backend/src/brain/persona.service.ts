@@ -114,24 +114,23 @@ export class PersonaService implements OnModuleInit {
    * кеш на пару секунд снимает это с базы, а правки из панели всё равно видны
    * почти сразу — и сразу, если пришли через этот же сервис.
    */
-  private readonly rowCache = new Map<
-    string,
-    { until: number; value: unknown }
-  >();
+  // Ленивая инициализация: в тестах сервис собирают без конструктора.
+  private rowCache?: Map<string, { until: number; value: unknown }>;
   private static readonly ROW_CACHE_MS = 2000;
 
   private async cached<T>(key: string, load: () => Promise<T>): Promise<T> {
-    const hit = this.rowCache.get(key);
+    const cache = (this.rowCache ??= new Map());
+    const hit = cache.get(key);
     const now = Date.now();
     if (hit && hit.until > now) return hit.value as T;
     const value = await load();
-    this.rowCache.set(key, { until: now + PersonaService.ROW_CACHE_MS, value });
+    cache.set(key, { until: now + PersonaService.ROW_CACHE_MS, value });
     return value;
   }
 
   /** Сбросить кеш после записи в personas / tg_accounts. */
   forgetRows(): void {
-    this.rowCache.clear();
+    this.rowCache?.clear();
   }
   private readonly cache = new Map<string, RawPersona>();
 
