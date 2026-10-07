@@ -80,6 +80,24 @@ describe('главная панель: один список вместо дву
     await act(async () => root.unmount());
   });
 
+  it('«Ждут менеджера» и «Активные диалоги» — две панели-списка рядом, без листания', async () => {
+    queue.mockResolvedValue([{ chat_id: 7, name: 'Олег', queue_reason: 'hold_armed', waiting_since: now() - 600, is_paused: true }]);
+    const { host, root } = await draw();
+    const lists = host.querySelectorAll('[data-testid="agent-list"]');
+    expect(lists.length).toBe(2);
+    const wrapper = lists[0].parentElement.parentElement;
+    expect(wrapper).toBe(lists[1].parentElement.parentElement);
+    expect(wrapper.className).toContain('lg:grid-cols-2');
+    expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(
+      expect.arrayContaining(['Ждут менеджера', 'Активные диалоги']),
+    );
+    // В очереди один диалог, в активных — два из трёх (третий старше суток).
+    expect(lists[0].querySelectorAll('[data-testid="agent-card"]').length).toBe(1);
+    expect(lists[1].querySelectorAll('[data-testid="agent-card"]').length).toBe(2);
+    expect(host.querySelector('[aria-label="Показать"]')).toBeNull();
+    await act(async () => root.unmount());
+  });
+
   it('шапка страницы — «Диалоги», фильтра по периоду больше нет', async () => {
     const { host, root } = await draw();
     expect(host.querySelector('h1').textContent).toBe('Диалоги');

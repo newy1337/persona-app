@@ -157,8 +157,11 @@ function Dashboard() {
           </Alert>
         )}
         <StatsBar stats={stats} />
-        <NeedManagerAssist agents={managerAgents} />
-        <LiveConversations agents={liveAgents} />
+        {/* Две панели рядом; items-start — раскрытая панель не тянет соседнюю. */}
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          <NeedManagerAssist agents={managerAgents} loading={!ready} />
+          <LiveConversations agents={liveAgents} loading={!ready} />
+        </div>
         <ConversationsTable
           ready={ready}
           rows={rows}

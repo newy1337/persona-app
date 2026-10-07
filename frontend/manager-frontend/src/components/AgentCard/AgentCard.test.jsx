@@ -102,3 +102,84 @@ describe('AgentCard: чат без данных', () => {
     expect(host.querySelector('[title="Вброса нет"]')).toBeNull();
   });
 });
+
+describe('AgentCard: одна строка вместо карточки', () => {
+  const card = (host) => host.querySelector('[data-testid="agent-card"]');
+
+  it('строка — ссылка высотой 40px с классом agentCard', () => {
+    const host = render({ chat_id: 10, name: 'Олег', queue_reason: 'qual_gap', waiting_since: 1 });
+    expect(card(host).getAttribute('role')).toBe('link');
+    expect(card(host).className).toContain('agentCard');
+    expect(card(host).className).toContain('h-10');
+  });
+
+  it('показывает стадию диалога и кто ведёт, логин менеджера — рядом', () => {
+    const host = render({
+      chat_id: 11,
+      name: 'Олег',
+      age: 43,
+      city: 'Питер',
+      queue_reason: 'qual_gap',
+      waiting_since: 1,
+      is_paused: true,
+      manager_username: 'anna',
+      region_code: 'spb',
+      stage: { id: 'warm', title: 'стало привычкой', index: 3, total: 5 },
+    });
+    expect(host.querySelector('[data-testid="agent-stage"]').textContent).toBe('стало привычкой');
+    expect(host.querySelector('[data-testid="agent-lead"]').textContent).toContain('Менеджер');
+    expect(host.querySelector('[data-testid="agent-lead"]').textContent).toContain('anna');
+    expect(host.textContent).toContain('43 года · Питер');
+    // Полная атрибуция и этап остаются в подсказке строки.
+    expect(card(host).title).toContain('Менеджер: anna');
+    expect(card(host).title).toContain('Регион: spb');
+    expect(card(host).title).toContain('этап 3 из 5');
+  });
+
+  it('бота ведёт бот; без менеджера и стадии — прочерк и «не назначен» в подсказке', () => {
+    const host = render({ chat_id: 12, name: 'Олег', queue_reason: 'qual_gap', waiting_since: 1, is_paused: false });
+    expect(host.querySelector('[data-testid="agent-lead"]').textContent).toBe('Бот');
+    expect(host.querySelector('[data-testid="agent-stage"]').textContent).toBe('—');
+    expect(card(host).title).toContain('Менеджер: не назначен');
+  });
+
+  it('клиент в сети — зелёная точка у аватара; печатает — вместо возраста и города', () => {
+    const host = render({
+      chat_id: 13,
+      name: 'Олег',
+      age: 21,
+      city: 'Казань',
+      queue_reason: 'qual_gap',
+      waiting_since: 1,
+      client_presence: { kind: 'online' },
+      typing: 'voice',
+    });
+    expect(host.querySelector('[data-testid="agent-online"]')).not.toBeNull();
+    expect(host.textContent).toContain('записывает голосовое…');
+    expect(host.textContent).not.toContain('21 год');
+    expect(render({ chat_id: 14, name: 'Олег', waiting_since: 1 }).querySelector('[data-testid="agent-online"]')).toBeNull();
+  });
+
+  it('значок вброса остаётся с подсказкой', () => {
+    const host = render({ chat_id: 15, name: 'Олег', queue_reason: 'before_vbros', vbros_phase: 'predloga', waiting_since: 1 });
+    expect(host.querySelector('[title="Вброс: predloga"]')).not.toBeNull();
+  });
+
+  it('вне очереди: время от последнего сообщения и счётчик непрочитанных', () => {
+    const nowS = Math.floor(Date.now() / 1000);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const agent = { chat_id: 16, name: 'Олег', last_message_ts: nowS - 5 * 60, waiting_since: nowS - 7200, unread_count: 4 };
+    act(() => createRoot(host).render(React.createElement(AgentCard, { agent })));
+    expect(host.textContent).toContain('5 мин');
+    expect(host.textContent).not.toContain('2 ч');
+    expect(host.querySelector('[data-testid="agent-unread"]').textContent).toBe('4');
+  });
+
+  it('вне очереди без непрочитанных счётчика нет', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    act(() => createRoot(host).render(React.createElement(AgentCard, { agent: { chat_id: 17, name: 'Олег', unread_count: 0 } })));
+    expect(host.querySelector('[data-testid="agent-unread"]')).toBeNull();
+  });
+});

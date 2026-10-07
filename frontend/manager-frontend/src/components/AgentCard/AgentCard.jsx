@@ -2,9 +2,8 @@ import { useNavigate } from 'react-router-dom';
 import { Bot, Clock, OctagonAlert, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
-import { Attribution } from '../Attribution/Attribution';
-import { PRIORITY_COLORS, priorityColor } from '../../data/stages';
+import ClientAvatar, { ACTIVITY_LABEL } from '../ClientAvatar/ClientAvatar';
+import { PRIORITY_COLORS, priorityColor, stageColors } from '../../data/stages';
 
 function waitingFor(ts) {
   if (!ts) return '—';
@@ -12,6 +11,15 @@ function waitingFor(ts) {
   if (mins < 60) return `${Math.floor(mins)} мин`;
   const hours = mins / 60;
   return hours < 24 ? `${Math.floor(hours)} ч` : `${Math.floor(hours / 24)} д`;
+}
+
+function years(age) {
+  const n = Math.abs(Number(age)) % 100;
+  const d = n % 10;
+  if (n > 10 && n < 20) return `${age} лет`;
+  if (d === 1) return `${age} год`;
+  if (d >= 2 && d <= 4) return `${age} года`;
+  return `${age} лет`;
 }
 
 export const REASON_LABEL = {
@@ -30,6 +38,20 @@ export const REASON_LABEL = {
   manual_mode: 'Ручной режим',
 };
 
+/**
+ * Сетка строки. Колонки после имени — фиксированной ширины, поэтому строки
+ * одной панели стоят ровно, как таблица. На узкой панели (container query по
+ * самой панели) сначала уходит стадия, потом логин менеджера, потом слово
+ * «Бот» / «Менеджер» — остаётся значок.
+ */
+const QUEUE_GRID =
+  'grid-cols-[minmax(0,1fr)_132px_16px_52px] @min-[440px]:grid-cols-[minmax(0,1fr)_132px_84px_52px] @min-[560px]:grid-cols-[minmax(0,1fr)_132px_150px_52px] @min-[660px]:grid-cols-[minmax(0,1fr)_132px_112px_150px_52px]';
+const LIVE_GRID =
+  'grid-cols-[minmax(0,1fr)_36px_16px_52px] @min-[360px]:grid-cols-[minmax(0,1fr)_36px_84px_52px] @min-[460px]:grid-cols-[minmax(0,1fr)_36px_150px_52px] @min-[560px]:grid-cols-[minmax(0,1fr)_36px_112px_150px_52px]';
+
+export const ROW_HEIGHT = 'h-10';
+
+/** Строка списка: одна линия 40px. showAlert — строка очереди «Ждут менеджера». */
 function AgentCard({ agent, showAlert = false }) {
   const {
     chat_id: chatId,
@@ -43,6 +65,14 @@ function AgentCard({ agent, showAlert = false }) {
     hold_armed_at: holdArmedAt,
     queue_reason: queueReason,
     waiting_since: waitingSince,
+    last_message_ts: lastMessageTs,
+    unread_count: unreadCount,
+    manager_username: managerUsername,
+    region_code: regionCode,
+    client_presence: clientPresence,
+    avatar_url: avatarUrl,
+    typing,
+    stage,
   } = agent;
   const isManager = Boolean(isPaused);
   const navigate = useNavigate();
@@ -57,67 +87,142 @@ function AgentCard({ agent, showAlert = false }) {
   const urgent = String(queueReason).startsWith('media_');
   const hot = priorityColor(vbrosPhase) === PRIORITY_COLORS.hot;
   const LeadIcon = isManager ? User : Bot;
+  const lead = isManager ? 'Менеджер' : 'Бот';
+  const online = clientPresence?.kind === 'online';
+  const unread = unreadCount ?? 0;
+
+  const who = name || `Чат ${chatId}`;
+  const about =
+    [age ? years(age) : null, city].filter(Boolean).join(' · ') ||
+    (accountId == null ? 'аккаунт удалён' : accountUsername ? `@${accountUsername}` : 'возраст и город неизвестны');
+  const activity = typing ? `${ACTIVITY_LABEL[typing] || 'печатает'}…` : null;
+  const time = waitingFor(showAlert ? (waitingSince ?? holdArmedAt) : lastMessageTs);
+  const stageTitle = stage?.title ? `${stage.title} · этап ${stage.index} из ${stage.total}` : null;
+
+  // Всё, что на узкой панели прячется, остаётся в подсказке строки.
+  const title = [
+    who,
+    about,
+    online ? 'в сети' : null,
+    reason,
+    showAlert && vbrosPhase ? `Вброс: ${vbrosPhase}` : null,
+    !showAlert && unread > 0 ? `Непрочитанных: ${unread}` : null,
+    stageTitle,
+    `Ведёт: ${lead}`,
+    `Менеджер: ${managerUsername || 'не назначен'}`,
+    `Регион: ${regionCode || 'не задан'}`,
+    showAlert ? `Ждёт: ${time}` : `Последнее сообщение: ${time}`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
-    <Card
+    <div
       data-testid="agent-card"
       role="link"
       tabIndex={0}
       onClick={open}
       onKeyDown={onKeyDown}
+      title={title}
       className={cn(
         'agentCard',
-        'min-w-0 cursor-pointer gap-3 rounded-lg p-4 shadow-none outline-none transition-colors hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50',
+        ROW_HEIGHT,
+        'grid cursor-pointer items-center gap-3 px-3 text-sm outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50',
+        showAlert ? QUEUE_GRID : LIVE_GRID,
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="truncate text-sm font-medium">{name || `Чат ${chatId}`}</span>
-          <div className="flex min-h-4 items-center gap-1.5 overflow-hidden text-xs text-muted-foreground">
-            {age || city ? (
-              <>
-                {age ? <span className="shrink-0">{age} лет</span> : null}
-                {age && city ? <span className="shrink-0">·</span> : null}
-                {city ? <span className="truncate" title={city}>{city}</span> : null}
-              </>
-            ) : (
-              <span className="truncate">
-                {accountId == null ? 'аккаунт удалён' : accountUsername ? `@${accountUsername}` : 'возраст и город неизвестны'}
-              </span>
-            )}
-          </div>
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="relative shrink-0">
+          <ClientAvatar
+            className="size-6 rounded-full bg-muted text-[10px] font-medium text-muted-foreground"
+            style={{ '--av-bg': 'var(--muted)' }}
+            src={avatarUrl}
+            name={name || '—'}
+          />
+          {online && (
+            <span
+              aria-hidden="true"
+              data-testid="agent-online"
+              className="absolute -right-0.5 -bottom-0.5 size-2 rounded-full border border-card bg-success-foreground"
+            />
+          )}
+        </span>
+        <span className="max-w-[60%] shrink-0 truncate font-medium">{who}</span>
+        <span className="min-w-0 truncate text-xs text-muted-foreground">{activity || about}</span>
+      </div>
+
+      {showAlert ? (
+        <div className="flex min-w-0 items-center gap-1.5">
+          {reason && (
+            <Badge variant={urgent ? 'destructive' : 'warning'} className="min-w-0 shrink border-transparent px-0 font-normal">
+              <span className="truncate">{reason}</span>
+            </Badge>
+          )}
+          {vbrosPhase ? (
+            <span
+              className={cn('shrink-0', hot ? 'text-destructive' : 'text-muted-foreground')}
+              title={`Вброс: ${vbrosPhase}`}
+            >
+              <OctagonAlert aria-hidden="true" className="size-3.5" />
+            </span>
+          ) : null}
         </div>
-        {showAlert && vbrosPhase ? (
+      ) : (
+        <div className="flex min-w-0 items-center">
+          {unread > 0 && (
+            <Badge
+              variant="default"
+              data-testid="agent-unread"
+              title={`Непрочитанных: ${unread}`}
+              className="h-[18px] px-1.5 tabular-nums"
+            >
+              {unread > 99 ? '99+' : unread}
+            </Badge>
+          )}
+        </div>
+      )}
+
+      <div
+        data-testid="agent-stage"
+        className={cn(
+          'hidden min-w-0 items-center gap-1.5 text-xs text-muted-foreground',
+          showAlert ? '@min-[660px]:flex' : '@min-[560px]:flex',
+        )}
+      >
+        {stage?.title ? (
+          <>
+            <span
+              aria-hidden="true"
+              className="size-1.5 shrink-0 rounded-full"
+              style={{ background: stageColors(stage.index).color }}
+            />
+            <span className="truncate">{stage.title}</span>
+          </>
+        ) : (
+          '—'
+        )}
+      </div>
+
+      <div data-testid="agent-lead" className="flex min-w-0 items-center gap-1.5 text-xs">
+        <LeadIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+        <span className={cn('hidden shrink-0', showAlert ? '@min-[440px]:inline' : '@min-[360px]:inline')}>{lead}</span>
+        {managerUsername ? (
           <span
-            className={cn('shrink-0', hot ? 'text-destructive' : 'text-muted-foreground')}
-            title={`Вброс: ${vbrosPhase}`}
+            className={cn(
+              'hidden min-w-0 truncate text-muted-foreground',
+              showAlert ? '@min-[560px]:inline' : '@min-[460px]:inline',
+            )}
           >
-            <OctagonAlert aria-hidden="true" className="size-4" />
+            · {managerUsername}
           </span>
         ) : null}
       </div>
 
-      <Attribution value={agent} compact />
-
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <Badge variant="outline" className="font-normal">
-            <LeadIcon aria-hidden="true" />
-            {isManager ? 'Менеджер' : 'Бот'}
-          </Badge>
-          {reason && (
-            <Badge variant={urgent ? 'destructive' : 'warning'} title={reason} className="min-w-0 shrink font-normal">
-              <span className="truncate">{reason}</span>
-            </Badge>
-          )}
-        </div>
-
-        <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
-          <Clock aria-hidden="true" className="size-3.5" />
-          <span className="min-w-[4ch] text-right tabular-nums">{waitingFor(waitingSince ?? holdArmedAt)}</span>
-        </span>
-      </div>
-    </Card>
+      <span className="flex items-center justify-end gap-1 whitespace-nowrap text-xs text-muted-foreground">
+        <Clock aria-hidden="true" className="size-3 shrink-0" />
+        <span className="tabular-nums">{time}</span>
+      </span>
+    </div>
   );
 }
 
