@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import Header from '../Header/Header';
 import { RouteBusyContext, useRouteBusy } from './routeBusy';
+import { MeContext } from './me';
 
 /** Пока грузится код страницы: шапка на месте, под ней — каркас контента. */
 function PageFallback() {
@@ -38,6 +39,7 @@ export default function AppLayout({ me }) {
   const fixed = Boolean(useMatch('/conversation/:id'));
 
   return (
+    <MeContext.Provider value={me}>
     <RouteBusyContext.Provider value={hold}>
       <div className={cn('app', fixed && 'h-dvh overflow-hidden')}>
         <Header me={me} busy={waiting > 0} />
@@ -48,5 +50,6 @@ export default function AppLayout({ me }) {
         </main>
       </div>
     </RouteBusyContext.Provider>
+    </MeContext.Provider>
   );
 }
