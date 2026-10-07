@@ -117,6 +117,13 @@ export class ManagerService {
     private attribution: ManagerAttributionService,
   ) {}
 
+  /**
+   * Прогноз «что бот сделает дальше» на строку дашборда. Движок сбрасывает
+   * прогноз чата сам, когда в нём что-то происходит, поэтому кешированный
+   * ответ можно отдавать долго; пересчёт устаревших идёт в фоне.
+   */
+  private static readonly FORECAST_MAX_AGE_S = 120;
+
   private async withNextActions(
     rows: ManagerChatRow[],
   ): Promise<ManagerChatRow[]> {
@@ -124,7 +131,7 @@ export class ManagerService {
       rows.map(async (row) => ({
         ...row,
         next_bot_action: await this.brain
-          .nextAction(row.chat_id, 30)
+          .nextAction(row.chat_id, ManagerService.FORECAST_MAX_AGE_S)
           .catch(() => null),
       })),
     );
@@ -278,18 +285,18 @@ export class ManagerService {
       WHERE 1 = 1 ${this.scopeSql(accounts)} ${visible}
       ORDER BY last_ts DESC NULLS LAST LIMIT ${limit}`;
     const stageOf = await this.stageResolver();
-    return this.withNextActions(
-      await this.withManagers(
-        rows.map((r) => {
-          const facts = parseLeadFacts(r.facts);
-          return this.row(
-            r,
-            facts,
-            stageOf(r.account_id === null ? null : Number(r.account_id), facts),
-          );
-        }),
-      ),
+    const listed = await this.withManagers(
+      rows.map((r) => {
+        const facts = parseLeadFacts(r.facts);
+        return this.row(
+          r,
+          facts,
+          stageOf(r.account_id === null ? null : Number(r.account_id), facts),
+        );
+      }),
     );
+    // В архиве бот молчит: прогноз там не нужен, а стоил он десяток запросов на чат.
+    return opts.includeHidden ? listed : this.withNextActions(listed);
   }
 
   private async readAttentionQueue(

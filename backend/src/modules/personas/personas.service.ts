@@ -8,7 +8,11 @@ import {
 import type { Persona } from '@prisma/client';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
-import { PERSONA_SECTIONS, PersonaSection } from 'src/brain/persona.service';
+import {
+  PERSONA_SECTIONS,
+  PersonaSection,
+  PersonaService,
+} from 'src/brain/persona.service';
 import {
   DEFAULT_PROMPTS,
   PROMPT_KEYS,
@@ -139,9 +143,12 @@ export class PersonasService {
   constructor(
     private prisma: PrismaService,
     private clock: ClockService,
+    private personaRuntime: PersonaService,
   ) {}
 
   private nextStamp(row: Pick<Persona, 'updatedAt'>): number {
+    // Любая запись идёт через новую метку: тут же сбрасываем кеш строк у движка.
+    this.personaRuntime.forgetRows();
     return Math.max(this.clock.ts(), row.updatedAt + 1);
   }
 

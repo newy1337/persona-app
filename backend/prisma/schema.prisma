@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,23 +7,22 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-
 model DashboardUser {
-  id           Int     @id @default(autoincrement())
-  username     String  @unique
-  passwordHash String  @map("password_hash")
+  id                Int     @id @default(autoincrement())
+  username          String  @unique
+  passwordHash      String  @map("password_hash")
   passwordEncrypted String? @map("password_encrypted")
-  regionCode   String? @map("region_code")
-  role         String  @default("manager")
-  lastLogin    Int?    @map("last_login")
-  createdAt    Int     @map("created_at")
+  regionCode        String? @map("region_code")
+  role              String  @default("manager")
+  lastLogin         Int?    @map("last_login")
+  createdAt         Int     @map("created_at")
 
-  voicerId Int? @map("voicer_id")
-  voicer DashboardUser? @relation("ManagerVoicer", fields: [voicerId], references: [id], onDelete: SetNull)
-  voicedManagers DashboardUser[] @relation("ManagerVoicer")
-  voiceProfile VoicerProfile?
-  requestedVoiceTasks VoiceTask[] @relation("TaskManager")
-  assignedVoiceTasks VoiceTask[] @relation("TaskVoicer")
+  voicerId            Int?            @map("voicer_id")
+  voicer              DashboardUser?  @relation("ManagerVoicer", fields: [voicerId], references: [id], onDelete: SetNull)
+  voicedManagers      DashboardUser[] @relation("ManagerVoicer")
+  voiceProfile        VoicerProfile?
+  requestedVoiceTasks VoiceTask[]     @relation("TaskManager")
+  assignedVoiceTasks  VoiceTask[]     @relation("TaskVoicer")
 
   accounts ManagerAccount[]
   audit    DashboardAuditLog[]
@@ -60,26 +58,25 @@ model DashboardAuditLog {
   @@map("dashboard_audit_log")
 }
 
-
 model Persona {
-  id         Int     @id @default(autoincrement())
-  slug       String  @unique
-  name       String
-  isDefault  Boolean @default(false) @map("is_default")
-  enabled    Boolean @default(true)
-  persona    String  @default("{}")
-  goals      String  @default("{}")
-  storylines String  @default("{}")
-  dayConfig  String  @default("{}") @map("day_config")
-  beats      String? 
-  prompts    String  @default("{}")
-  rhythm     String  @default("{}")
-  variables  String  @default("{}")
-  notes      String?
+  id             Int     @id @default(autoincrement())
+  slug           String  @unique
+  name           String
+  isDefault      Boolean @default(false) @map("is_default")
+  enabled        Boolean @default(true)
+  persona        String  @default("{}")
+  goals          String  @default("{}")
+  storylines     String  @default("{}")
+  dayConfig      String  @default("{}") @map("day_config")
+  beats          String?
+  prompts        String  @default("{}")
+  rhythm         String  @default("{}")
+  variables      String  @default("{}")
+  notes          String?
   generatorModel String? @map("generator_model")
   judgeModel     String? @map("judge_model")
-  createdAt  Int     @map("created_at")
-  updatedAt  Int     @map("updated_at")
+  createdAt      Int     @map("created_at")
+  updatedAt      Int     @map("updated_at")
 
   versions PersonaVersion[]
 
@@ -131,27 +128,26 @@ model TgAccount {
   @@map("tg_accounts")
 }
 
-
 model Contact {
-  chatId      BigInt  @id @map("chat_id")
-  accountId   Int?    @map("account_id")
-  pauseState  String  @default("active") @map("pause_state")
-  pauseReason String? @map("pause_reason")
-  pauseActor  String? @map("pause_actor")
-  pausedUntil Int?    @map("paused_until")
-  pausedTs    Int?    @map("paused_ts")
-  createdAt   Int     @default(0) @map("created_at")
-  readOutboxMaxId Int? @map("read_outbox_max_id")
-  readInboxMaxId  Int? @map("read_inbox_max_id")
-  clientStatus    String? @map("client_status")
-  clientStatusAt  Int?    @map("client_status_at")
-  clientStatusSeenAt Int? @map("client_status_seen_at")
-  blockedByClientAt Int? @map("blocked_by_client_at")
-  managerSeenTs   Int?    @map("manager_seen_ts")
-  clearedByClientAt Int?  @map("cleared_by_client_at")
-  note            String? @map("note")
-  noteBy          String? @map("note_by")
-  noteAt          Int?    @map("note_at")
+  chatId             BigInt  @id @map("chat_id")
+  accountId          Int?    @map("account_id")
+  pauseState         String  @default("active") @map("pause_state")
+  pauseReason        String? @map("pause_reason")
+  pauseActor         String? @map("pause_actor")
+  pausedUntil        Int?    @map("paused_until")
+  pausedTs           Int?    @map("paused_ts")
+  createdAt          Int     @default(0) @map("created_at")
+  readOutboxMaxId    Int?    @map("read_outbox_max_id")
+  readInboxMaxId     Int?    @map("read_inbox_max_id")
+  clientStatus       String? @map("client_status")
+  clientStatusAt     Int?    @map("client_status_at")
+  clientStatusSeenAt Int?    @map("client_status_seen_at")
+  blockedByClientAt  Int?    @map("blocked_by_client_at")
+  managerSeenTs      Int?    @map("manager_seen_ts")
+  clearedByClientAt  Int?    @map("cleared_by_client_at")
+  note               String? @map("note")
+  noteBy             String? @map("note_by")
+  noteAt             Int?    @map("note_at")
 
   account TgAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
 
@@ -178,10 +174,10 @@ model Message {
   processedAt     Int?    @map("processed_at")
   inboundPayload  String? @map("inbound_payload")
 
+  @@unique([chatId, sourceMessageId], map: "uq_messages_chat_source_message")
   @@index([chatId, id], map: "idx_messages_chat")
   @@index([chatId, ts, id], map: "idx_messages_chat_ts")
   @@index([processedAt, role], map: "idx_messages_unprocessed")
-  @@unique([chatId, sourceMessageId], map: "uq_messages_chat_source_message")
   @@map("messages")
 }
 
@@ -201,37 +197,36 @@ model BrainState {
 }
 
 model ReplySchedule {
-  delivery String?
-  chatId    BigInt @id @map("chat_id")
-  accountId Int    @map("account_id")
-  dueAt     Int    @map("due_at")
-  baseDueAt Int    @default(0) @map("base_due_at")
-  openedAt  Int?   @map("opened_at")
+  delivery  String?
+  chatId    BigInt  @id @map("chat_id")
+  accountId Int     @map("account_id")
+  dueAt     Int     @map("due_at")
+  baseDueAt Int     @default(0) @map("base_due_at")
+  openedAt  Int?    @map("opened_at")
   reason    String
-  turns     String @default("[]")
-  createdAt Int    @map("created_at")
+  turns     String  @default("[]")
+  createdAt Int     @map("created_at")
 
   @@index([dueAt], map: "idx_reply_schedule_due")
   @@map("reply_schedule")
 }
 
-
 model PendingReply {
-  id        Int    @id @default(autoincrement())
-  chatId    BigInt @map("chat_id")
-  text      String
-  source    String @default("manual")
-  accountId Int?   @map("account_id")
-  claimedAt Int?   @map("claimed_at")
-  retryAt   Int?   @map("retry_at")
-  delivery  String?
-  status    String @default("pending")
-  kind      String @default("text")
-  filePath  String? @map("file_path")
-  replyTo   Int?    @map("reply_to")
-  createdTs Int    @map("created_ts")
-  sentTs    Int?   @map("sent_ts")
-  error     String?
+  id             Int            @id @default(autoincrement())
+  chatId         BigInt         @map("chat_id")
+  text           String
+  source         String         @default("manual")
+  accountId      Int?           @map("account_id")
+  claimedAt      Int?           @map("claimed_at")
+  retryAt        Int?           @map("retry_at")
+  delivery       String?
+  status         String         @default("pending")
+  kind           String         @default("text")
+  filePath       String?        @map("file_path")
+  replyTo        Int?           @map("reply_to")
+  createdTs      Int            @map("created_ts")
+  sentTs         Int?           @map("sent_ts")
+  error          String?
   voicerDelivery VoiceDelivery?
 
   @@index([chatId, status], map: "idx_pending_replies_status")
@@ -253,7 +248,6 @@ model PendingAdminAction {
   @@index([chatId, status], map: "idx_admin_actions_status")
   @@map("pending_admin_actions")
 }
-
 
 model BeatDelivery {
   personaId String  @map("persona_id")
@@ -302,9 +296,9 @@ model FunnelEvent {
 
   @@index([personaId, ts(sort: Desc)], map: "idx_funnel_persona_ts")
   @@index([chatId, ts(sort: Desc)], map: "idx_funnel_chat_ts")
+  @@index([eventType, ts], map: "idx_funnel_type_ts")
   @@map("funnel_events")
 }
-
 
 model MediaShown {
   chatId  BigInt @map("chat_id")
@@ -328,32 +322,31 @@ model InboundMedia {
   @@map("inbound_media")
 }
 
-
 model PhoneNumber {
-  id                Int     @id @default(autoincrement())
-  phoneE164         String? @unique @map("phone_e164")
-  usernameKey       String? @unique @map("username_key")
-  firstName         String? @map("first_name")
-  city              String?
-  age               Int?
-  site              String?
-  gender            String?
-  telegramUserId    BigInt? @map("telegram_user_id")
-  telegramUsername  String? @map("telegram_username")
-  sourceType        String  @default("manual") @map("source_type")
-  insertedAt        Int     @map("inserted_at")
-  status            String  @default("pending")
-  assignedAccountId Int?    @map("assigned_account_id")
-  preferredAccountId Int?   @map("preferred_account_id")
-  assignedAt        Int?    @map("assigned_at")
-  firstContactAt    Int?    @map("first_contact_at")
-  attempts          Int     @default(0)
-  nextAttemptAt     Int?    @map("next_attempt_at")
-  lastError         String? @map("last_error")
-  notes             String?
-  avoidAccountId    Int?    @map("avoid_account_id")
-  personaId         String? @map("persona_id")
-  ownerUserId       Int?    @map("owner_user_id")
+  id                 Int     @id @default(autoincrement())
+  phoneE164          String? @unique @map("phone_e164")
+  usernameKey        String? @unique @map("username_key")
+  firstName          String? @map("first_name")
+  city               String?
+  age                Int?
+  site               String?
+  gender             String?
+  telegramUserId     BigInt? @map("telegram_user_id")
+  telegramUsername   String? @map("telegram_username")
+  sourceType         String  @default("manual") @map("source_type")
+  insertedAt         Int     @map("inserted_at")
+  status             String  @default("pending")
+  assignedAccountId  Int?    @map("assigned_account_id")
+  preferredAccountId Int?    @map("preferred_account_id")
+  assignedAt         Int?    @map("assigned_at")
+  firstContactAt     Int?    @map("first_contact_at")
+  attempts           Int     @default(0)
+  nextAttemptAt      Int?    @map("next_attempt_at")
+  lastError          String? @map("last_error")
+  notes              String?
+  avoidAccountId     Int?    @map("avoid_account_id")
+  personaId          String? @map("persona_id")
+  ownerUserId        Int?    @map("owner_user_id")
 
   @@index([telegramUserId], map: "idx_phone_telegram_user")
   @@index([ownerUserId], map: "idx_phone_owner")
@@ -375,20 +368,20 @@ model AppSettings {
 }
 
 model ModelUsage {
-  id                       Int    @id @default(autoincrement())
-  createdAt                Int    @map("created_at")
+  id                       Int     @id @default(autoincrement())
+  createdAt                Int     @map("created_at")
   chatId                   BigInt? @map("chat_id")
   personaId                String? @map("persona_id")
   provider                 String
   model                    String
   stage                    String
-  inputTokens              Int?   @map("input_tokens")
-  outputTokens             Int?   @map("output_tokens")
-  cachedTokens             Int?   @map("cached_tokens")
-  cacheWriteTokens         Int?   @map("cache_write_tokens")
-  cacheWrite1hTokens       Int?   @map("cache_write_1h_tokens")
-  providerEstimatedCostUsd Float? @map("provider_estimated_cost_usd")
-  elapsedMs                Int?   @map("elapsed_ms")
+  inputTokens              Int?    @map("input_tokens")
+  outputTokens             Int?    @map("output_tokens")
+  cachedTokens             Int?    @map("cached_tokens")
+  cacheWriteTokens         Int?    @map("cache_write_tokens")
+  cacheWrite1hTokens       Int?    @map("cache_write_1h_tokens")
+  providerEstimatedCostUsd Float?  @map("provider_estimated_cost_usd")
+  elapsedMs                Int?    @map("elapsed_ms")
 
   @@index([createdAt], map: "idx_model_usage_created")
   @@map("model_usage")
@@ -402,67 +395,68 @@ model Setting {
   @@map("settings")
 }
 
-
 model VoicerProfile {
-  userId Int @id @map("user_id")
-  telegramId BigInt? @unique @map("telegram_id")
-  telegramUsername String? @map("telegram_username")
-  linkHash String? @unique @map("link_hash")
-  linkExpiresAt Int? @map("link_expires_at")
-  user DashboardUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           Int           @id @map("user_id")
+  telegramId       BigInt?       @unique @map("telegram_id")
+  telegramUsername String?       @map("telegram_username")
+  linkHash         String?       @unique @map("link_hash")
+  linkExpiresAt    Int?          @map("link_expires_at")
+  user             DashboardUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@map("voicer_profiles")
 }
 
 model VoiceTask {
-  source String @default("manager")
-  autoKey String? @unique @map("auto_key")
-  autoReplyId String? @map("auto_reply_id")
-  autoContextId Int? @map("auto_context_id")
-  autoContextHash String? @map("auto_context_hash")
-  autoExpiresAt Int? @map("auto_expires_at")
-  autoPersonaUpdatedAt Int? @map("auto_persona_updated_at")
-  id Int @id @default(autoincrement())
-  managerId Int? @map("manager_id")
-  voicerId Int? @map("voicer_id")
-  managerName String @map("manager_name")
-  voicerName String @map("voicer_name")
-  manager DashboardUser? @relation("TaskManager", fields: [managerId], references: [id], onDelete: SetNull)
-  voicer DashboardUser? @relation("TaskVoicer", fields: [voicerId], references: [id], onDelete: SetNull)
-  kind String
-  voiceMode String @default("library") @map("voice_mode")
-  sendAccountId Int? @map("send_account_id")
-  sendRequestedById Int? @map("send_requested_by_id")
-  title String
-  script String @default("")
-  emotion String @default("")
-  tempo String @default("")
-  instructions String @default("")
-  contactLabel String @map("contact_label")
-  contactRef String @default("") @map("contact_ref")
-  chatId BigInt? @map("chat_id")
-  chatGrantAccountId Int? @map("chat_grant_account_id")
-  chatGrantedById Int? @map("chat_granted_by_id")
-  personaSlug String @map("persona_slug")
-  personaName String @map("persona_name")
-  biography String
-  status String @default("queued")
-  priority Int @default(0)
-  revision Int @default(1)
-  feedback String @default("")
-  outcome String @default("")
-  createdAt Int @map("created_at")
-  updatedAt Int @map("updated_at")
-  dueAt Int? @map("due_at")
-  notifyVersion Int @default(1) @map("notify_version")
-  notifiedVersion Int @default(0) @map("notified_version")
-  notifyAfter Int @default(0) @map("notify_after")
-  notifyError String? @map("notify_error")
-  botMessageId Int? @map("bot_message_id")
-  botChatId BigInt? @map("bot_chat_id")
-  calls VoiceCall[]
-  recordings VoiceRecording[]
-  deliveries VoiceDelivery[]
-  notices VoiceNotice[]
+  source               String           @default("manager")
+  autoKey              String?          @unique @map("auto_key")
+  autoReplyId          String?          @map("auto_reply_id")
+  autoContextId        Int?             @map("auto_context_id")
+  autoContextHash      String?          @map("auto_context_hash")
+  autoExpiresAt        Int?             @map("auto_expires_at")
+  autoPersonaUpdatedAt Int?             @map("auto_persona_updated_at")
+  id                   Int              @id @default(autoincrement())
+  managerId            Int?             @map("manager_id")
+  voicerId             Int?             @map("voicer_id")
+  managerName          String           @map("manager_name")
+  voicerName           String           @map("voicer_name")
+  manager              DashboardUser?   @relation("TaskManager", fields: [managerId], references: [id], onDelete: SetNull)
+  voicer               DashboardUser?   @relation("TaskVoicer", fields: [voicerId], references: [id], onDelete: SetNull)
+  kind                 String
+  voiceMode            String           @default("library") @map("voice_mode")
+  sendAccountId        Int?             @map("send_account_id")
+  sendRequestedById    Int?             @map("send_requested_by_id")
+  title                String
+  script               String           @default("")
+  emotion              String           @default("")
+  tempo                String           @default("")
+  instructions         String           @default("")
+  contactLabel         String           @map("contact_label")
+  contactRef           String           @default("") @map("contact_ref")
+  chatId               BigInt?          @map("chat_id")
+  chatGrantAccountId   Int?             @map("chat_grant_account_id")
+  chatGrantedById      Int?             @map("chat_granted_by_id")
+  personaSlug          String           @map("persona_slug")
+  personaName          String           @map("persona_name")
+  biography            String
+  status               String           @default("queued")
+  priority             Int              @default(0)
+  revision             Int              @default(1)
+  feedback             String           @default("")
+  outcome              String           @default("")
+  createdAt            Int              @map("created_at")
+  updatedAt            Int              @map("updated_at")
+  dueAt                Int?             @map("due_at")
+  notifyVersion        Int              @default(1) @map("notify_version")
+  notifiedVersion      Int              @default(0) @map("notified_version")
+  notifyAfter          Int              @default(0) @map("notify_after")
+  notifyError          String?          @map("notify_error")
+  botMessageId         Int?             @map("bot_message_id")
+  botChatId            BigInt?          @map("bot_chat_id")
+  calls                VoiceCall[]
+  recordings           VoiceRecording[]
+  deliveries           VoiceDelivery[]
+  notices              VoiceNotice[]
+
   @@index([managerId, status, id])
   @@index([voicerId, status, priority, id])
   @@index([source, status, autoExpiresAt])
@@ -470,80 +464,85 @@ model VoiceTask {
 }
 
 model VoiceRecording {
-  id Int @id @default(autoincrement())
-  taskId Int @map("task_id")
-  revision Int
-  title String
-  filePath String @map("file_path")
-  duration Int
-  createdAt Int @map("created_at")
-  telegramMessageId Int @map("telegram_message_id")
-  telegramChatId BigInt @map("telegram_chat_id")
-  task VoiceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  deliveries VoiceDelivery[]
+  id                Int             @id @default(autoincrement())
+  taskId            Int             @map("task_id")
+  revision          Int
+  title             String
+  filePath          String          @map("file_path")
+  duration          Int
+  createdAt         Int             @map("created_at")
+  telegramMessageId Int             @map("telegram_message_id")
+  telegramChatId    BigInt          @map("telegram_chat_id")
+  task              VoiceTask       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  deliveries        VoiceDelivery[]
+
   @@unique([taskId, revision])
   @@unique([telegramChatId, telegramMessageId])
   @@map("voice_recordings")
 }
 
 model VoiceNotice {
-  id Int @id @default(autoincrement())
-  taskId Int @map("task_id")
-  userId Int @map("user_id")
-  eventKey String @map("event_key")
-  text String
-  createdAt Int @map("created_at")
-  readAt Int? @map("read_at")
-  task VoiceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  id        Int       @id @default(autoincrement())
+  taskId    Int       @map("task_id")
+  userId    Int       @map("user_id")
+  eventKey  String    @map("event_key")
+  text      String
+  createdAt Int       @map("created_at")
+  readAt    Int?      @map("read_at")
+  task      VoiceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
   @@unique([userId, eventKey])
   @@index([userId, readAt, id])
   @@map("voice_notices")
 }
 
 model VoiceDelivery {
-  notifiedStatus String @default("") @map("notified_status")
-  id Int @id @default(autoincrement())
-  taskId Int @map("task_id")
-  recordingId Int @map("recording_id")
-  requestKey String @unique @map("request_key")
-  mode String
-  requestedById Int @map("requested_by_id")
-  chatId BigInt @map("chat_id")
-  accountId Int @map("account_id")
-  personaSlug String @map("persona_slug")
-  historyText String @map("history_text")
-  createdAt Int @map("created_at")
-  pendingReplyId Int? @unique @map("pending_reply_id")
-  task VoiceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  recording VoiceRecording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
-  pendingReply PendingReply? @relation(fields: [pendingReplyId], references: [id], onDelete: SetNull)
+  notifiedStatus String         @default("") @map("notified_status")
+  id             Int            @id @default(autoincrement())
+  taskId         Int            @map("task_id")
+  recordingId    Int            @map("recording_id")
+  requestKey     String         @unique @map("request_key")
+  mode           String
+  requestedById  Int            @map("requested_by_id")
+  chatId         BigInt         @map("chat_id")
+  accountId      Int            @map("account_id")
+  personaSlug    String         @map("persona_slug")
+  historyText    String         @map("history_text")
+  createdAt      Int            @map("created_at")
+  pendingReplyId Int?           @unique @map("pending_reply_id")
+  task           VoiceTask      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  recording      VoiceRecording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  pendingReply   PendingReply?  @relation(fields: [pendingReplyId], references: [id], onDelete: SetNull)
+
   @@index([taskId, id])
   @@map("voice_deliveries")
 }
 
 model VoicerBotState {
-  id Int @id @default(1)
+  id           Int @id @default(1)
   nextUpdateId Int @default(0) @map("next_update_id")
+
   @@map("voicer_bot_state")
 }
 
 model VoiceCall {
-  id String @id
-  taskId Int @map("task_id")
-  task VoiceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  revision Int
-  accountId Int @map("account_id")
-  chatId BigInt @map("chat_id")
-  voicerId Int @map("voicer_id")
-  status String @default("connecting")
-  reason String @default("")
-  createdAt Int @map("created_at")
-  connectedAt Int? @map("connected_at")
-  endedAt Int? @map("ended_at")
-  finalizedAt Int? @map("finalized_at")
-  resumeStatus String @default("pending") @map("resume_status")
-  followupStatus String @default("none") @map("followup_status")
-  note String @default("")
+  id             String    @id
+  taskId         Int       @map("task_id")
+  task           VoiceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  revision       Int
+  accountId      Int       @map("account_id")
+  chatId         BigInt    @map("chat_id")
+  voicerId       Int       @map("voicer_id")
+  status         String    @default("connecting")
+  reason         String    @default("")
+  createdAt      Int       @map("created_at")
+  connectedAt    Int?      @map("connected_at")
+  endedAt        Int?      @map("ended_at")
+  finalizedAt    Int?      @map("finalized_at")
+  resumeStatus   String    @default("pending") @map("resume_status")
+  followupStatus String    @default("none") @map("followup_status")
+  note           String    @default("")
+
   @@index([taskId, createdAt])
   @@map("voice_calls")
 }

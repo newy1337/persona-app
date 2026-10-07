@@ -107,6 +107,32 @@ const json = (text: string | null | undefined): Record<string, any> => {
 @Injectable()
 export class PersonaService implements OnModuleInit {
   private readonly log = new Logger(PersonaService.name);
+
+  /**
+   * Строки личностей и привязки аккаунтов читаются на каждый прогноз, ответ и
+   * строку дашборда: тысячи раз в минуту при одних и тех же данных. Короткий
+   * кеш на пару секунд снимает это с базы, а правки из панели всё равно видны
+   * почти сразу — и сразу, если пришли через этот же сервис.
+   */
+  private readonly rowCache = new Map<
+    string,
+    { until: number; value: unknown }
+  >();
+  private static readonly ROW_CACHE_MS = 2000;
+
+  private async cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const hit = this.rowCache.get(key);
+    const now = Date.now();
+    if (hit && hit.until > now) return hit.value as T;
+    const value = await load();
+    this.rowCache.set(key, { until: now + PersonaService.ROW_CACHE_MS, value });
+    return value;
+  }
+
+  /** Сбросить кеш после записи в personas / tg_accounts. */
+  forgetRows(): void {
+    this.rowCache.clear();
+  }
   private readonly cache = new Map<string, RawPersona>();
 
   readonly provider = appConfig.llmProvider;
@@ -413,14 +439,17 @@ export class PersonaService implements OnModuleInit {
   }
 
   private async defaultRow() {
-    const row =
-      (await this.prisma.persona.findFirst({
-        where: { isDefault: true, enabled: true },
-      })) ??
-      (await this.prisma.persona.findFirst({
-        where: { enabled: true },
-        orderBy: { id: 'asc' },
-      }));
+    const row = await this.cached(
+      'default',
+      async () =>
+        (await this.prisma.persona.findFirst({
+          where: { isDefault: true, enabled: true },
+        })) ??
+        (await this.prisma.persona.findFirst({
+          where: { enabled: true },
+          orderBy: { id: 'asc' },
+        })),
+    );
     if (!row)
       throw new NotFoundException(
         'в базе нет ни одной личности — заведите её в панели',
@@ -447,15 +476,19 @@ export class PersonaService implements OnModuleInit {
       return this.withCurrentLocation(row, chat);
     };
     if (accountId == null) return fallback();
-    const account = await this.prisma.tgAccount.findUnique({
-      where: { id: accountId },
-      select: { personaId: true },
-    });
+    const account = await this.cached(`account:${accountId}`, () =>
+      this.prisma.tgAccount.findUnique({
+        where: { id: accountId },
+        select: { personaId: true },
+      }),
+    );
     if (!account?.personaId)
       throw new NotFoundException('У аккаунта не задана личность');
-    const row = await this.prisma.persona.findUnique({
-      where: { slug: account.personaId },
-    });
+    const row = await this.cached(`slug:${account.personaId}`, () =>
+      this.prisma.persona.findUnique({
+        where: { slug: account.personaId },
+      }),
+    );
     if (!row)
       throw new NotFoundException(
         'Привязанная личность не найдена — автоматические ответы остановлены',
@@ -481,6 +514,7 @@ export class PersonaService implements OnModuleInit {
     let effectiveStamp = row.updatedAt;
     if (loaded.rhythm.timezone !== place.timezone) {
       const updatedAt = Math.max(row.updatedAt + 1, this.clock.ts());
+      this.forgetRows();
       const changed = await this.prisma.persona.updateMany({
         where: {
           id: row.id,

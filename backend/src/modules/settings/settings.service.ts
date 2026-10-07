@@ -24,7 +24,18 @@ export class SettingsService {
     private clock: ClockService,
   ) {}
 
+  private cache: { until: number; value: AppSettingsView } | null = null;
+  private static readonly CACHE_MS = 2000;
+
+  /** Настройки читает каждый прогноз и каждый ответ; пара секунд кеша снимает это с базы. */
   async get(): Promise<AppSettingsView> {
+    if (this.cache && this.cache.until > Date.now()) return this.cache.value;
+    const value = await this.read();
+    this.cache = { until: Date.now() + SettingsService.CACHE_MS, value };
+    return value;
+  }
+
+  private async read(): Promise<AppSettingsView> {
     const row = await this.prisma.appSettings.findUnique({ where: { id: 1 } });
     const extra = this.parseExtra(row?.customPrompt);
     return {
@@ -77,6 +88,7 @@ export class SettingsService {
       create: { id: 1, ...data },
       update: data,
     });
+    this.cache = null;
     return this.get();
   }
 

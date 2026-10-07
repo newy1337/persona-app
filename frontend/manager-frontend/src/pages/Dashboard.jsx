@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import Header from '../components/Header/Header';
 import NeedManagerAssist from '../components/NeedManagerAssist/NeedManagerAssist';
 import LiveConversations from '../components/LiveConversations/LiveConversations';
@@ -38,7 +38,12 @@ function Dashboard() {
   const [showHidden, setShowHidden] = useState(false);
   const [ready, setReady] = useState(false);
 
+  const inFlight = useRef(false);
   const load = useCallback(() => {
+    // Опрос раз в 5 секунд: если прошлый ещё не ответил, новый не запускаем,
+    // иначе при медленном сервере запросы копятся и панель «подвисает».
+    if (inFlight.current) return;
+    inFlight.current = true;
     Promise.all([
       getNeedManagerAssist(),
       showHidden ? getHiddenConversations() : getConversations(),
@@ -52,7 +57,10 @@ function Dashboard() {
         setStats(STAT_TILES.map((t) => ({ id: t.key, label: t.label, color: t.color, value: String(raw?.[t.key] ?? '—') })));
       })
       .catch((e) => setError(e.detail || e.message))
-      .finally(() => setReady(true));
+      .finally(() => {
+        inFlight.current = false;
+        setReady(true);
+      });
   }, [showHidden]);
 
   const changeDealStage = useCallback(
