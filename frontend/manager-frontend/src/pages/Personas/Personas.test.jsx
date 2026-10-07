@@ -32,7 +32,7 @@ let root;
 let get;
 
 const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
-const byLabel = (label) => host.querySelector(`button[aria-label="${label}"]`);
+const byLabel = (label) => host.querySelector(`[aria-label="${label}"]`);
 
 beforeEach(async () => {
   window.localStorage.clear();
@@ -170,6 +170,11 @@ describe('страница личностей без описаний полей
 
     await act(async () => byLabel('Пояснение: Разогрев').focus());
     expect(tooltip().textContent).toContain('от его первого сообщения');
+
+    // Значок стоит внутри подписи, но подпись по-прежнему относится к полю, а не к нему.
+    const warm = [...host.querySelectorAll('[data-slot="field"]')].find((f) => f.textContent === 'Разогрев, мин');
+    expect(warm.control?.tagName).toBe('INPUT');
+    expect(byLabel('Пояснение: Разогрев').tagName).toBe('SPAN');
   });
 
   it('карточка: заметка автора к полю — за значком, ключ документа — в title подписи', async () => {
