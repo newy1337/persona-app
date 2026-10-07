@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Bot, Clock, OctagonAlert, User } from 'lucide-react';
+import { Clock, OctagonAlert, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsAdmin } from '../AppLayout/me';
 import { Badge } from '@/components/ui/badge';
@@ -41,10 +41,10 @@ export const REASON_LABEL = {
 
 /**
  * Сетка строки. Колонки после имени — фиксированной ширины, поэтому строки
- * одной панели стоят ровно, как таблица. На узкой панели (container query по
- * самой панели) сначала уходит логин менеджера, потом стадия.
+ * одного столбца стоят ровно, как таблица. В узком столбце (container query по
+ * ячейке списка) сначала уходит логин менеджера, потом стадия.
  *
- * В очереди «Ждут менеджера» колонки «кто ведёт» нет: отвечать должен
+ * Колонки «кто ведёт» нет: отвечать должен
  * менеджер, это и так понятно. Админу вместо неё показан логин менеджера,
  * за которым закреплён диалог.
  */
@@ -52,13 +52,10 @@ const QUEUE_GRID =
   'grid-cols-[minmax(0,1fr)_132px_52px] @min-[480px]:grid-cols-[minmax(0,1fr)_132px_120px_52px]';
 const QUEUE_GRID_ADMIN =
   'grid-cols-[minmax(0,1fr)_132px_52px] @min-[480px]:grid-cols-[minmax(0,1fr)_132px_120px_52px] @min-[620px]:grid-cols-[minmax(0,1fr)_132px_120px_120px_52px]';
-const LIVE_GRID =
-  'grid-cols-[minmax(0,1fr)_36px_16px_52px] @min-[360px]:grid-cols-[minmax(0,1fr)_36px_84px_52px] @min-[460px]:grid-cols-[minmax(0,1fr)_36px_150px_52px] @min-[560px]:grid-cols-[minmax(0,1fr)_36px_112px_150px_52px]';
-
 export const ROW_HEIGHT = 'h-10';
 
-/** Строка списка: одна линия 40px. showAlert — строка очереди «Ждут менеджера». */
-function AgentCard({ agent, showAlert = false }) {
+/** Строка очереди «Ждут менеджера»: одна линия 40px. */
+function AgentCard({ agent }) {
   const {
     chat_id: chatId,
     account_id: accountId,
@@ -71,8 +68,6 @@ function AgentCard({ agent, showAlert = false }) {
     hold_armed_at: holdArmedAt,
     queue_reason: queueReason,
     waiting_since: waitingSince,
-    last_message_ts: lastMessageTs,
-    unread_count: unreadCount,
     manager_username: managerUsername,
     region_code: regionCode,
     client_presence: clientPresence,
@@ -89,22 +84,20 @@ function AgentCard({ agent, showAlert = false }) {
       open();
     }
   };
-  const reason = showAlert ? REASON_LABEL[queueReason] : null;
+  const reason = REASON_LABEL[queueReason];
   const urgent = String(queueReason).startsWith('media_');
   const hot = priorityColor(vbrosPhase) === PRIORITY_COLORS.hot;
-  const LeadIcon = isManager ? User : Bot;
   const lead = isManager ? 'Менеджер' : 'Бот';
   // Чей это диалог, интересно только админу: менеджер видит лишь свои.
   const admin = useIsAdmin();
   const online = clientPresence?.kind === 'online';
-  const unread = unreadCount ?? 0;
 
   const who = name || `Чат ${chatId}`;
   const about =
     [age ? years(age) : null, city].filter(Boolean).join(' · ') ||
     (accountId == null ? 'аккаунт удалён' : accountUsername ? `@${accountUsername}` : 'возраст и город неизвестны');
   const activity = typing ? `${ACTIVITY_LABEL[typing] || 'печатает'}…` : null;
-  const time = waitingFor(showAlert ? (waitingSince ?? holdArmedAt) : lastMessageTs);
+  const time = waitingFor(waitingSince ?? holdArmedAt);
   const stageTitle = stage?.title ? `${stage.title} · этап ${stage.index} из ${stage.total}` : null;
 
   // Всё, что на узкой панели прячется, остаётся в подсказке строки.
@@ -113,13 +106,12 @@ function AgentCard({ agent, showAlert = false }) {
     about,
     online ? 'в сети' : null,
     reason,
-    showAlert && vbrosPhase ? `Вброс: ${vbrosPhase}` : null,
-    !showAlert && unread > 0 ? `Непрочитанных: ${unread}` : null,
+    vbrosPhase ? `Вброс: ${vbrosPhase}` : null,
     stageTitle,
     `Ведёт: ${lead}`,
     admin ? `Менеджер: ${managerUsername || 'не назначен'}` : null,
     admin ? `Регион: ${regionCode || 'не задан'}` : null,
-    showAlert ? `Ждёт: ${time}` : `Последнее сообщение: ${time}`,
+    `Ждёт: ${time}`,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -136,7 +128,7 @@ function AgentCard({ agent, showAlert = false }) {
         'agentCard',
         ROW_HEIGHT,
         'grid cursor-pointer items-center gap-3 px-3 text-sm outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50',
-        showAlert ? (admin ? QUEUE_GRID_ADMIN : QUEUE_GRID) : LIVE_GRID,
+        admin ? QUEUE_GRID_ADMIN : QUEUE_GRID,
       )}
     >
       <div className="flex min-w-0 items-center gap-2">
@@ -159,43 +151,25 @@ function AgentCard({ agent, showAlert = false }) {
         <span className="min-w-0 truncate text-xs text-muted-foreground">{activity || about}</span>
       </div>
 
-      {showAlert ? (
-        <div className="flex min-w-0 items-center gap-1.5">
-          {reason && (
-            <Badge variant={urgent ? 'destructive' : 'warning'} className="min-w-0 shrink border-transparent px-0 font-normal">
-              <span className="truncate">{reason}</span>
-            </Badge>
-          )}
-          {vbrosPhase ? (
-            <span
-              className={cn('shrink-0', hot ? 'text-destructive' : 'text-muted-foreground')}
-              title={`Вброс: ${vbrosPhase}`}
-            >
-              <OctagonAlert aria-hidden="true" className="size-3.5" />
-            </span>
-          ) : null}
-        </div>
-      ) : (
-        <div className="flex min-w-0 items-center">
-          {unread > 0 && (
-            <Badge
-              variant="default"
-              data-testid="agent-unread"
-              title={`Непрочитанных: ${unread}`}
-              className="h-[18px] px-1.5 tabular-nums"
-            >
-              {unread > 99 ? '99+' : unread}
-            </Badge>
-          )}
-        </div>
-      )}
+      <div className="flex min-w-0 items-center gap-1.5">
+        {reason && (
+          <Badge variant={urgent ? 'destructive' : 'warning'} className="min-w-0 shrink border-transparent px-0 font-normal">
+            <span className="truncate">{reason}</span>
+          </Badge>
+        )}
+        {vbrosPhase ? (
+          <span
+            className={cn('shrink-0', hot ? 'text-destructive' : 'text-muted-foreground')}
+            title={`Вброс: ${vbrosPhase}`}
+          >
+            <OctagonAlert aria-hidden="true" className="size-3.5" />
+          </span>
+        ) : null}
+      </div>
 
       <div
         data-testid="agent-stage"
-        className={cn(
-          'hidden min-w-0 items-center gap-1.5 text-xs text-muted-foreground',
-          showAlert ? '@min-[480px]:flex' : '@min-[560px]:flex',
-        )}
+        className="hidden min-w-0 items-center gap-1.5 text-xs text-muted-foreground @min-[480px]:flex"
       >
         {stage?.title ? (
           <>
@@ -211,22 +185,12 @@ function AgentCard({ agent, showAlert = false }) {
         )}
       </div>
 
-      {showAlert ? (
-        admin && (
-          <div data-testid="agent-lead" className="hidden min-w-0 items-center gap-1.5 text-xs @min-[620px]:flex">
-            <User aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className={cn('truncate', !managerUsername && 'text-muted-foreground')}>
-              {managerUsername || 'не назначен'}
-            </span>
-          </div>
-        )
-      ) : (
-        <div data-testid="agent-lead" className="flex min-w-0 items-center gap-1.5 text-xs">
-          <LeadIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-          <span className="hidden shrink-0 @min-[360px]:inline">{lead}</span>
-          {admin && managerUsername ? (
-            <span className="hidden min-w-0 truncate text-muted-foreground @min-[460px]:inline">· {managerUsername}</span>
-          ) : null}
+      {admin && (
+        <div data-testid="agent-lead" className="hidden min-w-0 items-center gap-1.5 text-xs @min-[620px]:flex">
+          <User aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className={cn('truncate', !managerUsername && 'text-muted-foreground')}>
+            {managerUsername || 'не назначен'}
+          </span>
         </div>
       )}
 

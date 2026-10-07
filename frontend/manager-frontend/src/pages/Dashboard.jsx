@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { useRouteBusy } from '../components/AppLayout/routeBusy';
 import { PageHeader } from '../components/PageHeader/PageHeader';
 import NeedManagerAssist from '../components/NeedManagerAssist/NeedManagerAssist';
-import LiveConversations from '../components/LiveConversations/LiveConversations';
 import StatsBar from '../components/StatsBar/StatsBar';
 import ConversationsTable from '../components/ConversationsTable/ConversationsTable';
 import {
@@ -16,7 +15,6 @@ import {
   setDealStage,
 } from '../api/conversations';
 import { getStats } from '../api/stats';
-import { liveRows } from '../utils/chat';
 import { moscowDay } from '../utils/panelTime';
 import { rememberReminder, shouldRemind } from '../utils/stageReminder';
 
@@ -49,7 +47,6 @@ function StageReminder({ count, onDismiss }) {
 }
 
 function Dashboard() {
-  const [liveAgents, setLiveAgents] = useState([]);
   const [managerAgents, setManagerAgents] = useState([]);
   const [rows, setRows] = useState([]);
   const [stats, setStats] = useState(EMPTY_STATS);
@@ -63,10 +60,8 @@ function Dashboard() {
       getNeedManagerAssist(),
       showHidden ? getHiddenConversations() : getConversations(),
       getStats(),
-      showHidden ? getConversations() : null,
     ])
-      .then(([queue, all, raw, visible]) => {
-        setLiveAgents(liveRows(visible ?? all));
+      .then(([queue, all, raw]) => {
         setManagerAgents(queue);
         setRows(all);
         setStats(STAT_TILES.map((t) => ({ id: t.key, label: t.label, value: String(raw?.[t.key] ?? '—') })));
@@ -157,11 +152,7 @@ function Dashboard() {
           </Alert>
         )}
         <StatsBar stats={stats} />
-        {/* Две панели рядом; items-start — раскрытая панель не тянет соседнюю. */}
-        <div className="grid items-start gap-4 lg:grid-cols-2">
-          <NeedManagerAssist agents={managerAgents} loading={!ready} />
-          <LiveConversations agents={liveAgents} loading={!ready} />
-        </div>
+        <NeedManagerAssist agents={managerAgents} loading={!ready} />
         <ConversationsTable
           ready={ready}
           rows={rows}

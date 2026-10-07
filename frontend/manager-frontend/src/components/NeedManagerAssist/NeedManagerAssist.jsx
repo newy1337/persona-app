@@ -38,7 +38,6 @@ function NeedManagerAssist({ agents = [], query = '', headFilters = {}, loading 
       icon={Hourglass}
       count={filtered.length}
       agents={filtered}
-      showAlert
       loading={loading}
       emptyText={shown.length ? 'Ничего не найдено — сбросьте фильтры и поиск' : 'Никто не ждёт'}
     >

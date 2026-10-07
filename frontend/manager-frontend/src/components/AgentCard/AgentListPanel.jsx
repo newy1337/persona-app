@@ -1,76 +1,44 @@
-import { useEffect, useId, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import AgentCard, { ROW_HEIGHT } from './AgentCard';
 
-/** Сколько строк видно в свёрнутой панели: её высота от числа диалогов не зависит. */
-export const COLLAPSED_ROWS = 3;
-
 /**
- * Панель-список диалогов: шапка 36px и тело из строк по 40px. Свёрнутое тело
- * всегда ровно в три строки и прокручивается внутри себя, поэтому опрос не
- * двигает страницу; «Все N» раскрывает его до 60% высоты окна.
+ * Панель-список диалогов: шапка 36px и строки по 40px в два столбца (на узком
+ * экране — в один). Высота панели идёт за числом диалогов: пусто — одна
+ * строка, дальше по строке на каждые два диалога. Очень длинный список
+ * (больше десяти строк) прокручивается внутри панели, чтобы таблица под ней
+ * не уезжала за экран.
+ *
+ * Каждая ячейка — свой контейнер для container query: строка сама решает,
+ * какие колонки показать, по ширине своего столбца, а не всей панели.
  */
-function AgentListPanel({ title, icon: Icon, count, agents, showAlert = false, loading = false, emptyText, children }) {
-  const [open, setOpen] = useState(false);
-  const bodyId = useId();
-  const canExpand = agents.length > COLLAPSED_ROWS;
-  const expanded = open && canExpand;
-  // Список сократился до трёх строк — раскрытие сбрасываем: иначе следующая
-  // четвёртая строка сама раздвинула бы панель и сдвинула таблицу под ней.
-  useEffect(() => {
-    if (!canExpand) setOpen(false);
-  }, [canExpand]);
-
+function AgentListPanel({ title, icon: Icon, count, agents, loading = false, emptyText, children }) {
   return (
-    <section className="@container min-w-0 overflow-hidden rounded-lg border bg-card">
+    <section className="min-w-0 overflow-hidden rounded-lg border bg-card">
       <div className="flex h-9 items-center gap-2 border-b px-3">
         {Icon && <Icon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
         <h2 className="min-w-0 truncate text-sm font-medium">{title}</h2>
         <Badge variant="outline" className="h-5 min-w-7 font-normal tabular-nums text-muted-foreground">
           {count}
         </Badge>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          {children}
-          {/* Место под кнопку занято всегда: шапка не перестраивается, когда строк становится больше трёх. */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            aria-expanded={expanded}
-            aria-controls={bodyId}
-            aria-hidden={canExpand ? undefined : true}
-            tabIndex={canExpand ? undefined : -1}
-            disabled={!canExpand}
-            onClick={() => setOpen((v) => !v)}
-            className={cn('min-w-[4.75rem] font-normal text-muted-foreground tabular-nums', !canExpand && 'invisible')}
-          >
-            {expanded ? 'Свернуть' : `Все ${agents.length}`}
-          </Button>
-        </div>
+        {children && <div className="ml-auto flex shrink-0 items-center gap-1">{children}</div>}
       </div>
 
-      <div
-        id={bodyId}
-        data-testid="agent-list"
-        data-expanded={expanded ? 'true' : 'false'}
-        className={cn(
-          'overflow-y-auto [scrollbar-gutter:stable]',
-          expanded ? 'max-h-[60vh] min-h-[120px]' : 'h-[120px]',
-        )}
-      >
+      <div data-testid="agent-list" className="max-h-[400px] overflow-y-auto [scrollbar-gutter:stable]">
         {agents.length ? (
-          <div className="divide-y">
+          // -mb-px прячет нижнюю линию последнего ряда под рамку панели.
+          <div className="-mb-px grid lg:grid-cols-2">
             {agents.map((agent) => (
-              <AgentCard key={agent.chat_id} agent={agent} showAlert={showAlert} />
+              <div key={agent.chat_id} className="@container min-w-0 border-b lg:odd:border-r">
+                <AgentCard agent={agent} />
+              </div>
             ))}
           </div>
         ) : loading ? (
-          <div className="divide-y" aria-hidden="true">
-            {Array.from({ length: COLLAPSED_ROWS }, (_, i) => (
-              <div key={i} className={cn(ROW_HEIGHT, 'flex items-center gap-2 px-3')}>
+          <div className="grid lg:grid-cols-2" aria-hidden="true">
+            {[0, 1].map((i) => (
+              <div key={i} className={cn(ROW_HEIGHT, 'flex items-center gap-2 px-3', i === 1 && 'max-lg:hidden')}>
                 <Skeleton className="size-6 shrink-0 rounded-full" />
                 <Skeleton className="h-3.5 w-40 max-w-[50%]" />
                 <Skeleton className="ml-auto h-3.5 w-10" />
@@ -78,7 +46,7 @@ function AgentListPanel({ title, icon: Icon, count, agents, showAlert = false, l
             ))}
           </div>
         ) : (
-          <p className="flex h-full items-center justify-center px-3 text-center text-sm text-muted-foreground">
+          <p className={cn(ROW_HEIGHT, 'flex items-center justify-center px-3 text-center text-sm text-muted-foreground')}>
             {emptyText}
           </p>
         )}

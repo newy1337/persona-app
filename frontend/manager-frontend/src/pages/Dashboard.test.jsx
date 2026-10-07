@@ -73,28 +73,25 @@ describe('главная панель: один список вместо дву
     await act(async () => root.unmount());
   });
 
-  it('живые берутся из того же списка: граница — сутки', async () => {
-    const { host, root } = await draw();
-    // Третья строка старше суток, значит в живых остаются две.
-    expect(host.textContent).toContain('2');
-    await act(async () => root.unmount());
-  });
-
-  it('«Ждут менеджера» и «Активные диалоги» — две панели-списка рядом, без листания', async () => {
+  it('«Ждут менеджера» — одна панель на всю ширину, «Активных диалогов» нет', async () => {
     queue.mockResolvedValue([{ chat_id: 7, name: 'Олег', queue_reason: 'hold_armed', waiting_since: now() - 600, is_paused: true }]);
     const { host, root } = await draw();
     const lists = host.querySelectorAll('[data-testid="agent-list"]');
-    expect(lists.length).toBe(2);
-    const wrapper = lists[0].parentElement.parentElement;
-    expect(wrapper).toBe(lists[1].parentElement.parentElement);
-    expect(wrapper.className).toContain('lg:grid-cols-2');
-    expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(
-      expect.arrayContaining(['Ждут менеджера', 'Активные диалоги']),
-    );
-    // В очереди один диалог, в активных — два из трёх (третий старше суток).
+    expect(lists.length).toBe(1);
     expect(lists[0].querySelectorAll('[data-testid="agent-card"]').length).toBe(1);
-    expect(lists[1].querySelectorAll('[data-testid="agent-card"]').length).toBe(2);
-    expect(host.querySelector('[aria-label="Показать"]')).toBeNull();
+    const titles = [...host.querySelectorAll('h2')].map((h) => h.textContent);
+    expect(titles).toContain('Ждут менеджера');
+    expect(titles).not.toContain('Активные диалоги');
+    await act(async () => root.unmount());
+  });
+
+  it('в архиве список диалогов запрашивается один раз — второй запрос ради «активных» больше не нужен', async () => {
+    const { host, root } = await draw();
+    conversations.mockClear();
+    const button = [...host.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Архив');
+    await act(async () => button.click());
+    expect(hidden).toHaveBeenCalled();
+    expect(conversations).not.toHaveBeenCalled();
     await act(async () => root.unmount());
   });
 

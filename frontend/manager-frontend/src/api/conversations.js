@@ -18,10 +18,6 @@ export function setConversationHidden(chatId, hidden) {
   return api.post(`/api/conversations/${chatId}/${hidden ? 'hide' : 'unhide'}`);
 }
 
-export function getLiveConversations() {
-  return api.get('/api/manager/conversations?active=1').then((r) => r.items ?? []);
-}
-
 export function getNeedManagerAssist() {
   return api.get('/api/manager/queue').then((r) => r.items ?? []);
 }

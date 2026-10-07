@@ -12,7 +12,7 @@ const { default: AgentCard } = await import('./AgentCard');
 function render(agent) {
   const host = document.createElement('div');
   document.body.appendChild(host);
-  act(() => createRoot(host).render(React.createElement(AgentCard, { agent, showAlert: true })));
+  act(() => createRoot(host).render(React.createElement(AgentCard, { agent })));
   return host;
 }
 
@@ -71,19 +71,6 @@ describe('AgentCard в очереди «Ждут менеджера»', () => {
       is_paused: false,
     });
     expect(host.textContent).toContain(label);
-  });
-
-  it('вне очереди (showAlert=false) подписи причины нет', () => {
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    act(() =>
-      createRoot(host).render(
-        React.createElement(AgentCard, {
-          agent: { chat_id: 3, name: 'И', queue_reason: 'hold_armed', is_paused: false },
-        }),
-      ),
-    );
-    expect(host.textContent).not.toContain('Передать аналитика');
   });
 });
 
@@ -163,23 +150,5 @@ describe('AgentCard: одна строка вместо карточки', () =>
   it('значок вброса остаётся с подсказкой', () => {
     const host = render({ chat_id: 15, name: 'Олег', queue_reason: 'before_vbros', vbros_phase: 'predloga', waiting_since: 1 });
     expect(host.querySelector('[title="Вброс: predloga"]')).not.toBeNull();
-  });
-
-  it('вне очереди: время от последнего сообщения и счётчик непрочитанных', () => {
-    const nowS = Math.floor(Date.now() / 1000);
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    const agent = { chat_id: 16, name: 'Олег', last_message_ts: nowS - 5 * 60, waiting_since: nowS - 7200, unread_count: 4 };
-    act(() => createRoot(host).render(React.createElement(AgentCard, { agent })));
-    expect(host.textContent).toContain('5 мин');
-    expect(host.textContent).not.toContain('2 ч');
-    expect(host.querySelector('[data-testid="agent-unread"]').textContent).toBe('4');
-  });
-
-  it('вне очереди без непрочитанных счётчика нет', () => {
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    act(() => createRoot(host).render(React.createElement(AgentCard, { agent: { chat_id: 17, name: 'Олег', unread_count: 0 } })));
-    expect(host.querySelector('[data-testid="agent-unread"]')).toBeNull();
   });
 });

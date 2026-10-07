@@ -79,35 +79,28 @@ describe('очередь «Ждут менеджера»: компактная �
 
   const list = (host) => host.querySelector('[data-testid="agent-list"]');
   const rows = (host) => host.querySelectorAll('[data-testid="agent-card"]');
-  const expander = (host) => host.querySelector('button[aria-expanded]');
   const MANY = [1, 2, 3, 4, 5].map((id) => agent(id, 'hold_armed'));
 
-  it('свёрнутая панель — ровно три строки высотой, остальное прокручивается внутри', () => {
+  it('строки идут в два столбца, панель растёт по числу диалогов', () => {
     const host = render(MANY);
-    expect(list(host).dataset.expanded).toBe('false');
-    expect(list(host).className).toContain('h-[120px]');
-    expect(list(host).className).toContain('overflow-y-auto');
-    expect(expander(host).textContent).toBe('Все 5');
-    expect(expander(host).getAttribute('aria-expanded')).toBe('false');
-  });
-
-  it('«Все N» раскрывает панель, «Свернуть» возвращает три строки', () => {
-    const host = render(MANY);
-    act(() => expander(host).click());
-    expect(list(host).dataset.expanded).toBe('true');
-    expect(list(host).className).toContain('max-h-[60vh]');
     expect(rows(host).length).toBe(5);
-    expect(expander(host).textContent).toBe('Свернуть');
-    expect(expander(host).getAttribute('aria-expanded')).toBe('true');
-    act(() => expander(host).click());
-    expect(list(host).dataset.expanded).toBe('false');
+    const grid = rows(host)[0].parentElement.parentElement;
+    expect(grid.className).toContain('lg:grid-cols-2');
+    // Высота не фиксирована: нет ни трёх строк, ни кнопки раскрытия.
+    expect(list(host).className).not.toContain('h-[120px]');
+    expect(host.querySelector('button[aria-expanded]')).toBeNull();
+    expect(host.textContent).not.toContain('Все 5');
   });
 
-  it('до трёх строк кнопка раскрытия невидима и недоступна, но место занимает', () => {
-    const host = render([agent(1, 'hold_armed'), agent(2, 'media_photo')]);
-    expect(expander(host).className).toContain('invisible');
-    expect(expander(host).disabled).toBe(true);
-    expect(list(host).className).toContain('h-[120px]');
+  it('каждая ячейка — свой контейнер: строка считает ширину столбца, а не панели', () => {
+    const host = render(MANY);
+    for (const row of rows(host)) expect(row.parentElement.className).toContain('@container');
+  });
+
+  it('очень длинная очередь прокручивается внутри панели', () => {
+    const host = render(MANY);
+    expect(list(host).className).toContain('max-h-[400px]');
+    expect(list(host).className).toContain('overflow-y-auto');
   });
 
   it('галочка ручного режима по-прежнему фильтрует строки', () => {
@@ -117,10 +110,10 @@ describe('очередь «Ждут менеджера»: компактная �
     expect(rows(host).length).toBe(4);
   });
 
-  it('пустая очередь — «Никто не ждёт» в той же высоте', () => {
+  it('пустая очередь — одна строка «Никто не ждёт»', () => {
     const host = render([]);
     expect(list(host).textContent).toBe('Никто не ждёт');
-    expect(list(host).className).toContain('h-[120px]');
+    expect(list(host).firstElementChild.className).toContain('h-10');
   });
 
   it('с фильтром страницы пустой список просит сбросить фильтры', () => {
@@ -142,7 +135,7 @@ describe('очередь «Ждут менеджера»: компактная �
     expect(host.querySelector('[aria-label="Следующая страница"]')).toBeNull();
   });
 
-  it('пока идёт первая загрузка — три строки-заглушки вместо «Никто не ждёт»', () => {
+  it('пока идёт первая загрузка — строка-заглушка вместо «Никто не ждёт»', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     act(() => createRoot(host).render(React.createElement(NeedManagerAssist, { agents: [], loading: true })));

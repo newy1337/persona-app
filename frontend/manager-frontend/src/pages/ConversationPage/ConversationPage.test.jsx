@@ -46,7 +46,6 @@ vi.mock('../../api/conversations', () => ({
     { chat_id: 222, name: 'Б', last_message_ts: Math.floor(Date.now() / 1000) - 3600 },
     { chat_id: 333, name: 'В', last_message_ts: Math.floor(Date.now() / 1000) - 48 * 3600 },
   ]),
-  getLiveConversations: vi.fn(async () => [{ chat_id: 111 }, { chat_id: 222 }]),
   setAiMode: vi.fn(async () => ({})),
   sendMessage: vi.fn(async () => ({})),
   getInboundMedia: vi.fn(async () => []),
