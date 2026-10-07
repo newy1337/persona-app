@@ -17,10 +17,13 @@ import {
   writeFromAnother,
 } from '../../api/leads';
 import { useRouteBusy } from '../../components/AppLayout/routeBusy';
+import { FilterChips } from '../../components/ColumnFilter/FilterChips';
+import { useColumnFilters } from '../../components/ColumnFilter/useColumnFilters';
 import { PageHeader } from '../../components/PageHeader/PageHeader';
 import { Pager } from '../../components/Pager/Pager';
 import { SearchInput } from '../../components/SearchInput/SearchInput';
 import { StageTabs } from '../../components/StageTabs/StageTabs';
+import { DEAL_STAGES } from '../../data/dealStages';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -48,6 +51,12 @@ const STATUS = [
   { key: 'dead', label: 'Недоступен' },
 ];
 const LABEL = Object.fromEntries(STATUS.map((x) => [x.key, x.label]));
+const STATUS_KEYS = STATUS.map((x) => x.key).filter(Boolean);
+/* Фильтр «Этап»: этапы сделки по порядку и «не указан» — диалог есть, этапа нет. */
+const STAGE_OPTIONS = [...DEAL_STAGES.map((s) => ({ value: s.id, label: s.label })), { value: 'none', label: 'не указан' }];
+const STAGE_KEYS = STAGE_OPTIONS.map((o) => o.value);
+// Из сохранённого значения фильтра берём только известные ключи, в порядке списка.
+const pick = (value, known) => (Array.isArray(value) ? known.filter((key) => value.map(String).includes(key)) : []);
 /* Единственная карта «статус лида -> Badge». Нарочно не совпадает с цветами
    стадий диалогов из data/stages.js: статусы лида — про воронку прозвона. */
 const BADGE = {
@@ -237,7 +246,13 @@ export default function Leads() {
   const navigate = useNavigate();
   // items === null только до первого ответа: таблица рисует скелет нужной высоты.
   const [data, setData] = useState({ items: null, counts: {} });
-  const [status, setStatus] = useState('');
+  // Фильтры колонок («Статус», «Этап») живут в sessionStorage; воронка над
+  // таблицей — то же самое состояние, что и фильтр «Статус».
+  const [filterState, setFilter, resetFilters] = useColumnFilters('leads');
+  const statuses = pick(filterState.status, STATUS_KEYS);
+  const dealStages = pick(filterState.stage, STAGE_KEYS);
+  const status = statuses.join(',');
+  const dealStage = dealStages.join(',');
   const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
@@ -268,7 +283,7 @@ export default function Leads() {
   const load = useCallback(() => {
     const id = ++request.current;
     Promise.all([
-      getLeads({ status, q, limit: pageSize, offset: (page - 1) * pageSize }),
+      getLeads({ status, deal_stage: dealStage || undefined, q, limit: pageSize, offset: (page - 1) * pageSize }),
       getOutreachStatus().catch(() => null),
     ])
       .then(([d, o]) => {
@@ -277,7 +292,7 @@ export default function Leads() {
         if (o) setOutreach(o);
       })
       .catch((e) => { if (id === request.current) setError(e.detail || e.message); });
-  }, [status, q, page, pageSize]);
+  }, [status, dealStage, q, page, pageSize]);
 
   useEffect(() => {
     load();
@@ -321,6 +336,22 @@ export default function Leads() {
     if (page > pages) setPage(pages);
   }, [loaded, total, pageSize, page]);
 
+  const changeFilter = (key, value) => { setFilter(key, value); setPage(1); };
+  const filterColumns = [
+    {
+      key: 'status',
+      label: 'Статус',
+      filter: { type: 'options', options: STATUS_KEYS.map((key) => ({ value: key, label: LABEL[key], count: counts[key] })) },
+    },
+    { key: 'stage', label: 'Этап', filter: { type: 'options', options: STAGE_OPTIONS } },
+  ];
+  const filters = {
+    defs: Object.fromEntries(filterColumns.map((col) => [col.key, col.filter])),
+    state: { status: statuses, stage: dealStages },
+    onChange: changeFilter,
+  };
+  const filtered = Boolean(status || dealStage);
+
   const written = (counts.contacted ?? 0) + (counts.replied ?? 0);
   const stages = STATUS.map((st) => ({
     key: st.key,
@@ -359,12 +390,23 @@ export default function Leads() {
           <StageTabs
             aria-label="Статус"
             items={stages}
-            value={status}
+            value={statuses.length > 1 ? null : (statuses[0] ?? '')}
             total={counts.total}
-            onChange={(key) => { setStatus(key); setPage(1); }}
+            onChange={(key) => changeFilter('status', key ? [key] : [])}
           />
 
           <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-2">
+            <FilterChips
+              columns={filterColumns}
+              state={filters.state}
+              onChange={changeFilter}
+              onReset={() => { resetFilters(); setPage(1); }}
+            />
+            {loaded && (filtered || q) && (
+              <span className="text-xs tabular-nums text-muted-foreground" data-testid="leads-found">
+                Найдено {total} из {counts.total ?? total}
+              </span>
+            )}
             {ids.length > 0 && (
               <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Действия с выбранными">
                 <span className="min-w-[11ch] text-xs tabular-nums text-muted-foreground" role="status">Выбрано: {ids.length}</span>
@@ -386,7 +428,7 @@ export default function Leads() {
             />
           </div>
 
-          <LeadsTable rows={data.items} query={q} status={status} selected={selected}
+          <LeadsTable rows={data.items} query={q} filtered={filtered} filters={filters} selected={selected}
             onToggle={toggle} onSelectVisible={checked => setSelected(previous => {
               const next = new Set(previous);
               for (const row of items) { if (checked) next.add(row.id); else next.delete(row.id); }

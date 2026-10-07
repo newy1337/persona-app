@@ -46,11 +46,18 @@ const OUTREACH = {
 const lead = (id, extra = {}) => ({ id, first_name: `Лид ${id}`, phone_e164: `+7900000${String(id).padStart(4, '0')}`, status: 'pending', ...extra });
 
 // Сервер-заглушка: 60 лидов, id по убыванию; отдаёт страницу по limit / offset.
+// При filtering фильтры status / deal_stage (списки через запятую) сужают
+// выборку и total, counts остаются по всем лидам — как на бэкенде.
 let total;
 let rowExtra;
-function serve({ limit = 200, offset = 0 } = {}) {
-  const all = Array.from({ length: total }, (_, i) => lead(total - i, rowExtra(total - i)));
-  return Promise.resolve({ items: all.slice(offset, offset + limit), total, counts: { ...COUNTS, total } });
+let filtering;
+function serve({ limit = 200, offset = 0, status = '', deal_stage = '' } = {}) {
+  const statuses = filtering && status ? status.split(',') : [];
+  const stages = filtering && deal_stage ? deal_stage.split(',') : [];
+  const all = Array.from({ length: total }, (_, i) => lead(total - i, rowExtra(total - i)))
+    .filter((row) => !statuses.length || statuses.includes(row.status))
+    .filter((row) => !stages.length || stages.includes(row.deal_stage ?? (row.telegram_user_id ? 'none' : '')));
+  return Promise.resolve({ items: all.slice(offset, offset + limit), total: all.length, counts: { ...COUNTS, total } });
 }
 
 let host;
@@ -70,6 +77,24 @@ const lastQuery = () => leadsApi.getLeads.mock.calls.at(-1)[0];
 const rowIds = () => [...host.querySelectorAll('[data-lead-id]')].map((r) => Number(r.dataset.leadId));
 const pagerStatus = () => [...host.querySelectorAll('[role="status"]')].map((n) => n.textContent).find((t) => t.startsWith('Всего: '));
 const stage = (label) => [...byLabel('Статус', host).querySelectorAll('button')].find((b) => b.textContent.startsWith(label));
+const filterButton = (label) => byLabel(`Фильтр: ${label}`, host);
+const popover = () => document.querySelector('[data-slot="popover-content"]');
+// Открывает фильтр колонки и переключает галочку у варианта с такой подписью.
+const tick = async (column, option) => {
+  if (!popover()) await click(filterButton(column));
+  const row = [...popover().querySelectorAll('label')].find((l) => l.textContent.startsWith(option));
+  await click(row.querySelector('[role="checkbox"]'));
+};
+// Повторный клик по значку открытого фильтра закрывает его поповер.
+const closePopover = async () => {
+  const open = host.querySelector('thead button[aria-label^="Фильтр: "][data-state="open"]');
+  if (!open) return;
+  await click(open);
+  // Radix возвращает фокус на значок отложенно; ждём, чтобы он не закрыл следующий поповер.
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+};
+const chips = () => host.querySelector('[aria-label="Заданные фильтры"]');
+const pressed = () => [...byLabel('Статус', host).querySelectorAll('button[aria-pressed="true"]')].map((b) => b.textContent.replace(/\d+$/, ''));
 const openMenu = async (row) => {
   await act(async () => byLabel('Ещё', row).dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 })));
   await flush();
@@ -79,6 +104,8 @@ const openMenu = async (row) => {
 beforeEach(() => {
   total = 60;
   rowExtra = () => ({});
+  filtering = false;
+  window.sessionStorage.clear();
   vi.clearAllMocks();
   leadsApi.getLeads.mockReset().mockImplementation(serve);
   leadsApi.getOutreachStatus.mockResolvedValue(OUTREACH);
@@ -181,6 +208,185 @@ describe('лиды: постраничный список', () => {
     await act(async () => { await late(); });
     await flush();
     expect(rowIds()[0]).toBe(10);
+  });
+});
+
+describe('лиды: фильтры колонок «Статус» и «Этап»', () => {
+  // Каждый третий лид ответил, у каждого второго из них этап «Лид», у остальных диалог без этапа.
+  const mixed = (id) => (id % 3 === 0
+    ? { status: 'replied', telegram_user_id: 1000 + id, deal_stage: id % 2 === 0 ? 'lead' : null, deal_note: id % 2 === 0 ? 'ждёт звонка' : null }
+    : id % 3 === 1 ? { status: 'contacted', telegram_user_id: 1000 + id, deal_stage: 'vbros' } : {});
+  beforeEach(() => { filtering = true; });
+
+  it('колонка «Этап»: подпись этапа, причина в подсказке, без этапа — прочерк', async () => {
+    rowExtra = mixed;
+    await mount();
+    const cellOf = (id) => {
+      const at = [...host.querySelectorAll('thead th')].findIndex((th) => th.textContent.trim() === 'Этап');
+      return host.querySelector(`[data-lead-id="${id}"]`).children[at];
+    };
+    expect(cellOf(60).textContent).toBe('Лид');
+    expect(cellOf(60).querySelector('[title]').title).toBe('Лид — ждёт звонка');
+    expect(cellOf(58).textContent).toBe('Вброс');
+    expect(cellOf(57).textContent).toBe('—');
+    expect(cellOf(59).textContent).toBe('—');
+  });
+
+  it('у «Статуса» и «Этапа» есть значок фильтра; варианты статуса — с числами из counts', async () => {
+    await mount();
+    expect([...host.querySelectorAll('thead button[aria-label^="Фильтр: "]')].map((b) => b.getAttribute('aria-label'))).toEqual(['Фильтр: Статус', 'Фильтр: Этап']);
+    await click(filterButton('Статус'));
+    expect([...popover().querySelectorAll('label')].map((l) => l.textContent)).toEqual(['В базе40', 'В очереди10', 'Найден0', 'Написали6', 'Ответил4', 'Недоступен0']);
+    await closePopover();
+    await click(filterButton('Этап'));
+    expect([...popover().querySelectorAll('label')].map((l) => l.textContent)).toEqual(['Вброс', 'Предлога', 'Соглас', 'Лид', 'Депозит', 'Архив', 'не указан']);
+  });
+
+  it('фильтр по статусу уходит в запрос, возвращает на первую страницу и подсвечивает сегмент воронки', async () => {
+    rowExtra = mixed;
+    await mount();
+    await click(byLabel('Страница 2', host));
+    expect(lastQuery()).toMatchObject({ offset: 25 });
+
+    await tick('Статус', 'Ответил');
+    expect(lastQuery()).toEqual({ status: 'replied', q: '', limit: 25, offset: 0 });
+    expect(pressed()).toEqual(['Ответил']);
+    expect(filterButton('Статус').hasAttribute('data-active')).toBe(true);
+    expect(chips().textContent).toContain('Статус: Ответил');
+    expect(host.querySelector('[data-testid="leads-found"]').textContent).toBe('Найдено 20 из 60');
+    expect(rowIds().every((id) => id % 3 === 0)).toBe(true);
+  });
+
+  it('несколько статусов: список через запятую, ни один сегмент воронки не выбран, «Все» тоже', async () => {
+    rowExtra = mixed;
+    await mount();
+    await tick('Статус', 'Ответил');
+    await tick('Статус', 'Написали');
+    // порядок — как в воронке, а не как кликали
+    expect(lastQuery()).toEqual({ status: 'contacted,replied', q: '', limit: 25, offset: 0 });
+    expect(pressed()).toEqual([]);
+    expect(stage('Все').getAttribute('aria-pressed')).toBe('false');
+    expect(chips().textContent).toContain('Статус: Написали, Ответил');
+    expect(pagerStatus()).toBe('Всего: 40 · 1–25');
+
+    await tick('Статус', 'Ответил');
+    expect(lastQuery()).toMatchObject({ status: 'contacted' });
+    expect(pressed()).toEqual(['Написали']);
+  });
+
+  it('воронка и фильтр «Статус» — одно состояние: сегмент ставит ровно один статус, «Все» снимает', async () => {
+    await mount();
+    await tick('Статус', 'Ответил');
+    await tick('Статус', 'Написали');
+    await closePopover();
+
+    await click(stage('В очереди'));
+    expect(lastQuery()).toEqual({ status: 'queued', q: '', limit: 25, offset: 0 });
+    expect(pressed()).toEqual(['В очереди']);
+    expect(chips().textContent).toContain('Статус: В очереди');
+    await click(filterButton('Статус'));
+    const checked = [...popover().querySelectorAll('label')].filter((l) => l.querySelector('[role="checkbox"]').getAttribute('aria-checked') === 'true');
+    expect(checked.map((l) => l.textContent)).toEqual(['В очереди10']);
+    await closePopover();
+
+    await click(stage('Все'));
+    expect(lastQuery()).toEqual({ status: '', q: '', limit: 25, offset: 0 });
+    expect(pressed()).toEqual(['Все']);
+    expect(chips()).toBeNull();
+    expect(filterButton('Статус').hasAttribute('data-active')).toBe(false);
+    expect(host.querySelector('[data-testid="leads-found"]')).toBeNull();
+  });
+
+  it('фильтр по этапу: deal_stage через запятую вместе со статусом, страница сбрасывается', async () => {
+    rowExtra = mixed;
+    await mount();
+    await click(stage('Ответил'));
+    await click(byLabel('Страница 1', host));
+    await tick('Этап', 'не указан');
+    expect(lastQuery()).toEqual({ status: 'replied', deal_stage: 'none', q: '', limit: 25, offset: 0 });
+    expect(rowIds().every((id) => id % 6 === 3)).toBe(true);
+    await tick('Этап', 'Лид');
+    expect(lastQuery()).toEqual({ status: 'replied', deal_stage: 'lead,none', q: '', limit: 25, offset: 0 });
+    expect(chips().textContent).toContain('Этап: Лид, не указан');
+    // воронку фильтр по этапу не трогает
+    expect(pressed()).toEqual(['Ответил']);
+    expect(stage('Все').textContent).toBe('Все60');
+  });
+
+  it('плашки снимают фильтр по одному и все сразу', async () => {
+    rowExtra = mixed;
+    await mount();
+    await click(stage('Ответил'));
+    await tick('Этап', 'Лид');
+    await closePopover();
+    expect(host.querySelector('[data-testid="leads-found"]').textContent).toBe('Найдено 10 из 60');
+
+    await click(byLabel('Убрать фильтр: Этап', host));
+    expect(lastQuery()).toEqual({ status: 'replied', q: '', limit: 25, offset: 0 });
+    expect(chips().textContent).not.toContain('Этап');
+
+    await tick('Этап', 'Лид');
+    await closePopover();
+    await click(buttonByText('Сбросить все'));
+    expect(lastQuery()).toEqual({ status: '', q: '', limit: 25, offset: 0 });
+    expect(chips()).toBeNull();
+    expect(pressed()).toEqual(['Все']);
+    expect(rowIds()).toHaveLength(25);
+  });
+
+  it('строка с плашками держит высоту и без фильтров; поиск остаётся справа', async () => {
+    await mount();
+    const bar = byLabel('Поиск лидов', host).closest('.min-h-8');
+    expect(bar).toBeTruthy();
+    expect(chips()).toBeNull();
+    await click(stage('Ответил'));
+    expect(chips().closest('.min-h-8')).toBe(bar);
+    // плашки — слева, перед поиском
+    expect(chips().compareDocumentPosition(byLabel('Поиск лидов', host)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('опрос раз в 10 секунд и возврат на страницу сохраняют фильтры', async () => {
+    vi.useFakeTimers();
+    rowExtra = mixed;
+    await mount();
+    await click(stage('Ответил'));
+    await tick('Этап', 'Лид');
+    const before = leadsApi.getLeads.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(leadsApi.getLeads.mock.calls.length).toBe(before + 1);
+    expect(lastQuery()).toEqual({ status: 'replied', deal_stage: 'lead', q: '', limit: 25, offset: 0 });
+    expect(chips().textContent).toContain('Этап: Лид');
+
+    // Ушли в диалог и вернулись: страница смонтирована заново, фильтры из sessionStorage.
+    act(() => root.unmount());
+    host.remove();
+    await mount();
+    expect(leadsApi.getLeads.mock.calls.at(-1)[0]).toEqual({ status: 'replied', deal_stage: 'lead', q: '', limit: 25, offset: 0 });
+    expect(pressed()).toEqual(['Ответил']);
+    expect(chips().textContent).toContain('Статус: Ответил');
+  });
+
+  it('мусор в сохранённых фильтрах в запрос не попадает', async () => {
+    window.sessionStorage.setItem('panel_filters_leads', JSON.stringify({ status: ['bogus', 'queued'], stage: ['nope'], other: 'x' }));
+    await mount();
+    expect(lastQuery()).toEqual({ status: 'queued', q: '', limit: 25, offset: 0 });
+    expect(pressed()).toEqual(['В очереди']);
+    expect(chips().textContent).not.toContain('Этап');
+  });
+
+  it('по фильтру ничего не нашлось — пустое состояние про условия, а не про пустую базу', async () => {
+    await mount();
+    await tick('Этап', 'Депозит');
+    expect(rowIds()).toHaveLength(0);
+    expect(host.textContent).toContain('По этим условиям лидов нет. Измените поиск или фильтр.');
+    expect(host.querySelector('[data-testid="leads-found"]').textContent).toBe('Найдено 0 из 60');
+  });
+
+  it('старый бэкенд без deal_stage: колонка показывает прочерк, страница работает', async () => {
+    leadsApi.getLeads.mockImplementation(async () => ({ items: [lead(2), lead(1)], counts: { ...COUNTS, total: 2 } }));
+    await mount();
+    const at = [...host.querySelectorAll('thead th')].findIndex((th) => th.textContent.trim() === 'Этап');
+    expect([...host.querySelectorAll('[data-lead-id]')].map((tr) => tr.children[at].textContent)).toEqual(['—', '—']);
   });
 });
 

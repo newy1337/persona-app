@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { CircleAlert, ListPlus, ListX, MessageSquare, MoreHorizontal, RotateCcw, Shuffle, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PanelUX as ux } from '../../ui/PanelUX';
+import { useIsAdmin } from '../../components/AppLayout/me';
+import { ColumnFilter } from '../../components/ColumnFilter/ColumnFilter';
 import { ColumnPicker } from '../../components/ColumnPicker/ColumnPicker';
 import { tableMinWidth, useColumnPrefs } from '../../components/ColumnPicker/columnPrefs';
 import { IconAction } from '../../components/IconAction/IconAction';
+import { dealStageLabel } from '../../data/dealStages';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -26,7 +29,9 @@ const SKELETON_ROWS = 8;
    сам — «Настроить поля» в заголовке колонки действий; чекбокс, лида и действия
    скрыть нельзя. Значение скрытой колонки остаётся в подсказке лида, сайт ещё
    и дописывается под имя. Уже минимальной ширины таблица прокручивается
-   внутри рамки. */
+   внутри рамки. «Менеджер» (adminOnly) есть только у админа: остальным колонка
+   не рисуется и в настройке полей не предлагается. «Этап» — этап сделки
+   диалога лида (deal_stage), его ставит менеджер в диалоге. */
 const WIDE_QUERY = '(min-width: 1680px)';
 // Меньше этого «Лид» не сжимается.
 const FLEX_MIN_WIDTH = 180;
@@ -37,12 +42,14 @@ const COLUMNS = [
   { key: 'telegram', label: 'Telegram', width: 168, show: 'wide', bars: ['w-20'] },
   { key: 'site', label: 'Сайт', width: 92, show: 'wide', bars: ['w-12'] },
   { key: 'persona', label: 'Личность', width: 168, bars: ['w-24'] },
-  { key: 'manager', label: 'Менеджер', width: 116, bars: ['w-16'] },
+  { key: 'manager', label: 'Менеджер', width: 116, adminOnly: true, bars: ['w-16'] },
   { key: 'account', label: 'Аккаунт', width: 152, bars: ['w-20'] },
   { key: 'status', label: 'Статус', width: 164, bars: ['w-20'] },
+  { key: 'stage', label: 'Этап', width: 112, bars: ['w-14'] },
   { key: 'contacted', label: 'Написали', width: 128, bars: ['w-16'] },
   { key: 'actions', label: 'Действия', width: 96, required: true, bars: [] },
 ];
+const PUBLIC_COLUMNS = COLUMNS.filter((col) => !col.adminOnly);
 
 /* Высоту строки (52px) задаёт ячейка: в неё помещаются две короткие линии или
    селект личности. Скелет собран из тех же ячеек. */
@@ -110,10 +117,13 @@ function SkeletonRow({ columns }) {
   );
 }
 
-export function LeadsTable({ rows, query, status, selected, onToggle, onSelectVisible, onChat, onQueue, onUnqueue, onReassign, onDelete, onPersonaChange, personas, helpers }) {
+/* filters — фильтры колонок: { defs: { ключ колонки: описание }, state, onChange(key, value) };
+   список листается на сервере, поэтому сами строки здесь не отбираются. */
+export function LeadsTable({ rows, query, filtered, filters, selected, onToggle, onSelectVisible, onChat, onQueue, onUnqueue, onReassign, onDelete, onPersonaChange, personas, helpers }) {
   const { PersonaSelect, statusLabels, statusBadges, date } = helpers;
   const busy = ux.useActions().pending.some(key => key.includes('/api/leads'));
-  const prefs = useColumnPrefs('leads', COLUMNS, { wide: WIDE_QUERY });
+  const admin = useIsAdmin();
+  const prefs = useColumnPrefs('leads', admin ? COLUMNS : PUBLIC_COLUMNS, { wide: WIDE_QUERY });
   const { columns, has } = prefs;
   const loading = rows == null;
   const list = rows ?? [];
@@ -154,7 +164,17 @@ export function LeadsTable({ rows, query, status, selected, onToggle, onSelectVi
                     <ColumnPicker prefs={prefs} />
                   </div>
                 ) : (
-                  col.label
+                  <div className="flex min-w-0 items-center gap-1">
+                    <span className="truncate">{col.label}</span>
+                    {filters?.defs[col.key] && (
+                      <ColumnFilter
+                        label={col.label}
+                        def={filters.defs[col.key]}
+                        value={filters.state[col.key]}
+                        onChange={value => filters.onChange(col.key, value)}
+                      />
+                    )}
+                  </div>
                 )}
               </TableHead>
             ))}
@@ -165,7 +185,7 @@ export function LeadsTable({ rows, query, status, selected, onToggle, onSelectVi
           {!loading && list.length === 0 && (
             <TableRow className="hover:bg-transparent">
               <TableCell colSpan={columns.length} className="h-32 px-4 text-center text-sm whitespace-normal text-muted-foreground">
-                {query || status ? 'По этим условиям лидов нет. Измените поиск или фильтр.' : 'Лидов пока нет. Добавьте контакт или импортируйте список.'}
+                {query || filtered ? 'По этим условиям лидов нет. Измените поиск или фильтр.' : 'Лидов пока нет. Добавьте контакт или импортируйте список.'}
               </TableCell>
             </TableRow>
           )}
@@ -184,6 +204,8 @@ export function LeadsTable({ rows, query, status, selected, onToggle, onSelectVi
             const senderLabel = row.preferred_account_id && !row.first_contact_at ? 'Выбран: ' : 'Аккаунт: ';
             const ownerTitle = `Менеджер: ${row.manager_username || 'не назначен'} · Регион: ${row.region_code || 'не задан'}`;
             const statusText = statusLabels[row.status] || row.status;
+            const stageText = row.deal_stage ? dealStageLabel(row.deal_stage) : null;
+            const stageTitle = stageText ? [stageText, row.deal_note].filter(Boolean).join(' — ') : 'Этап не указан';
             // Значения скрытых колонок не пропадают: они дописываются в подсказку лида.
             const leadTitle = [
               row.first_name || `Лид #${row.id}`,
@@ -193,9 +215,10 @@ export function LeadsTable({ rows, query, status, selected, onToggle, onSelectVi
               telegram ? `Telegram: ${telegram}` : null,
               !has('contact') && [row.phone_e164, row.username ? `@${row.username}` : null].filter(Boolean).join(', '),
               !has('persona') && `Личность: ${personaText}`,
-              !has('manager') && ownerTitle,
+              admin && !has('manager') && ownerTitle,
               !has('account') && `${senderLabel}${sender}`,
               !has('status') && `Статус: ${[statusText, row.last_error].filter(Boolean).join(' — ')}`,
+              !has('stage') && stageText && `Этап: ${stageTitle}`,
               !has('contacted') && (row.first_contact_at ? `Написали: ${date(row.first_contact_at)}` : 'Ещё не писали'),
             ].filter(Boolean).join(' · ');
             return (
@@ -296,6 +319,14 @@ export function LeadsTable({ rows, query, status, selected, onToggle, onSelectVi
                         <span className="truncate">{statusText}</span>
                       </Badge>
                       {row.last_error && <ErrorDetails name={name} text={row.last_error} />}
+                    </div>
+                  </TableCell>
+                )}
+
+                {has('stage') && (
+                  <TableCell className={cell}>
+                    <div className={one} title={stageTitle}>
+                      {stageText ? <span className="truncate">{stageText}</span> : <Empty />}
                     </div>
                   </TableCell>
                 )}

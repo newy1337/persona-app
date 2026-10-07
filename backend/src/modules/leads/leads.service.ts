@@ -24,7 +24,16 @@ import {
   parseLeadLines,
 } from 'src/domain/leads';
 import { fromChatId } from 'src/utils/ids';
-import { CreateLeadDto, ImportLeadsDto, UpdateLeadDto } from './dto/lead.dto';
+import { DEAL_NOTE_KEY, DEAL_STAGE_KEY } from 'src/domain/deal-stage';
+import { parseLeadFacts } from 'src/domain/lead-facts';
+import {
+  CreateLeadDto,
+  DEAL_STAGE_FILTERS,
+  ImportLeadsDto,
+  NO_DEAL_STAGE,
+  UpdateLeadDto,
+  csvValues,
+} from './dto/lead.dto';
 import {
   ManagerAttributionService,
   ManagerAttribution,
@@ -43,6 +52,9 @@ export interface LeadView extends ManagerAttribution {
   gender: string | null;
   source_type: string;
   status: string;
+  /** этап сделки и причина из карточки диалога; null — диалога или этапа нет */
+  deal_stage: string | null;
+  deal_note: string | null;
   telegram_user_id: number | null;
   telegram_username: string | null;
   assigned_account_id: number | null;
@@ -71,6 +83,16 @@ export interface TelegramCleanup {
   deleted_in: number[];
   failed: Array<{ account_id: number | null; error: string }>;
 }
+
+export interface LeadDeal {
+  deal_stage: string | null;
+  deal_note: string | null;
+}
+
+const NO_DEAL: LeadDeal = { deal_stage: null, deal_note: null };
+
+const textOrNull = (value: unknown): string | null =>
+  typeof value === 'string' && value ? value : null;
 
 export interface LeadScope {
   userId: number;
@@ -165,6 +187,7 @@ export class LeadsService {
     names: Map<number, string | null> = new Map(),
     personas: Map<string, string> = new Map(),
     managers?: ManagerDirectory,
+    deal: LeadDeal = NO_DEAL,
   ): LeadView {
     return {
       ...(managers?.forLead(
@@ -181,6 +204,8 @@ export class LeadsService {
       gender: row.gender,
       source_type: row.sourceType,
       status: row.status,
+      deal_stage: deal.deal_stage,
+      deal_note: deal.deal_note,
       telegram_user_id: fromChatId(row.telegramUserId),
       telegram_username: row.telegramUsername,
       assigned_account_id: row.assignedAccountId,
@@ -210,14 +235,33 @@ export class LeadsService {
 
   async list(
     scope: LeadScope | null,
-    filter: { status?: string; q?: string; limit?: number; offset?: number },
+    filter: {
+      status?: string;
+      deal_stage?: string;
+      q?: string;
+      limit?: number;
+      offset?: number;
+    },
   ) {
+    const statuses = this.filterValues(filter.status, LEAD_STATUSES, 'статус');
+    const stages = this.filterValues(
+      filter.deal_stage,
+      DEAL_STAGE_FILTERS,
+      'этап',
+    );
     await this.markReplied();
     const q = filter.q?.trim();
+    const stageChats = stages.length
+      ? await this.chatsByDealStage(stages)
+      : null;
     const where: Prisma.PhoneNumberWhereInput = {
       AND: [
         this.scopeWhere(scope),
-        filter.status ? { status: filter.status } : {},
+        statuses.length === 1
+          ? { status: statuses[0] }
+          : statuses.length
+            ? { status: { in: statuses } }
+            : {},
         q
           ? {
               OR: [
@@ -231,6 +275,8 @@ export class LeadsService {
               ],
             }
           : {},
+        // Этап живёт в карточке диалога: сюда приходят уже найденные чаты.
+        stageChats ? { telegramUserId: { in: stageChats } } : {},
       ],
     };
     const [rows, total] = await Promise.all([
@@ -240,19 +286,87 @@ export class LeadsService {
         skip: filter.offset ?? 0,
         take: filter.limit ?? 200,
       }),
-      // То же условие, что и у выборки: статус + поиск + область видимости.
+      // То же условие, что и у выборки: статус + этап + поиск + область видимости.
       this.prisma.phoneNumber.count({ where }),
     ]);
-    const [names, personas, managers] = await Promise.all([
+    const [names, personas, managers, deals] = await Promise.all([
       this.accountNames(),
       this.personaNames(),
       this.attribution.directory(),
+      this.dealsOf(rows),
     ]);
     return {
-      items: rows.map((r) => this.toView(r, names, personas, managers)),
+      items: rows.map((r) =>
+        this.toView(
+          r,
+          names,
+          personas,
+          managers,
+          deals.get(String(r.telegramUserId)),
+        ),
+      ),
       total,
+      // Счётчики воронки — по всем лидам области, фильтры их не сужают.
       counts: await this.counts(scope),
     };
+  }
+
+  private filterValues(
+    raw: string | undefined,
+    allowed: readonly string[],
+    what: string,
+  ): string[] {
+    const values = [...new Set(csvValues(raw))];
+    const unknown = values.filter((v) => !allowed.includes(v));
+    if (unknown.length)
+      throw new BadRequestException(
+        `неизвестный ${what}: ${unknown.join(', ')}`,
+      );
+    return values;
+  }
+
+  /**
+   * Чаты лидов, у диалога которых этап сделки среди выбранных. Этап лежит в
+   * JSON карточки диалога (pinned_facts), как его читает список диалогов;
+   * none — диалог есть, этап не выставлен. Один запрос на весь фильтр.
+   */
+  private async chatsByDealStage(stages: string[]): Promise<bigint[]> {
+    const named = stages.filter((s) => s !== NO_DEAL_STAGE);
+    const conds: Prisma.Sql[] = [];
+    if (named.length)
+      conds.push(
+        Prisma.sql`p.facts::jsonb->>'deal_stage' IN (${Prisma.join(named)})`,
+      );
+    if (stages.includes(NO_DEAL_STAGE))
+      conds.push(Prisma.sql`COALESCE(p.facts::jsonb->>'deal_stage', '') = ''`);
+    const rows = await this.prisma.$queryRaw<{ chat_id: bigint | number }[]>(
+      Prisma.sql`SELECT c.chat_id FROM contacts c
+        LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
+        WHERE c.chat_id IN (SELECT pn.telegram_user_id FROM phone_numbers pn
+                            WHERE pn.telegram_user_id IS NOT NULL)
+          AND (${Prisma.join(conds, ' OR ')})`,
+    );
+    return rows.map((r) => BigInt(r.chat_id));
+  }
+
+  /** Этап сделки для строк страницы: один запрос на страницу, не на строку. */
+  private async dealsOf(rows: PhoneNumber[]): Promise<Map<string, LeadDeal>> {
+    const out = new Map<string, LeadDeal>();
+    const chatIds = rows
+      .map((r) => r.telegramUserId)
+      .filter((id): id is bigint => id !== null && id !== undefined);
+    if (!chatIds.length) return out;
+    const cards = await this.prisma.leadFacts.findMany({
+      where: { chatId: { in: chatIds } },
+    });
+    for (const card of cards) {
+      const facts = parseLeadFacts(card.facts);
+      out.set(String(card.chatId), {
+        deal_stage: textOrNull(facts[DEAL_STAGE_KEY]),
+        deal_note: textOrNull(facts[DEAL_NOTE_KEY]),
+      });
+    }
+    return out;
   }
 
   async counts(scope: LeadScope | null): Promise<Record<string, number>> {
