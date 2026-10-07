@@ -48,6 +48,10 @@ const choose = async (element, value) => act(async () => {
 });
 const openEditor = async id => act(async () => host.querySelector(`[data-manager-id="${id}"] [aria-label="Изменить"]`).click());
 const field = name => host.querySelector(`#manager-editor [name="${name}"]`);
+// Поле сохранённого пароля (в окне учётки и в окне «Данные для входа») и кнопка-глаз рядом с ним.
+const shown = () => host.querySelector('[role=dialog] [name="current-password"]');
+const reveal = async () => act(async () => host.querySelector('[aria-label="Показать пароль"]').click());
+const alertLine = () => host.querySelector('[role=dialog] [role=alert]');
 const submit = async () => act(async () => host.querySelector('#manager-editor').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
 const button = text => [...host.querySelectorAll('button')].find(x => x.textContent === text);
 // Подтверждение рисуется вторым окном поверх окна учётки: его кнопки ищем в последнем диалоге.
@@ -64,7 +68,11 @@ test('creates a manager with a leading-zero region and no manually entered passw
   expect(post).toHaveBeenCalledWith('/api/managers',{username:'new_manager',role:'manager',region_code:'0123',voicer_id:null});
   expect(api.get).toHaveBeenCalledWith('/api/managers/3');
   expect(host.textContent).toContain('Данные для входа: new_manager');
-  expect(host.querySelector('input[type=password]').value).toBe('synthetic-test-only');
+  // Пароль лежит в обычном текстовом поле и скрыт точками, пока не нажмут «Показать пароль».
+  expect(host.querySelector('input[type=password]')).toBeNull();
+  expect(shown().value).not.toContain('synthetic');
+  await act(async () => host.querySelector('[aria-label="Показать пароль"]').click());
+  expect(shown().value).toBe('synthetic-test-only');
 });
 test('failed region saves retain the editor and typed value', async () => {
   vi.spyOn(api,'put').mockRejectedValue({status:500});
@@ -108,12 +116,49 @@ test('the editor shows the stored password and loads everything with a single re
   expect(api.get.mock.calls.slice(before)).toEqual([['/api/managers/2']]);
   expect(host.querySelector('[role=dialog]').textContent).toContain('Учётка: manager_test');
   expect(field('username').value).toBe('manager_test');
-  expect(field('current-password').type).toBe('password');
-  expect(field('current-password').value).toBe('stored-test-only');
+  // Скрытый пароль — точки в обычном текстовом поле: полей type=password в окне нет вовсе.
+  expect(host.querySelector('[role=dialog] input[type=password]')).toBeNull();
+  expect(field('current-password').type).toBe('text');
+  expect(field('current-password').hasAttribute('data-masked')).toBe(true);
+  expect(field('current-password').value).not.toContain('stored');
+  expect(host.querySelector('[role=dialog]').innerHTML).not.toContain('stored-test-only');
   expect(button('Сохранить').disabled).toBe(true);
-  await act(async () => host.querySelector('[aria-label="Показать пароль"]').click());
+  await reveal();
+  expect(field('current-password').value).toBe('stored-test-only');
+  expect(field('current-password').hasAttribute('data-masked')).toBe(false);
   expect(host.querySelector('[role=dialog] input[type=password]')).toBeNull();
   expect(host.querySelector('[aria-label="Скрыть пароль"]')).not.toBeNull();
+  await act(async () => host.querySelector('[aria-label="Скрыть пароль"]').click());
+  expect(field('current-password').value).not.toContain('stored');
+});
+test('the editor does not look like a credential form to a password manager', async () => {
+  await render(<ManagersPage />);
+  await openEditor(2);
+  expect(field('username').getAttribute('autocomplete')).toBe('off');
+  expect(field('current-password').getAttribute('autocomplete')).toBe('off');
+  expect(field('current-password').readOnly).toBe(true);
+  expect(field('password').getAttribute('autocomplete')).toBe('new-password');
+  expect(host.querySelector('[role=dialog] input[type=password]')).toBeNull();
+});
+test('the stored password hint has its line from the start, so the answer moves nothing', async () => {
+  let release;
+  api.get.mockImplementation(path => path === '/api/managers/1' ? new Promise(done => { release = done; }) : Promise.resolve(path === '/api/managers' ? users : path === '/api/tg-accounts' ? accounts : { user_id: 1, role: 'admin' }));
+  await render(<ManagersPage />);
+  await openEditor(1);
+  const messages = () => [...host.querySelectorAll('#manager-editor [data-slot=field-message]')].length;
+  const hint = () => field('current-password').closest('[data-slot=field]').querySelector('[data-slot=field-message]');
+  const before = messages();
+  expect(field('current-password').placeholder).toBe('Загружаем…');
+  expect(hint().textContent).toBe('');
+  await act(async () => release(editors[1]));
+  expect(field('current-password').placeholder).toBe('Не сохранён');
+  expect(hint().textContent).toContain('Не сохранён для просмотра');
+  expect(hint().firstElementChild.className).toContain('truncate');
+  expect(messages()).toBe(before);
+  // Пустой логин объясняет, почему «Сохранить» выключена, в строке, которая уже занята.
+  await input(field('username'), ' ');
+  expect(host.querySelector('#manager-editor').textContent).toContain('Укажите логин');
+  expect(messages()).toBe(before);
 });
 test('a row deletes another account only after confirmation and never offers it for yourself', async () => {
   const remove = vi.spyOn(api, 'delete').mockResolvedValue({ ...users, items: [users.items[0]] });
@@ -170,10 +215,58 @@ test('the editor creates a new password after confirmation and shows it in place
   expect(put).toHaveBeenCalledWith('/api/managers/2', { regenerate_password: true });
   // Окно осталось открытым, пароль виден, несохранённая правка региона на месте, второго запроса нет.
   expect(field('current-password').value).toBe('regenerated-test-only');
-  expect(field('current-password').type).toBe('text');
+  expect(field('current-password').hasAttribute('data-masked')).toBe(false);
   expect(field('region').value).toBe('0999');
   expect(button('Сохранить').disabled).toBe(false);
   expect(api.get.mock.calls.filter(([path]) => path === '/api/managers/2')).toHaveLength(1);
+});
+test('while a new password is being created only that button shows progress', async () => {
+  let finish;
+  vi.spyOn(api, 'put').mockImplementation(() => new Promise(done => { finish = done; }));
+  await render(page);
+  await openEditor(2);
+  await input(field('region'), '0999');
+  await click('Создать новый пароль');
+  await answer('Создать пароль');
+  expect(button('Создаём…')).toBeDefined();
+  expect(button('Создать новый пароль')).toBeUndefined();
+  expect(button('Сохранить').disabled).toBe(true);
+  expect(button('Сохраняем…')).toBeUndefined();
+  await act(async () => finish({ ...users, editor: { ...editors[2], password: 'regenerated-test-only' } }));
+  expect(button('Создать новый пароль').disabled).toBe(false);
+  expect(button('Сохранить').disabled).toBe(false);
+  expect(field('current-password').value).toBe('regenerated-test-only');
+});
+test('errors sit in one line above the buttons and a successful copy keeps a save error', async () => {
+  const writeText = vi.fn().mockRejectedValueOnce(new Error('denied')).mockResolvedValue();
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  vi.spyOn(api, 'put').mockRejectedValue({ status: 500 });
+  await render(<ManagersPage />);
+  await openEditor(2);
+  // Ошибка копирования показывается и уходит после удачной попытки.
+  await click('Копировать логин + пароль');
+  expect(alertLine().textContent).toContain('Не удалось скопировать');
+  await click('Копировать логин + пароль');
+  expect(writeText).toHaveBeenLastCalledWith('Логин: manager_test\nПароль: stored-test-only\nРегион: 0077');
+  expect(alertLine()).toBeNull();
+  // Ошибка сохранения: одна строка примитива окна в подвале над кнопками, полный текст — в title.
+  await input(field('region'), '0999');
+  await submit();
+  const line = alertLine();
+  expect(line.textContent).toContain('Попробуйте ещё раз');
+  expect(line.getAttribute('data-slot')).toBe('dialog-error');
+  expect(line.title).toBe(line.textContent);
+  expect(line.className).toContain('truncate');
+  const footer = host.querySelector('[data-slot=dialog-footer]');
+  expect(line.parentElement).toBe(footer);
+  expect(footer.firstElementChild).toBe(line);
+  expect(host.querySelectorAll('[role=dialog] [data-slot=dialog-error]')).toHaveLength(1);
+  // Удачное копирование её не стирает.
+  await click('Скопировано');
+  expect(writeText).toHaveBeenCalledTimes(3);
+  expect(button('Скопировано')).toBeDefined();
+  expect(alertLine().textContent).toContain('Попробуйте ещё раз');
+  delete navigator.clipboard;
 });
 test('accounts are saved together with the other fields and a taken account asks first', async () => {
   const put = vi.spyOn(api, 'put').mockResolvedValue({ ...users, editor: editors[2] });
@@ -200,7 +293,7 @@ test('a role change warns about released accounts and your own role stays locked
   expect(field('role').disabled).toBe(true);
   expect(field('username').disabled).toBe(false);
   expect(host.querySelector('.mr-assignment-list')).toBeNull();
-  expect(host.querySelector('#manager-editor').textContent).toContain('не сохранён для просмотра');
+  expect(host.querySelector('#manager-editor').textContent).toContain('Не сохранён для просмотра');
   expect(host.querySelector('[aria-label="Показать пароль"]').disabled).toBe(true);
   await click('Отмена');
   await openEditor(2);
@@ -232,10 +325,17 @@ test('a failed load keeps the window in place and offers a retry', async () => {
   expect(host.querySelector('[role=dialog] [role=alert]').textContent).toContain('Попробуйте ещё раз');
   expect(button('Сохранить')).toBeUndefined();
   expect(field('region').disabled).toBe(true);
+  // Про пароль ничего не известно: прочерк, без «не сохранён» и без подсказки.
+  expect(field('current-password').value).toBe('');
+  expect(field('current-password').placeholder).toBe('—');
+  expect(host.querySelector('#manager-editor').textContent).not.toMatch(/не сохранён/i);
+  expect(field('current-password').closest('[data-slot=field]').querySelector('[data-slot=field-message]').textContent).toBe('');
+  expect(host.querySelector('[aria-label="Показать пароль"]').disabled).toBe(true);
   failEditor = false;
   await click('Повторить');
   expect(host.querySelector('[role=dialog] [role=alert]')).toBeNull();
   expect(field('region').disabled).toBe(false);
+  await reveal();
   expect(field('current-password').value).toBe('stored-test-only');
   expect(button('Сохранить')).toBeDefined();
 });

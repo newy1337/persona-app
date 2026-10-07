@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/PageHeader/PageHeader';
 import { SearchInput } from '@/components/SearchInput/SearchInput';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DialogError } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { NativeCheckbox } from '@/components/ui/native-checkbox';
@@ -27,8 +28,6 @@ const errorText = e => {
   return Array.isArray(message) ? message.join('; ') : String(message);
 };
 const caption = 'text-xs text-muted-foreground';
-// Строка ошибки в окнах занята всегда: форма не меняет высоту.
-const errorSlot = 'min-h-4 text-xs text-destructive';
 const formGrid = 'grid gap-3 sm:grid-cols-2';
 const sectionTitle = 'text-sm font-medium';
 
@@ -38,6 +37,13 @@ const headCell = 'h-9 px-3 text-xs font-medium text-muted-foreground';
 const cell = 'px-3 py-2';
 const line = 'truncate text-sm leading-5';
 const subline = cn(caption, 'truncate leading-4');
+
+/* Единственная строка ошибки окна — над кнопками подвала. Место занято всегда, длинный текст
+   обрезается до одной строки (целиком — в подсказке), поэтому кнопки не двигаются. */
+function FooterError({ children }) {
+  const text = children || '';
+  return <DialogError className="mb-0 w-full truncate" role={text ? 'alert' : undefined} title={text || undefined}>{text}</DialogError>;
+}
 
 function VoicerSelect({ voicerList, value, onChange, disabled }) {
   return (
@@ -78,6 +84,7 @@ function CreateForm({ roleList, voicerList, onCreate, onCancel }) {
   }
   return (
     <ux.Modal title="Новая учётка" onClose={onCancel} busy={busy} footer={<>
+      <FooterError>{error}</FooterError>
       <Button type="button" variant="outline" disabled={busy} onClick={onCancel}>Отмена</Button>
       <Button type="submit" form="manager-create" disabled={!valid || busy}>{busy ? 'Создаём…' : 'Создать'}</Button>
     </>}>
@@ -91,26 +98,34 @@ function CreateForm({ roleList, voicerList, onCreate, onCancel }) {
         </Field>
         {role === 'manager' && <div className="sm:col-span-2"><VoicerSelect voicerList={voicerList} value={voicer} disabled={busy} onChange={setVoicer} /></div>}
         <p className={cn(caption, 'sm:col-span-2')}>Пароль создастся автоматически. После создания можно скопировать логин и пароль.</p>
-        <div className={cn(errorSlot, 'sm:col-span-2')}>{error && <p role="alert">{error}</p>}</div>
       </form>
     </ux.Modal>
   );
 }
 
-/* Сохранённый пароль: скрыт, пока не нажмут «Показать пароль». Поле стоит на месте и пока данные
-   грузятся, и когда пароля для просмотра нет — высота блока от этого не зависит. */
-function StoredPassword({ label, value, loading = false, visible, onToggle, className }) {
+const PASSWORD_MASK = '•'.repeat(12);
+const NOT_STORED = 'Не сохранён для просмотра — создайте новый.';
+const PASSWORD_PLACEHOLDER = { loading: 'Загружаем…', failed: '—', ready: 'Не сохранён' };
+
+/* Сохранённый пароль: скрыт, пока не нажмут «Показать пароль». Поле обычное текстовое (не password),
+   скрытое значение заменяют точки — браузер и менеджер паролей не считают его полем учётных данных.
+   status: loading — ответа ещё нет, failed — загрузка не удалась (про пароль ничего не известно:
+   прочерк и никаких подсказок), ready — ответ пришёл; «не сохранён» пишем только в этом случае.
+   reserve держит строку подсказки с самого начала: её появление после загрузки ничего не двигает. */
+function StoredPassword({ label, value, status = 'ready', reserve = false, visible, onToggle, className }) {
+  const missing = status === 'ready' && !value;
   return (
-    <Field label={label} className={className} hint={loading || value ? undefined : 'Пароль этой учётки не сохранён для просмотра. Создайте новый или задайте свой.'}>
+    <Field label={label} className={className} reserve={reserve} hint={missing ? <span className="block truncate" title={NOT_STORED}>{NOT_STORED}</span> : undefined}>
       <span className="flex items-center gap-1.5">
-        <Input name="current-password" className="font-mono" readOnly autoComplete="off" type={visible ? 'text' : 'password'} value={value || ''} placeholder={loading ? 'Загружаем…' : 'Не сохранён'} />
+        <Input name="current-password" className="font-mono" readOnly type="text" autoComplete="off" spellCheck={false} data-masked={value && !visible ? '' : undefined} value={value ? visible ? value : PASSWORD_MASK : ''} placeholder={PASSWORD_PLACEHOLDER[status]} />
         <IconAction icon={visible ? EyeOff : Eye} label={visible ? 'Скрыть пароль' : 'Показать пароль'} size="icon" variant="outline" disabled={!value} onClick={onToggle} />
       </span>
     </Field>
   );
 }
 
-/* Кнопка держит ширину длинной подписи: смена на «Скопировано» ничего не двигает. */
+/* Кнопка держит ширину длинной подписи: смена на «Скопировано» ничего не двигает.
+   onError получает только ошибку самого копирования ('' — её больше нет); чужие ошибки окна не трогает. */
 function CopyCredentials({ value, onError, ...props }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => { setCopied(false); }, [value?.username, value?.password]);
@@ -128,6 +143,7 @@ function CreatedCredentials({ value, onClose }) {
   const [visible, setVisible] = useState(false), [error, setError] = useState('');
   return (
     <ux.Modal title={`Данные для входа: ${value.username}`} onClose={onClose} footer={<>
+      <FooterError>{error}</FooterError>
       <Button type="button" variant="outline" onClick={onClose}>Закрыть</Button>
       <CopyCredentials data-autofocus value={value} onError={setError} />
     </>}>
@@ -139,7 +155,6 @@ function CreatedCredentials({ value, onClose }) {
           <Input className="font-mono" readOnly value={value.region_code || 'Не задан'} />
         </Field>
         <StoredPassword className="sm:col-span-2" label="Пароль для входа" value={value.password} visible={visible} onToggle={() => setVisible(!visible)} />
-        <div className={cn(errorSlot, 'sm:col-span-2')}>{error && <p role="alert">{error}</p>}</div>
       </div>
     </ux.Modal>
   );
@@ -203,6 +218,8 @@ function ManagerEditor({ user, me, roleList, voicerList, userList, accountList, 
   const [saved, setSaved] = useState(null), [draft, setDraft] = useState(() => draftOf(user));
   const [loadError, setLoadError] = useState(''), [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [visible, setVisible] = useState(false);
+  // Ошибка копирования живёт отдельно: удачное копирование не стирает ошибку сохранения.
+  const [copyError, setCopyError] = useState(''), [regenerating, setRegenerating] = useState(false);
   const lock = useRef(false);
   useEffect(() => {
     let alive = true;
@@ -255,33 +272,32 @@ function ManagerEditor({ user, me, roleList, voicerList, userList, accountList, 
     lock.current = true;
     try {
       if (!await ux.confirm({ title: 'Создать новый пароль?', message: `Учётка ${base.username}. Прежний пароль перестанет действовать.`, confirmLabel: 'Создать пароль' })) return;
-      setBusy(true); setError('');
+      setBusy(true); setRegenerating(true); setError('');
       const fresh = await onSave(base.user_id, { regenerate_password: true });
-      if (fresh) { setSaved(fresh); setVisible(true); }
+      if (fresh) { setSaved(current => ({ ...current, ...fresh })); setVisible(true); }
     } catch (e) { setError(ux.readableError(e)); }
-    finally { lock.current = false; setBusy(false); }
+    finally { lock.current = false; setBusy(false); setRegenerating(false); }
   }
   const toggle = (id, checked) => setDraft(current => { const selected = new Set(current.selected); if (checked) selected.add(id); else selected.delete(id); return { ...current, selected }; });
-  const message = loadError || error;
   return (
     <ux.Modal title={`Учётка: ${user.username}`} wide busy={busy} onClose={onClose} footer={<>
-      {/* Одна строка для ошибки загрузки, сохранения и копирования: кнопки справа не двигаются. */}
-      <div className={cn(errorSlot, 'me-auto min-w-0 flex-1')}>{message && <p role="alert">{message}</p>}</div>
+      {/* Одна строка для ошибки загрузки, сохранения и копирования — над кнопками. */}
+      <FooterError>{loadError || error || copyError}</FooterError>
       <Button type="button" variant="outline" disabled={busy} onClick={onClose}>Отмена</Button>
       {loadError
         ? <Button type="button" className="min-w-28" onClick={() => { setLoadError(''); setAttempt(attempt + 1); }}>Повторить</Button>
-        : <Button type="submit" form="manager-editor" className="min-w-28" disabled={locked || !changed || !valid}>{busy ? 'Сохраняем…' : 'Сохранить'}</Button>}
+        : <Button type="submit" form="manager-editor" className="min-w-28" disabled={locked || !changed || !valid}>{busy && !regenerating ? 'Сохраняем…' : 'Сохранить'}</Button>}
     </>}>
       <form id="manager-editor" className="grid gap-4" aria-busy={!saved && !loadError} onSubmit={save} onKeyDown={keepEnter}>
         <section className="grid gap-3">
           <h3 className={sectionTitle}>Основное</h3>
           <div className={formGrid}>
-            <Field label="Логин">
+            <Field label="Логин" reserve error={login ? '' : 'Укажите логин.'}>
               {/* Пока идёт загрузка, поле только для чтения, но не выключено: фокус окна встаёт сюда. */}
               <Input name="username" data-autofocus required maxLength={64} autoComplete="off" readOnly={!saved} disabled={busy} value={draft.username} onChange={e => set({ username: e.target.value })} />
             </Field>
             <RoleSelect roleList={roleList} value={draft.role} disabled={locked || base.user_id === me?.user_id} onChange={role => set({ role })} />
-            <Field label="Регион" hint="3 или 4 цифры" error={regionValid ? '' : 'Укажите код региона: 3 или 4 цифры.'}>
+            <Field label="Регион" reserve hint="3 или 4 цифры" error={regionValid ? '' : 'Укажите код региона: 3 или 4 цифры.'}>
               <Input name="region" value={draft.region} disabled={locked} inputMode="numeric" maxLength={4} placeholder="Например, 0077" onChange={e => set({ region: e.target.value.replace(/\D/g, '').slice(0, 4) })} />
             </Field>
             {draft.role === 'manager' && <VoicerSelect voicerList={voicerList} value={draft.voicer} disabled={locked} onChange={voicer => set({ voicer })} />}
@@ -291,14 +307,15 @@ function ManagerEditor({ user, me, roleList, voicerList, userList, accountList, 
         <section className="grid gap-3">
           <h3 className={sectionTitle}>Вход</h3>
           <div className={formGrid}>
-            <StoredPassword label="Текущий пароль" value={saved?.password} loading={!saved && !loadError} visible={visible} onToggle={() => setVisible(!visible)} />
-            <Field label="Новый пароль" hint="Необязательно. Заменит текущий после сохранения." error={passwordValid ? '' : `Не короче ${PASSWORD_MIN} символов.`}>
-              <Input name="password" className="font-mono" autoComplete="off" maxLength={256} disabled={locked} value={draft.password} onChange={e => set({ password: e.target.value })} />
+            <StoredPassword reserve label="Текущий пароль" value={saved?.password} status={saved ? 'ready' : loadError ? 'failed' : 'loading'} visible={visible} onToggle={() => setVisible(!visible)} />
+            <Field label="Новый пароль" reserve hint="Необязательно. Заменит текущий после сохранения." error={passwordValid ? '' : `Не короче ${PASSWORD_MIN} символов.`}>
+              <Input name="password" className="font-mono" autoComplete="new-password" spellCheck={false} maxLength={256} disabled={locked} value={draft.password} onChange={e => set({ password: e.target.value })} />
             </Field>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <CopyCredentials variant="outline" size="sm" value={saved} onError={setError} />
-            <Button type="button" variant="outline" size="sm" disabled={locked} onClick={regenerate}>Создать новый пароль</Button>
+            <CopyCredentials variant="outline" size="sm" value={saved} onError={setCopyError} />
+            {/* Ход создания пароля показывает только эта кнопка; ширина — по длинной подписи. */}
+            <Button type="button" variant="outline" size="sm" className="min-w-[11.5rem]" disabled={locked} onClick={regenerate}>{regenerating ? 'Создаём…' : 'Создать новый пароль'}</Button>
           </div>
         </section>
         {draft.role === 'manager' && <>

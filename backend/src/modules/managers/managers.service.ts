@@ -14,6 +14,15 @@ import { Role, ROLES } from 'src/enums/roles.enum';
 import { CreateManagerDto, UpdateManagerDto } from './dto/manager.dto';
 import { CryptoService } from 'src/shared/crypto.service';
 
+/** Нарушение уникальности именно логина: у других уникальных индексов своя причина и своя ошибка. */
+function isUsernameTaken(e: any): boolean {
+  if (String(e?.code) !== 'P2002') return false;
+  const target = e?.meta?.target;
+  if (Array.isArray(target))
+    return target.length === 1 && target[0] === 'username';
+  return target === 'username' || target === 'dashboard_users_username_key';
+}
+
 @Injectable()
 export class ManagersService {
   constructor(
@@ -85,9 +94,10 @@ export class ManagersService {
       });
       createdId = created.id;
     } catch (e) {
-      const taken = String(e?.code) === 'P2002';
+      // Чужой уникальный индекс — не «логин занят»: такая ошибка уходит как есть.
+      if (String(e?.code) === 'P2002' && !isUsernameTaken(e)) throw e;
       throw new ConflictException(
-        taken
+        isUsernameTaken(e)
           ? `логин '${dto.username}' уже занят`
           : `не удалось создать пользователя (${e?.name})`,
       );
@@ -143,11 +153,15 @@ export class ManagersService {
       })
       .catch((e) => {
         // Гонка двух переименований: уникальный индекс срабатывает уже при записи.
-        if (username !== undefined && String(e?.code) === 'P2002')
-          throw taken();
+        if (username !== undefined && isUsernameTaken(e)) throw taken();
         throw e;
       });
-    return { ...(await this.list()), editor: await this.editor(userId) };
+    // Пароль возвращаем, только если этот запрос его сменил: в остальных случаях он уже есть у окна.
+    const { password: stored, ...editor } = await this.editor(userId);
+    return {
+      ...(await this.list()),
+      editor: password !== undefined ? { ...editor, password: stored } : editor,
+    };
   }
 
   private async applyUpdate(

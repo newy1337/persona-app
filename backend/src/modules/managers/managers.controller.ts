@@ -141,7 +141,10 @@ export class ManagersController {
     return this.audit.wrap(
       {
         userId,
-        action: 'manager.update',
+        // Случайный пароль — отдельное событие журнала, как до объединения запросов.
+        action: dto.regenerate_password
+          ? 'manager.password_regenerate'
+          : 'manager.update',
         resource: `user:${target}`,
         payload: {
           fields: UPDATE_FIELDS.filter((key) => dto[key] !== undefined),

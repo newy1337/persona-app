@@ -43,7 +43,7 @@ test('GET/auth stay silent; credentials and message bodies never enter feedback 
  const {createActionStore}=await modulePromise,client=api(async()=>({password:'secret-return'})),store=createActionStore(client,()=>{});
  await client.get('/api/managers');await client.post('/auth/login',{password:'secret-login'});await client.post('/api/tg-accounts/auth/abc/cancel',{});
  assert.deepEqual(store.getSnapshot(),{notices:[],pending:[]});
- const write=client.post('/api/managers/2/password',{password:'secret-new'});
+ const write=client.put('/api/managers/2',{password:'secret-new'});
  assert.ok(!JSON.stringify(store.getSnapshot()).includes('secret'));await write;
  assert.ok(!JSON.stringify(store.getSnapshot()).includes('secret'));
 });

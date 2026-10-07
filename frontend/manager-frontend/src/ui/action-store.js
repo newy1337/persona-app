@@ -6,7 +6,6 @@ export function actionLabels(method, url) {
   if (/^\/api\/voicer\/(recordings\/\d+\/send|deliveries\/\d+\/retry)$/.test(url)) return ['Добавляем в очередь…', 'Принято в очередь отправки'];
   if (/^\/api\/voicer\/users\/\d+\/link$/.test(url)) return ['Готовим ссылку…', 'Ссылка создана'];
   if (method === 'delete') return /\/stats\/prices/.test(url) ? ['Восстанавливаем…', 'Цены восстановлены'] : ['Удаляем…', 'Удалено'];
-  if (/\/managers\/\d+\/password$/.test(url)) return ['Создаём пароль…', 'Новый пароль создан'];
   if (/\/managers$/.test(url)) return ['Создаём…', 'Учётка создана'];
   if (/\/leads\/start$/.test(url)) return ['Добавляем в очередь…', 'Очередь обновлена'];
   if (/\/leads\/stop$/.test(url)) return ['Снимаем с очереди…', 'Очередь обновлена'];

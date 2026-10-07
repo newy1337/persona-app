@@ -70,7 +70,10 @@ describe('Manager credentials and regions through authenticated HTTP', () => {
           data.username !== undefined &&
           db.rows.some((r) => r !== row && r.username === data.username)
         )
-          throw Object.assign(new Error('unique'), { code: 'P2002' });
+          throw Object.assign(new Error('unique'), {
+            code: 'P2002',
+            meta: { target: ['username'] },
+          });
         Object.assign(row, data);
         return row;
       }),
@@ -287,10 +290,19 @@ describe('Manager credentials and regions through authenticated HTTP', () => {
       .send({ region_code: '077' })
       .expect(200);
     expect(db.rows[1].passwordHash).toBe('old-manager-hash');
-    expect(region.body.editor).toMatchObject({
+    // Обычная правка: пароль в ответе не повторяется, в журнале — manager.update.
+    expect(region.body.editor).toEqual({
       user_id: 2,
+      username: 'manager',
+      role: 'manager',
       region_code: '077',
-      password: null,
+      voicer_id: null,
+      account_ids: [7],
+    });
+    expect(lastAudit()).toMatchObject({
+      action: 'manager.update',
+      resource: 'user:2',
+      payload: { fields: ['region_code'] },
     });
     const reset = await http()
       .put('/api/managers/2')
@@ -304,12 +316,31 @@ describe('Manager credentials and regions through authenticated HTTP', () => {
     expect(await argon2.verify(db.rows[1].passwordHash, fresh)).toBe(true);
     expect(db.rows[1].passwordEncrypted).toMatch(/^v1:/);
     expect(JSON.stringify(reset.body.items)).not.toContain(fresh);
-    // В журнал попадают названия полей, но не сам пароль.
+    // Случайный пароль — своё событие журнала; в него попадают названия полей, но не сам пароль.
     expect(lastAudit()).toMatchObject({
-      action: 'manager.update',
+      action: 'manager.password_regenerate',
       resource: 'user:2',
       payload: { fields: ['regenerate_password'] },
     });
+    expect(JSON.stringify(lastAudit())).not.toContain(fresh);
+    // Следующая обычная правка сохранённый пароль не возвращает: он уже есть у окна.
+    const plain = await http()
+      .put('/api/managers/2')
+      .auth(admin, { type: 'bearer' })
+      .send({ region_code: '0078', account_ids: [7, 8] })
+      .expect(200);
+    expect(plain.body.editor).not.toHaveProperty('password');
+    expect(JSON.stringify(plain.body)).not.toContain(fresh);
+    expect(lastAudit().action).toBe('manager.update');
+    expect(
+      (
+        await http()
+          .get('/api/managers/2')
+          .auth(admin, { type: 'bearer' })
+          .expect(200)
+      ).body.password,
+    ).toBe(fresh);
+    expect(lastAudit().action).toBe('manager.credentials_view');
     expect(JSON.stringify(lastAudit())).not.toContain(fresh);
     const explicit = await http()
       .put('/api/managers/2')
@@ -317,6 +348,10 @@ describe('Manager credentials and regions through authenticated HTTP', () => {
       .send({ password: 'manually-updated-123' })
       .expect(200);
     expect(explicit.body.editor.password).toBe('manually-updated-123');
+    expect(lastAudit()).toMatchObject({
+      action: 'manager.update',
+      payload: { fields: ['password'] },
+    });
     expect(JSON.stringify(lastAudit())).not.toContain('manually-updated-123');
     const changed = await http()
       .get('/api/managers/2')
@@ -356,6 +391,7 @@ describe('Manager credentials and regions through authenticated HTTP', () => {
       .send({ username: 'anna' })
       .expect(200);
     expect(renamed.body.editor.username).toBe('anna');
+    expect(renamed.body.editor).not.toHaveProperty('password');
     expect(renamed.body.items.find((u) => u.user_id === 2).username).toBe(
       'anna',
     );
@@ -406,6 +442,51 @@ describe('Manager credentials and regions through authenticated HTTP', () => {
       prisma.dashboardUser.findUnique.mockImplementation(findUser);
     }
     expect(db.rows[1]).toMatchObject({ username: 'manager', regionCode: null });
+  });
+
+  it('calls a unique violation a taken login only for the username index', async () => {
+    const unique = (target: unknown) =>
+      Object.assign(new Error('Unique constraint failed'), {
+        code: 'P2002',
+        meta: { target },
+      });
+    // Имя индекса строкой — тоже логин.
+    for (const target of [['username'], 'dashboard_users_username_key']) {
+      prisma.dashboardUser.update.mockRejectedValueOnce(unique(target));
+      const taken = await http()
+        .put('/api/managers/2')
+        .auth(admin, { type: 'bearer' })
+        .send({ username: 'anna' })
+        .expect(409);
+      expect(taken.body.message).toBe("логин 'anna' уже занят");
+    }
+    // Другой уникальный индекс при том же запросе с переименованием — не «логин занят».
+    for (const target of [['tg_account_id'], ['voicer_id', 'username'], null]) {
+      prisma.dashboardUser.update.mockRejectedValueOnce(unique(target));
+      const other = await http()
+        .put('/api/managers/2')
+        .auth(admin, { type: 'bearer' })
+        .send({ username: 'anna' })
+        .expect(500);
+      expect(JSON.stringify(other.body)).not.toContain('уже занят');
+    }
+    expect(db.rows[1].username).toBe('manager');
+    // То же при создании учётки.
+    prisma.dashboardUser.create.mockRejectedValueOnce(unique(['username']));
+    const taken = await http()
+      .post('/api/managers')
+      .auth(admin, { type: 'bearer' })
+      .send({ username: 'voice', role: 'admin' })
+      .expect(409);
+    expect(taken.body.message).toBe("логин 'voice' уже занят");
+    prisma.dashboardUser.create.mockRejectedValueOnce(unique(['voicer_id']));
+    const other = await http()
+      .post('/api/managers')
+      .auth(admin, { type: 'bearer' })
+      .send({ username: 'fresh', role: 'admin' })
+      .expect(500);
+    expect(JSON.stringify(other.body)).not.toContain('уже занят');
+    expect(db.rows).toHaveLength(3);
   });
 
   it('changes login, role, region, password and accounts in one request', async () => {
