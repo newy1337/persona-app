@@ -185,7 +185,7 @@ export default function VoiceNotifications({ userId }) {
         {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
         {permission === 'default' && <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md bg-muted/40 px-3 py-2.5">
           <p className="min-w-0 flex-[1_1_240px] text-xs leading-relaxed text-muted-foreground">Чтобы видеть новые чаты в очереди, даже когда панель свёрнута, включите уведомления браузера.</p>
-          <Button type="button" variant="outline" size="sm" onClick={askPush}>Включить push</Button>
+          <Button type="button" variant="outline" onClick={askPush}>Включить push</Button>
         </div>}
         {permission === 'denied' && <p className="text-xs text-muted-foreground">Push в браузере запрещён — разрешите уведомления для этого сайта в настройках браузера.</p>}
         {!data.items.length && !pendingQueue.length && <p className="text-muted-foreground">Новых уведомлений пока нет. Здесь появятся чаты, которые ждут менеджера, и готовые голосовые.</p>}
@@ -199,8 +199,8 @@ export default function VoiceNotifications({ userId }) {
                 <time className="text-xs text-muted-foreground tabular-nums">ждёт {waitingLabel(item.waiting_since)}{item.manager_name ? ` · ${item.manager_name}` : ''}</time>
               </div>
               <div className={ITEM_ACTIONS_CLASS}>
-                <Button type="button" variant="outline" size="sm" onClick={() => openChat(item)}>Открыть чат</Button>
-                <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => closeQueue(item)}>Закрыть</Button>
+                <Button type="button" variant="outline" onClick={() => openChat(item)}>Открыть чат</Button>
+                <Button type="button" variant="ghost" className="text-muted-foreground" onClick={() => closeQueue(item)}>Закрыть</Button>
               </div>
             </article>)}
           </div>
@@ -216,7 +216,7 @@ export default function VoiceNotifications({ userId }) {
               </div>
               <div className={ITEM_ACTIONS_CLASS}>
                 <Link className={smallBtn} to={`/voice?task=${item.taskId}`} onClick={() => { read(item); setOpen(false); }}>Открыть задание</Link>
-                {!item.readAt && <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => read(item)}>Прочитано</Button>}
+                {!item.readAt && <Button type="button" variant="ghost" className="text-muted-foreground" onClick={() => read(item)}>Прочитано</Button>}
               </div>
             </article>)}
           </div>

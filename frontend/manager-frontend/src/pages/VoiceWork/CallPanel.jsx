@@ -70,9 +70,9 @@ export function CallPanel({ task, onActive }) {
     <p role="status" className="flex min-h-5 items-center gap-1.5 tabular-nums">{state && <>{state === 'connected' && <span className="size-1.5 shrink-0 rounded-full bg-success-foreground" aria-hidden="true" />}{labels[state] || state}{state === 'connected' && ` · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`}</>}</p>
     <p className={cn('min-h-4 text-xs tabular-nums', state === 'failed' ? 'text-destructive' : 'text-muted-foreground')}>{reason}</p>
     <div className="flex flex-wrap gap-2">
-      {!active && <Button type="button" variant="outline" size="sm" disabled={task.status !== 'in_progress' || !task.chatId} onClick={start}><Phone aria-hidden="true" />Позвонить с сайта</Button>}
-      {active && <><Button type="button" variant="outline" size="sm" onClick={mute} disabled={!resources.current?.stream}>{muted ? <Mic aria-hidden="true" /> : <MicOff aria-hidden="true" />}{muted ? 'Включить микрофон' : 'Выключить микрофон'}</Button>
-        <Button type="button" variant="destructive" size="sm" onClick={() => { setState('ended'); setReason('Вы завершили звонок'); startAt.current = 0; release(); }}><PhoneOff aria-hidden="true" />Завершить вызов</Button></>}
+      {!active && <Button type="button" variant="outline" disabled={task.status !== 'in_progress' || !task.chatId} onClick={start}><Phone aria-hidden="true" />Позвонить с сайта</Button>}
+      {active && <><Button type="button" variant="outline" onClick={mute} disabled={!resources.current?.stream}>{muted ? <Mic aria-hidden="true" /> : <MicOff aria-hidden="true" />}{muted ? 'Включить микрофон' : 'Выключить микрофон'}</Button>
+        <Button type="button" variant="destructive" onClick={() => { setState('ended'); setReason('Вы завершили звонок'); startAt.current = 0; release(); }}><PhoneOff aria-hidden="true" />Завершить вызов</Button></>}
     </div>
   </section>;
 }

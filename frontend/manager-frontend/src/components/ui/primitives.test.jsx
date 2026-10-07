@@ -9,7 +9,16 @@ import { Button } from './button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card';
 import { Checkbox } from './checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './collapsible';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from './dialog';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogError,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './dialog';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -400,7 +409,7 @@ describe('примитивы shadcn монтируются в этом прое�
     expect(table.className).toContain('text-xs');
   });
 
-  it('поле: подпись оборачивает контрол, слот подсказки всегда есть', async () => {
+  it('поле: подпись оборачивает контрол, подсказка и ошибка — в строке сообщения', async () => {
     const el = await mount(
       <>
         <Field label="Имя" hint="Как в паспорте">
@@ -421,6 +430,182 @@ describe('примитивы shadcn монтируются в этом прое�
     const error = withError.querySelector('[data-slot="field-message"]');
     expect(error?.textContent).toBe('Обязательное поле');
     expect(error.className).toContain('text-destructive');
+  });
+
+  it('поле без сообщения не держит пустую строку, reserve оставляет её', async () => {
+    const el = await mount(
+      <>
+        <Field label="Имя">
+          <Input defaultValue="Аня" />
+        </Field>
+        <Field label="Лимит" reserve>
+          <Input defaultValue="" />
+        </Field>
+      </>,
+    );
+    const [plain, reserved] = el.querySelectorAll('[data-slot="field"]');
+    expect(plain.querySelector('input')?.value).toBe('Аня');
+    expect(plain.querySelector('[data-slot="field-message"]')).toBeNull();
+    expect(plain.className).toContain('text-xs');
+    expect(plain.className).toContain('font-medium');
+    expect(plain.className).toContain('gap-1.5');
+    const slot = reserved.querySelector('[data-slot="field-message"]');
+    expect(slot).toBeTruthy();
+    expect(slot.className).toContain('min-h-4');
+    expect(slot.textContent).toBe('');
+  });
+
+  it('одна высота контролов — 32px, поля плоские, фокус нейтральный', async () => {
+    const el = await mount(
+      <>
+        <Button>Обычная</Button>
+        <Button size="sm">Малая</Button>
+        <Button size="lg">Крупная</Button>
+        <Button size="icon" aria-label="иконка" />
+        <Button size="icon-sm" aria-label="иконка 32" />
+        <Button size="icon-xs" aria-label="иконка 28" />
+        <Button variant="outline">Контур</Button>
+        <Input defaultValue="" />
+        <Textarea defaultValue="" />
+        <NativeSelect defaultValue="a">
+          <option value="a">А</option>
+        </NativeSelect>
+        <NativeSelect variant="ghost" defaultValue="a">
+          <option value="a">А</option>
+        </NativeSelect>
+        <Checkbox aria-label="флаг" />
+        <Tabs defaultValue="one">
+          <TabsList>
+            <TabsTrigger value="one">Один</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </>,
+    );
+    const classes = (node) => node.className.split(' ');
+    const [normal, small, large, icon, iconSm, iconXs, outline] = el.querySelectorAll(
+      '[data-slot="button"]',
+    );
+    expect(classes(normal)).toContain('h-8');
+    expect(classes(small)).toContain('h-8');
+    expect(classes(large)).toContain('h-9');
+    expect(classes(icon)).toContain('size-8');
+    expect(classes(iconSm)).toContain('size-8');
+    expect(classes(iconXs)).toContain('size-7');
+    expect(classes(outline)).toContain('bg-transparent');
+    expect(classes(outline)).toContain('border-input');
+    expect(classes(outline)).toContain('hover:bg-accent');
+
+    const input = el.querySelector('[data-slot="input"]');
+    const area = el.querySelector('[data-slot="textarea"]');
+    const [select, ghost] = el.querySelectorAll('[data-slot="native-select"]');
+    const checkbox = el.querySelector('[data-slot="checkbox"]');
+    expect(classes(input)).toContain('h-8');
+    expect(classes(input)).toContain('text-sm');
+    expect(classes(input)).toContain('px-2.5');
+    expect(classes(select)).toContain('h-8');
+    expect(classes(area)).toContain('text-sm');
+    expect(classes(area)).toContain('py-1.5');
+    for (const field of [input, area, select, checkbox, outline]) {
+      // Плоские поля: ни заливки тёмной темы, ни тени, ни крупного шрифта.
+      expect(field.className).not.toContain('dark:bg-input');
+      expect(field.className).not.toContain('shadow-xs');
+      expect(classes(field)).not.toContain('text-base');
+      expect(classes(field)).toContain('bg-transparent');
+    }
+    for (const field of [input, area, select]) {
+      expect(classes(field)).toContain('focus-visible:border-ring');
+      expect(classes(field)).toContain('focus-visible:ring-[3px]');
+      expect(classes(field)).toContain('focus-visible:ring-ring/25');
+    }
+    expect(classes(normal)).toContain('focus-visible:ring-ring/50');
+    // Призрачный селект строк таблиц остаётся без рамки.
+    expect(classes(ghost)).toContain('border-transparent');
+    expect(classes(el.querySelector('[data-slot="tabs-list"]'))).toContain('h-8');
+  });
+
+  it('окно: поверхность, части и строка ошибки', async () => {
+    const el = await mount(
+      <Dialog open>
+        <DialogContent portal={false}>
+          <DialogHeader>
+            <DialogTitle>Окно</DialogTitle>
+            <DialogDescription>Текст</DialogDescription>
+          </DialogHeader>
+          <DialogBody>Тело</DialogBody>
+          <DialogError role="alert" />
+          <DialogFooter>
+            <Button variant="outline">Отмена</Button>
+            <Button>Сохранить</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>,
+    );
+    const classes = (slot) => el.querySelector(`[data-slot="${slot}"]`).className.split(' ');
+    for (const name of ['bg-card', 'rounded-xl', 'border', 'shadow-lg', 'p-5', 'gap-4', 'sm:max-w-md']) {
+      expect(classes('dialog-content')).toContain(name);
+    }
+    expect(classes('dialog-overlay')).toContain('bg-black/60');
+    expect(classes('dialog-header')).toContain('gap-1');
+    expect(classes('dialog-title')).toContain('text-base');
+    expect(classes('dialog-title')).toContain('font-semibold');
+    expect(classes('dialog-description')).toContain('text-sm');
+    expect(classes('dialog-description')).toContain('text-muted-foreground');
+    expect(classes('dialog-body')).toContain('overflow-y-auto');
+    expect(classes('dialog-body')).toContain('[scrollbar-gutter:stable]');
+    expect(classes('dialog-footer')).toContain('justify-end');
+    expect(classes('dialog-footer')).toContain('gap-2');
+    // Строка ошибки пуста, но место под неё занято.
+    const error = el.querySelector('[data-slot="dialog-error"]');
+    expect(error.textContent).toBe('');
+    expect(error.className).toContain('min-h-4');
+    // Крестик — квадрат 28px с нейтральным кольцом фокуса.
+    const close = el.querySelector('button[data-slot="dialog-close"]');
+    expect(close.textContent).toBe('Закрыть');
+    expect(close.className).toContain('size-7');
+    expect(close.className).toContain('focus-visible:ring-ring/50');
+  });
+
+  it('меню, поповер, селект и подсказка — одна поверхность', async () => {
+    await mount(
+      <>
+        <DropdownMenu open>
+          <DropdownMenuTrigger asChild>
+            <Button>Меню</Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem>Открыть</DropdownMenuItem>
+            <DropdownMenuItem variant="destructive">Удалить</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Popover open>
+          <PopoverTrigger asChild>
+            <Button>Поповер</Button>
+          </PopoverTrigger>
+          <PopoverContent>Содержимое</PopoverContent>
+        </Popover>
+        <Tooltip open>
+          <TooltipTrigger asChild>
+            <Button>Наведи</Button>
+          </TooltipTrigger>
+          <TooltipContent>Подсказка</TooltipContent>
+        </Tooltip>
+      </>,
+    );
+    const classes = (slot) => document.querySelector(`[data-slot="${slot}"]`).className.split(' ');
+    for (const slot of ['dropdown-menu-content', 'popover-content']) {
+      const pad = slot === 'popover-content' ? 'p-3' : 'p-1';
+      for (const name of ['bg-popover', 'border', 'rounded-lg', 'shadow-md', pad]) {
+        expect(classes(slot)).toContain(name);
+      }
+    }
+    for (const name of ['bg-popover', 'border', 'shadow-md']) {
+      expect(classes('tooltip-content')).toContain(name);
+    }
+    const [item, danger] = document.querySelectorAll('[data-slot="dropdown-menu-item"]');
+    for (const name of ['min-h-8', 'text-sm', 'rounded-md']) {
+      expect(item.className.split(' ')).toContain(name);
+    }
+    expect(danger.className).toContain('data-[variant=destructive]:text-destructive');
   });
 
   it('нативный чекбокс переключает .checked', async () => {

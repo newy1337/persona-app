@@ -19,7 +19,16 @@ import ClientAvatar from '../../components/ClientAvatar/ClientAvatar';
 import { useRouteBusy } from '@/components/AppLayout/routeBusy';
 import { PageHeader } from '@/components/PageHeader/PageHeader';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogError,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -78,14 +87,13 @@ export function AddAccountDialog({ personas, onDone, onCancel }) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent portal={false} showCloseButton={false} className="flex flex-col gap-0 overflow-hidden p-0 sm:max-w-[440px]">
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
-          <DialogHeader className="px-6 pt-6 pb-4">
-            <DialogTitle className="text-base">Новый аккаунт</DialogTitle>
+      <DialogContent portal={false} showCloseButton={false}>
+        <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>Новый аккаунт</DialogTitle>
             <DialogDescription>Добавьте номер, затем войдите — код придёт в Telegram.</DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 [scrollbar-gutter:stable]">
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+          <DialogBody className="grid content-start gap-3 sm:grid-cols-2">
               <Field label="Телефон (E.164)">
                 <Input className="font-mono tabular-nums" autoFocus placeholder="+79001234567" value={f.phone_e164} onChange={(e) => set({ phone_e164: e.target.value })} />
               </Field>
@@ -106,15 +114,14 @@ export function AddAccountDialog({ personas, onDone, onCancel }) {
               <Field label="Лимит сообщений/день">
                 <Input className="tabular-nums" inputMode="numeric" placeholder="без лимита" value={f.daily_msg_quota} onChange={(e) => set({ daily_msg_quota: e.target.value })} />
               </Field>
-              <Label className="col-span-full mb-3 cursor-pointer font-normal">
+              <Label className="col-span-full cursor-pointer font-normal">
                 <NativeCheckbox checked={f.withProxy} onChange={(e) => set({ withProxy: e.target.checked })} />
                 Задать прокси сразу
               </Label>
               {f.withProxy && <ProxyFields value={f.proxy} onChange={(proxy) => set({ proxy })} />}
-            </div>
-            <p className="min-h-4 text-xs text-destructive">{error}</p>
-          </div>
-          <DialogFooter className="px-6 pt-4 pb-6">
+          </DialogBody>
+          <DialogError>{error}</DialogError>
+          <DialogFooter>
             <Button type="button" variant="outline" onClick={onCancel}>Отмена</Button>
             <Button type="submit" disabled={busy || !valid}>{busy ? 'Добавление…' : 'Добавить'}</Button>
           </DialogFooter>

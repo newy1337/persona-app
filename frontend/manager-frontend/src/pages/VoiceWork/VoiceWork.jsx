@@ -80,16 +80,16 @@ function CreateTask({ options, context, onClose, onCreated }) {
   const field = (key, label, { full, ...props } = {}) => <Field label={label} className={cn(full && 'sm:col-span-2')}><Input value={form[key]} onChange={e => set(key, e.target.value)} disabled={busy} {...props} /></Field>;
   return <PanelUX.Modal title="Новое задание войсеру" wide busy={busy} onClose={onClose}
     footer={<><Button type="button" variant="outline" disabled={busy} onClick={onClose}>Отмена</Button><Button type="submit" form="voice-task-form" disabled={busy || !manager?.voicer_id}>{busy && <LoaderCircle className="animate-spin" aria-hidden="true" />}{busy ? 'Создаём…' : 'Поставить в очередь'}</Button></>}>
-    <form id="voice-task-form" onSubmit={submit} className="grid min-w-0 gap-x-4 gap-y-2 sm:grid-cols-2">
+    <form id="voice-task-form" onSubmit={submit} className="grid min-w-0 gap-3 sm:grid-cols-2">
       <Field label="Тип задания"><NativeSelect value={form.kind} onChange={e => set('kind', e.target.value)}><option value="voice">Записать голосовое</option><option value="call">Звонок</option></NativeSelect></Field>
       {form.kind === 'voice' && <Field label="Режим голосового"><NativeSelect value={form.voice_mode} disabled={busy} onChange={e => set('voice_mode', e.target.value)}><option value="library">В библиотеку</option><option value="once">Одноразовое — сразу в диалог</option></NativeSelect></Field>}
       {form.kind === 'voice' && <p role="note" className={cn(caption, 'min-h-8 sm:col-span-2')}>{form.voice_mode === 'once' ? 'После записи войсером голосовое автоматически отправится в выбранный диалог. Дополнительное подтверждение менеджера не требуется.' : 'Запись сохранится в библиотеке. Позже её можно выбрать и отправить в любой доступный вам диалог.'}</p>}
       <Field label="Менеджер"><NativeSelect value={form.manager_id} onChange={e => setForm(old => ({ ...old, manager_id: e.target.value, chat_id: '' }))} required>{options.managers.map(m => <option key={m.id} value={m.id}>{m.username}{m.region ? ` · ${m.region}` : ''}</option>)}</NativeSelect></Field>
       {/* Войсера назначает администратор: это не поле ввода, а справка в той же сетке, что и поля. */}
-      <div role="note" className={cn(caption, 'flex min-w-0 flex-col gap-1.5')}>
+      <div role="note" className={cn(caption, 'flex min-w-0 flex-col gap-1.5 font-medium')}>
         Войсер
-        <div className="flex h-9 items-center rounded-md bg-muted/40 px-3 text-sm text-foreground"><span className="truncate">{manager?.voicer_name || 'не назначен'}</span></div>
-        <span className="flex min-h-4 items-start gap-1.5">{manager?.voicer_id ? !manager.bot_linked && <><Dot className="mt-[5px]" />Telegram ещё не подключён — задание будет ждать в очереди</> : 'Администратор назначает войсера в разделе «Менеджеры»'}</span>
+        <div className="flex h-8 items-center rounded-md bg-muted/40 px-2.5 text-sm font-normal text-foreground"><span className="truncate">{manager?.voicer_name || 'не назначен'}</span></div>
+        <span className="flex min-h-4 items-start gap-1.5 font-normal">{manager?.voicer_id ? !manager.bot_linked && <><Dot className="mt-[5px]" />Telegram ещё не подключён — задание будет ждать в очереди</> : 'Администратор назначает войсера в разделе «Менеджеры»'}</span>
       </div>
       {field('title', 'Название записи / задания', { required: true, maxLength: 160, placeholder: 'Сообщения для Димы · Доброе утро', full: true })}
       <Field label="Личность"><NativeSelect value={form.persona_slug} onChange={e => setForm(old => ({ ...old, persona_slug: e.target.value, chat_id: '' }))} required>{options.personas.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}</NativeSelect></Field>
@@ -161,7 +161,7 @@ function TaskDetail({ task: initial, role, bot, initialView, onClose, onChange }
       {task.kind === 'call' && <CallBrief task={task} />}
       {task.contactRef && <p className={prose}><strong className={label}>Контакт:</strong> {task.contactRef}</p>}
       {canReadChat && <Tabs value={view} onValueChange={setView} className="gap-0">
-        <TabsList className="h-8" aria-label="Задание и переписка">
+        <TabsList aria-label="Задание и переписка">
           <TabsTrigger value="brief" onClick={() => setView('brief')}>Задание и биография</TabsTrigger>
           <TabsTrigger value="chat" onClick={() => setView('chat')}>Переписка</TabsTrigger>
         </TabsList>
@@ -176,7 +176,7 @@ function TaskDetail({ task: initial, role, bot, initialView, onClose, onChange }
       {task.outcome && <p className={prose}><strong className={label}>Результат:</strong> {task.outcome}</p>}
       {task.call?.note && <p className={prose}><strong className={label}>Важное из звонка:</strong> {task.call.note}</p>}
       <details><summary className="cursor-pointer py-1 text-primary">Полная карточка личности</summary><p className={caption}>Снимок при создании задания. Неуказанные факты требуют уточнения.</p><pre className="my-2 max-h-[45vh] overflow-y-auto font-sans text-sm leading-7 whitespace-pre-wrap [overflow-wrap:anywhere] [scrollbar-gutter:stable]">{task.biography}</pre></details>
-      {task.chatId && !voice && <Button asChild variant="outline" size="sm" className="self-start"><Link to={`/conversation/${task.chatId}`}>Открыть диалог менеджера</Link></Button>}
+      {task.chatId && !voice && <Button asChild variant="outline" className="self-start"><Link to={`/conversation/${task.chatId}`}>Открыть диалог менеджера</Link></Button>}
       </>}
       {!task.chatId && !voice && task.status === 'queued' && <div className="flex min-w-0 flex-col gap-2.5">
         <TaskChatSelect managerId={task.managerId} persona={task.personaSlug} value={linkId} onChange={setLinkId} disabled={busy} />
@@ -205,7 +205,7 @@ function RenameRecording({ item, onClose, onChange }) {
     <Button type="submit" form="recording-rename" disabled={busy || !title.trim()}>Сохранить</Button>
   </>}>
     <form id="recording-rename" onSubmit={submit}>
-      <Field label="Название записи" error={error && <span role="alert">{error}</span>}><Input data-autofocus value={title} onChange={e => setTitle(e.target.value)} disabled={busy} maxLength={160} required /></Field>
+      <Field label="Название записи" reserve error={error && <span role="alert">{error}</span>}><Input data-autofocus value={title} onChange={e => setTitle(e.target.value)} disabled={busy} maxLength={160} required /></Field>
     </form>
   </PanelUX.Modal>;
 }
@@ -233,14 +233,14 @@ function Recording({ item, role, context, onChange, onOpen }) {
     {/* Строка плеера занята всегда: до загрузки в ней кнопка той же высоты и с тем же кружком, что у плеера. */}
     <div className="flex h-[42px] items-center">{url ? <VoicePlayer src={url} /> : (
       <button type="button" disabled={busy} className="group flex h-[42px] items-center gap-2.5 rounded-md pr-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50" onClick={() => perform(listen)}>
-        <span className="grid size-9 shrink-0 place-items-center rounded-full border bg-background shadow-xs transition-colors group-hover:bg-accent dark:border-input dark:bg-input/30"><Play className="size-4 fill-current" aria-hidden="true" /></span>
+        <span className="grid size-9 shrink-0 place-items-center rounded-full border border-input transition-colors group-hover:bg-accent"><Play className="size-4 fill-current" aria-hidden="true" /></span>
         Прослушать
       </button>
     )}</div>
     {item.last_delivery && <DeliveryStatus delivery={item.last_delivery} />}
     <div className={errorSlot}>{error && <p role="alert">{error}</p>}</div>
     <div className="mt-auto flex min-h-8 items-center justify-between gap-2">
-      {role !== 'voice' && item.current ? <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => setSending(true)}><Send aria-hidden="true" />Отправить в диалог</Button> : <span />}
+      {role !== 'voice' && item.current ? <Button type="button" variant="outline" disabled={busy} onClick={() => setSending(true)}><Send aria-hidden="true" />Отправить в диалог</Button> : <span />}
       <div className="flex items-center gap-0.5">
         <IconAction icon={Download} label="Скачать" disabled={busy} onClick={() => perform(download)} />
         {role !== 'voice' && <IconAction icon={Pencil} label="Переименовать" disabled={busy} onClick={() => setEditing(true)} />}
@@ -269,7 +269,7 @@ function TaskCard({ item, onOpen }) {
         <p className="tabular-nums">{item.dueAt ? `К ${date(item.dueAt)}` : `Создано ${date(item.createdAt)}`}</p>
         <p className="flex min-h-4 items-start gap-1.5">{item.notifyError ? <><Dot className="mt-[5px]" />{item.notifyError}</> : item.notification === 'sent' ? 'Уведомление доставлено в Telegram' : 'Уведомление ожидает отправки'}</p>
       </div>
-      <Button type="button" variant="outline" size="sm" onClick={() => onOpen(item.id)}>Открыть задание</Button>
+      <Button type="button" variant="outline" onClick={() => onOpen(item.id)}>Открыть задание</Button>
     </div>
   </article>;
 }
@@ -341,26 +341,26 @@ export default function VoiceWork() {
   const emptyText = shown === 'library' ? 'Записей пока нет. Они появятся после выполнения заданий в Telegram.' : search || status !== 'active' ? 'По выбранным условиям заданий нет.' : 'Очередь пуста. Здесь появятся задания на голосовые и звонки.';
   return <div className="container pb-6">
     <PageHeader title="Войсер" description="Голосовые, звонки и готовые записи">
-      {context.get('chat') && options?.role !== 'voice' && <Button asChild variant="outline" size="sm"><Link to={`/conversation/${context.get('chat')}`}>Вернуться в диалог</Link></Button>}
+      {context.get('chat') && options?.role !== 'voice' && <Button asChild variant="outline"><Link to={`/conversation/${context.get('chat')}`}>Вернуться в диалог</Link></Button>}
       {!options && <Skeleton className="h-8 w-[146px]" />}
-      {manager && <Button type="button" size="sm" onClick={() => setCreating(true)}><Plus aria-hidden="true" />Новое задание</Button>}
+      {manager && <Button type="button" onClick={() => setCreating(true)}><Plus aria-hidden="true" />Новое задание</Button>}
     </PageHeader>
     {options?.role === 'voice' && <Alert role="note" className="mb-4"><AlertDescription className="flex w-full flex-row flex-wrap items-center justify-between gap-3 text-foreground"><span>{options.linked ? `Telegram подключён${options.telegram_username ? ': @' + options.telegram_username : ''}` : 'Подключите Telegram, чтобы получать задания и отправлять записи'}</span><VoiceBotLink userId={options.user_id} linked={options.linked} onChange={load} /></AlertDescription></Alert>}
     {options?.bot.error && <Alert variant="warning" className="mb-4" role="status"><AlertDescription>{options.bot.error}</AlertDescription></Alert>}
     {options && !options.bot.configured && <Alert variant="warning" role="note" className="mb-4"><AlertDescription>Бот не настроен. Задания сохраняются, но уведомления пока не отправляются.</AlertDescription></Alert>}
     <div className="mb-4 flex min-h-8 flex-wrap items-center gap-2">
       <Tabs value={tab} onValueChange={changeTab} className="gap-0">
-        <TabsList className="h-8" aria-label="Раздел озвучки">
+        <TabsList aria-label="Раздел озвучки">
           <TabsTrigger value="tasks" onClick={() => changeTab('tasks')}>Задания</TabsTrigger>
           <TabsTrigger value="library" onClick={() => changeTab('library')}>Библиотека</TabsTrigger>
         </TabsList>
       </Tabs>
       <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2 max-sm:w-full">
-        {tab === 'tasks' && <NativeSelect className="h-8 w-auto" aria-label="Статус заданий" value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="active">Активные</option>{Object.entries(states).filter(([key]) => key !== 'ready').map(([key, label]) => <option key={key} value={key}>{label}</option>)}<option value="all">Все</option></NativeSelect>}
+        {tab === 'tasks' && <NativeSelect className="w-auto" aria-label="Статус заданий" value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="active">Активные</option>{Object.entries(states).filter(([key]) => key !== 'ready').map(([key, label]) => <option key={key} value={key}>{label}</option>)}<option value="all">Все</option></NativeSelect>}
         <SearchInput className="w-full sm:w-80" aria-label="Поиск заданий и записей" placeholder="Поиск по названию" value={query} onChange={setQuery} />
       </div>
     </div>
-    {error && <Alert variant="destructive" role="alert" className="mb-4"><AlertDescription className="flex w-full flex-row flex-wrap items-center gap-2">{error} <Button type="button" variant="outline" size="sm" disabled={loading} onClick={retry}>Повторить</Button></AlertDescription></Alert>}
+    {error && <Alert variant="destructive" role="alert" className="mb-4"><AlertDescription className="flex w-full flex-row flex-wrap items-center gap-2">{error} <Button type="button" variant="outline" disabled={loading} onClick={retry}>Повторить</Button></AlertDescription></Alert>}
     {detailError && <p role="alert" className="mb-3 text-xs text-destructive">{detailError}</p>}
     {items === null ? (loading
       ? <div role="status" className={gridClass} aria-label="Загружаем…"><span className="sr-only">Загружаем…</span>{Array.from({ length: 6 }, (_, i) => <SkeletonCard key={i} />)}</div>

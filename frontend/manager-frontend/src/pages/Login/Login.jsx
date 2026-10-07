@@ -38,7 +38,7 @@ export default function Login({ onDone }) {
           <h1 className="text-lg leading-none font-semibold tracking-tight">Панель менеджера</h1>
         </CardHeader>
         <CardContent>
-          <form className="flex flex-col gap-2" onSubmit={submit}>
+          <form className="flex flex-col gap-3" onSubmit={submit}>
             <Field label="Логин">
               <Input
                 autoFocus
@@ -55,11 +55,11 @@ export default function Login({ onDone }) {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </Field>
+            {/* Строка ошибки занята всегда: карточка не меняет высоту. */}
+            <p className="min-h-4 text-xs leading-4 text-destructive" role="alert">{error}</p>
             <Button type="submit" className="w-full" disabled={busy || !username || !password}>
               {busy ? 'Вход…' : 'Войти'}
             </Button>
-            {/* Строка ошибки занята всегда: карточка не меняет высоту. */}
-            <p className="min-h-4 text-xs text-destructive" role="alert">{error}</p>
           </form>
         </CardContent>
       </Card>

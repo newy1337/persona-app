@@ -71,13 +71,13 @@ export function SaveBar({ status, error, note, onNote, onSave, disabled, busy, l
         {error || (status ? <span className={cn(DOT, 'before:bg-success-foreground')}>{status}</span> : '')}
       </span>
       <Input
-        className="h-8 max-w-60"
+        className="max-w-60"
         placeholder="подпись к версии"
         aria-label="Подпись к версии"
         value={note}
         onChange={(e) => onNote(e.target.value)}
       />
-      <Button size="sm" disabled={disabled} onClick={onSave} title="Ctrl+S">
+      <Button disabled={disabled} onClick={onSave} title="Ctrl+S">
         {busy ? 'Сохранение…' : label}
       </Button>
     </div>

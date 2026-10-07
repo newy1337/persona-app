@@ -3,7 +3,15 @@ import { Check, CircleCheck } from 'lucide-react';
 import { authFlow } from '../../api/accounts';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogError,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -162,17 +170,12 @@ export default function AuthWizard({ account, onClose }) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && close(done)}>
-      <DialogContent
-        portal={false}
-        showCloseButton={false}
-        aria-describedby={undefined}
-        className="flex flex-col gap-0 overflow-hidden p-0 sm:max-w-[400px]"
-      >
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
-          <DialogHeader className="px-6 pt-6 pb-4">
-            <DialogTitle className="text-base">Вход: <span className="font-mono">{account.phone_e164}</span></DialogTitle>
+      <DialogContent portal={false} showCloseButton={false} aria-describedby={undefined}>
+        <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>Вход: <span className="font-mono">{account.phone_e164}</span></DialogTitle>
           </DialogHeader>
-          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 [scrollbar-gutter:stable]">
+          <DialogBody className="flex flex-col gap-3">
             <Tabs value={method} onValueChange={switchMethod} activationMode="manual">
               <TabsList className="grid w-full grid-cols-2" aria-label="Способ входа">
                 <TabsTrigger value="phone" disabled={busy || over} onClick={() => switchMethod('phone')}>
@@ -235,10 +238,9 @@ export default function AuthWizard({ account, onClose }) {
               )}
               {status === 'failed' && <p className="text-sm text-destructive">Не удалось: {job.error}</p>}
             </div>
-            <p className="min-h-4 text-xs text-destructive">{error}</p>
-          </div>
-
-          <DialogFooter className="px-6 pt-4 pb-6">
+          </DialogBody>
+          <DialogError>{error}</DialogError>
+          <DialogFooter>
             {over ? (
               <Button type="button" onClick={() => close(done)}>Закрыть</Button>
             ) : (

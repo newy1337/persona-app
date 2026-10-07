@@ -4,8 +4,10 @@ import { getPrices, putPrices, resetPrices } from '../../api/usage';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
+  DialogError,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -24,7 +26,7 @@ const FIELDS = [
 ];
 
 const CELL = cn(TD, 'py-1.5 align-middle');
-const PRICE = 'h-8 w-24';
+const PRICE = 'w-24';
 const SKELETON_ROWS = 4;
 
 // Содержимое окна живёт только пока окно открыто: цены запрашиваются при каждом
@@ -80,18 +82,19 @@ function PricesForm({ onChanged, onClose }) {
   }
 
   return (
-    <form onSubmit={save} className="flex min-h-0 flex-col" aria-busy={!ready || undefined}>
-      <DialogHeader className="border-b px-6 py-4">
+    <form onSubmit={save} className="flex min-h-0 flex-1 flex-col gap-4" aria-busy={!ready || undefined}>
+      <DialogHeader>
         <DialogTitle>Цены моделей</DialogTitle>
-        <DialogDescription className="min-h-5">
+        {/* Две строки заняты всегда: пояснение дописывается после загрузки цен. */}
+        <DialogDescription className="min-h-10">
           USD за 1 млн токенов.
           {ready && (table.is_default ? ' Сейчас работают умолчания — сверьте с актуальным прайс-листом.' : ' Своя таблица.')}
           {ready && table.note && <> {table.note}</>}
         </DialogDescription>
       </DialogHeader>
 
-      <div className="min-h-[220px] overflow-y-auto [scrollbar-gutter:stable]">
-        <Table className="[&_td:first-child]:pl-6 [&_td:last-child]:pr-6 [&_th:first-child]:pl-6 [&_th:last-child]:pr-6">
+      <DialogBody className="min-h-[220px]">
+        <Table className="[&_td:first-child]:pl-0 [&_td:last-child]:pr-0 [&_th:first-child]:pl-0 [&_th:last-child]:pr-0">
           <TableHeader>
             <TableRow>
               <TableHead className={TH}>Модель</TableHead>
@@ -104,7 +107,7 @@ function PricesForm({ onChanged, onClose }) {
                 <TableRow key={r} className="hover:bg-transparent">
                   <TableCell className={CELL}><Skeleton className="h-5 w-40 max-w-full" /></TableCell>
                   {FIELDS.map(([field]) => (
-                    <TableCell key={field} className={CELL}><Skeleton className={PRICE} /></TableCell>
+                    <TableCell key={field} className={CELL}><Skeleton className={cn(PRICE, 'h-8')} /></TableCell>
                   ))}
                 </TableRow>
               ))}
@@ -127,11 +130,11 @@ function PricesForm({ onChanged, onClose }) {
               ))}
           </TableBody>
         </Table>
-      </div>
+      </DialogBody>
 
-      <DialogFooter className="items-center border-t px-6 py-4">
-        <p className="min-h-4 min-w-0 flex-1 text-xs text-destructive" role="status">{error || ''}</p>
-        <Button type="button" variant="ghost" disabled={busy || !ready || table.is_default} onClick={reset}>
+      <DialogError role="status">{error || ''}</DialogError>
+      <DialogFooter>
+        <Button type="button" variant="ghost" className="mr-auto text-muted-foreground" disabled={busy || !ready || table.is_default} onClick={reset}>
           Вернуть умолчания
         </Button>
         <Button type="button" variant="outline" onClick={onClose}>Отмена</Button>
@@ -146,7 +149,7 @@ function PricesForm({ onChanged, onClose }) {
 export default function PricesEditor({ open, onOpenChange, onChanged }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent portal={false} showCloseButton={false} className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+      <DialogContent portal={false} showCloseButton={false} className="sm:max-w-2xl">
         <PricesForm onChanged={onChanged} onClose={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>

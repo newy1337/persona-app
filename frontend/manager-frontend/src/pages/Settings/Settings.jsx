@@ -68,7 +68,7 @@ export function TriggersEditor({ initial, onSave }) {
         {draft.map((value, i) => (
           <li key={i} className={ROW}>
             <Input
-              className="h-8 flex-1"
+              className="flex-1"
               value={value}
               placeholder="например: позови менеджера"
               maxLength={200}
@@ -96,7 +96,6 @@ export function TriggersEditor({ initial, onSave }) {
       <Button
         type="button"
         variant="ghost"
-        size="sm"
         className="self-start text-muted-foreground"
         disabled={busy || draft.length >= MAX_TRIGGERS}
         onClick={add}
@@ -106,7 +105,7 @@ export function TriggersEditor({ initial, onSave }) {
       </Button>
       <Separator />
       <div className={FOOTER}>
-        <Button type="submit" size="sm" className="min-w-28" disabled={busy || !dirty}>
+        <Button type="submit" className="min-w-28" disabled={busy || !dirty}>
           {busy ? 'Сохраняем…' : 'Сохранить'}
         </Button>
         <span className="min-w-[26ch] text-xs text-muted-foreground tabular-nums" role="status">

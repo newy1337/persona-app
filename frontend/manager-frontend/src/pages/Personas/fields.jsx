@@ -103,7 +103,7 @@ export function FieldRow({ parent, k, children }) {
 function ScalarField({ value, onChange }) {
   if (typeof value === 'boolean') {
     return (
-      <Label className="h-9 gap-1.5 text-sm font-normal">
+      <Label className="h-8 gap-1.5 text-sm font-normal">
         <Checkbox checked={value} onCheckedChange={(v) => onChange(v === true)} />
         {value ? 'да' : 'нет'}
       </Label>
@@ -190,7 +190,6 @@ function ArrayEditor({ value, onChange }) {
             <div className="flex items-center gap-2 px-2 py-1">
               <Button
                 variant="ghost"
-                size="sm"
                 className="min-w-0 flex-1 justify-start gap-2 px-2 font-normal"
                 aria-expanded={open.has(i)}
                 onClick={() => toggle(i)}
@@ -210,7 +209,7 @@ function ArrayEditor({ value, onChange }) {
           </div>
         ),
       )}
-      <Button variant="outline" size="sm" className="self-start" onClick={addItem}><Plus aria-hidden="true" />
+      <Button variant="outline" className="self-start" onClick={addItem}><Plus aria-hidden="true" />
         Добавить
       </Button>
     </div>

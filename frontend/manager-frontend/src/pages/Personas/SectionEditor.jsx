@@ -123,7 +123,7 @@ export default function SectionEditor({ persona, section, onSaved, onError }) {
       <EditorBar
         leading={
           <Tabs value={mode} onValueChange={setMode}>
-            <TabsList className="h-8">
+            <TabsList>
               <TabsTrigger value="form" className="px-3 text-xs">Форма</TabsTrigger>
               <TabsTrigger value="json" className="px-3 text-xs">JSON</TabsTrigger>
             </TabsList>
@@ -158,7 +158,7 @@ export default function SectionEditor({ persona, section, onSaved, onError }) {
 
       {mode === 'json' || !parsed.ok ? (
         <Textarea
-          className="field-sizing-fixed min-h-[60vh] resize-y overflow-x-auto font-mono text-xs leading-normal whitespace-pre [overflow-wrap:normal] md:text-xs"
+          className="field-sizing-fixed min-h-[60vh] resize-y overflow-x-auto font-mono text-xs leading-normal whitespace-pre [overflow-wrap:normal]"
           spellCheck={false}
           value={text}
           onChange={(e) => edit(e.target.value)}

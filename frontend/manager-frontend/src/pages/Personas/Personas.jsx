@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogError,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -62,8 +63,8 @@ const TABS = [
 function CreateDialog({ open, personas, onDone, onCancel }) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onCancel(); }}>
-      <DialogContent portal={false} showCloseButton={false} className="gap-0 p-0">
-        <DialogHeader className="border-b px-6 py-4">
+      <DialogContent portal={false} showCloseButton={false}>
+        <DialogHeader>
           <DialogTitle>Новая личность</DialogTitle>
           <DialogDescription>
             Кем говорит бот. Документы можно скопировать у существующей личности.
@@ -100,23 +101,23 @@ function CreateForm({ personas, onDone, onCancel }) {
   }
 
   return (
-    <form onSubmit={submit}>
-      <div className="flex flex-col gap-3 px-6 py-4">
+    <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={submit}>
+      <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Имя">
           <Input autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
         </Field>
         <Field label="Идентификатор (латиницей)">
           <Input placeholder="соберём из имени" value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value })} />
         </Field>
-        <Field label="Скопировать документы у">
+        <Field label="Скопировать документы у" className="col-span-full">
           <NativeSelect value={f.copy_from} onChange={(e) => setF({ ...f, copy_from: e.target.value })}>
             <option value="">— пустая личность —</option>
             {personas.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
           </NativeSelect>
         </Field>
-        <p className="min-h-4 text-xs text-destructive" role="status">{error || ''}</p>
       </div>
-      <DialogFooter className="border-t px-6 py-4">
+      <DialogError role="status">{error || ''}</DialogError>
+      <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>Отмена</Button>
         <Button type="submit" disabled={busy || !f.name.trim()}>{busy ? 'Создание…' : 'Создать'}</Button>
       </DialogFooter>
@@ -186,7 +187,7 @@ function ModelsSkeleton() {
     <div className={MODELS_BOX} role="status" aria-label="Загружаю модели">
       {MODEL_FIELDS.map((m) => (
         <Field key={m.key} label={m.label} hint={m.hint} className={MODEL_FIELD}>
-          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-8 w-full" />
         </Field>
       ))}
     </div>
@@ -207,7 +208,7 @@ function DetailSkeleton({ models }) {
       </div>
       {models !== null && <ModelsSkeleton />}
       <div className="flex flex-col gap-2">
-        <div className={cn('inline-flex h-9 w-fit items-center rounded-lg bg-muted p-[3px]', TABS_LIST)}>
+        <div className={cn('inline-flex h-8 w-fit items-center rounded-lg bg-muted p-[3px]', TABS_LIST)}>
           {TABS.map((t) => (
             <div key={t.key} className={cn('flex h-full items-center', TAB)}>
               <Skeleton className="h-4 w-14 bg-background" />
@@ -376,7 +377,7 @@ export default function Personas() {
         title="Личности"
         description="Кем говорит бот. Одна личность может стоять на нескольких аккаунтах; правки действуют со следующего ответа."
       >
-        <Button variant="outline" size="sm" disabled={creating} onClick={() => setCreating(true)}>
+        <Button variant="outline" disabled={creating} onClick={() => setCreating(true)}>
           <Plus aria-hidden="true" />
           Новая личность
         </Button>

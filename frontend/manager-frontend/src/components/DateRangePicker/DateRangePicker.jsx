@@ -156,7 +156,6 @@ export default function DateRangePicker({ from, to, firstDay = null, onChange })
         ref={trigger}
         type="button"
         variant="outline"
-        size="sm"
         className="min-w-[180px] justify-start"
         data-testid="range-button"
         aria-haspopup="dialog"
@@ -179,17 +178,16 @@ export default function DateRangePicker({ from, to, firstDay = null, onChange })
           tabIndex={-1}
           role="dialog"
           aria-label="Выбор периода"
-          className="absolute top-[calc(100%+6px)] right-0 z-50 flex max-h-[calc(100vh-120px)] overflow-auto rounded-lg border bg-popover text-popover-foreground shadow-sm outline-hidden [scrollbar-gutter:stable] max-md:right-auto max-md:left-0 max-md:max-w-[calc(100vw-32px)] max-md:flex-col"
+          className="absolute top-[calc(100%+6px)] right-0 z-50 flex max-h-[calc(100vh-120px)] overflow-auto rounded-lg border bg-popover text-popover-foreground shadow-md outline-hidden [scrollbar-gutter:stable] max-md:right-auto max-md:left-0 max-md:max-w-[calc(100vw-32px)] max-md:flex-col"
         >
-          <div className="flex min-w-[190px] flex-col gap-0.5 border-r p-2 max-md:flex-row max-md:flex-wrap max-md:border-r-0 max-md:border-b">
+          <div className="flex min-w-[190px] flex-col gap-0.5 border-r p-1 max-md:flex-row max-md:flex-wrap max-md:border-r-0 max-md:border-b">
             {list.map((p) => (
               <Button
                 key={p.key}
                 type="button"
                 variant="ghost"
-                size="sm"
                 aria-pressed={active?.key === p.key}
-                className="justify-start font-normal aria-pressed:bg-accent aria-pressed:font-medium aria-pressed:text-accent-foreground"
+                className="justify-start px-2 font-normal aria-pressed:bg-accent aria-pressed:font-medium aria-pressed:text-accent-foreground"
                 onClick={() => {
                   onChange({ from: p.from, to: p.to });
                   close();

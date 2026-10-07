@@ -4,8 +4,10 @@ import { parseProxyLine } from '../../utils/proxyLine';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
+  DialogError,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -54,9 +56,13 @@ export function ProxyFields({ value, onChange, autoFocus = false }) {
     ? `Распознано: ${parsed.proxy.type.toUpperCase()} ${parsed.proxy.host}:${parsed.proxy.port}${parsed.proxy.username ? ` · логин ${parsed.proxy.username}` : ''} — проверьте поля ниже`
     : undefined;
 
+  // Сообщение под строкой всегда в одну строку (целиком — в title): длинный
+  // разбор не меняет высоту окна.
+  const oneLine = (text) => text && <span className="block truncate" title={text}>{text}</span>;
+
   return (
     <>
-      <Field label="Одной строкой" className="col-span-full" error={lineError} hint={lineHint}>
+      <Field label="Одной строкой" className="col-span-full" reserve error={oneLine(lineError)} hint={oneLine(lineHint)}>
         <Input
           className="font-mono"
           value={line}
@@ -132,12 +138,12 @@ export default function ProxyDialog({ account, onClose }) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose(false)}>
-      <DialogContent portal={false} showCloseButton={false} className="flex flex-col gap-0 overflow-hidden p-0 sm:max-w-[400px]">
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
-          <DialogHeader className="px-6 pt-6 pb-4">
-            <DialogTitle className="text-base">Прокси: {account.phone_e164}</DialogTitle>
+      <DialogContent portal={false} showCloseButton={false}>
+        <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>Прокси: <span className="font-mono">{account.phone_e164}</span></DialogTitle>
           </DialogHeader>
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 [scrollbar-gutter:stable]">
+          <DialogBody className="flex flex-col gap-3">
             {/* Порядок абзацев как в исходном окне: сначала текущий прокси, затем пояснение.
                 account — снимок на время жизни окна, так что условный абзац не прыгает. */}
             {account.proxy_label && (
@@ -148,12 +154,12 @@ export default function ProxyDialog({ account, onClose }) {
             <DialogDescription>
               После сохранения аккаунт переподключится через этот прокси. Не подключится — будет видно по статусу «онлайн».
             </DialogDescription>
-            <div className="grid grid-cols-2 gap-x-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <ProxyFields value={proxy} onChange={setProxy} autoFocus />
             </div>
-            <p className="min-h-4 text-xs text-destructive">{error}</p>
-          </div>
-          <DialogFooter className="px-6 pt-4 pb-6">
+          </DialogBody>
+          <DialogError>{error}</DialogError>
+          <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onClose(false)}>Отмена</Button>
             <Button type="submit" disabled={busy || !proxyValid(proxy)}>
               {busy ? 'Сохранение…' : 'Сохранить'}

@@ -177,7 +177,7 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
         versions={versions}
         onReset={reset}
       >
-        <Button variant="outline" size="sm" className="mr-1" onClick={() => addRow()}>
+        <Button variant="outline" className="mr-1" onClick={() => addRow()}>
           <Plus aria-hidden="true" />
           Переменная
         </Button>
@@ -251,7 +251,7 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
                       <span className="text-muted-foreground">{'{'}</span>
                       <Input
                         ref={(el) => { keyInputs.current[i] = el; }}
-                        className="h-8 w-36 font-mono text-xs md:text-xs"
+                        className="w-36 font-mono text-xs"
                         value={row.key}
                         placeholder="site"
                         aria-invalid={errors[i] ? true : undefined}
@@ -263,7 +263,7 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
                   </TableCell>
                   <TableCell className={CELL}>
                     <Input
-                      className="h-8 min-w-40"
+                      className="min-w-40"
                       value={row.value}
                       placeholder="значение"
                       onChange={(e) => setCell(i, 'value', e.target.value)}
@@ -271,7 +271,7 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
                   </TableCell>
                   <TableCell className={CELL}>
                     <Input
-                      className="h-8 min-w-40"
+                      className="min-w-40"
                       value={row.note}
                       placeholder="для себя"
                       onChange={(e) => setCell(i, 'note', e.target.value)}

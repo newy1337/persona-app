@@ -1,6 +1,6 @@
 import { AlertCircle, Check, Loader2, X } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../components/ui/dialog';
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { NativeCheckbox } from '../components/ui/native-checkbox';
 import { cn } from '../lib/utils';
 import { createActionStore, readableError } from './action-store';
@@ -31,8 +31,8 @@ export function createPanelUX({ React, api }) {
     current?.resolve(value);
   }
   // Окно всегда из трёх частей: заголовок, прокручиваемое тело и подвал с
-  // действиями (outline «Отмена» + одна главная кнопка). Заливок нет — части
-  // разделяют только тонкие линии.
+  // действиями (outline «Отмена» + одна главная кнопка). Отступы, шрифты и шаг
+  // между частями — от примитива Dialog; линий и заливок между частями нет.
   // described — в children есть DialogDescription (confirm, удаление лида): тогда
   // Radix сам связывает окно с описанием. У окон-форм описания нет, и связь
   // снимаем явно, иначе Radix предупреждает в консоли.
@@ -47,7 +47,7 @@ export function createPanelUX({ React, api }) {
       h(DialogContent, {
         portal: false,
         showCloseButton: false,
-        className: cn('flex max-h-[calc(100dvh-3rem)] flex-col gap-0 overflow-hidden p-0', wide && 'sm:max-w-2xl'),
+        className: cn('overflow-hidden', wide && 'sm:max-w-2xl'),
         'aria-busy': busy,
         ...(described ? null : { 'aria-describedby': undefined }),
         onOpenAutoFocus: event => {
@@ -62,10 +62,10 @@ export function createPanelUX({ React, api }) {
         onPointerDownOutside: blockWhenBusy,
         onInteractOutside: blockWhenBusy,
       },
-      h('div', { 'data-slot': 'dialog-header', className: 'shrink-0 border-b px-5 py-4' },
-        h(DialogTitle, { className: 'text-base leading-6 font-semibold [overflow-wrap:anywhere]' }, title)),
-      h('div', { className: 'min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 text-sm leading-relaxed [scrollbar-gutter:stable]' }, children),
-      footer && h('div', { 'data-slot': 'dialog-footer', className: 'flex shrink-0 flex-wrap items-center justify-end gap-2 border-t px-5 py-3' }, footer)));
+      h(DialogHeader, null,
+        h(DialogTitle, null, title)),
+      h(DialogBody, { className: 'text-sm' }, children),
+      footer && h(DialogFooter, null, footer)));
   }
   // Уведомление — нейтральная карточка; статус несёт только иконка слева.
   const noticeIcon = status => status === 'pending'
@@ -109,7 +109,7 @@ export function createPanelUX({ React, api }) {
       h(Button, { type: 'button', variant: 'outline', disabled: busy, 'data-autofocus': true, onClick: onCancel }, 'Отмена'),
       h(Button, { type: 'button', variant: 'destructive', disabled: busy, onClick: submit }, busy ? 'Удаляем…' : telegram ? 'Удалить с перепиской' : 'Удалить')) },
     h(DialogDescription, { className: 'whitespace-pre-line [overflow-wrap:anywhere]' }, lead.telegram_user_id ? 'Удалятся переписка в панели, память бота и карточка. Если добавить этого человека снова, знакомство начнётся заново.' : 'Удалится только запись лида в базе.'),
-    lead.telegram_user_id && h('label', { className: 'mt-4 flex cursor-pointer items-start gap-2.5 text-sm text-foreground' },
+    lead.telegram_user_id && h('label', { className: 'mt-3 flex cursor-pointer items-start gap-2 text-sm text-foreground' },
       h(NativeCheckbox, { className: 'mt-0.5', checked: telegram, disabled: busy, onChange: event => setTelegram(event.target.checked) }),
       'Удалить переписку в Telegram у обоих участников'),
     lead.telegram_user_id && h('div', { className: 'mt-2 min-h-4 text-xs text-destructive' }, telegram && h('p', null, 'Сообщения исчезнут у обоих. Отменить это нельзя.')),

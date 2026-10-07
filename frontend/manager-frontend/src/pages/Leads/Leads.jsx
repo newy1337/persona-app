@@ -25,8 +25,10 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
+  DialogError,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -120,13 +122,9 @@ function ImportDialog({ personas, onClose }) {
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(Boolean(result)); }}>
-      <DialogContent
-        portal={false}
-        showCloseButton={false}
-        className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]"
-      >
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit} aria-label="Импорт лидов">
-          <DialogHeader className="p-6 pb-4">
+      <DialogContent portal={false} showCloseButton={false}>
+        <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={submit} aria-label="Импорт лидов">
+          <DialogHeader>
             <DialogTitle>Импорт номеров</DialogTitle>
             <DialogDescription>
               По одному лиду в строке: <Mono>контакт;имя;город;возраст;сайт</Mono>, где контакт —
@@ -136,7 +134,8 @@ function ImportDialog({ personas, onClose }) {
               Дубли пропускаются.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex min-h-[360px] min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-6 [scrollbar-gutter:stable]">
+          {/* Высота тела одна и та же у формы и у итога: окно не прыгает после импорта. */}
+          <DialogBody className="flex min-h-[328px] min-w-0 flex-col gap-3">
             {result ? (
               <div className="flex flex-col gap-2 rounded-lg bg-muted/40 p-4 text-sm">
                 <StatusLine tone="success">Добавлено: <span className="tabular-nums">{result.created}</span>, дублей: <span className="tabular-nums">{result.duplicates}</span></StatusLine>
@@ -150,7 +149,7 @@ function ImportDialog({ personas, onClose }) {
             ) : (
               <>
                 <Textarea
-                  className="min-h-[240px] resize-y font-mono text-xs field-sizing-fixed [field-sizing:fixed] md:text-xs"
+                  className="min-h-[240px] resize-y font-mono text-xs field-sizing-fixed [field-sizing:fixed]"
                   rows={10}
                   autoFocus
                   aria-label="Список лидов"
@@ -167,9 +166,9 @@ function ImportDialog({ personas, onClose }) {
                 </div>
               </>
             )}
-            <p className="min-h-4 text-xs text-destructive" aria-live="polite">{error}</p>
-          </div>
-          <DialogFooter className="p-6 pt-4">
+          </DialogBody>
+          <DialogError aria-live="polite">{error}</DialogError>
+          <DialogFooter>
             {result ? (
               <Button type="button" onClick={() => onClose(true)}>Готово</Button>
             ) : (

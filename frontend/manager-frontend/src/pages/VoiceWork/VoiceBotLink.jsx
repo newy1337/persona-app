@@ -31,7 +31,7 @@ export function VoiceBotLink({ userId, linked = false, onChange, compact = false
   return <>
     {compact
       ? <IconAction icon={Send} label={label} disabled={busy || disabled} onClick={create} />
-      : <Button type="button" variant="outline" size="sm" disabled={busy || disabled} onClick={create}>{busy ? 'Готовим ссылку…' : label}</Button>}
+      : <Button type="button" variant="outline" disabled={busy || disabled} onClick={create}>{busy ? 'Готовим ссылку…' : label}</Button>}
     {error && !link && !compact && <span className="text-xs text-destructive" role="alert">{error}</span>}
     {link && <PanelUX.Modal title="Подключение войсера" onClose={() => setLink(null)} busy={busy} footer={<>
       {linked && <Button type="button" variant="ghost" className="me-auto text-destructive hover:text-destructive" disabled={busy} onClick={disconnect}>Отключить текущий Telegram</Button>}

@@ -44,7 +44,6 @@ export default function DocEditor({ doc, onChange }) {
             <Button
               key={n.id}
               variant="ghost"
-              size="sm"
               aria-current={current ? 'true' : undefined}
               data-active={current || undefined}
               className="w-auto shrink-0 justify-start gap-2 px-2.5 font-normal text-muted-foreground data-[active]:bg-accent data-[active]:font-medium data-[active]:text-foreground md:w-full"

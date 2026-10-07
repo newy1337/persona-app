@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { api } from '../../api/client';
 import { getAccounts as loadAccounts } from '../../api/accounts';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogBody, DialogContent, DialogError, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -50,19 +50,21 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
     </Field>
   );
   const accountLabel = a => [a.username ? `@${a.username}` : a.first_name || a.phone_e164 || `Аккаунт #${a.id}`, a.username ? a.phone_e164 : null, personaName(a.persona_id)].filter(Boolean).join(' · ');
+  // Подсказка под выбором аккаунта держит две строки: тексты разной длины не
+  // меняют высоту окна.
+  const senderHint = draft.preferred_account_id
+    ? 'Напишет только выбранный аккаунт. Если он временно недоступен, лид останется в очереди.'
+    : !loading && !loadError && available.length === 0
+      ? 'Нет включённых аккаунтов для этой личности.'
+      : 'Без выбора аккаунт подбирается автоматически, как раньше.';
   return (
     <Dialog open onOpenChange={open => { if (!open && !busy) onCancel(); }}>
-      <DialogContent
-        portal={false}
-        showCloseButton={false}
-        aria-describedby={undefined}
-        className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]"
-      >
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit} aria-label="Добавление лида">
-          <DialogHeader className="p-6 pb-4">
+      <DialogContent portal={false} showCloseButton={false} aria-describedby={undefined}>
+        <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={submit} aria-label="Добавление лида">
+          <DialogHeader>
             <DialogTitle>Новый лид</DialogTitle>
           </DialogHeader>
-          <div className="grid min-h-0 flex-1 content-start gap-x-3 gap-y-1 overflow-y-auto px-6 [scrollbar-gutter:stable] sm:grid-cols-2">
+          <DialogBody className="grid content-start gap-3 sm:grid-cols-2">
             {input('phone', 'Телефон или @username', { autoFocus: true, placeholder: '+7 900 123-45-67 или @name', maxLength: 64 })}
             {input('first_name', 'Имя', { maxLength: 64 })}
             {input('city', 'Город', { maxLength: 64 })}
@@ -80,7 +82,7 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
             <div className="mr-lead-sender col-span-full min-w-0" data-testid="lead-sender">
               <Field
                 label="Telegram-аккаунт для первого сообщения"
-                hint={draft.preferred_account_id ? 'Напишет только выбранный аккаунт. Если он временно недоступен, лид останется в очереди.' : 'Без выбора аккаунт подбирается автоматически, как раньше.'}
+                hint={<span className="block min-h-8">{senderHint}</span>}
               >
                 <NativeSelect
                   value={draft.preferred_account_id}
@@ -94,22 +96,19 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
                   {available.map(a => <option key={a.id} value={String(a.id)}>{accountLabel(a)}</option>)}
                 </NativeSelect>
               </Field>
-              <div className="flex min-h-4 flex-wrap items-center gap-x-2 text-xs leading-4" role={loadError ? 'alert' : undefined}>
-                {loadError ? (
-                  <>
-                    <p className="text-destructive">{`Не удалось загрузить аккаунты: ${loadError}`}</p>
-                    <button type="button" className="rounded-sm text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50" onClick={() => setReload(n => n + 1)}>Повторить</button>
-                  </>
-                ) : (
-                  <p className="text-muted-foreground">
-                    {!loading && available.length === 0 ? 'Нет включённых аккаунтов для этой личности.' : null}
-                  </p>
-                )}
-              </div>
             </div>
-            <p className="col-span-full min-h-4 text-xs text-destructive" role="alert">{error}</p>
-          </div>
-          <DialogFooter className="p-6 pt-4">
+          </DialogBody>
+          {/* Одна строка под все ошибки формы: отправка и загрузка аккаунтов. */}
+          <DialogError className="flex flex-wrap items-center gap-x-2" role="alert">
+            {error ? <span>{error}</span> : null}
+            {loadError ? (
+              <>
+                <span>{`Не удалось загрузить аккаунты: ${loadError}`}</span>
+                <button type="button" className="rounded-sm text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50" onClick={() => setReload(n => n + 1)}>Повторить</button>
+              </>
+            ) : null}
+          </DialogError>
+          <DialogFooter>
             <Button type="button" variant="outline" disabled={busy} onClick={onCancel}>Отмена</Button>
             <Button type="submit" disabled={busy || !valid}>
               {busy && <Loader2 className="animate-spin" aria-hidden="true" />}

@@ -28,7 +28,7 @@ export function CallBrief({ task }) {
   return <details className="min-w-0 rounded-lg border bg-card p-4 text-sm text-card-foreground" open>
     <summary className="cursor-pointer font-medium">Памятка к звонку</summary>
     <div className="mt-2 flex min-h-[200px] flex-col gap-2">
-      {error && <p role="alert" className="flex flex-wrap items-center gap-2 text-xs text-destructive">{error} <Button type="button" variant="outline" size="sm" onClick={() => setRetry(n => n + 1)}>Повторить</Button></p>}
+      {error && <p role="alert" className="flex flex-wrap items-center gap-2 text-xs text-destructive">{error} <Button type="button" variant="outline" onClick={() => setRetry(n => n + 1)}>Повторить</Button></p>}
       {!brief?.persona ? (!error && <div role="status" className="grid min-h-[160px] gap-5 sm:grid-cols-2" aria-label="Загружаем памятку…">
         <span className="sr-only">Загружаем памятку…</span>
         <div className="flex flex-col gap-2"><Skeleton className="h-5 w-2/3" /><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-5/6" /><Skeleton className="h-4 w-3/4" /></div>

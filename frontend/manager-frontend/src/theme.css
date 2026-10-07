@@ -49,7 +49,7 @@
   --warning-foreground: oklch(0.58 0.13 70);
   --border: oklch(0.92 0.004 286.32);
   --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.546 0.215 262.9);
+  --ring: oklch(0.705 0.015 286);
 }
 
 .dark {
@@ -75,7 +75,7 @@
   --warning-foreground: oklch(0.83 0.13 85);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.58 0.2 262);
+  --ring: oklch(0.552 0.016 286);
 }
 
 @theme inline {

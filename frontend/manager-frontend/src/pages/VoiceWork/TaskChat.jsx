@@ -27,7 +27,7 @@ export function TaskChatSelect({ managerId, persona, value, onChange, disabled, 
     }, 250);
     return () => { active = false; clearTimeout(timer); };
   }, [managerId, persona, query, sendTarget]);
-  return <div className="grid min-w-0 gap-x-4 gap-y-1.5 sm:grid-cols-2">
+  return <div className="grid min-w-0 gap-3 sm:grid-cols-2">
     <Field label="Поиск диалога"><Input placeholder="Имя, Telegram или ID" value={query} onChange={e => setQuery(e.target.value)} disabled={disabled} /></Field>
     <Field label={sendTarget ? 'Получатель' : required ? 'Диалог для автоматической отправки' : 'Переписка для войсера'}><NativeSelect required={required} disabled={disabled} aria-busy={loading} value={value}
       onChange={e => onChange(e.target.value, data.items.find(item => item.chat_id === e.target.value))}>
@@ -35,8 +35,8 @@ export function TaskChatSelect({ managerId, persona, value, onChange, disabled, 
       {value && !data.items.some(item => item.chat_id === value) && <option value={value}>Диалог {value}</option>}
       {data.items.map(item => <option key={item.chat_id} value={item.chat_id}>{item.label} · {item.chat_id}{sendTarget && item.persona_name ? ` · ${item.persona_name}` : ''}{!sendTarget && item.unassigned ? ' · без менеджера' : ''}</option>)}
     </NativeSelect></Field>
-    {/* Подсказка встаёт в пустую строку сообщений под полями (16px + зазор 6px), а не добавляет свою. */}
-    <p className={cn(muted, '-mt-5.5 min-h-4 sm:col-span-2')}>{loading ? 'Ищем диалоги…' : data.more ? 'Показаны 40 диалогов. Уточните поиск.' : !data.items.length ? 'Подходящих диалогов не найдено.' : sendTarget ? 'Выберите получателя и убедитесь, что текст и голос подходят этому диалогу.' : showChatAccess ? 'Войсер сможет читать выбранную переписку, в том числе во время звонка.' : 'Войсер получит текст и эмоциональность. Переписка при записи голосового ему недоступна.'}</p>
+    {/* Одна строка подсказки на оба поля, вплотную к ним (6px, как сообщение у Field); место занято всегда. */}
+    <p className={cn(muted, '-mt-1.5 min-h-4 sm:col-span-2')}>{loading ? 'Ищем диалоги…' : data.more ? 'Показаны 40 диалогов. Уточните поиск.' : !data.items.length ? 'Подходящих диалогов не найдено.' : sendTarget ? 'Выберите получателя и убедитесь, что текст и голос подходят этому диалогу.' : showChatAccess ? 'Войсер сможет читать выбранную переписку, в том числе во время звонка.' : 'Войсер получит текст и эмоциональность. Переписка при записи голосового ему недоступна.'}</p>
     {!value && warnMissing && !sendTarget && <p className={cn(muted, 'flex items-center gap-1.5 sm:col-span-2')}><span className="size-1.5 shrink-0 rounded-full bg-warning-foreground" aria-hidden="true" />Без привязки войсер получит задание, но не увидит переписку.</p>}
     {!sendTarget && data.items.find(item => item.chat_id === value)?.unassigned && <p className={cn(muted, 'sm:col-span-2')}>Аккаунт не закреплён за менеджером. При создании задания доступ к этой переписке получит выбранный менеджер; войсер — только для звонка. Остальные диалоги аккаунта останутся закрыты.</p>}
     {error && <p className={cn(errorLine, 'sm:col-span-2')} role="alert">{error}</p>}
@@ -98,9 +98,9 @@ export function TaskChat({ task }) {
   return <section className="flex min-w-0 flex-col gap-3" aria-label="Переписка по заданию">
     <div className="flex flex-wrap items-center justify-between gap-2"><div><strong className="text-sm font-medium">Переписка · {task.contactLabel}</strong><p className={cn(muted, 'min-h-4 tabular-nums')}>Только просмотр · обновление каждые 5 секунд{updated && ` · ${updated.toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow' })}`}</p></div>
       <div className="flex flex-wrap items-center gap-1">
-        <Button type="button" variant="outline" size="sm" disabled={loading || !data?.next_before} onClick={() => { setTrail(old => [...old, before]); setBefore(data.next_before); }}>Ранние сообщения</Button>
-        <Button type="button" variant="outline" size="sm" disabled={loading || !before} onClick={() => { setBefore(trail[trail.length - 1] ?? null); setTrail(old => old.slice(0, -1)); }}>Новые сообщения</Button>
-        <Button type="button" variant="outline" size="sm" disabled={!before} onClick={() => { setBefore(null); setTrail([]); }}>К последним</Button>
+        <Button type="button" variant="outline" disabled={loading || !data?.next_before} onClick={() => { setTrail(old => [...old, before]); setBefore(data.next_before); }}>Ранние сообщения</Button>
+        <Button type="button" variant="outline" disabled={loading || !before} onClick={() => { setBefore(trail[trail.length - 1] ?? null); setTrail(old => old.slice(0, -1)); }}>Новые сообщения</Button>
+        <Button type="button" variant="outline" disabled={!before} onClick={() => { setBefore(null); setTrail([]); }}>К последним</Button>
         <IconAction icon={RefreshCw} label="Обновить" disabled={loading} onClick={() => setRefresh(n => n + 1)} />
       </div></div>
     {error && <p className={errorLine} role="alert">{error}{data && ' Показаны ранее загруженные сообщения.'}</p>}
