@@ -141,15 +141,17 @@ function ConversationsTable({
 
   return (
     <section className="flex flex-col gap-3">
-      <div className="flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1">
-        <h2 className="text-sm font-medium">{showHidden ? 'Архив' : 'Мои диалоги'}</h2>
+      {/* Строка не переносится: плашки фильтров прокручиваются внутри своего места,
+          напоминание обрезается — таблица под ней не сдвигается ни на какой ширине. */}
+      <div className="flex h-8 min-w-0 items-center gap-2">
+        <h2 className="shrink-0 text-sm font-medium">{showHidden ? 'Архив' : 'Мои диалоги'}</h2>
         {/* Одна и та же кнопка в обоих состояниях: без фильтров она выглядит
             обычным текстом, с фильтрами — сбрасывает их все. */}
         <Button
           type="button"
           variant={hasFilters ? 'secondary' : 'ghost'}
           size="xs"
-          className="min-w-20 justify-start font-normal tabular-nums text-muted-foreground disabled:opacity-100"
+          className="min-w-20 shrink-0 justify-start font-normal tabular-nums text-muted-foreground disabled:opacity-100"
           disabled={!hasFilters}
           onClick={resetFilters}
           title={hasFilters ? 'Сбросить все фильтры' : undefined}
@@ -158,8 +160,14 @@ function ConversationsTable({
             ? `НАЙДЕНО: ${filtered.length} из ${rows.length}`
             : `ВСЕГО: ${total}${truncated ? ` · показаны последние ${rows.length}` : ''}`}
         </Button>
-        <FilterChips columns={filterColumns} state={filterState} onChange={setFilter} onReset={resetFilters} />
-        {headerExtra && <div className="ml-auto flex min-w-0 items-center">{headerExtra}</div>}
+        <FilterChips
+          className="min-w-0 flex-1 flex-nowrap overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0"
+          columns={filterColumns}
+          state={filterState}
+          onChange={setFilter}
+          onReset={resetFilters}
+        />
+        {headerExtra && <div className="ml-auto flex max-w-[55%] min-w-0 shrink items-center">{headerExtra}</div>}
       </div>
 
       {loading ? (

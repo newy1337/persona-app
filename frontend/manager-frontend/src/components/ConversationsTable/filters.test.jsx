@@ -252,7 +252,8 @@ describe('шапка списка: счётчик и плашки фильтро
     expect(counter().textContent).toBe('ВСЕГО: 3');
     expect(counter().disabled).toBe(true);
     expect(chips()).toBeNull();
-    expect(host.querySelector('h2').parentElement.className).toContain('min-h-8');
+    expect(host.querySelector('h2').parentElement.className).toContain('h-8');
+    expect(host.querySelector('h2').parentElement.className).not.toContain('flex-wrap');
   });
 
   it('с фильтром — «НАЙДЕНО: N из M» и плашка между счётчиком и напоминанием', async () => {
