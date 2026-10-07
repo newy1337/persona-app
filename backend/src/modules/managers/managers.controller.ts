@@ -26,6 +26,17 @@ import {
   UpdateManagerDto,
 } from './dto/manager.dto';
 
+// В журнал уходят только названия изменённых полей: значения (пароль) туда не пишем.
+const UPDATE_FIELDS = [
+  'username',
+  'role',
+  'region_code',
+  'voicer_id',
+  'account_ids',
+  'password',
+  'regenerate_password',
+] as const;
+
 @ApiTags('Managers')
 @ApiBearerAuth()
 @Auth()
@@ -43,9 +54,12 @@ export class ManagersController {
     return this.managers.list();
   }
 
-  @Get(':userId/credentials')
+  @ApiOperation({
+    summary: 'Everything the account editor shows, the stored password too',
+  })
+  @Get(':userId')
   @Header('Cache-Control', 'no-store')
-  async credentials(
+  async editor(
     @Param('userId', ParseIntPipe) target: number,
     @CurrentUser('id') userId: number,
   ) {
@@ -55,24 +69,7 @@ export class ManagersController {
         action: 'manager.credentials_view',
         resource: `user:${target}`,
       },
-      () => this.managers.credentials(target),
-    );
-  }
-
-  @Post(':userId/password')
-  @HttpCode(200)
-  @Header('Cache-Control', 'no-store')
-  async regeneratePassword(
-    @Param('userId', ParseIntPipe) target: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.audit.wrap(
-      {
-        userId,
-        action: 'manager.password_regenerate',
-        resource: `user:${target}`,
-      },
-      () => this.managers.regeneratePassword(target),
+      () => this.managers.editor(target),
     );
   }
 
@@ -129,9 +126,12 @@ export class ManagersController {
     );
   }
 
-  @ApiOperation({ summary: 'Update role, password and the full account set' })
+  @ApiOperation({
+    summary: 'Update login, role, region, voicer, password and the account set',
+  })
   @Put(':userId')
   @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
   @UsePipes(ValidationPipe)
   async update(
     @Param('userId', ParseIntPipe) target: number,
@@ -139,7 +139,14 @@ export class ManagersController {
     @CurrentUser('id') userId: number,
   ) {
     return this.audit.wrap(
-      { userId, action: 'manager.update', resource: `user:${target}` },
+      {
+        userId,
+        action: 'manager.update',
+        resource: `user:${target}`,
+        payload: {
+          fields: UPDATE_FIELDS.filter((key) => dto[key] !== undefined),
+        },
+      },
       () => this.managers.update(target, dto),
     );
   }

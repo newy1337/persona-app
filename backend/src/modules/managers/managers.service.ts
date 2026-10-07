@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -99,8 +100,20 @@ export class ManagersService {
       where: { id: userId },
     });
     if (!user) throw new NotFoundException('нет такой учётки');
+    if (dto.password !== undefined && dto.regenerate_password)
+      throw new BadRequestException(
+        'Задайте свой пароль или создайте случайный — одновременно нельзя',
+      );
     await this.validateVoicer(dto.role ?? user.role, dto.voicer_id);
+    const username =
+      dto.username !== undefined && dto.username !== user.username
+        ? dto.username
+        : undefined;
+    const password = dto.regenerate_password
+      ? randomBytes(12).toString('base64url')
+      : dto.password;
     const data: {
+      username?: string;
       role?: string;
       passwordHash?: string;
       passwordEncrypted?: string;
@@ -112,72 +125,97 @@ export class ManagersService {
       data.voicerId = null;
     if (dto.role !== undefined) data.role = dto.role;
     if (dto.region_code !== undefined) data.regionCode = dto.region_code;
-    if (dto.password !== undefined) {
-      data.passwordHash = await argon2.hash(dto.password);
-      data.passwordEncrypted = this.crypto.encrypt(dto.password);
+    if (username !== undefined) data.username = username;
+    if (password !== undefined) {
+      data.passwordHash = await argon2.hash(password);
+      data.passwordEncrypted = this.crypto.encrypt(password);
     }
-    await this.prisma.$transaction(async (tx) => {
-      if (dto.role !== undefined && dto.role !== user.role)
-        await this.ensureNoActiveTasks(userId, tx);
-      if (dto.account_ids !== undefined) {
+    const taken = () => new ConflictException(`логин '${username}' уже занят`);
+    await this.prisma
+      .$transaction(async (tx) => {
+        // Логин отличается от своего, значит найденная учётка — чужая.
         if (
-          (dto.role ?? user.role) !== Role.MANAGER &&
-          dto.account_ids.length
-        ) {
-          throw new UnprocessableEntityException(
-            'Аккаунты закрепляются только за менеджером',
-          );
-        }
-        await this.requireAccounts(tx, dto.account_ids);
-      }
-      if (
-        user.role === Role.VOICE &&
-        dto.role !== undefined &&
-        dto.role !== Role.VOICE
-      ) {
-        await tx.dashboardUser.updateMany({
-          where: { voicerId: userId },
-          data: { voicerId: null },
-        });
-        await tx.voicerProfile.deleteMany({ where: { userId } });
-      }
-      if (Object.keys(data).length)
-        await tx.dashboardUser.update({ where: { id: userId }, data });
-      if (dto.role !== undefined && dto.role !== Role.MANAGER)
-        await tx.managerAccount.deleteMany({ where: { userId } });
-      if (dto.account_ids !== undefined) {
-        await tx.managerAccount.deleteMany({ where: { userId } });
-        for (const acc of new Set(dto.account_ids)) {
-          await tx.managerAccount.deleteMany({ where: { tgAccountId: acc } });
-          await tx.managerAccount.create({
-            data: { userId, tgAccountId: acc },
-          });
-        }
-      }
-    });
-    return this.list();
+          username !== undefined &&
+          (await tx.dashboardUser.findUnique({ where: { username } }))
+        )
+          throw taken();
+        await this.applyUpdate(tx, user, dto, data);
+      })
+      .catch((e) => {
+        // Гонка двух переименований: уникальный индекс срабатывает уже при записи.
+        if (username !== undefined && String(e?.code) === 'P2002')
+          throw taken();
+        throw e;
+      });
+    return { ...(await this.list()), editor: await this.editor(userId) };
   }
 
-  async credentials(userId: number) {
+  private async applyUpdate(
+    tx: Prisma.TransactionClient,
+    user: { id: number; role: string },
+    dto: UpdateManagerDto,
+    data: Prisma.DashboardUserUncheckedUpdateInput,
+  ) {
+    const userId = user.id;
+    if (dto.role !== undefined && dto.role !== user.role)
+      await this.ensureNoActiveTasks(userId, tx);
+    if (dto.account_ids !== undefined) {
+      if ((dto.role ?? user.role) !== Role.MANAGER && dto.account_ids.length) {
+        throw new UnprocessableEntityException(
+          'Аккаунты закрепляются только за менеджером',
+        );
+      }
+      await this.requireAccounts(tx, dto.account_ids);
+    }
+    if (
+      user.role === Role.VOICE &&
+      dto.role !== undefined &&
+      dto.role !== Role.VOICE
+    ) {
+      await tx.dashboardUser.updateMany({
+        where: { voicerId: userId },
+        data: { voicerId: null },
+      });
+      await tx.voicerProfile.deleteMany({ where: { userId } });
+    }
+    if (Object.keys(data).length)
+      await tx.dashboardUser.update({ where: { id: userId }, data });
+    if (dto.role !== undefined && dto.role !== Role.MANAGER)
+      await tx.managerAccount.deleteMany({ where: { userId } });
+    if (dto.account_ids !== undefined) {
+      await tx.managerAccount.deleteMany({ where: { userId } });
+      for (const acc of new Set(dto.account_ids)) {
+        await tx.managerAccount.deleteMany({ where: { tgAccountId: acc } });
+        await tx.managerAccount.create({
+          data: { userId, tgAccountId: acc },
+        });
+      }
+    }
+  }
+
+  /** Всё, что показывает окно «Изменить»: поля учётки, её аккаунты и сохранённый пароль. */
+  async editor(userId: number) {
     const user = await this.prisma.dashboardUser.findUnique({
       where: { id: userId },
+      include: {
+        accounts: {
+          select: { tgAccountId: true },
+          orderBy: { tgAccountId: 'asc' },
+        },
+      },
     });
     if (!user) throw new NotFoundException('нет такой учётки');
     return {
       user_id: user.id,
       username: user.username,
+      role: user.role,
       region_code: user.regionCode,
+      voicer_id: user.voicerId ?? null,
+      account_ids: user.accounts.map((a) => a.tgAccountId),
       password: user.passwordEncrypted
         ? this.crypto.decrypt(user.passwordEncrypted)
         : null,
     };
-  }
-
-  async regeneratePassword(userId: number) {
-    await this.update(userId, {
-      password: randomBytes(12).toString('base64url'),
-    });
-    return this.credentials(userId);
   }
 
   private async resolveOwner(userId: number | null | undefined) {

@@ -140,9 +140,9 @@ describe('Manager panel API (e2e)', () => {
         .send({ username: 'auth-reset-qa', password: 'old-password-123' })
         .expect(200);
       await request(app.getHttpServer())
-        .post(`/api/managers/${created.body.created_user_id}/password`)
+        .put(`/api/managers/${created.body.created_user_id}`)
         .set(h)
-        .send({})
+        .send({ regenerate_password: true })
         .expect(200);
       await request(app.getHttpServer())
         .get('/auth/me')
@@ -282,7 +282,7 @@ describe('Manager panel API (e2e)', () => {
       .expect(200);
     const id = created.body.created_user_id;
     const credentials = await request(app.getHttpServer())
-      .get(`/api/managers/${id}/credentials`)
+      .get(`/api/managers/${id}`)
       .set(h)
       .expect(200);
     expect(credentials.body).toMatchObject({
@@ -298,7 +298,7 @@ describe('Manager panel API (e2e)', () => {
       })
       .expect(200);
     await request(app.getHttpServer())
-      .get(`/api/managers/${id}/credentials`)
+      .get(`/api/managers/${id}`)
       .set('Authorization', `Bearer ${login.body.tokens.accessToken}`)
       .expect(403);
     await request(app.getHttpServer())

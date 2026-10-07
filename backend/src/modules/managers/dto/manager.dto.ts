@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -50,6 +51,13 @@ export class UpdateManagerDto {
   @IsOptional()
   @IsInt()
   voicer_id?: number | null;
+
+  @ApiPropertyOptional({ description: 'Новый логин учётки' })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  username?: string;
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
@@ -73,6 +81,13 @@ export class UpdateManagerDto {
   @MinLength(8)
   @MaxLength(256)
   password?: string;
+
+  @ApiPropertyOptional({
+    description: 'Создать случайный пароль. Нельзя вместе с password',
+  })
+  @IsOptional()
+  @IsBoolean()
+  regenerate_password?: boolean;
 }
 
 export class AccountOwnerDto {

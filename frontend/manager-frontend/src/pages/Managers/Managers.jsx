@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Eye, EyeOff, KeyRound, MoreHorizontal, Pencil, Trash2, Users } from 'lucide-react';
+import { Eye, EyeOff, Pencil, Trash2 } from 'lucide-react';
 import { api } from '../../api/client';
 import { getAccounts as loadAccounts } from '../../api/accounts';
 import { PanelUX as ux } from '../../ui/PanelUX';
@@ -10,17 +10,18 @@ import { PageHeader } from '@/components/PageHeader/PageHeader';
 import { SearchInput } from '@/components/SearchInput/SearchInput';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { NativeCheckbox } from '@/components/ui/native-checkbox';
 import { NativeSelect } from '@/components/ui/native-select';
+import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 
 const roles = { admin: 'админ', manager: 'менеджер', voice: 'войсер' };
 const validRegion = value => /^\d{3,4}$/.test(value);
+const PASSWORD_MIN = 8; // как проверяет сервер
 const errorText = e => {
   const message = e.detail || e.message || 'Не удалось выполнить действие';
   return Array.isArray(message) ? message.join('; ') : String(message);
@@ -28,6 +29,8 @@ const errorText = e => {
 const caption = 'text-xs text-muted-foreground';
 // Строка ошибки в окнах занята всегда: форма не меняет высоту.
 const errorSlot = 'min-h-4 text-xs text-destructive';
+const formGrid = 'grid gap-3 sm:grid-cols-2';
+const sectionTitle = 'text-sm font-medium';
 
 /* Колонки списка. Строка — две строки текста (20 + 16) и отступы по 8px: 52px. */
 const COLUMNS = [['Учётка', ''], ['Роль', 'w-32'], ['Регион', 'w-24'], ['Аккаунты', 'w-[34%]']];
@@ -39,7 +42,7 @@ const subline = cn(caption, 'truncate leading-4');
 function VoicerSelect({ voicerList, value, onChange, disabled }) {
   return (
     <Field label="Войсер" hint="Назначение применяется к новым заданиям.">
-      <NativeSelect value={value} disabled={disabled} onChange={e => onChange(e.target.value)}>
+      <NativeSelect name="voicer" value={value} disabled={disabled} onChange={e => onChange(e.target.value)}>
         <option value="">Не назначен</option>
         {voicerList.map(v => <option key={v.user_id} value={v.user_id}>{`${v.username}${v.telegram_linked ? '' : ' · Telegram не подключён'}`}</option>)}
       </NativeSelect>
@@ -50,7 +53,7 @@ function VoicerSelect({ voicerList, value, onChange, disabled }) {
 function RoleSelect({ roleList, value, onChange, disabled }) {
   return (
     <Field label="Роль">
-      <NativeSelect value={value} disabled={disabled} onChange={e => onChange(e.target.value)}>
+      <NativeSelect name="role" value={value} disabled={disabled} onChange={e => onChange(e.target.value)}>
         {roleList.map(r => <option key={r} value={r}>{roles[r] || r}</option>)}
       </NativeSelect>
     </Field>
@@ -78,7 +81,7 @@ function CreateForm({ roleList, voicerList, onCreate, onCancel }) {
       <Button type="button" variant="outline" disabled={busy} onClick={onCancel}>Отмена</Button>
       <Button type="submit" form="manager-create" disabled={!valid || busy}>{busy ? 'Создаём…' : 'Создать'}</Button>
     </>}>
-      <form id="manager-create" onSubmit={submit} aria-label="Создание учётки" className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+      <form id="manager-create" onSubmit={submit} aria-label="Создание учётки" className={formGrid}>
         <Field label="Логин" className="sm:col-span-2">
           <Input value={username} data-autofocus required maxLength={64} autoComplete="off" disabled={busy} onChange={e => setUsername(e.target.value)} />
         </Field>
@@ -94,154 +97,215 @@ function CreateForm({ roleList, voicerList, onCreate, onCancel }) {
   );
 }
 
-function Credentials({ value, onClose, onRegenerate }) {
-  const [visible, setVisible] = useState(false);
+/* Сохранённый пароль: скрыт, пока не нажмут «Показать пароль». Поле стоит на месте и пока данные
+   грузятся, и когда пароля для просмотра нет — высота блока от этого не зависит. */
+function StoredPassword({ label, value, loading = false, visible, onToggle, className }) {
+  return (
+    <Field label={label} className={className} hint={loading || value ? undefined : 'Пароль этой учётки не сохранён для просмотра. Создайте новый или задайте свой.'}>
+      <span className="flex items-center gap-1.5">
+        <Input name="current-password" className="font-mono" readOnly autoComplete="off" type={visible ? 'text' : 'password'} value={value || ''} placeholder={loading ? 'Загружаем…' : 'Не сохранён'} />
+        <IconAction icon={visible ? EyeOff : Eye} label={visible ? 'Скрыть пароль' : 'Показать пароль'} size="icon" variant="outline" disabled={!value} onClick={onToggle} />
+      </span>
+    </Field>
+  );
+}
+
+/* Кнопка держит ширину длинной подписи: смена на «Скопировано» ничего не двигает. */
+function CopyCredentials({ value, onError, ...props }) {
   const [copied, setCopied] = useState(false);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  useEffect(() => { setVisible(false); setCopied(false); setError(''); }, [value.user_id, value.password]);
+  useEffect(() => { setCopied(false); }, [value?.username, value?.password]);
   async function copy() {
     try {
       await navigator.clipboard.writeText(`Логин: ${value.username}\nПароль: ${value.password}${value.region_code ? `\nРегион: ${value.region_code}` : ''}`);
-      setCopied(true); setError('');
-    } catch { setError('Не удалось скопировать. Нажмите «Показать пароль» и скопируйте данные из полей.'); }
+      setCopied(true); onError('');
+    } catch { setCopied(false); onError('Не удалось скопировать. Нажмите «Показать пароль» и скопируйте данные из полей.'); }
   }
-  async function regenerate() {
-    if (!await ux.confirm({ title: 'Создать новый пароль?', message: `Учётка ${value.username}. Прежний пароль перестанет действовать.`, confirmLabel: 'Создать пароль' })) return;
-    setBusy(true); setError('');
-    try { await onRegenerate(value.user_id); }
-    catch (e) { setError(errorText(e)); }
-    finally { setBusy(false); }
-  }
-  // Главная кнопка окна одна: скопировать данные, а если пароль не сохранён — создать новый.
+  return <Button type="button" className="min-w-[14.5rem]" disabled={!value?.password} onClick={copy} {...props}>{copied ? 'Скопировано' : 'Копировать логин + пароль'}</Button>;
+}
+
+/* Данные новой учётки — один раз сразу после создания. Дальше всё то же самое лежит в «Изменить». */
+function CreatedCredentials({ value, onClose }) {
+  const [visible, setVisible] = useState(false), [error, setError] = useState('');
   return (
-    <ux.Modal title={`Данные для входа: ${value.username}`} onClose={onClose} busy={busy} footer={<>
-      {value.password && <Button type="button" variant="ghost" className="me-auto" disabled={busy} onClick={regenerate}>{busy ? 'Создаём…' : 'Создать новый пароль'}</Button>}
-      <Button type="button" variant="outline" disabled={busy} onClick={onClose}>Закрыть</Button>
-      {value.password
-        ? <Button type="button" className="min-w-[14.5rem]" data-autofocus onClick={copy}>{copied ? 'Скопировано' : 'Копировать логин + пароль'}</Button>
-        : <Button type="button" disabled={busy} onClick={regenerate}>{busy ? 'Создаём…' : 'Создать новый пароль'}</Button>}
+    <ux.Modal title={`Данные для входа: ${value.username}`} onClose={onClose} footer={<>
+      <Button type="button" variant="outline" onClick={onClose}>Закрыть</Button>
+      <CopyCredentials data-autofocus value={value} onError={setError} />
     </>}>
-      <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+      <div className={formGrid}>
         <Field label="Логин для входа">
           <Input className="font-mono" readOnly value={value.username} />
         </Field>
         <Field label="Регион">
           <Input className="font-mono" readOnly value={value.region_code || 'Не задан'} />
         </Field>
-        {value.password ? (
-          <Field label="Пароль для входа" className="sm:col-span-2">
-            <span className="flex items-center gap-1.5">
-              <Input className="font-mono" readOnly autoComplete="off" type={visible ? 'text' : 'password'} value={value.password} />
-              <IconAction icon={visible ? EyeOff : Eye} label={visible ? 'Скрыть пароль' : 'Показать пароль'} size="icon" variant="outline" onClick={() => setVisible(!visible)} />
-            </span>
-          </Field>
-        ) : (
-          <p className={cn(caption, 'sm:col-span-2')}>Пароль этой старой учётки не сохранён для просмотра. Можно создать новый и выдать его менеджеру.</p>
-        )}
+        <StoredPassword className="sm:col-span-2" label="Пароль для входа" value={value.password} visible={visible} onToggle={() => setVisible(!visible)} />
         <div className={cn(errorSlot, 'sm:col-span-2')}>{error && <p role="alert">{error}</p>}</div>
       </div>
     </ux.Modal>
   );
 }
 
-function ManagerEditor({ user, me, roleList, voicerList, onSave, onClose }) {
-  const [role, setRole] = useState(user.role), [region, setRegion] = useState(user.region_code || '');
-  const [voicer, setVoicer] = useState(String(user.voicer_id || ''));
-  const [busy, setBusy] = useState(false), [error, setError] = useState('');
-  const lock = useRef(false);
-  const assigned = user.account_ids;
-  const changed = role !== user.role || region !== (user.region_code || '') || voicer !== String(user.voicer_id || '');
-  const valid = region === '' ? role !== 'manager' || user.role === 'manager' && !user.region_code : validRegion(region);
-  async function save(event) {
-    event.preventDefault();
-    if (lock.current || !changed || !valid) return;
-    lock.current = true;
-    if (user.role === 'manager' && role !== 'manager' && assigned.length && !await ux.confirm({ title: 'Изменить роль?', message: `У ${user.username} будут освобождены аккаунты: ${assigned.length}.`, confirmLabel: 'Изменить роль' })) { lock.current = false; return; }
-    setBusy(true); setError('');
-    try {
-      await onSave(user.user_id, { role, region_code: region || null, voicer_id: role === 'manager' && voicer ? Number(voicer) : null, ...(user.role === 'manager' && role !== 'manager' ? { account_ids: [] } : {}) });
-      onClose();
-    } catch (e) { setError(ux.readableError(e)); }
-    finally { lock.current = false; setBusy(false); }
-  }
-  return (
-    <ux.Modal title={`Учётка: ${user.username}`} onClose={onClose} busy={busy} footer={<>
-      <Button type="button" variant="outline" disabled={busy} onClick={onClose}>Отмена</Button>
-      <Button type="submit" form="manager-editor" disabled={!changed || !valid || busy}>{busy ? 'Сохраняем…' : 'Сохранить'}</Button>
-    </>}>
-      <form id="manager-editor" className="grid gap-x-4 gap-y-2 sm:grid-cols-2" onSubmit={save}>
-        <RoleSelect roleList={roleList} value={role} disabled={busy || user.user_id === me?.user_id} onChange={setRole} />
-        <Field label="Регион (3–4 цифры)" error={valid ? '' : 'Укажите код региона: 3 или 4 цифры.'}>
-          <Input data-autofocus value={region} disabled={busy} inputMode="numeric" maxLength={4} placeholder="Например, 0077" onChange={e => setRegion(e.target.value.replace(/\D/g, '').slice(0, 4))} />
-        </Field>
-        {role === 'manager' && <div className="sm:col-span-2"><VoicerSelect voicerList={voicerList} value={voicer} onChange={setVoicer} disabled={busy} /></div>}
-        <div className={cn(errorSlot, 'sm:col-span-2')}>{error && <p role="alert">{error}</p>}</div>
-      </form>
-    </ux.Modal>
-  );
-}
-
-function AccountAssignment({ user, userList, accountList, onSave, onClose }) {
-  const [selected, setSelected] = useState(() => new Set(user.account_ids));
+/* Раздел «Аккаунты» окна учётки. Выбор хранит сама форма: аккаунты сохраняются вместе с остальным. */
+function AccountPicker({ userId, accountList, ownerById, selected, moving, disabled, onToggle }) {
   const [query, setQuery] = useState(''), [filter, setFilter] = useState('all');
-  const [busy, setBusy] = useState(false), [error, setError] = useState('');
-  const lock = useRef(false);
-  const assigned = user.account_ids;
-  const ownerById = new Map();
-  for (const manager of userList) if (manager.role === 'manager') for (const id of manager.account_ids) ownerById.set(id, manager);
-  const changed = selected.size !== assigned.length || assigned.some(id => !selected.has(id));
   const q = query.toLowerCase().trim(), phoneQuery = query.replace(/[^0-9]/g, '');
   const matched = accountList.filter(account => {
     if (filter === 'selected' && !selected.has(account.id)) return false;
     if (filter === 'free' && ownerById.has(account.id)) return false;
     return !q || [account.username, account.display_name, account.phone_e164, ownerById.get(account.id)?.username, String(account.id)].some(value => String(value || '').toLowerCase().includes(q)) || phoneQuery.length >= 3 && /^[+()\s\d-]+$/.test(query) && (account.phone_e164 || '').includes(phoneQuery);
   });
-  const moving = accountList.filter(account => selected.has(account.id) && ownerById.has(account.id) && ownerById.get(account.id).user_id !== user.user_id);
-  async function save() {
-    if (lock.current || !changed) return;
-    lock.current = true;
-    if (moving.length && !await ux.confirm({ title: 'Переназначить аккаунты?', message: `Эти аккаунты перейдут к ${user.username}:\n` + moving.map(account => `${account.username ? '@' + account.username : account.phone_e164} — от ${ownerById.get(account.id).username}`).join('\n'), confirmLabel: 'Переназначить' })) { lock.current = false; return; }
-    setBusy(true); setError('');
-    try { await onSave(user.user_id, { account_ids: [...selected] }); onClose(); }
-    catch (e) { setError(ux.readableError(e)); }
-    finally { lock.current = false; setBusy(false); }
-  }
-  const toggle = (id, checked) => setSelected(current => { const next = new Set(current); if (checked) next.add(id); else next.delete(id); return next; });
   return (
-    <ux.Modal title={`Аккаунты: ${user.username}`} wide busy={busy} onClose={onClose} footer={<>
-      <span className={cn(caption, 'me-auto min-w-[12ch] tabular-nums')} role="status">{`Выбрано: ${selected.size}`}</span>
-      <Button type="button" variant="outline" disabled={busy} onClick={onClose}>Отмена</Button>
-      <Button type="button" disabled={!changed || busy} onClick={save}>{busy ? 'Сохраняем…' : 'Сохранить'}</Button>
-    </>}>
+    <section className="grid gap-3" data-enter="keep">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className={sectionTitle}>Аккаунты</h3>
+        <span className={cn(caption, 'min-w-[12ch] text-right tabular-nums')} role="status">{`Выбрано: ${selected.size}`}</span>
+      </div>
       <div className="flex min-h-8 flex-wrap items-center gap-2">
-        <SearchInput className="flex-[1_1_220px]" aria-label="Поиск аккаунтов" placeholder="Номер, ник, имя или менеджер" data-autofocus value={query} onChange={setQuery} />
         <div className="flex items-center gap-0.5" role="group" aria-label="Какие аккаунты показать">
           {[['all', 'Все'], ['selected', 'Выбранные'], ['free', 'Свободные']].map(([key, label]) => (
             <Button key={key} type="button" size="sm" variant={filter === key ? 'secondary' : 'ghost'} className={cn('shadow-none', filter !== key && 'text-muted-foreground')} aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}</Button>
           ))}
         </div>
+        <SearchInput className="ml-auto w-full sm:w-72" aria-label="Поиск аккаунтов" placeholder="Номер, ник, имя или менеджер" value={query} onChange={setQuery} />
       </div>
-      <div className={cn('mr-assignment-list', 'mt-3 max-h-[340px] min-h-[200px] divide-y overflow-y-auto overscroll-contain rounded-md border [scrollbar-gutter:stable]')}>
+      {/* Высота списка постоянная: поиск и фильтр не меняют высоту окна. */}
+      <div className={cn('mr-assignment-list', 'h-60 divide-y overflow-y-auto overscroll-contain rounded-md border [scrollbar-gutter:stable]')}>
         {matched.length ? matched.map(account => {
           const owner = ownerById.get(account.id);
           return (
             <label key={account.id} className="grid cursor-pointer grid-cols-[1rem_minmax(0,1fr)_minmax(90px,30%)] items-center gap-3 px-3 py-2 hover:bg-muted/50">
-              <NativeCheckbox disabled={busy} checked={selected.has(account.id)} aria-label={`Аккаунт ${account.phone_e164 || account.username || account.id}`} onChange={e => toggle(account.id, e.target.checked)} />
+              <NativeCheckbox disabled={disabled} checked={selected.has(account.id)} aria-label={`Аккаунт ${account.phone_e164 || account.username || account.id}`} onChange={e => onToggle(account.id, e.target.checked)} />
               <span className="flex min-w-0 flex-col">
                 <span className={line}>{account.display_name || account.username || account.phone_e164 || `#${account.id}`}</span>
                 <span className={cn(subline, 'font-mono')}>{[account.phone_e164, account.username ? '@' + account.username : null].filter(Boolean).join(' · ')}</span>
               </span>
-              <span className={cn(caption, 'truncate text-right')}>{owner ? owner.user_id === user.user_id ? 'У этого менеджера' : owner.username : 'Свободен'}</span>
+              <span className={cn(caption, 'truncate text-right')}>{owner ? owner.user_id === userId ? 'У этого менеджера' : owner.username : 'Свободен'}</span>
             </label>
           );
         }) : <p className={cn(caption, 'p-3')}>Аккаунты не найдены. Измените поиск или фильтр.</p>}
       </div>
-      <div className={cn(caption, 'mt-2 flex min-h-4 items-center gap-1.5')}>{moving.length > 0 && <>
+      <div className={cn(caption, 'flex min-h-4 items-center gap-1.5')}>{moving.length > 0 && <>
         <span className="size-1.5 shrink-0 rounded-full bg-warning-foreground" aria-hidden="true" />
         <p>{`Будут переназначены от других менеджеров: ${moving.length}`}</p>
       </>}</div>
-      <div className={cn(errorSlot, 'mt-1')}>{error && <p role="alert">{error}</p>}</div>
+    </section>
+  );
+}
+
+// Enter в поиске и на галочках списка аккаунтов не должен отправлять всю форму учётки.
+const keepEnter = event => { if (event.key === 'Enter' && event.target.tagName === 'INPUT' && event.target.closest('[data-enter="keep"]')) event.preventDefault(); };
+const draftOf = user => ({ username: user.username, role: user.role, region: user.region_code || '', voicer: String(user.voicer_id || ''), password: '', selected: new Set(user.account_ids) });
+
+/* Одно окно на всю учётку: основное, вход и аккаунты. Открывается сразу с данными строки (поля
+   заблокированы), один запрос приносит свежие значения и пароль — размер окна при этом не меняется.
+   «Сохранить» отправляет одним запросом только то, что изменилось. */
+function ManagerEditor({ user, me, roleList, voicerList, userList, accountList, onSave, onClose }) {
+  const [saved, setSaved] = useState(null), [draft, setDraft] = useState(() => draftOf(user));
+  const [loadError, setLoadError] = useState(''), [attempt, setAttempt] = useState(0);
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [visible, setVisible] = useState(false);
+  const lock = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    api.get(`/api/managers/${user.user_id}`).then(
+      value => { if (alive) { setSaved(value); setDraft(draftOf(value)); } },
+      e => { if (alive) setLoadError(ux.readableError(e)); },
+    );
+    return () => { alive = false; };
+  }, [user.user_id, attempt]);
+  const base = saved || user;
+  const locked = busy || !saved;
+  const set = patch => setDraft(current => ({ ...current, ...patch }));
+  const login = draft.username.trim();
+  const assigned = base.account_ids;
+  const leavesManagers = base.role === 'manager' && draft.role !== 'manager';
+  // Чей аккаунт сейчас: по списку страницы, а для этой учётки — по свежему ответу сервера.
+  const ownerById = new Map();
+  for (const manager of userList) if (manager.role === 'manager' && manager.user_id !== base.user_id) for (const id of manager.account_ids) ownerById.set(id, manager);
+  if (base.role === 'manager') for (const id of assigned) ownerById.set(id, base);
+  const moving = draft.role === 'manager' ? accountList.filter(account => draft.selected.has(account.id) && ownerById.has(account.id) && ownerById.get(account.id).user_id !== base.user_id) : [];
+  const voicerId = draft.voicer ? Number(draft.voicer) : null;
+  const body = {};
+  if (login !== base.username) body.username = login;
+  if (draft.role !== base.role) body.role = draft.role;
+  if (draft.region !== (base.region_code || '')) body.region_code = draft.region || null;
+  if (draft.role === 'manager' && voicerId !== (base.voicer_id ?? null)) body.voicer_id = voicerId;
+  if (leavesManagers) body.account_ids = [];
+  else if (draft.role === 'manager' && (draft.selected.size !== assigned.length || assigned.some(id => !draft.selected.has(id)))) body.account_ids = [...draft.selected].sort((a, b) => a - b);
+  if (draft.password) body.password = draft.password;
+  const changed = Object.keys(body).length > 0;
+  const regionValid = draft.region === '' ? draft.role !== 'manager' || base.role === 'manager' && !base.region_code : validRegion(draft.region);
+  const passwordValid = !draft.password || draft.password.length >= PASSWORD_MIN;
+  const valid = Boolean(login) && regionValid && passwordValid;
+  async function save(event) {
+    event.preventDefault();
+    if (lock.current || !saved || !changed || !valid) return;
+    lock.current = true;
+    try {
+      if (leavesManagers && assigned.length && !await ux.confirm({ title: 'Изменить роль?', message: `У ${base.username} будут освобождены аккаунты: ${assigned.length}.`, confirmLabel: 'Изменить роль' })) return;
+      if (body.account_ids && moving.length && !await ux.confirm({ title: 'Переназначить аккаунты?', message: `Эти аккаунты перейдут к ${login}:\n` + moving.map(account => `${account.username ? '@' + account.username : account.phone_e164} — от ${ownerById.get(account.id).username}`).join('\n'), confirmLabel: 'Переназначить' })) return;
+      setBusy(true); setError('');
+      await onSave(base.user_id, body);
+      onClose();
+    } catch (e) { setError(ux.readableError(e)); }
+    finally { lock.current = false; setBusy(false); }
+  }
+  // Новый пароль создаётся сразу, отдельно от «Сохранить»: остальные правки в форме остаются как были.
+  async function regenerate() {
+    if (lock.current || !saved) return;
+    lock.current = true;
+    try {
+      if (!await ux.confirm({ title: 'Создать новый пароль?', message: `Учётка ${base.username}. Прежний пароль перестанет действовать.`, confirmLabel: 'Создать пароль' })) return;
+      setBusy(true); setError('');
+      const fresh = await onSave(base.user_id, { regenerate_password: true });
+      if (fresh) { setSaved(fresh); setVisible(true); }
+    } catch (e) { setError(ux.readableError(e)); }
+    finally { lock.current = false; setBusy(false); }
+  }
+  const toggle = (id, checked) => setDraft(current => { const selected = new Set(current.selected); if (checked) selected.add(id); else selected.delete(id); return { ...current, selected }; });
+  const message = loadError || error;
+  return (
+    <ux.Modal title={`Учётка: ${user.username}`} wide busy={busy} onClose={onClose} footer={<>
+      {/* Одна строка для ошибки загрузки, сохранения и копирования: кнопки справа не двигаются. */}
+      <div className={cn(errorSlot, 'me-auto min-w-0 flex-1')}>{message && <p role="alert">{message}</p>}</div>
+      <Button type="button" variant="outline" disabled={busy} onClick={onClose}>Отмена</Button>
+      {loadError
+        ? <Button type="button" className="min-w-28" onClick={() => { setLoadError(''); setAttempt(attempt + 1); }}>Повторить</Button>
+        : <Button type="submit" form="manager-editor" className="min-w-28" disabled={locked || !changed || !valid}>{busy ? 'Сохраняем…' : 'Сохранить'}</Button>}
+    </>}>
+      <form id="manager-editor" className="grid gap-4" aria-busy={!saved && !loadError} onSubmit={save} onKeyDown={keepEnter}>
+        <section className="grid gap-3">
+          <h3 className={sectionTitle}>Основное</h3>
+          <div className={formGrid}>
+            <Field label="Логин">
+              {/* Пока идёт загрузка, поле только для чтения, но не выключено: фокус окна встаёт сюда. */}
+              <Input name="username" data-autofocus required maxLength={64} autoComplete="off" readOnly={!saved} disabled={busy} value={draft.username} onChange={e => set({ username: e.target.value })} />
+            </Field>
+            <RoleSelect roleList={roleList} value={draft.role} disabled={locked || base.user_id === me?.user_id} onChange={role => set({ role })} />
+            <Field label="Регион" hint="3 или 4 цифры" error={regionValid ? '' : 'Укажите код региона: 3 или 4 цифры.'}>
+              <Input name="region" value={draft.region} disabled={locked} inputMode="numeric" maxLength={4} placeholder="Например, 0077" onChange={e => set({ region: e.target.value.replace(/\D/g, '').slice(0, 4) })} />
+            </Field>
+            {draft.role === 'manager' && <VoicerSelect voicerList={voicerList} value={draft.voicer} disabled={locked} onChange={voicer => set({ voicer })} />}
+          </div>
+        </section>
+        <Separator />
+        <section className="grid gap-3">
+          <h3 className={sectionTitle}>Вход</h3>
+          <div className={formGrid}>
+            <StoredPassword label="Текущий пароль" value={saved?.password} loading={!saved && !loadError} visible={visible} onToggle={() => setVisible(!visible)} />
+            <Field label="Новый пароль" hint="Необязательно. Заменит текущий после сохранения." error={passwordValid ? '' : `Не короче ${PASSWORD_MIN} символов.`}>
+              <Input name="password" className="font-mono" autoComplete="off" maxLength={256} disabled={locked} value={draft.password} onChange={e => set({ password: e.target.value })} />
+            </Field>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <CopyCredentials variant="outline" size="sm" value={saved} onError={setError} />
+            <Button type="button" variant="outline" size="sm" disabled={locked} onClick={regenerate}>Создать новый пароль</Button>
+          </div>
+        </section>
+        {draft.role === 'manager' && <>
+          <Separator />
+          <AccountPicker userId={base.user_id} accountList={accountList} ownerById={ownerById} selected={draft.selected} moving={moving} disabled={locked} onToggle={toggle} />
+        </>}
+      </form>
     </ux.Modal>
   );
 }
@@ -262,48 +326,32 @@ function SkeletonRow() {
 export function ManagersPage() {
   const [data, setData] = useState({ roles: [], items: null }), [accountList, setAccountList] = useState([]), [me, setMe] = useState(null);
   const [error, setError] = useState(''), [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false), [credentials, setCredentials] = useState(null), [editing, setEditing] = useState(null), [assigning, setAssigning] = useState(null);
+  const [creating, setCreating] = useState(false), [created, setCreated] = useState(null), [editing, setEditing] = useState(null);
   const [query, setQuery] = useState('');
-  const [opening, setOpening] = useState(null);
   useRouteBusy(loading);
   const reload = useCallback(async () => {
     const [fresh, accountRows, currentUser] = await Promise.all([api.get('/api/managers'), loadAccounts(), api.get('/auth/me')]);
     setData(fresh); setAccountList(accountRows); setMe(currentUser); return fresh;
   }, []);
   useEffect(() => { reload().catch(e => setError(ux.readableError(e))).finally(() => setLoading(false)); }, [reload]);
-  async function showCredentials(user) {
-    setError(''); setOpening(user.user_id);
-    try { setCredentials(await api.get(`/api/managers/${user.user_id}/credentials`)); }
-    catch (e) { setError(ux.readableError(e)); }
-    finally { setOpening(null); }
-  }
   async function create(body) {
     const result = await api.post('/api/managers', body);
     setData(result); setCreating(false); setError('');
-    await showCredentials({ user_id: result.created_user_id });
-  }
-  async function save(id, body) {
-    const result = await api.put(`/api/managers/${id}`, body);
-    setData(result); setError('');
-    if (credentials?.user_id === id) setCredentials(null);
-  }
-  async function openAccounts(user) {
-    setOpening(user.user_id); setError('');
-    try {
-      const fresh = await reload();
-      const list = fresh.items || [];
-      const current = list.find(item => item.user_id === user.user_id);
-      if (current?.role === 'manager') setAssigning(current);
-    }
+    // Пароль новой учётки показываем сразу после создания; позже он доступен в «Изменить».
+    try { setCreated(await api.get(`/api/managers/${result.created_user_id}`)); }
     catch (e) { setError(ux.readableError(e)); }
-    finally { setOpening(null); }
+  }
+  // Ответ — свежий список, а под ключом editor — данные сохранённой учётки для открытого окна.
+  async function save(id, body) {
+    const { editor, ...list } = await api.put(`/api/managers/${id}`, body);
+    setData(list); setError('');
+    return editor;
   }
   async function remove(user) {
     if (!await ux.confirm({ title: `Удалить ${user.username}?`, message: 'Учётка будет удалена. Закреплённые аккаунты освободятся.', confirmLabel: 'Удалить', danger: true })) return;
-    try { setData(await api.delete(`/api/managers/${user.user_id}`)); if (credentials?.user_id === user.user_id) setCredentials(null); }
+    try { setData(await api.delete(`/api/managers/${user.user_id}`)); }
     catch (e) { setError(ux.readableError(e)); }
   }
-  async function regenerate(id) { setCredentials(await api.post(`/api/managers/${id}/password`, {})); }
   const state = ux.useActions(), pending = state.pending.some(key => key.includes('/api/managers'));
   const managerList = data.items || [];
   const voicerList = managerList.filter(u => u.role === 'voice');
@@ -314,7 +362,7 @@ export function ManagersPage() {
     <>
       <div className="container">
         <PageHeader title="Менеджеры">
-          <Button type="button" size="sm" onClick={() => { setCreating(true); setCredentials(null); }}>+ Создать учётку</Button>
+          <Button type="button" size="sm" onClick={() => { setCreating(true); setCreated(null); }}>+ Создать учётку</Button>
         </PageHeader>
         <div className="mb-3 flex min-h-8 flex-wrap items-center gap-x-4 gap-y-2">
           {/* Одно место и для счётчика, и для ошибки страницы: список под ним не сдвигается. */}
@@ -362,25 +410,12 @@ export function ManagersPage() {
                     </TableCell>
                     <TableCell className={cell}>
                       <div className="flex items-center justify-end gap-0.5">
-                        {user.role === 'manager' && <IconAction icon={Users} label={`Назначить аккаунты: ${user.username}`} hint="Назначить аккаунты" disabled={pending || opening !== null} onClick={() => openAccounts(user)} />}
                         {user.role === 'voice' && <VoiceBotLink compact userId={user.user_id} linked={user.telegram_linked} />}
                         <IconAction icon={Pencil} label="Изменить" disabled={pending} onClick={() => setEditing(user)} />
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <IconAction icon={MoreHorizontal} label="Ещё" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem disabled={pending || opening !== null} onSelect={() => showCredentials(user)}>
-                              <KeyRound aria-hidden="true" />Логин и пароль
-                            </DropdownMenuItem>
-                            {!self && <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem variant="destructive" disabled={pending} onSelect={() => remove(user)}>
-                                <Trash2 aria-hidden="true" />Удалить
-                              </DropdownMenuItem>
-                            </>}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {/* Свою учётку удалить нельзя; место кнопки занято, чтобы «Изменить» стояла в одной колонке. */}
+                        {self
+                          ? <span className="size-8 shrink-0" aria-hidden="true" />
+                          : <IconAction icon={Trash2} label="Удалить" tone="danger" disabled={pending} onClick={() => remove(user)} />}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -397,9 +432,8 @@ export function ManagersPage() {
           </Table>
         </div>
         {creating && <CreateForm roleList={data.roles} voicerList={voicerList} onCreate={create} onCancel={() => setCreating(false)} />}
-        {credentials && <Credentials value={credentials} onClose={() => setCredentials(null)} onRegenerate={regenerate} />}
-        {editing && <ManagerEditor key={editing.user_id} user={editing} me={me} roleList={data.roles} voicerList={voicerList} onSave={save} onClose={() => setEditing(null)} />}
-        {assigning && <AccountAssignment key={assigning.user_id} user={assigning} userList={managerList} accountList={accountList} onSave={save} onClose={() => setAssigning(null)} />}
+        {created && <CreatedCredentials value={created} onClose={() => setCreated(null)} />}
+        {editing && <ManagerEditor key={editing.user_id} user={editing} me={me} roleList={data.roles} voicerList={voicerList} userList={managerList} accountList={accountList} onSave={save} onClose={() => setEditing(null)} />}
       </div>
     </>
   );
