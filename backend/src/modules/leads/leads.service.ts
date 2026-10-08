@@ -81,6 +81,12 @@ export interface LeadScope {
  * Поиск по лидам: без учёта регистра, по телефону, нику, имени, городу,
  * заметке и по id чата в Telegram, если ввели число.
  */
+function phoneNeedle(q: string): string {
+  const digits = q.replace(/\D/g, '');
+  if (digits.length < 3) return q.replace(/[\s()-]/g, '');
+  return digits.length >= 5 ? digits.replace(/^[78]/, '') : digits;
+}
+
 export function leadSearchClauses(raw: string): Prisma.PhoneNumberWhereInput[] {
   const q = raw.trim();
   const ci = (field: keyof Prisma.PhoneNumberWhereInput, value: string) =>
@@ -88,7 +94,8 @@ export function leadSearchClauses(raw: string): Prisma.PhoneNumberWhereInput[] {
       [field]: { contains: value, mode: 'insensitive' },
     }) as Prisma.PhoneNumberWhereInput;
   const out: Prisma.PhoneNumberWhereInput[] = [
-    ci('phoneE164', q.replace(/[\s()-]/g, '')),
+    // Телефон ищем по цифрам; ведущие 8 или 7 отбрасываем — в базе номера в +7…
+    ci('phoneE164', phoneNeedle(q)),
     ci('usernameKey', q.replace(/^@/, '')),
     ci('telegramUsername', q.replace(/^@/, '')),
     ci('firstName', q),
