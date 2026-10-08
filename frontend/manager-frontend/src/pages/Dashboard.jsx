@@ -15,6 +15,7 @@ import { getStats } from '../api/stats';
 import { liveRows } from '../utils/chat';
 import { moscowDay } from '../utils/panelTime';
 import { rememberReminder, shouldRemind } from '../utils/stageReminder';
+import { withArchive } from '../utils/search';
 
 const STAT_TILES = [
   { key: 'need_manager', label: 'Ждут менеджера', color: '#00D4FF' },
@@ -39,21 +40,30 @@ function Dashboard() {
   const [ready, setReady] = useState(false);
 
   const inFlight = useRef(false);
+  const [archiveRows, setArchiveRows] = useState([]);
+  const searching = query.trim() !== '';
+  const searchRef = useRef(searching);
+  searchRef.current = searching;
   const load = useCallback(() => {
     // Опрос раз в 5 секунд: если прошлый ещё не ответил, новый не запускаем,
     // иначе при медленном сервере запросы копятся и панель «подвисает».
     if (inFlight.current) return;
     inFlight.current = true;
+    // Поиск должен находить и архивные диалоги: пока в строке поиска что-то
+    // есть, архив подтягивается вместе с основным списком.
+    const wantArchive = searchRef.current && !showHidden;
     Promise.all([
       getNeedManagerAssist(),
       showHidden ? getHiddenConversations() : getConversations(),
       getStats(),
       showHidden ? getConversations() : null,
+      wantArchive ? getHiddenConversations().catch(() => []) : null,
     ])
-      .then(([queue, all, raw, visible]) => {
+      .then(([queue, all, raw, visible, archive]) => {
         setLiveAgents(liveRows(visible ?? all));
         setManagerAgents(queue);
         setRows(all);
+        setArchiveRows(archive ?? []);
         setStats(STAT_TILES.map((t) => ({ id: t.key, label: t.label, color: t.color, value: String(raw?.[t.key] ?? '—') })));
       })
       .catch((e) => setError(e.detail || e.message))
@@ -113,6 +123,11 @@ function Dashboard() {
     [load],
   );
 
+  // Начали искать — сразу дотянуть архив, не дожидаясь следующего опроса.
+  useEffect(() => {
+    if (searching && !showHidden) load();
+  }, [searching, showHidden, load]);
+
   useEffect(() => {
     load();
     const timer = setInterval(() => {
@@ -152,7 +167,7 @@ function Dashboard() {
           <StatsBar stats={stats} dateFilter={dateFilter} onDateFilterChange={setDateFilter} />
           <ConversationsTable
             ready={ready}
-            rows={rows}
+            rows={searching && !showHidden ? withArchive(rows, archiveRows) : rows}
             query={query}
             headFilters={headFilters}
             dateFilter={dateFilter}

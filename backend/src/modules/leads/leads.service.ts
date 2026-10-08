@@ -77,6 +77,28 @@ export interface LeadScope {
   accounts: number[];
 }
 
+/**
+ * Поиск по лидам: без учёта регистра, по телефону, нику, имени, городу,
+ * заметке и по id чата в Telegram, если ввели число.
+ */
+export function leadSearchClauses(raw: string): Prisma.PhoneNumberWhereInput[] {
+  const q = raw.trim();
+  const ci = (field: keyof Prisma.PhoneNumberWhereInput, value: string) =>
+    ({
+      [field]: { contains: value, mode: 'insensitive' },
+    }) as Prisma.PhoneNumberWhereInput;
+  const out: Prisma.PhoneNumberWhereInput[] = [
+    ci('phoneE164', q.replace(/[\s()-]/g, '')),
+    ci('usernameKey', q.replace(/^@/, '')),
+    ci('telegramUsername', q.replace(/^@/, '')),
+    ci('firstName', q),
+    ci('city', q),
+    ci('notes', q),
+  ];
+  if (/^\d{5,}$/.test(q)) out.push({ telegramUserId: BigInt(q) });
+  return out;
+}
+
 @Injectable()
 export class LeadsService {
   private readonly log = new Logger(LeadsService.name);
@@ -212,25 +234,20 @@ export class LeadsService {
     scope: LeadScope | null,
     filter: { status?: string; q?: string; limit?: number },
   ) {
+    return this.listLeads(scope, filter);
+  }
+
+  private async listLeads(
+    scope: LeadScope | null,
+    filter: { status?: string; q?: string; limit?: number },
+  ) {
     await this.markReplied();
     const q = filter.q?.trim();
     const where: Prisma.PhoneNumberWhereInput = {
       AND: [
         this.scopeWhere(scope),
         filter.status ? { status: filter.status } : {},
-        q
-          ? {
-              OR: [
-                { phoneE164: { contains: q } },
-                {
-                  usernameKey: { contains: q.replace(/^@/, '').toLowerCase() },
-                },
-                { firstName: { contains: q } },
-                { city: { contains: q } },
-                { telegramUsername: { contains: q } },
-              ],
-            }
-          : {},
+        q ? { OR: leadSearchClauses(q) } : {},
       ],
     };
     const rows = await this.prisma.phoneNumber.findMany({

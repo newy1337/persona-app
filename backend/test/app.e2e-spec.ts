@@ -816,6 +816,14 @@ describe('Manager panel API (e2e)', () => {
         .expect(200);
       expect(l.body.items).toHaveLength(1);
       expect(l.body.items[0].status).toBe('pending');
+      // регистр не важен, телефон можно вводить с пробелами и скобками
+      for (const q of ['олег', 'ОЛЕГ', '8 (900) 555', 'моск']) {
+        const r = await request(app.getHttpServer())
+          .get(`/api/leads?q=${encodeURIComponent(q)}`)
+          .set(h)
+          .expect(200);
+        expect(r.body.items.map((x: any) => x.first_name)).toContain('Олег');
+      }
     });
 
     it('edit, outreach status, delete', async () => {

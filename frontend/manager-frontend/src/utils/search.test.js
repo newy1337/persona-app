@@ -106,3 +106,22 @@ describe('matchesDateFilter — «SELECT DATE»', () => {
     }
   });
 });
+
+import { withArchive } from './search';
+
+describe('поиск с архивом', () => {
+  it('добавляет архивные диалоги без дублей и помечает их', () => {
+    const rows = [{ chat_id: 1 }, { chat_id: 2 }];
+    rows.total = 2;
+    const merged = withArchive(rows, [{ chat_id: 2 }, { chat_id: 3 }]);
+    expect(merged.map((r) => r.chat_id)).toEqual([1, 2, 3]);
+    expect(merged[2].hidden).toBe(true);
+    expect(merged[1].hidden).toBeUndefined();
+    expect(merged.total).toBe(2);
+  });
+
+  it('без архива возвращает тот же список', () => {
+    const rows = [{ chat_id: 1 }];
+    expect(withArchive(rows, [])).toBe(rows);
+  });
+});

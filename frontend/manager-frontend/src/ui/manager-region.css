@@ -293,3 +293,5 @@
 .mr-dialog-deal-select{font:inherit;font-size:11px;color:#dfe7f3;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:2px 4px;max-width:100%}
 .mr-dialog-deal-missing .mr-dialog-deal-select{color:#f2c27b;border-color:#8a5a1f;background:rgba(138,90,31,.14)}
 .mr-dialog-deal-note{display:block;margin-top:3px;color:#aebed5;white-space:normal}
+
+.mr-dialog-archived{display:inline-block;margin-top:5px;padding:1px 7px;border-radius:999px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#aebed5;border:1px solid #36445a}

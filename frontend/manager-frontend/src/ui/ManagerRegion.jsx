@@ -60,6 +60,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, 
             row.account_lost && h('div', { className: 'mr-dialog-warning' }, accountLost(row.account_lost, { short: true }))),
           h('td', { className: 'mr-dialog-status', 'data-label': 'Стадия и режим' },
             h(Stage, { stage: row.stage }),
+            row.hidden && !archived && h('div', { className: 'mr-dialog-archived', 'data-testid': 'archived-mark' }, 'в архиве'),
             onDealStage
               ? h('div', { className: `mr-dialog-deal ${row.deal_stage ? '' : 'mr-dialog-deal-missing'}`, 'data-testid': 'deal-stage', title: row.deal_note || undefined, onClick: e => e.stopPropagation() },
                   h('select', { className: 'mr-dialog-deal-select', 'aria-label': `Этап сделки: ${row.name || row.chat_id}`, value: row.deal_stage || '', onChange: e => { const stage = e.target.value; if (stage) onDealStage(row.chat_id, stage, row); } },

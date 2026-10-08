@@ -40,3 +40,12 @@ export function matchesDateFilter(row, dateFilter) {
   }
   return true;
 }
+
+/** Основной список плюс архив без дублей: нужен только пока идёт поиск. */
+export function withArchive(rows, archive) {
+  if (!archive?.length) return rows;
+  const seen = new Set(rows.map((r) => r.chat_id));
+  const merged = [...rows, ...archive.filter((r) => !seen.has(r.chat_id)).map((r) => ({ ...r, hidden: true }))];
+  merged.total = rows.total ?? rows.length;
+  return merged;
+}
