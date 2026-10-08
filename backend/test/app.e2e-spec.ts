@@ -172,6 +172,13 @@ describe('Manager panel API (e2e)', () => {
       active_now: 0,
       leads: 0,
       accounts: 0,
+      period: null,
+      stage_vbros: 0,
+      stage_predloga: 0,
+      stage_soglas: 0,
+      stage_lead: 0,
+      stage_deposit: 0,
+      stage_archive: 0,
     });
     // (accounts for the admin = the whole fleet; it is checked after an account is added below)
     const queue = await request(app.getHttpServer())
@@ -452,6 +459,31 @@ describe('Manager panel API (e2e)', () => {
       .set(h)
       .expect(200);
     expect(again.body.totals).toMatchObject({ vbros: 1, lead: 1 });
+
+    // плитки дашборда: без периода — дошли всего, за сегодня — пройдено сегодня, за вчера — ноль
+    const today = new Date(Date.now() + 3 * 3600 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const tilesAll = await request(app.getHttpServer())
+      .get('/api/manager/stats')
+      .set(h)
+      .expect(200);
+    expect(tilesAll.body).toMatchObject({
+      stage_lead: 1,
+      stage_soglas: 1,
+      period: null,
+    });
+    const tilesToday = await request(app.getHttpServer())
+      .get(`/api/manager/stats?from=${today}&to=${today}`)
+      .set(h)
+      .expect(200);
+    expect(tilesToday.body).toMatchObject({ stage_lead: 1, stage_vbros: 1 });
+    expect(tilesToday.body.period).toEqual({ from: today, to: today });
+    const tilesOld = await request(app.getHttpServer())
+      .get('/api/manager/stats?from=2020-01-01&to=2020-01-02')
+      .set(h)
+      .expect(200);
+    expect(tilesOld.body).toMatchObject({ stage_lead: 0, total: 0 });
 
     await request(app.getHttpServer())
       .post(`/api/conversations/${chatId}/deal-stage`)

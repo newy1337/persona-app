@@ -2,6 +2,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { REPLY_BRAIN, type ReplyBrain } from 'src/brain/reply-brain.port';
 import type { NextBotAction } from 'src/brain/nastya/dialogue/forecast';
 import { Prisma } from '@prisma/client';
+import { resolveRange, type DayRange } from '../stats/range';
+import {
+  stageMovesInRange,
+  stagesReachedEver,
+  zeroStages,
+} from 'src/shared/deal-stage-stats';
 import { PrismaService } from 'src/prisma.service';
 import { PersonaService } from 'src/brain/persona.service';
 import { ClockService } from 'src/shared/clock.service';
@@ -299,6 +305,33 @@ export class ManagerService {
     return opts.includeHidden ? listed : this.withNextActions(listed);
   }
 
+  /** Этапы для плиток: за период — пройденные в эти дни, без периода — дошли всего. */
+  private async stageTiles(
+    accounts: number[] | null,
+    range: DayRange | null,
+  ): Promise<Record<string, number>> {
+    const mine =
+      accounts === null
+        ? null
+        : new Set(
+            (
+              await this.prisma.contact.findMany({
+                where: { accountId: { in: accounts } },
+                select: { chatId: true },
+              })
+            ).map((c) => String(c.chatId)),
+          );
+    if (!range) return stagesReachedEver(this.prisma, mine);
+    const out = zeroStages();
+    for (const m of await stageMovesInRange(
+      this.prisma,
+      range.start,
+      range.end,
+    ))
+      if (!mine || mine.has(String(m.chatId))) out[m.stage] += 1;
+    return out;
+  }
+
   private async readAttentionQueue(
     accounts: number[] | null,
   ): Promise<ManagerChatRow[]> {
@@ -374,31 +407,54 @@ export class ManagerService {
     return this.readAttentionQueue(accounts);
   }
 
-  async stats(accounts: number[] | null) {
+  /**
+   * Плитки дашборда. Без периода — как есть: все диалоги, лиды за всё время,
+   * этапы «дошли всего». С периодом (дни по Москве) — диалоги, в которых
+   * клиент писал в эти дни, лиды, оформленные в эти дни, и этапы, пройденные
+   * в эти дни. «Ждут менеджера», «активны сейчас» и аккаунты от периода не
+   * зависят: это состояние на сейчас.
+   */
+  async stats(
+    accounts: number[] | null,
+    period: { from?: string; to?: string } = {},
+  ) {
     const nowTs = this.clock.ts();
     const activeSince = nowTs - ACTIVE_WINDOW_S;
     const scope = this.scopeSql(accounts);
+    const range = period.from || period.to ? resolveRange(period, nowTs) : null;
     const one = async (sql: Prisma.Sql) => {
       const r = await this.prisma.$queryRaw<{ n: bigint | number }[]>(sql);
       return Number(r[0]?.n ?? 0);
     };
+    const inPeriod = range
+      ? Prisma.sql`AND EXISTS (SELECT 1 FROM messages mp WHERE mp.chat_id = c.chat_id AND mp.role = 'user' AND mp.ts >= ${range.start} AND mp.ts < ${range.end})`
+      : Prisma.empty;
     const total = await one(Prisma.sql`
       SELECT COUNT(*) AS n FROM contacts c LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
-      WHERE 1 = 1 ${scope} ${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL}`);
+      WHERE 1 = 1 ${scope} ${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL} ${inPeriod}`);
     const active = await one(Prisma.sql`
       SELECT COUNT(*) AS n FROM contacts c LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
       WHERE EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.chat_id AND m.ts >= ${activeSince})
       ${scope} ${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL}`);
+    const leadsInPeriod = range
+      ? Prisma.sql`AND COALESCE(h.closed_at, h.contact_delivered_at, h.analyst_assigned_at, h.updated_at) >= ${range.start}
+                   AND COALESCE(h.closed_at, h.contact_delivered_at, h.analyst_assigned_at, h.updated_at) < ${range.end}`
+      : Prisma.empty;
     const leads = await one(Prisma.sql`
       SELECT COUNT(*) AS n FROM lead_handoff h JOIN contacts c ON c.chat_id = h.chat_id
-      WHERE h.state IN ('analyst_assigned', 'contact_delivered', 'closed') ${scope}`);
+      WHERE h.state IN ('analyst_assigned', 'contact_delivered', 'closed') ${scope} ${leadsInPeriod}`);
     const queue = await this.readAttentionQueue(accounts);
     const need = queue.filter((r) => r.queue_reason !== 'manual_mode').length;
+    const stages = await this.stageTiles(accounts, range);
     return {
       need_manager: need,
       total,
       active_now: active,
       leads,
+      period: range ? { from: range.from, to: range.to } : null,
+      ...Object.fromEntries(
+        Object.entries(stages).map(([k, v]) => [`stage_${k}`, v]),
+      ),
       accounts:
         accounts === null
           ? await this.prisma.tgAccount.count({

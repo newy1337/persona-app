@@ -13,16 +13,22 @@ import {
 } from '../api/conversations';
 import { getStats } from '../api/stats';
 import { liveRows } from '../utils/chat';
-import { moscowDay } from '../utils/panelTime';
+import { moscowDay, rangeForFilter } from '../utils/panelTime';
 import { rememberReminder, shouldRemind } from '../utils/stageReminder';
 import { withArchive } from '../utils/search';
 
 const STAT_TILES = [
   { key: 'need_manager', label: 'Ждут менеджера', color: '#00D4FF' },
-  { key: 'total', label: 'Всего диалогов', color: '#10B981' },
+  { key: 'total', label: 'Всего диалогов', color: '#10B981', periodLabel: 'Диалогов за период' },
   { key: 'active_now', label: 'Активны сейчас', color: '#A78BFA' },
   { key: 'leads', label: 'Лидов оформлено', color: '#F59E0B' },
   { key: 'accounts', label: 'Мои аккаунты', color: '#4A9EFF' },
+  { key: 'stage_vbros', label: 'Вброс', color: '#60A5FA', periodLabel: 'Вброс за период' },
+  { key: 'stage_predloga', label: 'Предлога', color: '#34D399', periodLabel: 'Предлога за период' },
+  { key: 'stage_soglas', label: 'Соглас', color: '#FBBF24', periodLabel: 'Соглас за период' },
+  { key: 'stage_lead', label: 'Лид', color: '#F472B6', periodLabel: 'Лид за период' },
+  { key: 'stage_deposit', label: 'Депозит', color: '#C084FC', periodLabel: 'Депозит за период' },
+  { key: 'stage_archive', label: 'В архиве', color: '#94A3B8', periodLabel: 'В архив за период' },
 ];
 
 const POLL_MS = 10000;
@@ -44,6 +50,9 @@ function Dashboard() {
   const searching = query.trim() !== '';
   const searchRef = useRef(searching);
   searchRef.current = searching;
+  // Период для плиток: фильтр дат должен менять и статистику, не только списки.
+  const dateRef = useRef(dateFilter);
+  dateRef.current = dateFilter;
   const load = useCallback(() => {
     // Опрос раз в 5 секунд: если прошлый ещё не ответил, новый не запускаем,
     // иначе при медленном сервере запросы копятся и панель «подвисает».
@@ -55,7 +64,7 @@ function Dashboard() {
     Promise.all([
       getNeedManagerAssist(),
       showHidden ? getHiddenConversations() : getConversations(),
-      getStats(),
+      getStats(rangeForFilter(dateRef.current)),
       showHidden ? getConversations() : null,
       wantArchive ? getHiddenConversations().catch(() => []) : null,
     ])
@@ -64,7 +73,12 @@ function Dashboard() {
         setManagerAgents(queue);
         setRows(all);
         setArchiveRows(archive ?? []);
-        setStats(STAT_TILES.map((t) => ({ id: t.key, label: t.label, color: t.color, value: String(raw?.[t.key] ?? '—') })));
+        setStats(STAT_TILES.map((t) => ({
+          id: t.key,
+          label: raw?.period && t.periodLabel ? t.periodLabel : t.label,
+          color: t.color,
+          value: String(raw?.[t.key] ?? '—'),
+        })));
       })
       .catch((e) => setError(e.detail || e.message))
       .finally(() => {
@@ -127,6 +141,11 @@ function Dashboard() {
   useEffect(() => {
     if (searching && !showHidden) load();
   }, [searching, showHidden, load]);
+
+  // Сменили период — плитки пересчитываются сразу.
+  useEffect(() => {
+    load();
+  }, [dateFilter, load]);
 
   useEffect(() => {
     load();
