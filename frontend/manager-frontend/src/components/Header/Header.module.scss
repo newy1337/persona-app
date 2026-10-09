@@ -453,23 +453,3 @@
   .logoText { display: none; }
   .right { gap: 8px; }
 }
-
-.support {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 0 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.04);
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-
-  &:hover { background: rgba(255, 255, 255, 0.08); }
-  span { display: none; }
-  @media (min-width: 1100px) { span { display: inline; } }
-}

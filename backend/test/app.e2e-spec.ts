@@ -526,24 +526,6 @@ describe('Manager panel API (e2e)', () => {
     });
   });
 
-  it('поддержка: без бота статус «не настроена», отправка отвечает 503, без входа — 401', async () => {
-    const h = { Authorization: `Bearer ${token}` };
-    const st = await request(app.getHttpServer())
-      .get('/api/support/status')
-      .set(h)
-      .expect(200);
-    expect(st.body).toEqual({ configured: false });
-    await request(app.getHttpServer())
-      .post('/api/support/report')
-      .set(h)
-      .field('text', 'сломалось')
-      .expect(503);
-    await request(app.getHttpServer())
-      .post('/api/support/report')
-      .field('text', 'сломалось')
-      .expect(401);
-  });
-
   it('расход по менеджерам: чат без закреплённого аккаунта попадает в строку «без менеджера»', async () => {
     const h = { Authorization: `Bearer ${token}` };
     const stats = await request(app.getHttpServer())
