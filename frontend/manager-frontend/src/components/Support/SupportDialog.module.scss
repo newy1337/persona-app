@@ -1,0 +1,30 @@
+.form { display: flex; flex-direction: column; gap: 12px; }
+.hint { margin: 0; font-size: 13px; line-height: 1.5; opacity: 0.75; }
+.text {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 10px 12px;
+  resize: vertical;
+  min-height: 120px;
+}
+.filesRow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px; }
+.previews { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.preview {
+  position: relative;
+  width: 96px;
+  height: 72px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  button {
+    position: absolute; top: 2px; right: 2px;
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 0; background: rgba(0, 0, 0, 0.65); color: #fff; font-size: 14px; line-height: 20px; cursor: pointer;
+  }
+}

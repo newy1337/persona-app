@@ -17,6 +17,8 @@ export const appConfig = {
   openaiBaseUrl: (
     process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
   ).trim(),
+  supportBotToken: (process.env.SUPPORT_BOT_TOKEN || '').trim(),
+  supportChatId: (process.env.SUPPORT_CHAT_ID || '').trim(),
   transcribeModel: (
     process.env.TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe'
   ).trim(),

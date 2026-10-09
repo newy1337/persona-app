@@ -19,6 +19,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { LeadsModule } from './modules/leads/leads.module';
 import { PersonasModule } from './modules/personas/personas.module';
 import { StatsModule } from './modules/stats/stats.module';
+import { SupportModule } from './modules/support/support.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { StatsModule } from './modules/stats/stats.module';
     LeadsModule,
     PersonasModule,
     StatsModule,
+    SupportModule,
   ],
   controllers: [AppController],
   providers: [AppService],

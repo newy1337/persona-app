@@ -4,6 +4,7 @@ import { getStats } from '../../api/stats';
 import { Link, NavLink } from 'react-router-dom';
 import styles from './Header.module.scss';
 import VoiceNotifications from './VoiceNotifications';
+import SupportDialog from '../Support/SupportDialog';
 import {
   LogoChatIcon,
   LiveUsersIcon,
@@ -90,6 +91,7 @@ function Header({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [me, setMe] = useState(null);
   const [leaving, setLeaving] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [ownLive, setOwnLive] = useState(null);
   const searchable = typeof onQueryChange === 'function';
@@ -203,6 +205,13 @@ function Header({
         )}
 
         <div className={styles.right}>
+          {me && (
+            <button type="button" className={styles.support} title="Написать в поддержку" aria-label="Поддержка" onClick={() => setSupportOpen(true)}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.5" /><path d="m5.6 5.6 3.9 3.9M14.5 14.5l3.9 3.9M18.4 5.6l-3.9 3.9M9.5 14.5l-3.9 3.9" /></svg>
+              <span>Поддержка</span>
+            </button>
+          )}
+          {supportOpen && <SupportDialog onClose={() => setSupportOpen(false)} />}
           {me && ['manager', 'admin'].includes(me.role) && <VoiceNotifications key={me.id} userId={me.id} />}
           <div className={styles.timeBlock}>
             <span className={styles.timeValue}>{now.toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow' })} МСК</span>
