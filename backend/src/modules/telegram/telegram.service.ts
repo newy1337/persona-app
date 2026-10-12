@@ -1663,21 +1663,29 @@ export class TelegramService
     // появляется рывком, чего у живого собеседника не бывает.
     // Кружок свой статус показывает сам, в sendVideoNote.
     if (!(opts.kind === 'video_note' && !remote)) {
-      await account.client
-        .invoke(
-          new Api.messages.SetTyping({
-            peer: chatId,
-            action:
-              opts.kind === 'voice'
-                ? new Api.SendMessageRecordAudioAction()
-                : opts.kind === 'photo'
-                  ? new Api.SendMessageUploadPhotoAction({ progress: 0 })
-                  : opts.kind === 'video'
-                    ? new Api.SendMessageUploadVideoAction({ progress: 0 })
-                    : new Api.SendMessageUploadDocumentAction({ progress: 0 }),
-          }),
-        )
-        .catch(() => undefined);
+      // Через call с таймаутом: на зависшем соединении invoke не возвращается
+      // вовсе, и тогда встаёт вся очередь ручных сообщений.
+      await this.call(
+        account,
+        'setTyping',
+        () =>
+          account.client.invoke(
+            new Api.messages.SetTyping({
+              peer: chatId,
+              action:
+                opts.kind === 'voice'
+                  ? new Api.SendMessageRecordAudioAction()
+                  : opts.kind === 'photo'
+                    ? new Api.SendMessageUploadPhotoAction({ progress: 0 })
+                    : opts.kind === 'video'
+                      ? new Api.SendMessageUploadVideoAction({ progress: 0 })
+                      : new Api.SendMessageUploadDocumentAction({
+                          progress: 0,
+                        }),
+            }),
+          ),
+        TG_TYPING_TIMEOUT_MS,
+      ).catch(() => undefined);
     }
 
     // Голосовое из вложения панели — той же дорогой, что и клип войсера: с перекодировкой.
@@ -1754,14 +1762,18 @@ export class TelegramService
       const buffer = readFileSync(path);
       return new CustomFile(basename(path), buffer.length, path, buffer);
     });
-    await account.client
-      .invoke(
-        new Api.messages.SetTyping({
-          peer: chatId,
-          action: new Api.SendMessageUploadPhotoAction({ progress: 0 }),
-        }),
-      )
-      .catch(() => undefined);
+    await this.call(
+      account,
+      'setTyping',
+      () =>
+        account.client.invoke(
+          new Api.messages.SetTyping({
+            peer: chatId,
+            action: new Api.SendMessageUploadPhotoAction({ progress: 0 }),
+          }),
+        ),
+      TG_TYPING_TIMEOUT_MS,
+    ).catch(() => undefined);
     const sent = (await this.deliver(chatId, () =>
       this.call(
         account,
