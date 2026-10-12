@@ -78,7 +78,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, 
 }
 
 export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
-  const [draft, setDraft] = useState({ phone: '', first_name: '', city: '', age: '', site: '', persona_id: '', preferred_account_id: '' });
+  const [draft, setDraft] = useState({ phone: '', first_name: '', city: '', age: '', site: '', first_message: '', persona_id: '', preferred_account_id: '' });
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -99,7 +99,7 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
     if (busy || !valid) return;
     setBusy(true); setError('');
     try {
-      await api.post('/api/leads', { phone: draft.phone, first_name: draft.first_name || undefined, city: draft.city || undefined, age: draft.age ? Number(draft.age) : undefined, site: draft.site.trim() || undefined, persona_id: draft.persona_id || undefined, preferred_account_id: draft.preferred_account_id ? Number(draft.preferred_account_id) : undefined });
+      await api.post('/api/leads', { phone: draft.phone, first_name: draft.first_name || undefined, city: draft.city || undefined, age: draft.age ? Number(draft.age) : undefined, site: draft.site.trim() || undefined, first_message: draft.first_message.trim() || undefined, persona_id: draft.persona_id || undefined, preferred_account_id: draft.preferred_account_id ? Number(draft.preferred_account_id) : undefined });
       onDone();
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
@@ -119,6 +119,10 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
       h('p', { className: 'mr-caption' }, draft.preferred_account_id ? 'Напишет только выбранный аккаунт. Если он временно недоступен, лид останется в очереди.' : 'Без выбора аккаунт подбирается автоматически, как раньше.'),
       !loading && !loadError && available.length === 0 && h('p', { className: 'mr-caption' }, 'Нет включённых аккаунтов для этой личности.'),
       loadError && h('div', { role: 'alert' }, h('p', { className: s.error }, `Не удалось загрузить аккаунты: ${loadError}`), button('Повторить', () => setReload(n => n + 1)))),
+    h('div', { className: s.formFull },
+      h('label', { className: s.label }, 'Первое сообщение',
+        h('textarea', { className: s.field, rows: 3, maxLength: 1000, value: draft.first_message, disabled: busy, placeholder: 'Оставьте пустым — бот напишет по шаблону личности', style: { resize: 'vertical' }, onChange: e => change({ first_message: e.target.value }) })),
+      h('p', { className: 'mr-caption' }, draft.first_message.trim() ? 'Лид получит именно этот текст, без подстановок. Дальше диалог ведёт бот.' : 'Без текста первое сообщение составит бот, как раньше.')),
     error && h('p', { className: `${s.error} ${s.formFull}`, role: 'alert' }, error),
     h('div', { className: `${s.formFull} ${s.actions}` }, button('Отмена', onCancel, { className: s.btn, disabled: busy }), h('button', { type: 'submit', className: s.btnPrimary, disabled: busy || !valid }, busy ? 'Добавляем…' : 'Добавить')));
 }
@@ -149,6 +153,7 @@ export function LeadsTable({ ready = true, rows, query, status, selected, onTogg
               h('div', { className: 'mr-dialog-muted' }, [row.age ? `${row.age} лет` : null, row.city].filter(Boolean).join(' · ') || 'Возраст и город не указаны'),
               h('div', { className: 'mr-dialog-contact' }, row.phone_e164 || null, row.username && telegramLink(row.username)),
               h('div', { className: 'mr-dialog-muted' }, `#${row.id}`, row.site ? ` · Сайт: ${row.site}` : ''),
+              row.first_message && h('div', { className: 'mr-dialog-muted', title: row.first_message }, h('span', { className: 'mr-caption' }, row.first_contact_at ? 'Первое сообщение: ' : 'Напишем: '), row.first_message.length > 80 ? `${row.first_message.slice(0, 80)}…` : row.first_message),
               (row.telegram_username || row.telegram_user_id) && h('div', { className: 'mr-lead-telegram' }, h('span', { className: 'mr-caption' }, 'Telegram: '), row.telegram_username ? telegramLink(row.telegram_username) : String(row.telegram_user_id))),
             h('td', { className: 'mr-lead-owner' }, h(Attribution, { value: row }),
               h('div', { className: 'mr-dialog-account' }, h('span', { className: 'mr-caption' }, row.preferred_account_id && !row.first_contact_at ? 'Выбран: ' : 'Аккаунт: '), senderId ? h(React.Fragment, null, senderUsername && telegramLink(senderUsername), ` #${senderId}`) : 'автоматически')),

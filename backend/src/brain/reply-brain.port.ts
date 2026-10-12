@@ -83,6 +83,8 @@ export interface LeadIntro {
   city?: string | null;
   age?: number | null;
   site?: string | null;
+  /** Первое сообщение, написанное менеджером; пусто — шаблон личности. */
+  opener?: string | null;
 }
 
 export interface OutboundTransport {

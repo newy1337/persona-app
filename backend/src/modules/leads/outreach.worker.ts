@@ -328,6 +328,7 @@ export class OutreachWorker implements OnModuleInit {
         city: candidate.city,
         age: candidate.age,
         site: candidate.site,
+        opener: candidate.firstMessage,
       });
       const ts = this.clock.ts();
       await this.prisma.phoneNumber.update({

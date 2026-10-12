@@ -58,6 +58,7 @@ export interface LeadView extends ManagerAttribution {
   next_attempt_at: number | null;
   last_error: string | null;
   notes: string | null;
+  first_message: string | null;
   inserted_at: number;
 }
 
@@ -233,6 +234,7 @@ export class LeadsService {
       next_attempt_at: row.nextAttemptAt,
       last_error: row.lastError,
       notes: row.notes,
+      first_message: row.firstMessage,
       inserted_at: row.insertedAt,
     };
   }
@@ -382,6 +384,7 @@ export class LeadsService {
         gender: dto.gender ?? null,
         sourceType: dto.source_type?.trim() || 'manual',
         notes: dto.notes?.trim() || null,
+        firstMessage: dto.first_message?.trim() || null,
         ownerUserId,
         insertedAt: this.clock.ts(),
       },
@@ -520,6 +523,13 @@ export class LeadsService {
     }
     if (dto.gender !== undefined) data.gender = dto.gender;
     if (dto.notes !== undefined) data.notes = dto.notes?.trim() || null;
+    if (dto.first_message !== undefined) {
+      if ((await this.get(scope, id)).firstContactAt)
+        throw new UnprocessableEntityException(
+          'лиду уже написали — первое сообщение изменить нельзя',
+        );
+      data.firstMessage = dto.first_message?.trim() || null;
+    }
     const row = await this.prisma.phoneNumber.update({ where: { id }, data });
     const [names, personas, managers] = await Promise.all([
       this.accountNames(),
