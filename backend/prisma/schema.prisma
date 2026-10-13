@@ -344,6 +344,7 @@ model PhoneNumber {
   nextAttemptAt      Int?    @map("next_attempt_at")
   lastError          String? @map("last_error")
   notes              String?
+  firstMessage       String? @map("first_message")
   avoidAccountId     Int?    @map("avoid_account_id")
   personaId          String? @map("persona_id")
   ownerUserId        Int?    @map("owner_user_id")

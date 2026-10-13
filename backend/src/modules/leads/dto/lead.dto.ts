@@ -66,6 +66,13 @@ export class CreateLeadDto {
   @IsString()
   @MaxLength(512)
   notes?: string;
+  @ApiPropertyOptional({
+    description: 'Первое сообщение вручную; пусто — шаблон личности',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  first_message?: string;
 }
 
 export class ImportLeadsDto {
@@ -118,6 +125,11 @@ export class UpdateLeadDto {
   gender?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(512) notes?:
     string | null;
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  first_message?: string | null;
 }
 
 export class LeadIdsDto {

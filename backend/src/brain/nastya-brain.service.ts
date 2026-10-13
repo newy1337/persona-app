@@ -2063,11 +2063,9 @@ export class NastyaBrainService implements ReplyBrain {
           },
         };
 
-        const reply = openerText(
-          persona.prompts.opener,
-          persona.variables,
-          site,
-        );
+        const reply =
+          lead.opener?.trim() ||
+          openerText(persona.prompts.opener, persona.variables, site);
         await this.deliverParts(
           chatId,
           [reply],
