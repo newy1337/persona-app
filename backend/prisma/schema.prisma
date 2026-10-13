@@ -459,6 +459,7 @@ model VoiceTask {
   botMessageId         Int?             @map("bot_message_id")
   botChatId            BigInt?          @map("bot_chat_id")
   calls                VoiceCall[]
+  callRecordings       VoiceCallRecording[]
   recordings           VoiceRecording[]
   deliveries           VoiceDelivery[]
   notices              VoiceNotice[]
@@ -548,7 +549,26 @@ model VoiceCall {
   resumeStatus   String    @default("pending") @map("resume_status")
   followupStatus String    @default("none") @map("followup_status")
   note           String    @default("")
+  recording      VoiceCallRecording?
 
   @@index([taskId, createdAt])
   @@map("voice_calls")
+}
+
+/// Диктофон: запись звонка из кабинета, обе стороны, подпись ставит войсер после звонка.
+model VoiceCallRecording {
+  id        Int       @id @default(autoincrement())
+  callId    String    @unique @map("call_id")
+  call      VoiceCall @relation(fields: [callId], references: [id], onDelete: Cascade)
+  taskId    Int       @map("task_id")
+  task      VoiceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  title     String
+  filePath  String    @map("file_path")
+  duration  Int
+  createdAt Int       @map("created_at")
+  /// когда войсер подписал запись; пусто — стоит подпись по умолчанию
+  titledAt  Int?      @map("titled_at")
+
+  @@index([taskId, id])
+  @@map("voice_call_recordings")
 }

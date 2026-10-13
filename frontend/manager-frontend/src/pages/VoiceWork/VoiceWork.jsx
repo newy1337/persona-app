@@ -20,8 +20,8 @@ const errorText = e => PanelUX.readableError(e);
 const date = seconds => new Date(seconds * 1000).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', dateStyle: 'short', timeStyle: 'short' });
 const filename = title => title.replace(/[\\/:*?"<>|]/g, '_') + '.ogg';
 
-async function audioBlob(id) {
-  const response = await fetch(`/api/voicer/recordings/${id}/file`, { headers: authHeaders() });
+async function audioBlob(id, callId = null) {
+  const response = await fetch(callId ? `/api/voicer/calls/${callId}/recording/file` : `/api/voicer/recordings/${id}/file`, { headers: authHeaders() });
   if (!response.ok) throw new Error(response.status === 404 ? 'Запись не найдена' : 'Не удалось загрузить аудио. Обновите страницу и попробуйте ещё раз');
   return response.blob();
 }
@@ -159,19 +159,20 @@ function Recording({ item, role, context, onChange, onOpen }) {
     try { await fn(); } catch (e) { if (alive.current) setError(errorText(e)); }
     finally { actionLock.current = false; if (alive.current) setBusy(false); }
   }
-  async function listen() { const blob = await audioBlob(item.id); if (alive.current) setUrl(URL.createObjectURL(blob)); }
+  const isCall = item.kind === 'call';
+  async function listen() { const blob = await audioBlob(item.id, isCall ? item.call_id : null); if (alive.current) setUrl(URL.createObjectURL(blob)); }
   async function download() {
-    const fileUrl = URL.createObjectURL(await audioBlob(item.id)); const a = document.createElement('a');
+    const fileUrl = URL.createObjectURL(await audioBlob(item.id, isCall ? item.call_id : null)); const a = document.createElement('a');
     a.href = fileUrl; a.download = filename(item.title); a.click(); setTimeout(() => URL.revokeObjectURL(fileUrl), 10000);
   }
   const [sending, setSending] = useState(false);
   return <article className={v.card}>
-    <div className={v.cardTop}><h3>{item.title}</h3><span className={item.current ? s.badgeActive : v.tag}>{item.current ? 'Актуальная' : 'Предыдущая'}</span></div>
-    <p className={v.meta}>{item.task.personaName} · {item.task.contactLabel}<br />{item.task.managerName} → {item.task.voicerName}<br />{date(item.createdAt)} · {item.duration} сек. · Версия {item.revision}</p>
+    <div className={v.cardTop}><h3>{item.title}</h3><span className={isCall ? v.tag : item.current ? s.badgeActive : v.tag} data-testid={isCall ? 'call-recording' : undefined}>{isCall ? 'Звонок' : item.current ? 'Актуальная' : 'Предыдущая'}</span></div>
+    <p className={v.meta}>{item.task.personaName} · {item.task.contactLabel}<br />{item.task.managerName} → {item.task.voicerName}<br />{date(item.createdAt)} · {item.duration} сек.{isCall ? (item.titled ? '' : ' · без подписи') : ` · Версия ${item.revision}`}</p>
     {url && <VoicePlayer src={url} />}
     {item.last_delivery && <DeliveryStatus delivery={item.last_delivery} />}
     {sending && <SendVoice item={item} initialChat={context.get('chat') || ''} onClose={() => setSending(false)} onChange={onChange} />}
-    {editing && <form onSubmit={e => { e.preventDefault(); perform(async () => { await api.put(`/api/voicer/recordings/${item.id}`, { title }); setEditing(false); onChange(); }); }}>
+    {editing && <form onSubmit={e => { e.preventDefault(); perform(async () => { await api.put(isCall ? `/api/voicer/calls/${item.call_id}/recording` : `/api/voicer/recordings/${item.id}`, { title }); setEditing(false); onChange(); }); }}>
       <label className={s.label}>Название записи<input className={s.field} value={title} onChange={e => setTitle(e.target.value)} maxLength={160} required /></label>
       <div className={v.actions}><button className={s.btnPrimary} disabled={busy || !title.trim()}>Сохранить</button><button type="button" className={s.btn} onClick={() => setEditing(false)}>Отмена</button></div>
     </form>}
@@ -179,8 +180,8 @@ function Recording({ item, role, context, onChange, onOpen }) {
     <div className={v.actions}>
       {!url && <button className={s.btnPrimary} disabled={busy} onClick={() => perform(listen)}>Прослушать</button>}
       <button className={s.btn} disabled={busy} onClick={() => perform(download)}>Скачать</button>
-      {role !== 'voice' && item.current && <button className={s.btnPrimary} disabled={busy} onClick={() => setSending(true)}>Отправить в диалог</button>}
-      {role !== 'voice' && <button className={s.btnSm} disabled={busy} onClick={() => setEditing(!editing)}>Переименовать</button>}
+      {role !== 'voice' && !isCall && item.current && <button className={s.btnPrimary} disabled={busy} onClick={() => setSending(true)}>Отправить в диалог</button>}
+      {(role !== 'voice' || isCall) && <button className={s.btnSm} disabled={busy} onClick={() => setEditing(!editing)}>{isCall ? 'Подписать' : 'Переименовать'}</button>}
       <button className={s.btnSm} disabled={busy} onClick={() => onOpen(item.task.id)}>Задание #{item.task.id}</button>
     </div>
   </article>;
