@@ -158,7 +158,7 @@ function Header({
             <NavLink to="/voice" className={navClass}>Войсер</NavLink>
             {me.role === 'admin' && <NavLink to="/personas" className={navClass}>Личности</NavLink>}
             {(me.role === 'admin' || isManagerRole(me.role)) && <NavLink to="/accounts" className={navClass}>Аккаунты</NavLink>}
-            {me.role === 'admin' && <NavLink to="/managers" className={navClass}>Менеджеры</NavLink>}
+            {(me.role === 'admin' || me.role === 'head') && <NavLink to="/managers" className={navClass}>{me.role === 'admin' ? 'Менеджеры' : 'Команда'}</NavLink>}
             {me.role === 'admin' && <NavLink to="/stats" className={navClass}>Статистика</NavLink>}
             {me.role === 'admin' && <NavLink to="/settings" className={navClass}>Настройки</NavLink>}
           </nav>

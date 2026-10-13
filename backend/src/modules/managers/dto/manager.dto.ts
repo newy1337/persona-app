@@ -43,7 +43,11 @@ export class CreateManagerDto {
   @ApiPropertyOptional({
     description: 'Код региона менеджера: 3–4 цифры, включая ведущие нули',
   })
-  @ValidateIf((o) => o.role === 'manager' || o.region_code !== undefined)
+  @ValidateIf(
+    (o) =>
+      ['manager', 'teamlead', 'head'].includes(o.role) ||
+      o.region_code !== undefined,
+  )
   @IsString()
   @Matches(/^\d{3,4}$/, { message: 'регион должен содержать 3 или 4 цифры' })
   region_code?: string;

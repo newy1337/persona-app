@@ -526,59 +526,77 @@ describe('Manager panel API (e2e)', () => {
     });
   });
 
-  it('тимлид видит диалоги своих менеджеров, хед — своих тимлидов, чужой менеджер — нет', async () => {
+  it('регион задаёт иерархию: хед региона один, тимлиды цепляются сами, хед назначает тимлидов менеджерам', async () => {
     const h = { Authorization: `Bearer ${token}` };
     const prisma = app.get(PrismaService);
-    const mk = async (body: Record<string, unknown>) =>
+    const mk = async (body: Record<string, unknown>, expect = 200) =>
       (
         await request(app.getHttpServer())
           .post('/api/managers')
           .set(h)
           .send(body)
-          .expect(200)
+          .expect(expect)
       ).body.created_user_id as number;
     const head = await mk({
-      username: 'rl-head',
+      username: 'rg-head',
       password: 'head12345',
       role: 'head',
+      region_code: '0101',
     });
+    // второй хед в том же регионе — отказ; тимлиду регион обязателен
+    await mk(
+      {
+        username: 'rg-head2',
+        password: 'head12345',
+        role: 'head',
+        region_code: '0101',
+      },
+      422,
+    );
+    await mk(
+      { username: 'rg-lead-noregion', password: 'lead12345', role: 'teamlead' },
+      400,
+    );
     const lead = await mk({
-      username: 'rl-lead',
+      username: 'rg-lead',
       password: 'lead12345',
       role: 'teamlead',
-      lead_id: head,
+      region_code: '0101',
     });
     const manager = await mk({
-      username: 'rl-man',
+      username: 'rg-man',
       password: 'man123456',
       role: 'manager',
       region_code: '0101',
       lead_id: lead,
     });
     const stranger = await mk({
-      username: 'rl-other',
+      username: 'rg-other',
       password: 'oth123456',
       role: 'manager',
       region_code: '0102',
     });
-
-    // руководитель только подходящего уровня
-    await request(app.getHttpServer())
-      .post('/api/managers')
-      .set(h)
-      .send({
-        username: 'rl-bad',
+    // менеджеру из другого региона этот тимлид не подходит
+    await mk(
+      {
+        username: 'rg-bad',
         password: 'bad123456',
         role: 'manager',
-        region_code: '0103',
-        lead_id: head,
-      })
-      .expect(422);
-    await request(app.getHttpServer())
-      .put(`/api/managers/${head}`)
-      .set(h)
-      .send({ lead_id: lead })
-      .expect(422);
+        region_code: '0102',
+        lead_id: lead,
+      },
+      422,
+    );
+
+    const byId = async (id: number) =>
+      (
+        await request(app.getHttpServer())
+          .get('/api/managers')
+          .set(h)
+          .expect(200)
+      ).body.items.find((u: any) => u.user_id === id);
+    expect((await byId(lead)).lead_id).toBe(head);
+    expect((await byId(manager)).lead_id).toBe(lead);
 
     const acc = await request(app.getHttpServer())
       .post('/api/tg-accounts')
@@ -622,37 +640,62 @@ describe('Manager panel API (e2e)', () => {
           .set(auth)
           .expect(200)
       ).body.items.some((r: any) => r.chat_id === chatId);
-    expect(await sees(await as('rl-man', 'man123456'))).toBe(true);
-    expect(await sees(await as('rl-lead', 'lead12345'))).toBe(true);
-    expect(await sees(await as('rl-head', 'head12345'))).toBe(true);
-    expect(await sees(await as('rl-other', 'oth123456'))).toBe(false);
-    // карточка чата открывается руководителю, чужому — 404
+    const headAuth = await as('rg-head', 'head12345');
+    expect(await sees(await as('rg-man', 'man123456'))).toBe(true);
+    expect(await sees(await as('rg-lead', 'lead12345'))).toBe(true);
+    expect(await sees(headAuth)).toBe(true);
+    expect(await sees(await as('rg-other', 'oth123456'))).toBe(false);
     await request(app.getHttpServer())
       .get(`/api/conversations/${chatId}`)
-      .set(await as('rl-head', 'head12345'))
-      .expect(200);
-    await request(app.getHttpServer())
-      .get(`/api/conversations/${chatId}`)
-      .set(await as('rl-other', 'oth123456'))
+      .set(await as('rg-other', 'oth123456'))
       .expect(404);
 
-    // тимлид стал менеджером — его менеджеры остались без руководителя, хед их больше не видит
+    // хед видит свой регион и правит только тимлида у менеджеров региона
+    const team = await request(app.getHttpServer())
+      .get('/api/managers')
+      .set(headAuth)
+      .expect(200);
+    expect(team.body.items.map((u: any) => u.username).sort()).toEqual([
+      'rg-head',
+      'rg-lead',
+      'rg-man',
+    ]);
+    await request(app.getHttpServer())
+      .put(`/api/managers/${manager}`)
+      .set(headAuth)
+      .send({ lead_id: null })
+      .expect(200);
+    expect((await byId(manager)).lead_id).toBeNull();
+    await request(app.getHttpServer())
+      .put(`/api/managers/${manager}`)
+      .set(headAuth)
+      .send({ lead_id: lead })
+      .expect(200);
+    await request(app.getHttpServer())
+      .put(`/api/managers/${manager}`)
+      .set(headAuth)
+      .send({ role: 'teamlead' })
+      .expect(403);
+    await request(app.getHttpServer())
+      .put(`/api/managers/${stranger}`)
+      .set(headAuth)
+      .send({ lead_id: null })
+      .expect(403);
+    await request(app.getHttpServer())
+      .post('/api/managers')
+      .set(headAuth)
+      .send({ username: 'x', role: 'manager', region_code: '0101' })
+      .expect(403);
+
+    // тимлид стал менеджером — его менеджер без руководителя, хед больше не видит чат
     await request(app.getHttpServer())
       .put(`/api/managers/${lead}`)
       .set(h)
-      .send({ role: 'manager', region_code: '0104' })
+      .send({ role: 'manager' })
       .expect(200);
-    const list = await request(app.getHttpServer())
-      .get('/api/managers')
-      .set(h)
-      .expect(200);
-    expect(
-      list.body.items.find((u: any) => u.user_id === manager).lead_id,
-    ).toBeNull();
-    expect(
-      list.body.items.find((u: any) => u.user_id === lead).lead_id,
-    ).toBeNull();
-    expect(await sees(await as('rl-head', 'head12345'))).toBe(false);
+    expect((await byId(manager)).lead_id).toBeNull();
+    expect((await byId(lead)).lead_id).toBeNull();
+    expect(await sees(headAuth)).toBe(false);
 
     await prisma.message.deleteMany({ where: { chatId: BigInt(chatId) } });
     await prisma.contact.delete({ where: { chatId: BigInt(chatId) } });

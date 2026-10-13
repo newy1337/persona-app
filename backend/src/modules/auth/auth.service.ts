@@ -113,6 +113,7 @@ export class AuthService implements OnModuleInit {
       user_id: user.id,
       username: user.username,
       role: user.role,
+      region_code: (user as { regionCode?: string | null }).regionCode ?? null,
       last_login: user.lastLogin,
     };
   }

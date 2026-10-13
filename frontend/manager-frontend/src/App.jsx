@@ -41,7 +41,7 @@ function App() {
       <Route path="/voice" element={<Suspense fallback={<p role="status">Загружаем…</p>}><VoiceWork /></Suspense>} />
       <Route path="/leads" element={me.role === 'voice' ? <Navigate to={home} replace /> : <Leads />} />
       <Route path="/accounts" element={accountsAllowed ? <Accounts /> : <Navigate to={home} replace />} />
-      <Route path="/managers" element={admin ? <Managers /> : <Navigate to={home} replace />} />
+      <Route path="/managers" element={admin || me.role === 'head' ? <Managers /> : <Navigate to={home} replace />} />
       <Route path="/personas" element={admin ? <Personas /> : <Navigate to={home} replace />} />
       <Route path="/stats" element={admin ? <Stats /> : <Navigate to={home} replace />} />
       <Route path="/settings" element={admin ? <Settings /> : <Navigate to={home} replace />} />
