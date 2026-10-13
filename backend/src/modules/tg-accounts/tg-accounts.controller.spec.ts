@@ -24,12 +24,22 @@ describe('Telegram account ownership in the panel', () => {
       },
     ];
     const prisma = {
-      dashboardUser: { findMany: jest.fn(async () => users) },
-      managerAccount: {
-        findMany: jest.fn(
-          async ({ where }) =>
-            users.find((u) => u.id === where.userId)?.accounts ?? [],
+      dashboardUser: {
+        // без where — справочник для подписей; с where.leadId — поиск подчинённых (их нет)
+        findMany: jest.fn(async (args?: any) =>
+          args?.where?.leadId
+            ? users.filter((u) => args.where.leadId.in.includes(u.leadId))
+            : users,
         ),
+      },
+      managerAccount: {
+        findMany: jest.fn(async ({ where }) => {
+          const ids: number[] =
+            typeof where.userId === 'object' ? where.userId.in : [where.userId];
+          return users
+            .filter((u) => ids.includes(u.id))
+            .flatMap((u) => u.accounts);
+        }),
       },
     } as any;
     const accounts = {

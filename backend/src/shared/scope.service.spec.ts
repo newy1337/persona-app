@@ -10,7 +10,11 @@ const voice: any = { id: 3, role: 'voice' };
 
 describe('ScopeService', () => {
   let service: ScopeService;
-  const prisma = { managerAccount: { findMany: jest.fn() } };
+  const prisma = {
+    managerAccount: { findMany: jest.fn() },
+    // подчинённых нет: область видимости менеджера — только его аккаунты
+    dashboardUser: { findMany: jest.fn(async () => []) },
+  };
   const history = { chatOwnerAccount: jest.fn() };
 
   beforeEach(async () => {
