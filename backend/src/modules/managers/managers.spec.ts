@@ -28,6 +28,8 @@ describe('Manager credentials and regions through authenticated HTTP', () => {
         rows.find((r) => r.id === where.id),
       ),
       findMany: jest.fn(async () => rows),
+      findFirst: jest.fn(async () => null),
+      updateMany: jest.fn(async () => ({ count: 0 })),
       create: jest.fn(async ({ data }) => {
         const row = { ...data, id: rows.length + 1, accounts: [] };
         rows.push(row);

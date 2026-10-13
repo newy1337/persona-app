@@ -597,6 +597,15 @@ describe('Manager panel API (e2e)', () => {
       ).body.items.find((u: any) => u.user_id === id);
     expect((await byId(lead)).lead_id).toBe(head);
     expect((await byId(manager)).lead_id).toBe(lead);
+    // менеджер региона без тимлида подчиняется хеду напрямую
+    const direct = await mk({
+      username: 'rg-direct',
+      password: 'dir123456',
+      role: 'manager',
+      region_code: '0101',
+    });
+    expect((await byId(direct)).lead_id).toBe(head);
+    expect((await byId(stranger)).lead_id).toBeNull();
 
     const acc = await request(app.getHttpServer())
       .post('/api/tg-accounts')
@@ -656,6 +665,7 @@ describe('Manager panel API (e2e)', () => {
       .set(headAuth)
       .expect(200);
     expect(team.body.items.map((u: any) => u.username).sort()).toEqual([
+      'rg-direct',
       'rg-head',
       'rg-lead',
       'rg-man',
@@ -665,12 +675,13 @@ describe('Manager panel API (e2e)', () => {
       .set(headAuth)
       .send({ lead_id: null })
       .expect(200);
-    expect((await byId(manager)).lead_id).toBeNull();
+    expect((await byId(manager)).lead_id).toBe(head);
     await request(app.getHttpServer())
       .put(`/api/managers/${manager}`)
       .set(headAuth)
       .send({ lead_id: lead })
       .expect(200);
+    expect((await byId(manager)).lead_id).toBe(lead);
     await request(app.getHttpServer())
       .put(`/api/managers/${manager}`)
       .set(headAuth)
@@ -687,19 +698,27 @@ describe('Manager panel API (e2e)', () => {
       .send({ username: 'x', role: 'manager', region_code: '0101' })
       .expect(403);
 
-    // тимлид стал менеджером — его менеджер без руководителя, хед больше не видит чат
+    // тимлид стал менеджером — он и его менеджер переходят к хеду региона
     await request(app.getHttpServer())
       .put(`/api/managers/${lead}`)
       .set(h)
       .send({ role: 'manager' })
       .expect(200);
+    expect((await byId(manager)).lead_id).toBe(head);
+    expect((await byId(lead)).lead_id).toBe(head);
+    expect(await sees(headAuth)).toBe(true);
+    // хед ушёл в менеджеры — регион без хеда, подчинённые без руководителя
+    await request(app.getHttpServer())
+      .put(`/api/managers/${head}`)
+      .set(h)
+      .send({ role: 'manager' })
+      .expect(200);
     expect((await byId(manager)).lead_id).toBeNull();
-    expect((await byId(lead)).lead_id).toBeNull();
-    expect(await sees(headAuth)).toBe(false);
+    expect((await byId(head)).lead_id).toBeNull();
 
     await prisma.message.deleteMany({ where: { chatId: BigInt(chatId) } });
     await prisma.contact.delete({ where: { chatId: BigInt(chatId) } });
-    for (const id of [manager, stranger, lead, head])
+    for (const id of [manager, direct, stranger, lead, head])
       await request(app.getHttpServer())
         .delete(`/api/managers/${id}`)
         .set(h)

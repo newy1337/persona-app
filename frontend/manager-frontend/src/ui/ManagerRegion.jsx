@@ -255,9 +255,10 @@ function LeadSelect({ role, region, users, value, onChange, disabled, selfId = n
       ? head ? `Хед региона ${region}: ${head.username} — назначается автоматически.` : `В регионе ${region} пока нет хеда: тимлид привяжется к нему, как только хед появится.`
       : 'Укажите регион — хед региона назначится автоматически.');
   }
+  const head = users.find(u => u.role === 'head' && region && u.region_code === region);
   return h('label', { className: s.label }, 'Тимлид', h('select', { className: s.select, value, disabled: disabled || !region, 'aria-label': 'Руководитель', onChange: e => onChange(e.target.value) },
-    h('option', { value: '' }, 'Не назначен'), sameRegion.map(u => h('option', { key: u.user_id, value: u.user_id }, u.username))),
-    h('span', { className: 'mr-caption' }, region ? (sameRegion.length ? 'Тимлид видит диалоги и лидов своих менеджеров.' : `В регионе ${region} пока нет тимлидов.`) : 'Сначала укажите регион.'));
+    h('option', { value: '' }, head ? `Без тимлида — напрямую хеду ${head.username}` : 'Не назначен'), sameRegion.map(u => h('option', { key: u.user_id, value: u.user_id }, u.username))),
+    h('span', { className: 'mr-caption' }, region ? (sameRegion.length ? 'Тимлид видит диалоги и лидов своих менеджеров.' : `В регионе ${region} пока нет тимлидов${head ? ', менеджеры подчиняются хеду напрямую' : ''}.`) : 'Сначала укажите регион.'));
 }
 
 function VoicerSelect({ voicers, value, onChange, disabled }) {

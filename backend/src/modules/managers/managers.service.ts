@@ -106,8 +106,9 @@ export class ManagersService {
   }
 
   /**
-   * Руководитель менеджера — тимлид того же региона. У тимлида руководитель не
-   * выбирается: это хед региона, он подставляется сам. У остальных его нет.
+   * Руководитель менеджера — тимлид того же региона, а без тимлида — хед
+   * региона. У тимлида руководитель не выбирается: это хед региона, он
+   * подставляется сам. У остальных его нет.
    */
   private async managerLead(
     role: string,
@@ -116,12 +117,16 @@ export class ManagersService {
     selfId: number | null = null,
   ): Promise<number | null> {
     if (role === Role.TEAMLEAD)
-      return (await this.regionHead(region))?.id ?? null;
-    if (id == null) return null;
-    if (role !== Role.MANAGER)
-      throw new UnprocessableEntityException(
-        'Руководитель назначается только менеджеру',
-      );
+      return (await this.regionHead(region, selfId))?.id ?? null;
+    if (role !== Role.MANAGER) {
+      if (id != null)
+        throw new UnprocessableEntityException(
+          'Руководитель назначается только менеджеру',
+        );
+      return null;
+    }
+    // Менеджер без тимлида подчиняется хеду региона напрямую.
+    if (id == null) return (await this.regionHead(region, selfId))?.id ?? null;
     if (id === selfId)
       throw new UnprocessableEntityException(
         'Нельзя быть руководителем самому себе',
@@ -138,7 +143,10 @@ export class ManagersService {
     return id;
   }
 
-  /** Хед региона получил регион: тимлиды региона — его, чужие тимлиды отцепляются. */
+  /**
+   * Хед региона получил регион: тимлиды региона и менеджеры без тимлида — его,
+   * подчинённые из других регионов отцепляются.
+   */
   private async attachRegionToHead(headId: number, region: string | null) {
     await this.prisma.dashboardUser.updateMany({
       where: {
@@ -152,14 +160,31 @@ export class ManagersService {
         where: { role: Role.TEAMLEAD, regionCode: region },
         data: { leadId: headId },
       });
+    await this.attachOrphansToHead(region);
   }
 
-  /** Тимлид сменил регион: его менеджеры из другого региона остаются без руководителя. */
+  /** Менеджеры региона без руководителя подчиняются хеду региона. */
+  private async attachOrphansToHead(region: string | null) {
+    const head = await this.regionHead(region);
+    if (!head) return;
+    await this.prisma.dashboardUser.updateMany({
+      where: { role: Role.MANAGER, regionCode: region, leadId: null },
+      data: { leadId: head.id },
+    });
+  }
+
+  /** Тимлид сменил регион: его менеджеры из другого региона уходят к своему хеду. */
   private async detachForeignManagers(leadId: number, region: string | null) {
+    const foreign = await this.prisma.dashboardUser.findMany({
+      where: { leadId, ...(region ? { regionCode: { not: region } } : {}) },
+      select: { regionCode: true },
+    });
     await this.prisma.dashboardUser.updateMany({
       where: { leadId, ...(region ? { regionCode: { not: region } } : {}) },
       data: { leadId: null },
     });
+    for (const code of new Set(foreign.map((u) => u.regionCode)))
+      await this.attachOrphansToHead(code);
   }
 
   async create(dto: CreateManagerDto) {
@@ -315,6 +340,10 @@ export class ManagersService {
       await this.attachRegionToHead(userId, nextRegion);
     if (nextRole === Role.TEAMLEAD)
       await this.detachForeignManagers(userId, nextRegion);
+    // Бывшие подчинённые (и сам пользователь после смены роли) без
+    // руководителя уходят к хеду своего региона.
+    for (const code of new Set([user.regionCode, nextRegion]))
+      await this.attachOrphansToHead(code);
     return this.list();
   }
 
