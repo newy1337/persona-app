@@ -125,7 +125,8 @@ export class TgAccountsController {
   @HttpCode(200)
   @UsePipes(ValidationPipe)
   add(@Body() dto: AddTgAccountDto, @CurrentUser() user: DashboardUser) {
-    const owner = user.role === Role.ADMIN ? null : user.id;
+    // Аккаунт закрепляется только за менеджером; тимлид и хед добавляют свободный.
+    const owner = user.role === Role.MANAGER ? user.id : null;
     return this.audit.wrap(
       {
         userId: user.id,

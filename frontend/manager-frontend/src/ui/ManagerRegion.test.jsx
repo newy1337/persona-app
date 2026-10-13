@@ -31,7 +31,7 @@ test('creates a manager with a leading-zero region and no manually entered passw
   const form=host.querySelector('form'); const fields=form.querySelectorAll('input');
   await input(fields[0],'new_manager'); await input(fields[1],'0123');
   await act(async()=>form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
-  expect(post).toHaveBeenCalledWith('/api/managers',{username:'new_manager',role:'manager',region_code:'0123',voicer_id:null});
+  expect(post).toHaveBeenCalledWith('/api/managers',{username:'new_manager',role:'manager',region_code:'0123',voicer_id:null,lead_id:null});
   expect(host.textContent).toContain('Данные для входа: new_manager');
   expect(host.querySelector('input[type=password]').value).toBe('synthetic-test-only');
 });

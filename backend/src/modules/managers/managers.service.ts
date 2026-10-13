@@ -9,7 +9,7 @@ import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
-import { Role, ROLES } from 'src/enums/roles.enum';
+import { LEAD_ROLE_FOR, Role, ROLES } from 'src/enums/roles.enum';
 import { CreateManagerDto, UpdateManagerDto } from './dto/manager.dto';
 import { CryptoService } from 'src/shared/crypto.service';
 
@@ -30,6 +30,7 @@ export class ManagersService {
           orderBy: { tgAccountId: 'asc' },
         },
         voicer: { select: { id: true, username: true } },
+        lead: { select: { id: true, username: true } },
         voiceProfile: { select: { telegramId: true, telegramUsername: true } },
       },
     });
@@ -42,6 +43,8 @@ export class ManagersService {
         region_code: u.regionCode,
         voicer_id: u.voicerId ?? null,
         voicer_username: u.voicer?.username ?? null,
+        lead_id: u.leadId ?? null,
+        lead_username: u.lead?.username ?? null,
         telegram_linked: Boolean(u.voiceProfile?.telegramId),
         telegram_username: u.voiceProfile?.telegramUsername ?? null,
         password_available: Boolean(u.passwordEncrypted),
@@ -64,8 +67,32 @@ export class ManagersService {
     }
   }
 
+  /** Руководитель: у менеджера — тимлид, у тимлида — хед, у остальных его нет. */
+  private async validateLead(
+    role: string,
+    id: number | null | undefined,
+    selfId: number | null = null,
+  ): Promise<void> {
+    if (id == null) return;
+    const wanted = LEAD_ROLE_FOR[role];
+    if (!wanted)
+      throw new UnprocessableEntityException(
+        'Руководитель назначается только менеджеру или тимлиду',
+      );
+    if (id === selfId)
+      throw new UnprocessableEntityException(
+        'Нельзя быть руководителем самому себе',
+      );
+    const lead = await this.prisma.dashboardUser.findUnique({ where: { id } });
+    if (lead?.role !== wanted)
+      throw new UnprocessableEntityException(
+        `Руководителем здесь может быть только ${wanted === Role.TEAMLEAD ? 'тимлид' : 'хед'}`,
+      );
+  }
+
   async create(dto: CreateManagerDto) {
     await this.validateVoicer(dto.role, dto.voicer_id);
+    await this.validateLead(dto.role, dto.lead_id);
     const password = dto.password ?? randomBytes(12).toString('base64url');
     const passwordHash = await argon2.hash(password);
     const passwordEncrypted = this.crypto.encrypt(password);
@@ -79,6 +106,7 @@ export class ManagersService {
           regionCode: dto.region_code ?? null,
           role: dto.role,
           voicerId: dto.voicer_id ?? null,
+          leadId: dto.lead_id ?? null,
           createdAt: this.clock.ts(),
         },
       });
@@ -100,14 +128,24 @@ export class ManagersService {
     });
     if (!user) throw new NotFoundException('нет такой учётки');
     await this.validateVoicer(dto.role ?? user.role, dto.voicer_id);
+    await this.validateLead(dto.role ?? user.role, dto.lead_id, userId);
     const data: {
       role?: string;
       passwordHash?: string;
       passwordEncrypted?: string;
       regionCode?: string | null;
       voicerId?: number | null;
+      leadId?: number | null;
     } = {};
     if (dto.voicer_id !== undefined) data.voicerId = dto.voicer_id;
+    if (dto.lead_id !== undefined) data.leadId = dto.lead_id;
+    // Сменилась роль — прежний руководитель больше не подходит по уровню.
+    if (
+      dto.role !== undefined &&
+      dto.role !== user.role &&
+      dto.lead_id === undefined
+    )
+      data.leadId = null;
     if (dto.role !== undefined && dto.role !== Role.MANAGER)
       data.voicerId = null;
     if (dto.role !== undefined) data.role = dto.role;
@@ -141,6 +179,16 @@ export class ManagersService {
         });
         await tx.voicerProfile.deleteMany({ where: { userId } });
       }
+      // Был тимлидом или хедом и роль сменилась — подчинённые остаются без руководителя.
+      if (
+        dto.role !== undefined &&
+        dto.role !== user.role &&
+        (user.role === Role.TEAMLEAD || user.role === Role.HEAD)
+      )
+        await tx.dashboardUser.updateMany({
+          where: { leadId: userId },
+          data: { leadId: null },
+        });
       if (Object.keys(data).length)
         await tx.dashboardUser.update({ where: { id: userId }, data });
       if (dto.role !== undefined && dto.role !== Role.MANAGER)

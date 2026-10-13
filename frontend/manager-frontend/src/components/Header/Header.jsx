@@ -4,6 +4,7 @@ import { getStats } from '../../api/stats';
 import { Link, NavLink } from 'react-router-dom';
 import styles from './Header.module.scss';
 import VoiceNotifications from './VoiceNotifications';
+import { isManagerRole } from '../../utils/roles';
 import {
   LogoChatIcon,
   LiveUsersIcon,
@@ -156,7 +157,7 @@ function Header({
             {me.role !== 'voice' && <NavLink to="/leads" className={navClass}>Лиды</NavLink>}
             <NavLink to="/voice" className={navClass}>Войсер</NavLink>
             {me.role === 'admin' && <NavLink to="/personas" className={navClass}>Личности</NavLink>}
-            {(me.role === 'admin' || me.role === 'manager') && <NavLink to="/accounts" className={navClass}>Аккаунты</NavLink>}
+            {(me.role === 'admin' || isManagerRole(me.role)) && <NavLink to="/accounts" className={navClass}>Аккаунты</NavLink>}
             {me.role === 'admin' && <NavLink to="/managers" className={navClass}>Менеджеры</NavLink>}
             {me.role === 'admin' && <NavLink to="/stats" className={navClass}>Статистика</NavLink>}
             {me.role === 'admin' && <NavLink to="/settings" className={navClass}>Настройки</NavLink>}

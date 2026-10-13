@@ -20,6 +20,10 @@ model DashboardUser {
   voicerId            Int?            @map("voicer_id")
   voicer              DashboardUser?  @relation("ManagerVoicer", fields: [voicerId], references: [id], onDelete: SetNull)
   voicedManagers      DashboardUser[] @relation("ManagerVoicer")
+  /// руководитель: у менеджера — тимлид, у тимлида — хед; они видят диалоги подчинённых
+  leadId              Int?            @map("lead_id")
+  lead                DashboardUser?  @relation("ManagerLead", fields: [leadId], references: [id], onDelete: SetNull)
+  subordinates        DashboardUser[] @relation("ManagerLead")
   voiceProfile        VoicerProfile?
   requestedVoiceTasks VoiceTask[]     @relation("TaskManager")
   assignedVoiceTasks  VoiceTask[]     @relation("TaskVoicer")
@@ -27,6 +31,7 @@ model DashboardUser {
   accounts ManagerAccount[]
   audit    DashboardAuditLog[]
 
+  @@index([leadId], map: "idx_dashboard_users_lead")
   @@map("dashboard_users")
 }
 

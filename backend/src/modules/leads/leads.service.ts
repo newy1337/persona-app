@@ -75,6 +75,8 @@ export interface TelegramCleanup {
 
 export interface LeadScope {
   userId: number;
+  /** пользователь и его команда: лиды, которые они добавили, видны руководителю */
+  userIds?: number[];
   accounts: number[];
 }
 
@@ -123,7 +125,11 @@ export class LeadsService {
     if (scope === null) return {};
     return {
       OR: [
-        { ownerUserId: scope.userId },
+        {
+          ownerUserId: {
+            in: scope.userIds?.length ? scope.userIds : [scope.userId],
+          },
+        },
         ...(scope.accounts.length
           ? [{ assignedAccountId: { in: scope.accounts } }]
           : []),

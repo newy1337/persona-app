@@ -18,6 +18,13 @@ export class CreateManagerDto {
   @IsOptional()
   @IsInt()
   voicer_id?: number | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'руководитель: тимлид для менеджера, хед для тимлида',
+  })
+  @IsOptional()
+  @IsInt()
+  lead_id?: number | null;
   @ApiProperty()
   @IsString()
   @MinLength(1)
@@ -50,6 +57,10 @@ export class UpdateManagerDto {
   @IsOptional()
   @IsInt()
   voicer_id?: number | null;
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsInt()
+  lead_id?: number | null;
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()

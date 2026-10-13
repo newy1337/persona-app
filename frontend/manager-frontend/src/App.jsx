@@ -9,6 +9,7 @@ import Leads from './pages/Leads/Leads';
 import Personas from './pages/Personas/Personas';
 import Stats from './pages/Stats/Stats';
 import Settings from './pages/Settings/Settings';
+import { isManagerRole } from './utils/roles';
 import Login from './pages/Login/Login';
 import { api, getToken } from './api/client';
 import './App.scss';
@@ -30,7 +31,7 @@ function App() {
   if (!me) return <Login onDone={check} />;
 
   const admin = me.role === 'admin';
-  const accountsAllowed = admin || me.role === 'manager';
+  const accountsAllowed = admin || isManagerRole(me.role);
   const home = me.role === 'voice' ? '/voice' : '/';
 
   return (

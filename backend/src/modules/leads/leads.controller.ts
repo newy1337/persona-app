@@ -44,8 +44,10 @@ export class LeadsController {
   ) {}
 
   private async leadScope(user: DashboardUser): Promise<LeadScope | null> {
-    const accounts = await this.scope.accountsFilter(user);
-    return accounts === null ? null : { userId: user.id, accounts };
+    const scope = await this.scope.scopeOf(user);
+    return scope.isAdmin
+      ? null
+      : { userId: user.id, userIds: scope.userIds, accounts: scope.accountIds };
   }
 
   @ApiOperation({ summary: 'Leads in scope with per-status counts' })

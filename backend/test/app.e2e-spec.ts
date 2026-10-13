@@ -526,6 +526,143 @@ describe('Manager panel API (e2e)', () => {
     });
   });
 
+  it('тимлид видит диалоги своих менеджеров, хед — своих тимлидов, чужой менеджер — нет', async () => {
+    const h = { Authorization: `Bearer ${token}` };
+    const prisma = app.get(PrismaService);
+    const mk = async (body: Record<string, unknown>) =>
+      (
+        await request(app.getHttpServer())
+          .post('/api/managers')
+          .set(h)
+          .send(body)
+          .expect(200)
+      ).body.created_user_id as number;
+    const head = await mk({
+      username: 'rl-head',
+      password: 'head12345',
+      role: 'head',
+    });
+    const lead = await mk({
+      username: 'rl-lead',
+      password: 'lead12345',
+      role: 'teamlead',
+      lead_id: head,
+    });
+    const manager = await mk({
+      username: 'rl-man',
+      password: 'man123456',
+      role: 'manager',
+      region_code: '0101',
+      lead_id: lead,
+    });
+    const stranger = await mk({
+      username: 'rl-other',
+      password: 'oth123456',
+      role: 'manager',
+      region_code: '0102',
+    });
+
+    // руководитель только подходящего уровня
+    await request(app.getHttpServer())
+      .post('/api/managers')
+      .set(h)
+      .send({
+        username: 'rl-bad',
+        password: 'bad123456',
+        role: 'manager',
+        region_code: '0103',
+        lead_id: head,
+      })
+      .expect(422);
+    await request(app.getHttpServer())
+      .put(`/api/managers/${head}`)
+      .set(h)
+      .send({ lead_id: lead })
+      .expect(422);
+
+    const acc = await request(app.getHttpServer())
+      .post('/api/tg-accounts')
+      .set(h)
+      .send({ phone_e164: '+79001230001', persona_id: 'nastya' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .put(`/api/managers/accounts/${acc.body.id}`)
+      .set(h)
+      .send({ user_id: manager })
+      .expect(200);
+    const chatId = 777001;
+    await prisma.contact.create({
+      data: { chatId: BigInt(chatId), accountId: acc.body.id, createdAt: 1 },
+    });
+    await prisma.message.create({
+      data: {
+        chatId: BigInt(chatId),
+        ts: Math.floor(Date.now() / 1000),
+        role: 'user',
+        text: 'привет',
+        author: 'client',
+        sourceMessageId: 1,
+      },
+    });
+
+    const as = async (username: string, password: string) => ({
+      Authorization: `Bearer ${
+        (
+          await request(app.getHttpServer())
+            .post('/auth/login')
+            .send({ username, password })
+            .expect(200)
+        ).body.tokens.accessToken
+      }`,
+    });
+    const sees = async (auth: Record<string, string>) =>
+      (
+        await request(app.getHttpServer())
+          .get('/api/manager/conversations')
+          .set(auth)
+          .expect(200)
+      ).body.items.some((r: any) => r.chat_id === chatId);
+    expect(await sees(await as('rl-man', 'man123456'))).toBe(true);
+    expect(await sees(await as('rl-lead', 'lead12345'))).toBe(true);
+    expect(await sees(await as('rl-head', 'head12345'))).toBe(true);
+    expect(await sees(await as('rl-other', 'oth123456'))).toBe(false);
+    // карточка чата открывается руководителю, чужому — 404
+    await request(app.getHttpServer())
+      .get(`/api/conversations/${chatId}`)
+      .set(await as('rl-head', 'head12345'))
+      .expect(200);
+    await request(app.getHttpServer())
+      .get(`/api/conversations/${chatId}`)
+      .set(await as('rl-other', 'oth123456'))
+      .expect(404);
+
+    // тимлид стал менеджером — его менеджеры остались без руководителя, хед их больше не видит
+    await request(app.getHttpServer())
+      .put(`/api/managers/${lead}`)
+      .set(h)
+      .send({ role: 'manager', region_code: '0104' })
+      .expect(200);
+    const list = await request(app.getHttpServer())
+      .get('/api/managers')
+      .set(h)
+      .expect(200);
+    expect(
+      list.body.items.find((u: any) => u.user_id === manager).lead_id,
+    ).toBeNull();
+    expect(
+      list.body.items.find((u: any) => u.user_id === lead).lead_id,
+    ).toBeNull();
+    expect(await sees(await as('rl-head', 'head12345'))).toBe(false);
+
+    await prisma.message.deleteMany({ where: { chatId: BigInt(chatId) } });
+    await prisma.contact.delete({ where: { chatId: BigInt(chatId) } });
+    for (const id of [manager, stranger, lead, head])
+      await request(app.getHttpServer())
+        .delete(`/api/managers/${id}`)
+        .set(h)
+        .expect(200);
+  });
+
   it('расход по менеджерам: чат без закреплённого аккаунта попадает в строку «без менеджера»', async () => {
     const h = { Authorization: `Bearer ${token}` };
     const stats = await request(app.getHttpServer())

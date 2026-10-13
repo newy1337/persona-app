@@ -5,12 +5,14 @@ import {
 } from '@nestjs/common';
 import { DashboardUser } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { Role } from '../enums/roles.enum';
+import { Role, isManagerRole } from '../enums/roles.enum';
 import { HistoryService } from './history.service';
 
 export interface ManagerScope {
   user: DashboardUser;
   role: string;
+  /** сам пользователь и все его подчинённые по цепочке руководителей */
+  userIds: number[];
   accountIds: number[];
   isAdmin: boolean;
 }
@@ -22,18 +24,45 @@ export class ScopeService {
     private history: HistoryService,
   ) {}
 
+  /**
+   * Область видимости: менеджер — свои аккаунты, тимлид — аккаунты своих
+   * менеджеров, хед — аккаунты менеджеров своих тимлидов. Цепочка собирается
+   * по полю «руководитель», глубина не ограничена жёстко, но циклы не зацикливают.
+   */
   async scopeOf(user: DashboardUser): Promise<ManagerScope> {
     const isAdmin = user.role === Role.ADMIN;
-    const accountIds = isAdmin
-      ? []
-      : (
-          await this.prisma.managerAccount.findMany({
-            where: { userId: user.id },
-            select: { tgAccountId: true },
-            orderBy: { tgAccountId: 'asc' },
-          })
-        ).map((r) => r.tgAccountId);
-    return { user, role: user.role, accountIds, isAdmin };
+    if (isAdmin)
+      return {
+        user,
+        role: user.role,
+        userIds: [user.id],
+        accountIds: [],
+        isAdmin,
+      };
+    const userIds = await this.teamIds(user.id);
+    const accountIds = (
+      await this.prisma.managerAccount.findMany({
+        where: { userId: { in: userIds } },
+        select: { tgAccountId: true },
+        orderBy: { tgAccountId: 'asc' },
+      })
+    ).map((r) => r.tgAccountId);
+    return { user, role: user.role, userIds, accountIds, isAdmin };
+  }
+
+  /** Сам пользователь плюс все подчинённые вниз по цепочке руководителей. */
+  async teamIds(userId: number): Promise<number[]> {
+    const seen = new Set<number>([userId]);
+    let frontier = [userId];
+    while (frontier.length) {
+      const rows = await this.prisma.dashboardUser.findMany({
+        where: { leadId: { in: frontier } },
+        select: { id: true },
+      });
+      frontier = rows.map((r) => r.id).filter((id) => !seen.has(id));
+      for (const id of frontier) seen.add(id);
+    }
+    return [...seen];
   }
 
   async accountsFilter(user: DashboardUser): Promise<number[] | null> {
@@ -42,7 +71,7 @@ export class ScopeService {
   }
 
   requireManager(user: DashboardUser): void {
-    if (user.role !== Role.ADMIN && user.role !== Role.MANAGER) {
+    if (user.role !== Role.ADMIN && !isManagerRole(user.role)) {
       throw new ForbiddenException(
         `нужна роль manager (текущая: ${user.role})`,
       );
