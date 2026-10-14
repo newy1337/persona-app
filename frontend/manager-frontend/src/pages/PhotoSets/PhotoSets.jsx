@@ -77,7 +77,6 @@ function SetSettings({ set, canEdit, onSaved }) {
           Не повторять показанные снимки
         </label>
       </div>
-      <p className={s.hint}>Это ограничения сверху: бот не обязан отправлять фото, если они не к месту. Менеджер может отправить снимок вручную при любых настройках.</p>
       {error && <p className={s.error} role="alert">{error}</p>}
       {canEdit && <button type="submit" className={s.btnPrimary} disabled={!dirty || busy}>{busy ? 'Сохраняем…' : 'Сохранить настройки'}</button>}
     </form>
@@ -121,8 +120,8 @@ function Uploader({ setId, onUploaded }) {
       {progress && (
         <p className={s.hint} role="status" style={{ marginTop: 8 }}>
           {progress.done < progress.total
-            ? `Загружаем и описываем ${progress.done + 1} из ${progress.total}…`
-            : `Готово: ${progress.total - progress.errors.length - progress.duplicates} новых${progress.duplicates ? `, ${progress.duplicates} уже были в образе` : ''}. Проверьте описания.`}
+            ? `${progress.done + 1} из ${progress.total}…`
+            : `Загружено: ${progress.total - progress.errors.length - progress.duplicates}${progress.duplicates ? `, повторов: ${progress.duplicates}` : ''}`}
           {progress.errors.map((e) => <span key={e} className={s.error} style={{ display: 'block' }}>{e}</span>)}
         </p>
       )}
@@ -194,7 +193,7 @@ export default function PhotoSets() {
 
   async function remove() {
     if (!set) return;
-    if (!await PanelUX.confirm({ title: 'Удалить образ?', message: `«${set.name}» снимется со всех ${set.accounts} аккаунтов. Отметки о том, какие фото уже видели собеседники, сохранятся.`, confirmLabel: 'Удалить', danger: true })) return;
+    if (!await PanelUX.confirm({ title: 'Удалить образ?', message: `«${set.name}» · аккаунтов: ${set.accounts}`, confirmLabel: 'Удалить', danger: true })) return;
     try {
       await deletePhotoSet(set.id);
       setCurrent(null);
@@ -205,7 +204,7 @@ export default function PhotoSets() {
   }
 
   async function removePhoto(ph) {
-    if (!await PanelUX.confirm({ title: 'Убрать снимок?', message: 'Бот и менеджеры больше не смогут его отправить. В уже отправленных диалогах он останется.', confirmLabel: 'Убрать', danger: true })) return;
+    if (!await PanelUX.confirm({ title: 'Убрать снимок?', message: '', confirmLabel: 'Убрать', danger: true })) return;
     try {
       await deleteSetPhoto(ph.id);
       setOpen(null);
@@ -240,10 +239,9 @@ export default function PhotoSets() {
               </form>
             )}
           </div>
-          <p className={s.hint} style={{ marginTop: 0 }}>Образ — общий набор фотографий с описаниями. Назначается аккаунтам во вкладке «Аккаунты»; новые снимки сразу доступны всем назначенным аккаунтам.</p>
           {error && <p className={s.error} role="alert">{error}</p>}
 
-          {!data.items.length && <p className={s.empty}>{data.can_manage ? 'Образов пока нет. Создайте первый.' : 'Вашим аккаунтам пока не назначен ни один образ.'}</p>}
+          {!data.items.length && <p className={s.empty}>Образов нет</p>}
           <div className={p.sets}>
             {data.items.map((x) => (
               <button type="button" key={x.id} className={`${p.setCard} ${x.id === current ? p.setCardActive : ''}`} onClick={() => setCurrent(x.id)} aria-pressed={x.id === current}>
@@ -260,10 +258,9 @@ export default function PhotoSets() {
           {set && (
             <section className={p.panel} aria-label={`Образ ${set.name}`}>
               <SetSettings set={set} canEdit={data.can_edit} onSaved={() => loadSets()} />
-              {!data.can_edit && <p className={s.hint}>Просмотр: менять общий набор можно только с отдельным правом — правка сразу видна на всех его аккаунтах.</p>}
               {data.can_edit && <Uploader setId={set.id} onUploaded={() => { loadPhotos(); loadSets(); }} />}
               <div className={p.toolbar}>
-                <input className={`${s.field} ${p.search}`} placeholder="Поиск по описанию, месту, деталям" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Поиск по снимкам" />
+                <input className={`${s.field} ${p.search}`} placeholder="Поиск" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Поиск по снимкам" />
                 {data.can_manage && <button type="button" className={s.btnSmDanger} onClick={remove}>Удалить образ</button>}
               </div>
               <TagFilter tags={tags} value={tag} onChange={setTag} />

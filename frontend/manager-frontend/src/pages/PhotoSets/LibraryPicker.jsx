@@ -45,15 +45,11 @@ export default function LibraryPicker({ chatId, replyTo, onClose, onSent }) {
       <div className={`${s.modal} ${p.picker}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Фото из образа">
         <h3 className={s.modalTitle}>Фото из образа{lib?.set ? ` · ${lib.set.name}` : ''}</h3>
         {!lib && !error && <p className={s.modalText} role="status">Загружаем…</p>}
-        {lib && !lib.set && <p className={s.modalText}>Аккаунту этого диалога не назначен образ. Назначить его можно во вкладке «Аккаунты».</p>}
+        {lib && !lib.set && <p className={s.modalText}>Образ не назначен</p>}
         {lib?.set && (
           <>
-            <p className={s.modalText}>
-              Собеседник уже видел {lib.sent_total} фото.
-              {!lib.set.auto_send || !lib.account_auto_send ? ' Бот сам фото не отправляет — только вручную.' : ''}
-            </p>
             <div className={p.toolbar}>
-              <input className={`${s.field} ${p.search}`} autoFocus placeholder="Кот, кафе, море…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Поиск по снимкам" />
+              <input className={`${s.field} ${p.search}`} autoFocus placeholder="Поиск" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Поиск по снимкам" />
               <label className={s.check} style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <input type="checkbox" checked={onlyNew} onChange={(e) => setOnlyNew(e.target.checked)} />
                 Только неотправленные
@@ -70,7 +66,7 @@ export default function LibraryPicker({ chatId, replyTo, onClose, onSent }) {
             <img className={p.preview} src={photoUrl(picked.id, true)} alt="" />
             <label className={s.label}>
               Подпись {picked.sent_at && <span className={p.flagWarn}>уже отправляли {fmtDate(picked.sent_at)}</span>}
-              <textarea className={`${s.field} ${p.textarea}`} value={caption} maxLength={1024} onChange={(e) => setCaption(e.target.value)} placeholder={picked.taken_on ? `Снято: ${picked.taken_label}` : 'Дата съёмки неизвестна — не пишите «только что»'} />
+              <textarea className={`${s.field} ${p.textarea}`} value={caption} maxLength={1024} onChange={(e) => setCaption(e.target.value)} placeholder={picked.taken_label} />
             </label>
           </div>
         )}

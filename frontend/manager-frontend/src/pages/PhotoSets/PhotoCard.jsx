@@ -29,7 +29,7 @@ export default function PhotoCard({ photo, onOpen, picked = false, withSent = fa
           {withSent && (photo.sent_at
             ? <span className={p.flagSent}>Отправляли {fmtDate(photo.sent_at)}</span>
             : <span className={p.flag}>Ещё не отправляли</span>)}
-          {!photo.reviewed && <span className={p.flagWarn} title="Описание предложено системой">Проверить описание</span>}
+          {!photo.reviewed && <span className={p.flagWarn}>Проверить описание</span>}
           {!photo.auto_send && <span className={p.flagOff}>Только вручную</span>}
           {photo.tags.map((t) => <span key={t} className={p.flag}>#{t}</span>)}
         </div>

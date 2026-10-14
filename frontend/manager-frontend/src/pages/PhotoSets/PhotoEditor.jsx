@@ -11,7 +11,7 @@ export function parseTagsText(text) {
   return [...new Set(String(text).split(',').map((t) => t.trim().toLowerCase().replace(/^#/, '')).filter(Boolean))];
 }
 
-export const TAKEN_HINT = 'ГГГГ, ГГГГ-ММ или ГГГГ-ММ-ДД. Пусто — «Дата неизвестна»';
+export const TAKEN_HINT = 'ГГГГ, ГГГГ-ММ или ГГГГ-ММ-ДД';
 
 /** Карточка снимка: что на нём, где и когда снято, что важно не перепутать. */
 export default function PhotoEditor({ photo, canEdit, onClose, onSaved, onDelete, onCover }) {
@@ -53,13 +53,12 @@ export default function PhotoEditor({ photo, canEdit, onClose, onSaved, onDelete
     <div className={s.overlay} onClick={onClose}>
       <form className={`${s.modal} ${p.editor}`} onClick={(e) => e.stopPropagation()} onSubmit={save} aria-label="Карточка снимка">
         <h3 className={s.modalTitle}>Фото #{photo.id}</h3>
-        {!photo.reviewed && <p className={s.modalText}>Описание предложено системой — проверьте его. Неизвестное оставьте пустым.</p>}
         <div className={p.editorBody}>
           <img className={p.preview} src={photoUrl(photo.id, true)} alt="" />
           <div className={p.fields}>
             <label className={s.label}>
               Что изображено
-              <textarea className={`${s.field} ${p.textarea}`} disabled={!canEdit} value={f.description} maxLength={1000} onChange={(e) => set({ description: e.target.value })} placeholder="Например: рыжий кот спит на подоконнике" />
+              <textarea className={`${s.field} ${p.textarea}`} disabled={!canEdit} value={f.description} maxLength={1000} onChange={(e) => set({ description: e.target.value })} />
             </label>
             <label className={s.label}>
               Где снято
@@ -71,11 +70,11 @@ export default function PhotoEditor({ photo, canEdit, onClose, onSaved, onDelete
             </label>
             <label className={s.label}>
               Важные детали
-              <textarea className={`${s.field} ${p.textarea}`} disabled={!canEdit} value={f.details} maxLength={1000} onChange={(e) => set({ details: e.target.value })} placeholder="Например: кота зовут Барсик" />
+              <textarea className={`${s.field} ${p.textarea}`} disabled={!canEdit} value={f.details} maxLength={1000} onChange={(e) => set({ details: e.target.value })} />
             </label>
             <label className={s.label}>
               Теги через запятую
-              <input className={s.field} disabled={!canEdit} value={f.tags} onChange={(e) => set({ tags: e.target.value })} placeholder="Например: кот, дом" />
+              <input className={s.field} disabled={!canEdit} value={f.tags} onChange={(e) => set({ tags: e.target.value })} />
             </label>
             <label className={s.check} style={{ flexDirection: 'row', alignItems: 'center' }}>
               <input type="checkbox" disabled={!canEdit} checked={f.auto_send} onChange={(e) => set({ auto_send: e.target.checked })} />

@@ -167,9 +167,7 @@ export default function Accounts() {
     const name = setId == null ? null : photoSets.find((x) => x.id === setId)?.name;
     const ok = await PanelUX.confirm({
       title: setId == null ? 'Снять образ?' : 'Назначить образ?',
-      message: setId == null
-        ? `С ${ids.length} аккаунтов снимется образ. Отметки о показанных фото сохранятся.`
-        : `«${name}» будет назначен ${ids.length} аккаунтам. Новые фото образа сразу станут доступны всем им.`,
+      message: setId == null ? `Аккаунтов: ${ids.length}` : `«${name}» · аккаунтов: ${ids.length}`,
       confirmLabel: setId == null ? 'Снять' : 'Назначить',
     });
     if (!ok) return;

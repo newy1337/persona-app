@@ -126,7 +126,7 @@ function MediaContent({ chatId, msg, inbound = null }) {
       return <>
         <a href={src} target="_blank" rel="noreferrer"><img className={styles.mediaItem} src={src} alt={caption || 'Вложение'} loading="lazy" /></a>
         {label}
-        {msg.media_note && <p className={styles.mediaNote} title="Что на снимке из образа — бот это помнит">Из образа: {msg.media_note}</p>}
+        {msg.media_note && <p className={styles.mediaNote}>Из образа: {msg.media_note}</p>}
       </>;
     }
     if (msg.media_kind === 'video_note') {
