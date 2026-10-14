@@ -173,14 +173,16 @@ export function LeadsTable({ ready = true, rows, query, status, selected, onTogg
         }))));
 }
 
-export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus, onClearFlood, onDelete, helpers }) {
+export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus, onClearFlood, onDelete, helpers, selection, onPhotoAutoSend }) {
   const pending = ux.useActions().pending;
   const [expanded, setExpanded] = useState(null);
   const { Avatar, statusLabel, statusClasses, date } = helpers;
   const chevron = open => h('svg', { width: 12, height: 12, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true, style: { transform: open ? 'rotate(180deg)' : undefined } }, h('path', { d: 'm4 6 4 4 4-4', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' }));
   if (!rows.length) return h('p', { className: s.empty }, 'Аккаунтов нет. Добавьте номер, затем войдите — код придёт в Telegram.');
   return h('table', { className: 'mr-account-table', 'aria-label': 'Telegram-аккаунты' },
-    h('thead', null, h('tr', null, ['Аккаунт', 'Личность / менеджер', 'Состояние', 'Действия'].map((label, index) => h('th', { key: label, scope: 'col', style: { width: ['30%', '28%', '17%', '25%'][index] } }, label)))),
+    h('thead', null, h('tr', null, ['Аккаунт', 'Личность / менеджер', 'Состояние', 'Действия'].map((label, index) => h('th', { key: label, scope: 'col', style: { width: ['30%', '28%', '17%', '25%'][index] } },
+      index === 0 && selection && h('input', { type: 'checkbox', className: 'mr-account-select', 'aria-label': 'Выбрать все аккаунты', checked: rows.length > 0 && rows.every(r => selection.selected.has(r.id)), onChange: () => selection.toggleAll(rows.map(r => r.id)) }),
+      label)))),
     h('tbody', null, rows.map(row => {
       const busy = pending.some(key => key.split(':').slice(1).join(':') === `/api/tg-accounts/${row.id}` || key.includes(`/api/tg-accounts/${row.id}/`));
       const accountButton = (text, onClick, props = {}) => button(text, onClick, { disabled: busy, ...props });
@@ -195,11 +197,14 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
         ['Назначение', row.purpose === 'test' ? 'Тестовый' : row.purpose === 'prod' ? 'Рабочий' : row.purpose || '—'],
         ['Последний вход', date(row.last_login_at)], ['Пульс', date(row.last_heartbeat_at)],
         ['Лимит сообщений в день', row.daily_msg_quota ?? 'Без лимита'],
+        ['Образ', row.photo_set_name || 'Не назначен'],
+        ['Автоотправка фото', row.photo_auto_send ? 'Разрешена' : 'Выключена для аккаунта'],
       ];
       return h(React.Fragment, { key: row.id },
         h('tr', { className: `mr-account-row ${open ? 'mr-account-expanded' : ''}`, 'data-account-id': row.id },
           h('td', { className: 'mr-account-identity' },
             h('div', { className: 'mr-account-who' },
+              selection && h('input', { type: 'checkbox', className: 'mr-account-select', 'aria-label': `Выбрать ${name}`, checked: selection.selected.has(row.id), onChange: () => selection.toggle(row.id) }),
               h(Avatar, { className: 'mr-account-avatar', style: { '--av-bg': '#49375f' }, src: row.avatar_url, name }),
               h('div', { className: 'mr-account-name-wrap' },
                 h('div', { className: 'mr-account-name' }, name),
@@ -211,7 +216,10 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
             h('div', { className: 'mr-account-persona' }, row.persona_name || row.persona_id || 'Без личности', row.purpose === 'test' && h('span', { className: 'mr-account-test' }, 'Тест')),
             h('div', { className: 'mr-account-owner', 'data-testid': 'account-owner' },
               h('span', { title: row.manager_username ? `Менеджер: ${row.manager_username}` : undefined }, row.manager_username || 'Без менеджера'),
-              h('span', { className: 'mr-account-region' }, row.region_code ? `Регион ${row.region_code}` : 'Регион не задан'))),
+              h('span', { className: 'mr-account-region' }, row.region_code ? `Регион ${row.region_code}` : 'Регион не задан')),
+            h('div', { className: 'mr-account-owner', 'data-testid': 'account-photo-set' },
+              h('span', null, row.photo_set_name ? `Образ: ${row.photo_set_name}` : 'Без образа'),
+              row.photo_set_id && !row.photo_auto_send && h('span', { className: 'mr-account-region' }, 'автоотправка фото выкл.'))),
           h('td', { className: 'mr-account-state' },
             h('span', { className: row.status === 'unauthorized' && row.lost_at ? s.badgeBanned : statusClasses[row.status] || s.badge, title: row.lost_reason || undefined }, statusLabel(row)),
             h('span', { className: `mr-account-connection ${online ? 'mr-account-online' : ''}` }, h('i', { 'aria-hidden': true }), online ? 'В сети' : 'Не в сети'),
@@ -227,6 +235,7 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
             row.flood_until && h('p', { className: 'mr-account-warning' }, `${row.flood_reason || 'Ограничение Telegram'} · до ${date(row.flood_until)}`),
             h('div', { className: 'mr-account-extra-actions' },
               accountButton('Прокси', () => onProxy(row)),
+              onPhotoAutoSend && accountButton(row.photo_auto_send ? 'Выключить автофото' : 'Включить автофото', () => onPhotoAutoSend(row, !row.photo_auto_send), { title: 'Бот перестанет сам отправлять фото с этого аккаунта; библиотека для менеджера останется' }),
               !loginNeeded && row.status !== 'retired' && accountButton('Перелогин', () => onLogin(row)),
               row.flood_until && accountButton('Снять флуд', () => onClearFlood(row), { title: 'Аккаунт снова будет брать новых лидов' }),
               row.status !== 'retired' && row.status !== 'banned' && accountButton('Вывести', () => onStatus(row, 'retired')),
@@ -334,9 +343,10 @@ function ManagerEditor({ user, me, availableRoles, voicers, users = [], onSave, 
   const [role, setRole] = useState(user.role), [region, setRegion] = useState(user.region_code || '');
   const [voicer, setVoicer] = useState(String(user.voicer_id || ''));
   const [lead, setLead] = useState(String(user.lead_id || ''));
+  const [photoEdit, setPhotoEdit] = useState(Boolean(user.can_edit_photo_sets));
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const lock = React.useRef(false);
-  const changed = role !== user.role || region !== (user.region_code || '') || voicer !== String(user.voicer_id || '') || lead !== String(user.lead_id || '');
+  const changed = role !== user.role || region !== (user.region_code || '') || voicer !== String(user.voicer_id || '') || lead !== String(user.lead_id || '') || photoEdit !== Boolean(user.can_edit_photo_sets);
   const valid = region === '' ? !['manager', 'teamlead', 'head'].includes(role) || user.role === role && !user.region_code : validRegion(region);
   async function save(event) {
     event.preventDefault();
@@ -345,7 +355,7 @@ function ManagerEditor({ user, me, availableRoles, voicers, users = [], onSave, 
     if (user.role === 'manager' && role !== 'manager' && user.account_ids.length && !await ux.confirm({ title: 'Изменить роль?', message: `У ${user.username} будут освобождены аккаунты: ${user.account_ids.length}.`, confirmLabel: 'Изменить роль' })) { lock.current = false; return; }
     setBusy(true); setError('');
     try {
-      await onSave(user.user_id, leadOnly ? { lead_id: lead ? Number(lead) : null } : { role, region_code: region || null, voicer_id: role === 'manager' && voicer ? Number(voicer) : null, lead_id: LEAD_ROLE_FOR[role] && lead ? Number(lead) : null, ...(user.role === 'manager' && role !== 'manager' ? { account_ids: [] } : {}) });
+      await onSave(user.user_id, leadOnly ? { lead_id: lead ? Number(lead) : null } : { role, region_code: region || null, voicer_id: role === 'manager' && voicer ? Number(voicer) : null, lead_id: LEAD_ROLE_FOR[role] && lead ? Number(lead) : null, ...(photoEdit !== Boolean(user.can_edit_photo_sets) ? { can_edit_photo_sets: photoEdit } : {}), ...(user.role === 'manager' && role !== 'manager' ? { account_ids: [] } : {}) });
       onClose();
     } catch (e) { setError(ux.readableError(e)); }
     finally { lock.current = false; setBusy(false); }
@@ -358,6 +368,9 @@ function ManagerEditor({ user, me, availableRoles, voicers, users = [], onSave, 
       h('label', { className: s.label }, 'Регион (3–4 цифры)', h('input', { className: s.field, 'data-autofocus': !leadOnly, value: region, disabled: busy || leadOnly, inputMode: 'numeric', maxLength: 4, placeholder: 'Например, 0077', onChange: e => setRegion(e.target.value.replace(/\D/g, '').slice(0, 4)) })),
       role === 'manager' && !leadOnly && h(VoicerSelect, { voicers, value: voicer, onChange: setVoicer, disabled: busy }),
       h(LeadSelect, { role, region, users, value: lead, onChange: setLead, disabled: busy, selfId: user.user_id }),
+      !leadOnly && role !== 'admin' && role !== 'voice' && h('label', { className: s.check, style: { flexDirection: 'row', alignItems: 'center' } },
+        h('input', { type: 'checkbox', checked: photoEdit, disabled: busy, onChange: e => setPhotoEdit(e.target.checked) }),
+        'Может менять образы', h('span', { className: 'mr-caption' }, ' — правка общего набора сразу видна на всех его аккаунтах')),
       !valid && h('p', { className: 'ux-inline-error' }, 'Укажите код региона: 3 или 4 цифры.'),
       error && h('p', { className: 'ux-inline-error', role: 'alert' }, error)));
 }

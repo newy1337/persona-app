@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -58,6 +59,12 @@ export class CreateManagerDto {
 }
 
 export class UpdateManagerDto {
+  @ApiPropertyOptional({
+    description: 'Право менять общие образы: правка видна на всех их аккаунтах',
+  })
+  @IsOptional()
+  @IsBoolean()
+  can_edit_photo_sets?: boolean;
   @IsOptional()
   @IsInt()
   voicer_id?: number | null;

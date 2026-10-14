@@ -284,6 +284,7 @@ export class ConversationsService {
         id: m.id,
         tg_msg_id: m.tg_msg_id,
         media_kind: m.media_kind,
+        media_note: m.media_note ?? null,
         media_url:
           m.file_path && !/^https?:\/\//i.test(m.file_path)
             ? `/api/files/${m.id}`
@@ -420,6 +421,34 @@ export class ConversationsService {
       ok: true,
       pending_reply_id: replyId,
       kind: dto.kind,
+      scheduled_ts: ts,
+    };
+  }
+
+  /** Снимок из образа вручную: через ту же очередь, что и вложения, с отметкой о показе. */
+  async sendLibraryPhoto(
+    chatId: number,
+    photo: { id: number; filePath: string },
+    dto: { caption?: string; reply_to?: number },
+  ) {
+    const ts = this.clock.ts();
+    const replyId = await this.history.enqueueManualReply(
+      chatId,
+      (dto.caption ?? '').trim(),
+      ts,
+      {
+        kind: 'photo',
+        filePath: photo.filePath,
+        replyTo: dto.reply_to,
+        photoId: photo.id,
+      },
+    );
+    await this.pauseForManager(chatId);
+    return {
+      ok: true,
+      pending_reply_id: replyId,
+      kind: 'photo',
+      photo_id: photo.id,
       scheduled_ts: ts,
     };
   }

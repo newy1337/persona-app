@@ -108,6 +108,19 @@ export interface OutboundTransport {
     messageIds: number[],
     accountId?: number | null,
   ): Promise<void>;
+  /** Фото с подписью; random_id не даёт повтору после сбоя создать дубликат. */
+  sendPhoto?(
+    chatId: number,
+    opts: {
+      path: string;
+      caption: string;
+      randomId: string;
+      accountId?: number | null;
+      typing?: TypingStyle;
+      signal?: AbortSignal;
+      onDispatch?: () => Promise<void>;
+    },
+  ): Promise<number>;
   isOnline?(accountId: number): boolean;
   editText?(chatId: number, tgMsgId: number, text: string): Promise<void>;
 }

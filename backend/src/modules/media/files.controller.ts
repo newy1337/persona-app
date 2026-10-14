@@ -19,6 +19,7 @@ import { UploadsService } from './uploads.service';
 import { appConfig } from 'src/config/app.config';
 import { existsSync } from 'fs';
 import { isAbsolute, relative, resolve } from 'path';
+import { insidePhotoStore } from '../photo-sets/photo-sets.service';
 
 const TYPES: Record<string, string> = {
   jpg: 'image/jpeg',
@@ -76,7 +77,7 @@ export class FilesController {
   private resolve(path: string): string {
     const abs = resolve(path);
     const rel = relative(appConfig.mediaDir, abs);
-    if (!rel.startsWith('..') && !isAbsolute(rel)) {
+    if ((!rel.startsWith('..') && !isAbsolute(rel)) || insidePhotoStore(abs)) {
       if (!existsSync(abs)) throw new NotFoundException('файла больше нет');
       return abs;
     }

@@ -85,6 +85,7 @@ export class RhythmScheduler {
     PersonaService,
     BrainStateService,
     ReplyScheduleService,
+    UsageRecorderService,
   ],
 })
 export class BrainModule {}

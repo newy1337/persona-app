@@ -68,6 +68,7 @@ import {
   uploadFile,
 } from '../../api/conversations';
 import EmojiPicker from '../../components/composer/EmojiPicker';
+import LibraryPicker from '../PhotoSets/LibraryPicker';
 
 function RoundIcon() {
   return (
@@ -125,6 +126,7 @@ function MediaContent({ chatId, msg, inbound = null }) {
       return <>
         <a href={src} target="_blank" rel="noreferrer"><img className={styles.mediaItem} src={src} alt={caption || 'Вложение'} loading="lazy" /></a>
         {label}
+        {msg.media_note && <p className={styles.mediaNote} title="Что на снимке из образа — бот это помнит">Из образа: {msg.media_note}</p>}
       </>;
     }
     if (msg.media_kind === 'video_note') {
@@ -225,6 +227,7 @@ function ConversationPage() {
   const [editing, setEditing] = useState(null);
   const [gallery, setGallery] = useState(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [reactFor, setReactFor] = useState(null);
   const fileInput = useRef(null);
   const voiceInput = useRef(null);
@@ -1526,6 +1529,17 @@ function ConversationPage() {
                       <button type="button" className={composer.toolBtn} title="Гифка по ссылке" disabled={busy} onClick={sendGifLink}>
                         GIF
                       </button>
+                      <button type="button" className={composer.toolBtn} title="Фото из образа" aria-label="Фото из образа" disabled={busy} onClick={() => setLibraryOpen(true)}>
+                        🖼
+                      </button>
+                      {libraryOpen && (
+                        <LibraryPicker
+                          chatId={id}
+                          replyTo={reply?.tg_msg_id ?? null}
+                          onClose={() => setLibraryOpen(false)}
+                          onSent={() => { setReply(null); load(); }}
+                        />
+                      )}
                     </div>
                     <div className={styles.inputActionsRight}>
                       <input

@@ -114,6 +114,9 @@ export class AuthService implements OnModuleInit {
       username: user.username,
       role: user.role,
       region_code: (user as { regionCode?: string | null }).regionCode ?? null,
+      can_edit_photo_sets:
+        user.role === 'admin' ||
+        Boolean((user as { canEditPhotoSets?: boolean }).canEditPhotoSets),
       last_login: user.lastLogin,
     };
   }

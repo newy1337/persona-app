@@ -54,6 +54,13 @@ import {
 } from 'src/domain/lead-facts';
 import { matchTrigger } from 'src/domain/handoff-triggers';
 import { mentionsMedia } from 'src/domain/media-request';
+import {
+  acceptPhotoChoice,
+  dropFreshClaims,
+  hasFalseFreshClaim,
+  withPhotoNote,
+} from 'src/domain/photo-library';
+import { PhotoLibraryService } from 'src/shared/photo-library.service';
 import { TakeoverReason } from 'src/domain/pause';
 import {
   InboundTurn,
@@ -237,6 +244,7 @@ export class NastyaBrainService implements ReplyBrain {
     private transport: OutboundTransport,
     @Optional() private autoVoice?: VoicerAutomationService,
     @Optional() private prisma?: PrismaService,
+    @Optional() private photos?: PhotoLibraryService,
   ) {}
 
   private judgeDeps(
@@ -794,9 +802,20 @@ export class NastyaBrainService implements ReplyBrain {
           throw new Error('Out-of-order delivery acknowledgment');
         const next = structuredClone(delivery);
         const ts = this.clock.ts();
+        const photo =
+          remaining[index].photo && next.photo
+            ? {
+                photoId: next.photo.photo_id,
+                filePath: next.photo.file_path,
+                note: next.photo.note,
+                accountId: due.accountId,
+              }
+            : undefined;
         appendAssistantMessage(
           next.state,
-          remaining[index].text,
+          photo
+            ? withPhotoNote(remaining[index].text, photo.note)
+            : remaining[index].text,
           'dialogue',
           ts,
         );
@@ -817,34 +836,59 @@ export class NastyaBrainService implements ReplyBrain {
           tgMsgId,
           ts,
           next,
+          photo,
         );
         delivery = next;
         confirmed += 1;
+        if (photo)
+          await this.funnel.emit(chatId, 'photo_sent', ts, {
+            photo_id: photo.photoId,
+            source: 'bot',
+          });
         await this.mirrorLeadFacts(chatId, next.state).catch((e) =>
           this.log.warn(
             `lead facts sync failed chat=${chatId}: ${e?.message ?? e}`,
           ),
         );
       };
+      const dispatched = async (index: number) => {
+        await beforePart();
+        delivery.parts[offset + index].dispatchedAt ??= this.clock.ts();
+        if (!(await this.schedule.prepare(chatId, delivery)))
+          throw new ReplySuperseded();
+      };
+      // Фото из образа — всегда первая часть: подпись к нему и есть первая реплика.
+      const lead = remaining[0]?.photo && delivery.photo ? 1 : 0;
+      if (lead) {
+        if (!this.transport.sendPhoto)
+          throw new Error('Transport cannot send photos');
+        await beforePart();
+        const id = await this.transport.sendPhoto(chatId, {
+          path: delivery.photo!.file_path,
+          caption: remaining[0].text,
+          accountId: due.accountId,
+          typing: persona.rhythm.typing,
+          signal,
+          randomId: remaining[0].randomId,
+          onDispatch: () => dispatched(0),
+        });
+        await confirm(0, id);
+      }
       const ids = await this.transport.sendText(
         chatId,
-        remaining.map((p) => p.text),
+        remaining.slice(lead).map((p) => p.text),
         {
           accountId: due.accountId,
           typing: persona.rhythm.typing,
           signal,
           beforePart,
-          randomIds: remaining.map((p) => p.randomId),
-          onPart: confirm,
-          onDispatch: async (index) => {
-            await beforePart();
-            delivery.parts[offset + index].dispatchedAt ??= this.clock.ts();
-            if (!(await this.schedule.prepare(chatId, delivery)))
-              throw new ReplySuperseded();
-          },
+          randomIds: remaining.slice(lead).map((p) => p.randomId),
+          onPart: (index, id) => confirm(index + lead, id),
+          onDispatch: (index) => dispatched(index + lead),
         },
       );
-      for (let i = confirmed; i < ids.length; i += 1) await confirm(i, ids[i]);
+      for (let i = confirmed - lead; i < ids.length; i += 1)
+        await confirm(i + lead, ids[i]);
       if (delivery.sentCount !== delivery.parts.length)
         throw new Error('Transport did not acknowledge every reply part');
       await this.schedule.drop(chatId);
@@ -1568,6 +1612,19 @@ export class NastyaBrainService implements ReplyBrain {
     runtime.time_context = await this.timeContext(loaded, state);
     const voiceAvailability = await this.autoVoice?.context(chatId);
     runtime.voice_availability = voiceAvailability;
+    const photoAccount =
+      incoming?.at(-1)?.turn.accountId ??
+      (await this.history.chatOwnerAccount(chatId));
+    const photoAvailability =
+      this.photos && photoAccount
+        ? await this.photos.context(
+            chatId,
+            photoAccount,
+            config.timeZone ?? 'UTC',
+            this.clock.ts(),
+          )
+        : undefined;
+    runtime.photo_availability = photoAvailability;
     const judgment = await judgeDialogue(
       {
         prompt: prompts.judge_plan,
@@ -1579,9 +1636,13 @@ export class NastyaBrainService implements ReplyBrain {
       this.judgeDeps(scope, variables, signal, loaded),
     );
     checkCancelled(signal);
+    // Просьбу о фото при включённом образе бот ведёт сам: снимок или текст.
+    const photosOwned =
+      judgment.media_request === 'photo' && Boolean(photoAvailability?.enabled);
     if (
       judgment.media_request &&
       judgment.media_request !== 'voice' &&
+      !photosOwned &&
       mentionsMedia(userText)
     ) {
       await this.handOverMediaRequest(
@@ -1615,6 +1676,7 @@ export class NastyaBrainService implements ReplyBrain {
         memory.source_message_ids = [...pendingIds];
     }
     runtime.voice_availability = voiceAvailability;
+    runtime.photo_availability = photoAvailability;
     const voice =
       voiceAvailability?.available && judgment.voice_reply?.send
         ? {
@@ -1626,9 +1688,37 @@ export class NastyaBrainService implements ReplyBrain {
             context_hash: voiceAvailability.context_hash,
           }
         : undefined;
+    const photoId = voice
+      ? null
+      : acceptPhotoChoice(
+          photoAvailability,
+          judgment.photo_reply,
+          judgment.media_request === 'photo',
+        );
+    const photoCard = photoAvailability?.candidates.find(
+      (c) => c.id === photoId,
+    );
+    const libraryPhoto =
+      photoId && photoCard ? await this.photos!.photo(Number(photoId)) : null;
+    if (judgment.photo_reply?.photo_id && !libraryPhoto)
+      this.log.log(
+        `chat=${chatId}: photo ${judgment.photo_reply.photo_id} rejected (${photoAvailability?.reason || 'not a candidate'})`,
+      );
     runtime.delivery_context = {
-      kind: voice ? 'voice' : 'text',
-      reason: voice?.reason || null,
+      kind: voice ? 'voice' : libraryPhoto ? 'photo' : 'text',
+      reason:
+        voice?.reason || (libraryPhoto && judgment.photo_reply?.reason) || null,
+      ...(libraryPhoto && photoCard
+        ? {
+            photo: {
+              description: photoCard.description,
+              place: photoCard.place,
+              taken: photoCard.taken,
+              freshness: photoCard.freshness,
+              details: photoCard.details,
+            },
+          }
+        : {}),
     };
     runtime.time_context = await this.timeContext(loaded, state);
 
@@ -1686,6 +1776,16 @@ export class NastyaBrainService implements ReplyBrain {
         `chat=${chatId}: repeated goodnight/morning dropped from the reply`,
       );
     reply = trimmed;
+    if (
+      photoCard &&
+      libraryPhoto &&
+      hasFalseFreshClaim(reply, photoCard.freshness)
+    ) {
+      reply = dropFreshClaims(reply);
+      this.log.warn(
+        `chat=${chatId}: "just taken" claim removed from an ${photoCard.freshness} photo caption`,
+      );
+    }
     state.history = structuredClone(baseState.history);
     if (attachmentContext) {
       const latest = [...state.history]
@@ -1701,6 +1801,16 @@ export class NastyaBrainService implements ReplyBrain {
     return {
       reply,
       ...(voice && reply.length <= 800 ? { voice } : {}),
+      ...(libraryPhoto && photoAccount && this.transport.sendPhoto
+        ? {
+            photo: {
+              photo_id: libraryPhoto.id,
+              file_path: libraryPhoto.filePath,
+              note: this.photos!.note(libraryPhoto, today),
+              account_id: photoAccount,
+            },
+          }
+        : {}),
       state,
       judgment,
       date: runtime.date,

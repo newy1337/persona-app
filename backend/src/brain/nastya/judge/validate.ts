@@ -82,7 +82,19 @@ export function validateJudgment(
   const responseKind = asText(value['response_kind']) || 'normal';
 
   const voice = value['voice_reply'];
+  const photo = value['photo_reply'];
   return {
+    photo_reply: {
+      photo_id:
+        typeof photo?.photo_id === 'string' ||
+        typeof photo?.photo_id === 'number'
+          ? String(photo.photo_id).trim().slice(0, 20)
+          : '',
+      reason:
+        typeof photo?.reason === 'string'
+          ? photo.reason.trim().slice(0, 500)
+          : '',
+    },
     voice_reply: {
       send:
         voice?.send === true &&

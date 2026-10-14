@@ -18,6 +18,7 @@ import { deliveryRandomId } from 'src/brain/reply-delivery';
 import { TakeoverReason } from 'src/domain/pause';
 import { VoicerDeliveryService } from '../voicer/voicer-delivery.service';
 import { KIND_LABEL, kindForFile } from 'src/domain/attachments';
+import { PhotoLibraryService } from 'src/shared/photo-library.service';
 
 /**
  * Одна строка на диалог — самая старая. Тик идёт каждые пять секунд, и если
@@ -51,6 +52,7 @@ export class RelayWorker implements OnModuleInit {
     private telegram: TelegramService,
     @Inject(forwardRef(() => REPLY_BRAIN)) private brain: ReplyBrain,
     @Optional() private voiceDelivery?: VoicerDeliveryService,
+    @Optional() private photos?: PhotoLibraryService,
   ) {}
 
   async onModuleInit() {
@@ -252,12 +254,17 @@ export class RelayWorker implements OnModuleInit {
       filePath: string | null;
       replyTo: number | null;
       source: string;
+      photoId?: number | null;
+      accountId?: number | null;
     },
     ids: number[],
     ts: number,
     autoReplyId?: string,
   ): Promise<void> {
     if (row.kind === 'reaction') return;
+    const libraryPhoto =
+      row.photoId && this.photos ? await this.photos.photo(row.photoId) : null;
+    const note = libraryPhoto ? this.photos!.note(libraryPhoto) : null;
     const paths =
       row.kind === 'album'
         ? (JSON.parse(row.filePath ?? '[]') as string[])
@@ -271,7 +278,7 @@ export class RelayWorker implements OnModuleInit {
             ? 'video'
             : 'photo'
           : row.kind;
-      await this.history.appendMessage(chatId, {
+      const stored = await this.history.appendMessage(chatId, {
         role: 'assistant',
         text: (i === 0 && row.text) || KIND_LABEL[kind] || `[${kind}]`,
         ts,
@@ -284,7 +291,22 @@ export class RelayWorker implements OnModuleInit {
         mediaKind: kind === 'text' ? null : kind,
         filePath: path,
         replyTo: i === 0 ? row.replyTo : null,
+        mediaNote: i === 0 ? note : null,
       });
+      // Ручная отправка из образа тоже отмечается: бот потом не повторит снимок.
+      if (i === 0 && libraryPhoto && stored)
+        await this.photos!.recordSend({
+          chatId,
+          photoId: libraryPhoto.id,
+          accountId: row.accountId ?? null,
+          messageId: stored.id,
+          tgMsgId: ids[0],
+          caption: row.text,
+          note: note ?? '',
+          source: 'manager',
+          actor: row.source,
+          sentAt: ts,
+        });
     }
     if (autoReplyId && this.brain.noteAutomatedVoiceMessage)
       await this.brain.noteAutomatedVoiceMessage(

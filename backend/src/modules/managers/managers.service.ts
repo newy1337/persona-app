@@ -52,6 +52,7 @@ export class ManagersService {
         username: u.username,
         role: u.role,
         region_code: u.regionCode,
+        can_edit_photo_sets: u.canEditPhotoSets,
         voicer_id: u.voicerId ?? null,
         voicer_username: u.voicer?.username ?? null,
         lead_id: u.leadId ?? null,
@@ -259,7 +260,10 @@ export class ManagersService {
       regionCode?: string | null;
       voicerId?: number | null;
       leadId?: number | null;
+      canEditPhotoSets?: boolean;
     } = {};
+    if (dto.can_edit_photo_sets !== undefined)
+      data.canEditPhotoSets = dto.can_edit_photo_sets;
     if (dto.voicer_id !== undefined) data.voicerId = dto.voicer_id;
     // Руководитель считается от роли и региона: хед — никого, тимлид — хед
     // региона, менеджер — тимлид своего региона (если задан и подходит).

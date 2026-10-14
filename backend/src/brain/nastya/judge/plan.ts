@@ -48,6 +48,13 @@ export const AUTO_VOICE_RULE = `Дополнительное поле JSON "voic
 Тёплая реакция, личный рассказ или юмор могут выиграть от голоса. Для сухого уточнения, ссылки, номера, ссоры или формального подтверждения обычно лучше текст. Для send=true обязательны конкретная причина уместности и краткая эмоциональность для войсера. Не придумывай новые биографические факты ради голоса.
 Если voice_availability отсутствует или available=false, send=false. media_request распознавай независимо: наличие просьбы не обязывает voice_reply.send=true.`;
 
+export const PHOTO_REPLY_RULE = `Дополнительное поле JSON "photo_reply": {"photo_id": "", "reason": ""}.
+photo_availability — личная галерея персонажа: снимки с описанием, местом и датой. Если photo_availability.available=true, можешь выбрать один снимок из photo_availability.candidates и указать его id и конкретную причину: он уйдёт вместе с ответом, а текст ответа станет подписью.
+Выбирай редко и только к месту: собеседник сам заговорил о теме снимка (рассказал про своего кота — можно показать своего), прямо попросил фото, или снимок естественно продолжает рассказ персонажа. Не цепляйся за любое упоминание темы, не отправляй фото в каждом разговоре и не делай из него ответ на всё. Лимит — это потолок, а не план.
+Если photo_availability.mode="request", выбирай только на прямую просьбу показать фото в последнем сообщении человека.
+Снимок не должен противоречить биографии персонажа, фактам из диалога и уже сказанному (питомец, город, внешность, время года). Сомневаешься — не выбирай. Снимки из shown_before собеседник уже видел: не выбирай их и учитывай, что он мог спрашивать о них.
+Просьба о фото, которой нет подходящего снимка, — photo_id пустой, ответ текстом. Если выбрано голосовое (voice_reply.send=true), photo_id пустой. Если photo_availability отсутствует или available=false, photo_id пустой.`;
+
 export interface JudgeDialogueInput {
   prompt: string;
   runtime: RuntimeSnapshot;
@@ -107,7 +114,7 @@ export async function judgeDialogue(
   const text = await judgeResponseText(
     deps,
     {
-      stable: `${prompt}\n\n${runtime.conversation_context ? CONVERSATION_PLAN_RULE : ''}\n\n${MEDIA_REQUEST_RULE}\n\n${AUTO_VOICE_RULE}\n\n${PERSONA_EVENT_RULE}\n\n${QUESTION_POLICY_RULE}\n\n${TIME_RULES}\n\n${CALL_CONTEXT_RULE}\n\n${CONTINUITY_RULES}\nЕсли собеседник явно сообщил новое текущее место, обнови слот location. Будущая поездка, родной город и чужой город не меняют его текущее место.\n\n${referenceText(reference)}`,
+      stable: `${prompt}\n\n${runtime.conversation_context ? CONVERSATION_PLAN_RULE : ''}\n\n${MEDIA_REQUEST_RULE}\n\n${AUTO_VOICE_RULE}\n\n${runtime.photo_availability ? `${PHOTO_REPLY_RULE}\n\n` : ''}${PERSONA_EVENT_RULE}\n\n${QUESTION_POLICY_RULE}\n\n${TIME_RULES}\n\n${CALL_CONTEXT_RULE}\n\n${CONTINUITY_RULES}\nЕсли собеседник явно сообщил новое текущее место, обнови слот location. Будущая поездка, родной город и чужой город не меняют его текущее место.\n\n${referenceText(reference)}`,
     },
     payload,
     6000,

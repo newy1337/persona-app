@@ -25,6 +25,7 @@ export interface StoredMessage {
   deleted_at: number | null;
   edited_at: number | null;
   inbound_payload?: string | null;
+  media_note?: string | null;
 }
 
 export interface AppendMessage {
@@ -39,6 +40,7 @@ export interface AppendMessage {
   filePath?: string | null;
   replyTo?: number | null;
   inboundPayload?: string;
+  mediaNote?: string | null;
 }
 
 const row = (m: any): StoredMessage => ({
@@ -52,6 +54,7 @@ const row = (m: any): StoredMessage => ({
   deleted_at: m.deletedAt ?? null,
   edited_at: m.editedAt ?? null,
   inbound_payload: m.inboundPayload ?? null,
+  media_note: m.mediaNote ?? null,
   ts: m.ts,
   role: m.role,
   text: m.text,
@@ -502,6 +505,7 @@ export class HistoryService {
         filePath: m.filePath ?? null,
         replyTo: m.replyTo ?? null,
         inboundPayload: m.inboundPayload ?? null,
+        mediaNote: m.mediaNote ?? null,
         processedAt: m.role === 'assistant' ? this.clock.ts() : null,
       },
     });
@@ -741,6 +745,7 @@ export class HistoryService {
       kind?: string;
       filePath?: string | null;
       replyTo?: number | null;
+      photoId?: number | null;
     } = {},
   ): Promise<number> {
     const r = await this.prisma.pendingReply.create({
@@ -753,6 +758,7 @@ export class HistoryService {
         kind: extra.kind ?? 'text',
         filePath: extra.filePath ?? null,
         replyTo: extra.replyTo ?? null,
+        photoId: extra.photoId ?? null,
       },
     });
     return r.id;
