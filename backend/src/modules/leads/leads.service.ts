@@ -24,6 +24,12 @@ import {
   parseLeadLines,
 } from 'src/domain/leads';
 import { fromChatId } from 'src/utils/ids';
+import {
+  DEAL_STAGE_FILTERS,
+  DEAL_STAGES,
+  DealStage,
+  DealStageFilter,
+} from 'src/domain/deal-stage';
 import { CreateLeadDto, ImportLeadsDto, UpdateLeadDto } from './dto/lead.dto';
 import {
   ManagerAttributionService,
@@ -60,6 +66,15 @@ export interface LeadView extends ManagerAttribution {
   notes: string | null;
   first_message: string | null;
   inserted_at: number;
+  /** этап сделки из карточки связанного чата; null — чат не связан или этап не задан */
+  deal_stage: string | null;
+}
+
+export interface LeadFilter {
+  status?: string;
+  q?: string;
+  limit?: number;
+  deal_stage?: DealStageFilter;
 }
 
 export interface ImportResult {
@@ -201,6 +216,7 @@ export class LeadsService {
     names: Map<number, string | null> = new Map(),
     personas: Map<string, string> = new Map(),
     managers?: ManagerDirectory,
+    stages: Map<string, DealStage> = new Map(),
   ): LeadView {
     return {
       ...(managers?.forLead(
@@ -242,20 +258,18 @@ export class LeadsService {
       notes: row.notes,
       first_message: row.firstMessage,
       inserted_at: row.insertedAt,
+      deal_stage:
+        row.telegramUserId === null
+          ? null
+          : (stages.get(String(row.telegramUserId)) ?? null),
     };
   }
 
-  async list(
-    scope: LeadScope | null,
-    filter: { status?: string; q?: string; limit?: number },
-  ) {
+  async list(scope: LeadScope | null, filter: LeadFilter) {
     return this.listLeads(scope, filter);
   }
 
-  private async listLeads(
-    scope: LeadScope | null,
-    filter: { status?: string; q?: string; limit?: number },
-  ) {
+  private async listLeads(scope: LeadScope | null, filter: LeadFilter) {
     await this.markReplied();
     const q = filter.q?.trim();
     const where: Prisma.PhoneNumberWhereInput = {
@@ -263,6 +277,7 @@ export class LeadsService {
         this.scopeWhere(scope),
         filter.status ? { status: filter.status } : {},
         q ? { OR: leadSearchClauses(q) } : {},
+        await this.stageWhere(scope, filter.deal_stage),
       ],
     };
     const rows = await this.prisma.phoneNumber.findMany({
@@ -270,15 +285,81 @@ export class LeadsService {
       orderBy: { id: 'desc' },
       take: filter.limit ?? 200,
     });
-    const [names, personas, managers] = await Promise.all([
+    const [names, personas, managers, stages] = await Promise.all([
       this.accountNames(),
       this.personaNames(),
       this.attribution.directory(),
+      this.stagesByChat(rows.map((r) => r.telegramUserId)),
     ]);
     return {
-      items: rows.map((r) => this.toView(r, names, personas, managers)),
+      items: rows.map((r) => this.toView(r, names, personas, managers, stages)),
       counts: await this.counts(scope),
+      stages: await this.stageCounts(scope),
     };
+  }
+
+  /**
+   * Этап сделки живёт в карточке чата, а не в лиде: читаем его по chat_id
+   * связанных чатов. Лиды без чата этапа не имеют.
+   */
+  private async stagesByChat(
+    chatIds: Array<bigint | null>,
+  ): Promise<Map<string, DealStage>> {
+    const ids = chatIds.filter((id): id is bigint => id !== null);
+    const out = new Map<string, DealStage>();
+    if (!ids.length) return out;
+    const rows = await this.prisma.$queryRaw<
+      Array<{ chat_id: bigint; stage: string | null }>
+    >`SELECT chat_id, facts::jsonb->>'deal_stage' AS stage
+      FROM pinned_facts WHERE chat_id IN (${Prisma.join(ids)})`;
+    for (const r of rows)
+      if (r.stage && (DEAL_STAGES as readonly string[]).includes(r.stage))
+        out.set(String(r.chat_id), r.stage as DealStage);
+    return out;
+  }
+
+  private async chatIdsInScope(scope: LeadScope | null): Promise<bigint[]> {
+    const rows = await this.prisma.phoneNumber.findMany({
+      where: {
+        AND: [this.scopeWhere(scope), { telegramUserId: { not: null } }],
+      },
+      select: { telegramUserId: true },
+    });
+    return rows
+      .map((r) => r.telegramUserId)
+      .filter((id): id is bigint => id !== null);
+  }
+
+  private async stageWhere(
+    scope: LeadScope | null,
+    stage: DealStageFilter | undefined,
+  ): Promise<Prisma.PhoneNumberWhereInput> {
+    if (!stage) return {};
+    const stages = await this.stagesByChat(await this.chatIdsInScope(scope));
+    const withStage = [...stages.entries()]
+      .filter(([, s]) => s === stage)
+      .map(([id]) => BigInt(id));
+    if (stage === 'none') {
+      const any = [...stages.keys()].map((id) => BigInt(id));
+      return any.length ? { telegramUserId: { notIn: any } } : {};
+    }
+    return withStage.length
+      ? { telegramUserId: { in: withStage } }
+      : { id: -1 };
+  }
+
+  /** Сколько лидов на каждом этапе; none — без этапа (включая лидов без чата). */
+  async stageCounts(scope: LeadScope | null): Promise<Record<string, number>> {
+    const out: Record<string, number> = Object.fromEntries(
+      DEAL_STAGE_FILTERS.map((s) => [s, 0]),
+    );
+    const stages = await this.stagesByChat(await this.chatIdsInScope(scope));
+    for (const s of stages.values()) out[s] += 1;
+    const total = await this.prisma.phoneNumber.count({
+      where: this.scopeWhere(scope),
+    });
+    out['none'] = total - stages.size;
+    return out;
   }
 
   async counts(scope: LeadScope | null): Promise<Record<string, number>> {

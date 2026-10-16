@@ -991,6 +991,50 @@ describe('Manager panel API (e2e)', () => {
         .expect(422);
     });
 
+    it('фильтр по этапу сделки: этап берётся из чата лида, none — без этапа', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      const prisma = app.get(PrismaService);
+      const chatId = 424301;
+      await prisma.phoneNumber.update({
+        where: { id: leadId },
+        data: { telegramUserId: BigInt(chatId) },
+      });
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${chatId}/deal-stage`)
+        .set(h)
+        .send({ stage: 'soglas' })
+        .expect(200);
+      const soglas = await request(app.getHttpServer())
+        .get('/api/leads?deal_stage=soglas')
+        .set(h)
+        .expect(200);
+      expect(soglas.body.items.map((l) => l.id)).toEqual([leadId]);
+      expect(soglas.body.items[0].deal_stage).toBe('soglas');
+      expect(soglas.body.stages).toMatchObject({ soglas: 1, vbros: 0 });
+      const vbros = await request(app.getHttpServer())
+        .get('/api/leads?deal_stage=vbros')
+        .set(h)
+        .expect(200);
+      expect(vbros.body.items).toEqual([]);
+      const none = await request(app.getHttpServer())
+        .get('/api/leads?deal_stage=none')
+        .set(h)
+        .expect(200);
+      expect(none.body.items.map((l) => l.id)).not.toContain(leadId);
+      await request(app.getHttpServer())
+        .get('/api/leads?deal_stage=nope')
+        .set(h)
+        .expect(400);
+      await prisma.leadFacts.deleteMany({ where: { chatId: BigInt(chatId) } });
+      await prisma.funnelEvent.deleteMany({
+        where: { chatId: BigInt(chatId) },
+      });
+      await prisma.phoneNumber.update({
+        where: { id: leadId },
+        data: { telegramUserId: null },
+      });
+    });
+
     it('imports pasted lines, skipping duplicates and reporting bad rows', async () => {
       const h = { Authorization: `Bearer ${token}` };
       const r = await request(app.getHttpServer())

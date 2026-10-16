@@ -129,7 +129,7 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
 }
 
 export function LeadsTable({ ready = true, rows, query, status, selected, onToggle, onSelectVisible, onClearSelection, onChat, onQueue, onUnqueue, onReassign, onDelete, onPersonaChange, personas, helpers }) {
-  const { PersonaSelect, statusLabels, statusClasses, date } = helpers;
+  const { PersonaSelect, statusLabels, statusClasses, date, dealStage = null } = helpers;
   const busy = ux.useActions().pending.some(key => key.includes('/api/leads'));
   const allSelected = rows.length > 0 && rows.every(row => selected.has(row.id));
   const someSelected = rows.some(row => selected.has(row.id));
@@ -163,6 +163,7 @@ export function LeadsTable({ ready = true, rows, query, status, selected, onTogg
             h('td', { className: 'mr-lead-status', 'data-label': 'Статус' },
               h('span', { className: statusClasses[row.status] || s.badge }, statusLabels[row.status] || row.status),
               h('div', { className: 'mr-lead-contact-time mr-dialog-muted' }, row.first_contact_at ? `Написали: ${date(row.first_contact_at)}` : 'Ещё не писали'),
+              row.deal_stage && h('div', { className: 'mr-dialog-muted', 'data-testid': 'lead-deal-stage' }, h('span', { className: 'mr-caption' }, 'Этап: '), dealStage ? dealStage(row.deal_stage) : row.deal_stage),
               row.last_error && h('details', { className: 'mr-lead-error' }, h('summary', null, 'Подробнее об ошибке'), h('p', null, row.last_error))),
             h('td', { className: 'mr-dialog-actions mr-lead-actions' },
               canChat && h('button', { type: 'button', className: `${s.btnSm} mr-dialog-open`, 'aria-label': `Открыть диалог: ${name}`, onClick: () => onChat(row.telegram_user_id) }, 'Открыть', h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true }, h('path', { d: 'M6 3.5 10.5 8 6 12.5', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' }))),

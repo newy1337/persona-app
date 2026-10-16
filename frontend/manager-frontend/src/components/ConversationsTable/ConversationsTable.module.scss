@@ -67,6 +67,15 @@
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.filtersLabel {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: $text-muted;
+  margin-right: 2px;
 }
 
 .filterPill {

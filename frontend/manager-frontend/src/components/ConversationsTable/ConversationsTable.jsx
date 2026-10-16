@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './ConversationsTable.module.scss';
 import { stageColors, stageFilters } from '../../data/stages';
+import { DEAL_STAGE_COLORS, DEAL_STAGE_FILTERS, matchesDealStage } from '../../data/dealStages';
 import { matchesQuery, matchesHeadFilters, matchesDateFilter } from '../../utils/search';
 
 function fmtTime(ts) {
@@ -59,6 +60,7 @@ function ConversationsTable({
   onDealStage = null,
 }) {
   const [activeFilter, setActiveFilter] = useState(null);
+  const [dealStage, setDealStage] = useState(null);
   const [onlyNew, setOnlyNew] = useState(false);
   const [page, setPage] = useState(1);
   const newCount = rows.filter(waitsForManager).length;
@@ -76,6 +78,7 @@ function ConversationsTable({
   const filtered = rows.filter(
     (c) =>
       (!activeFilter || c.stage?.id === activeFilter) &&
+      matchesDealStage(c, dealStage) &&
       (!onlyNew || waitsForManager(c)) &&
       matchesQuery(c, query) &&
       matchesHeadFilters(c, headFilters) &&
@@ -109,7 +112,7 @@ function ConversationsTable({
     setPage(1);
     // Зависимости — только значения: объект фильтров пересоздаётся на каждой
     // отрисовке, и по нему страница сбрасывалась бы сразу после переключения.
-  }, [query, headFilters.lead, headFilters.account, dateFilter, activeFilter, onlyNew, showHidden]);
+  }, [query, headFilters.lead, headFilters.account, dateFilter, activeFilter, dealStage, onlyNew, showHidden]);
   const current = Math.min(page, pages);
   const visible = useMemo(
     () => sorted.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE),
@@ -123,9 +126,9 @@ function ConversationsTable({
           <span className={styles.accent}></span>
           <h2 className={styles.title}>{showHidden ? 'Архив' : 'Мои диалоги'}</h2>
           <button
-            className={`${styles.total} ${activeFilter ? styles.totalActive : ''}`}
-            onClick={() => setActiveFilter(null)}
-            title={activeFilter ? 'Reset filter' : undefined}
+            className={`${styles.total} ${activeFilter || dealStage ? styles.totalActive : ''}`}
+            onClick={() => { setActiveFilter(null); setDealStage(null); }}
+            title={activeFilter || dealStage ? 'Сбросить фильтры' : undefined}
           >
             {filtered.length === rows.length
               ? `ВСЕГО: ${total}${truncated ? ` · показаны последние ${rows.length}` : ''}`
@@ -167,6 +170,25 @@ function ConversationsTable({
               {f.label}
             </button>
           ))}
+        </div>
+        <div className={styles.filters} data-testid="deal-stage-filters" aria-label="Этап сделки">
+          <span className={styles.filtersLabel}>Этап:</span>
+          {DEAL_STAGE_FILTERS.map((st) => {
+            const count = rows.filter((c) => matchesDealStage(c, st.id)).length;
+            if (!count && dealStage !== st.id) return null;
+            return (
+              <button
+                key={st.id}
+                className={`${styles.filterPill} ${dealStage === st.id ? styles.filterPillActive : ''}`}
+                style={{ '--pill-color': DEAL_STAGE_COLORS[st.id] }}
+                onClick={() => setDealStage(dealStage === st.id ? null : st.id)}
+                aria-pressed={dealStage === st.id}
+              >
+                <span className={styles.filterDot}></span>
+                {st.label} · {count}
+              </button>
+            );
+          })}
         </div>
       </div>
 

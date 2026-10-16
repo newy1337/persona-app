@@ -14,6 +14,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { LEAD_GENDERS, LEAD_STATUSES } from 'src/domain/leads';
+import { DEAL_STAGE_FILTERS, DealStageFilter } from 'src/domain/deal-stage';
 
 export class CreateLeadDto {
   @ApiPropertyOptional({ example: '+7 900 123-45-67' })
@@ -146,6 +147,13 @@ export class ListLeadsQuery {
   @IsOptional()
   @IsIn(LEAD_STATUSES)
   status?: string;
+  @ApiPropertyOptional({
+    enum: DEAL_STAGE_FILTERS,
+    description: 'этап сделки связанного чата; none — без этапа',
+  })
+  @IsOptional()
+  @IsIn(DEAL_STAGE_FILTERS)
+  deal_stage?: DealStageFilter;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(64) q?: string;
   @ApiPropertyOptional({ default: 200 })
   @IsOptional()
