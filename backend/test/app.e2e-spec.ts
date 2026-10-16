@@ -270,6 +270,38 @@ describe('Manager panel API (e2e)', () => {
       .set('Authorization', `Bearer ${login.body.tokens.accessToken}`)
       .expect(403);
 
+    // Админ меняет логин: вход по новому, старый не работает, занятый — отказ.
+    await request(app.getHttpServer())
+      .put(`/api/managers/${anna.user_id}`)
+      .set(h)
+      .send({ username: 'admin' })
+      .expect(409);
+    await request(app.getHttpServer())
+      .put(`/api/managers/${anna.user_id}`)
+      .set(h)
+      .send({ username: '   ' })
+      .expect(400);
+    const renamed = await request(app.getHttpServer())
+      .put(`/api/managers/${anna.user_id}`)
+      .set(h)
+      .send({ username: 'anna-new' })
+      .expect(200);
+    expect(
+      renamed.body.items.find((m) => m.user_id === anna.user_id).username,
+    ).toBe('anna-new');
+    await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ username: 'anna', password: 'anna12345' })
+      .expect(401);
+    await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ username: 'anna-new', password: 'anna12345' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/api/manager/stats')
+      .set('Authorization', `Bearer ${login.body.tokens.accessToken}`)
+      .expect(200);
+
     await request(app.getHttpServer())
       .delete(`/api/managers/${anna.user_id}`)
       .set(h)

@@ -39,10 +39,22 @@ test('failed region saves retain the editor and typed value', async () => {
   vi.spyOn(api,'put').mockRejectedValue({status:500});
   await render(<ManagersPage />);
   await act(async()=>[...host.querySelectorAll('[data-manager-id="2"] button')].find(b=>b.textContent==='Изменить').click());
-  const field=host.querySelector('#manager-editor input'); await input(field,'0999');
+  const field=host.querySelector('#manager-editor input[inputmode=numeric]'); await input(field,'0999');
   await act(async()=>host.querySelector('#manager-editor').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
-  expect(host.querySelector('#manager-editor input').value).toBe('0999');
+  expect(host.querySelector('#manager-editor input[inputmode=numeric]').value).toBe('0999');
   expect(host.querySelector('[role=alert]').textContent).toContain('Попробуйте ещё раз');
+});
+test('admin renames a manager login from the editor; empty login blocks save', async () => {
+  const put=vi.spyOn(api,'put').mockResolvedValue(users);
+  await render(<ManagersPage />);
+  await act(async()=>[...host.querySelectorAll('[data-manager-id="2"] button')].find(b=>b.textContent==='Изменить').click());
+  const login=host.querySelector('#manager-editor input[aria-label="Логин"]');
+  expect(login.value).toBe('manager_test');
+  await input(login,'   ');
+  expect(host.textContent).toContain('Логин не может быть пустым');
+  await input(login,'manager_renamed');
+  await act(async()=>host.querySelector('#manager-editor').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  expect(put).toHaveBeenCalledWith('/api/managers/2',expect.objectContaining({username:'manager_renamed',role:'manager',region_code:'0077'}));
 });
 test('account assignment opens separately with searchable accounts', async () => {
   await render(<ManagersPage />); await click('Назначить');

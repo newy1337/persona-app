@@ -59,6 +59,12 @@ export class CreateManagerDto {
 }
 
 export class UpdateManagerDto {
+  @ApiPropertyOptional({ description: 'Новый логин; должен быть свободен' })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  username?: string;
   @ApiPropertyOptional({
     description: 'Право менять общие образы: правка видна на всех их аккаунтах',
   })

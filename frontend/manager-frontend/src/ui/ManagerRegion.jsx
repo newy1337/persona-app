@@ -342,13 +342,17 @@ function Credentials({ value, onClose, onRegenerate }) {
 
 function ManagerEditor({ user, me, availableRoles, voicers, users = [], onSave, onClose, leadOnly = false }) {
   const [role, setRole] = useState(user.role), [region, setRegion] = useState(user.region_code || '');
+  const [username, setUsername] = useState(user.username);
+  const canRename = !leadOnly && me?.role === 'admin';
+  const usernameChanged = canRename && username.trim() !== user.username;
   const [voicer, setVoicer] = useState(String(user.voicer_id || ''));
   const [lead, setLead] = useState(String(user.lead_id || ''));
   const [photoEdit, setPhotoEdit] = useState(Boolean(user.can_edit_photo_sets));
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const lock = React.useRef(false);
-  const changed = role !== user.role || region !== (user.region_code || '') || voicer !== String(user.voicer_id || '') || lead !== String(user.lead_id || '') || photoEdit !== Boolean(user.can_edit_photo_sets);
-  const valid = region === '' ? !['manager', 'teamlead', 'head'].includes(role) || user.role === role && !user.region_code : validRegion(region);
+  const changed = usernameChanged || role !== user.role || region !== (user.region_code || '') || voicer !== String(user.voicer_id || '') || lead !== String(user.lead_id || '') || photoEdit !== Boolean(user.can_edit_photo_sets);
+  const usernameValid = !canRename || username.trim().length > 0;
+  const valid = usernameValid && (region === '' ? !['manager', 'teamlead', 'head'].includes(role) || user.role === role && !user.region_code : validRegion(region));
   async function save(event) {
     event.preventDefault();
     if (lock.current || !changed || !valid) return;
@@ -356,7 +360,7 @@ function ManagerEditor({ user, me, availableRoles, voicers, users = [], onSave, 
     if (user.role === 'manager' && role !== 'manager' && user.account_ids.length && !await ux.confirm({ title: 'Изменить роль?', message: `У ${user.username} будут освобождены аккаунты: ${user.account_ids.length}.`, confirmLabel: 'Изменить роль' })) { lock.current = false; return; }
     setBusy(true); setError('');
     try {
-      await onSave(user.user_id, leadOnly ? { lead_id: lead ? Number(lead) : null } : { role, region_code: region || null, voicer_id: role === 'manager' && voicer ? Number(voicer) : null, lead_id: LEAD_ROLE_FOR[role] && lead ? Number(lead) : null, ...(photoEdit !== Boolean(user.can_edit_photo_sets) ? { can_edit_photo_sets: photoEdit } : {}), ...(user.role === 'manager' && role !== 'manager' ? { account_ids: [] } : {}) });
+      await onSave(user.user_id, leadOnly ? { lead_id: lead ? Number(lead) : null } : { ...(usernameChanged ? { username: username.trim() } : {}), role, region_code: region || null, voicer_id: role === 'manager' && voicer ? Number(voicer) : null, lead_id: LEAD_ROLE_FOR[role] && lead ? Number(lead) : null, ...(photoEdit !== Boolean(user.can_edit_photo_sets) ? { can_edit_photo_sets: photoEdit } : {}), ...(user.role === 'manager' && role !== 'manager' ? { account_ids: [] } : {}) });
       onClose();
     } catch (e) { setError(ux.readableError(e)); }
     finally { lock.current = false; setBusy(false); }
@@ -365,6 +369,8 @@ function ManagerEditor({ user, me, availableRoles, voicers, users = [], onSave, 
     button('Отмена', onClose, { disabled: busy }),
     h('button', { type: 'submit', form: 'manager-editor', className: s.btnPrimary, disabled: !changed || !valid || busy }, busy ? 'Сохраняем…' : 'Сохранить')) },
     h('form', { id: 'manager-editor', className: 'mr-manager-form', onSubmit: save },
+      canRename && h('label', { className: s.label }, 'Логин', h('input', { className: s.field, value: username, disabled: busy, maxLength: 64, autoComplete: 'off', 'aria-label': 'Логин', onChange: e => setUsername(e.target.value) }),
+        h('span', { className: 'mr-caption' }, 'Под этим именем входят в панель. Пароль не меняется.')),
       h('label', { className: s.label }, 'Роль', h('select', { className: s.select, value: role, disabled: busy || leadOnly || user.user_id === me?.user_id, onChange: e => setRole(e.target.value) }, availableRoles.map(r => h('option', { key: r, value: r }, roles[r] || r)))),
       h('label', { className: s.label }, 'Регион (3–4 цифры)', h('input', { className: s.field, 'data-autofocus': !leadOnly, value: region, disabled: busy || leadOnly, inputMode: 'numeric', maxLength: 4, placeholder: 'Например, 0077', onChange: e => setRegion(e.target.value.replace(/\D/g, '').slice(0, 4)) })),
       role === 'manager' && !leadOnly && h(VoicerSelect, { voicers, value: voicer, onChange: setVoicer, disabled: busy }),
@@ -372,7 +378,8 @@ function ManagerEditor({ user, me, availableRoles, voicers, users = [], onSave, 
       !leadOnly && role !== 'admin' && role !== 'voice' && h('label', { className: s.check, style: { flexDirection: 'row', alignItems: 'center' } },
         h('input', { type: 'checkbox', checked: photoEdit, disabled: busy, onChange: e => setPhotoEdit(e.target.checked) }),
         'Может менять образы'),
-      !valid && h('p', { className: 'ux-inline-error' }, 'Укажите код региона: 3 или 4 цифры.'),
+      !usernameValid && h('p', { className: 'ux-inline-error' }, 'Логин не может быть пустым.'),
+      usernameValid && !valid && h('p', { className: 'ux-inline-error' }, 'Укажите код региона: 3 или 4 цифры.'),
       error && h('p', { className: 'ux-inline-error', role: 'alert' }, error)));
 }
 

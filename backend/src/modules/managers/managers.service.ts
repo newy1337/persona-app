@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -254,6 +255,7 @@ export class ManagersService {
     if (nextRole === Role.HEAD) await this.assertRegionFree(nextRegion, userId);
     await this.validateVoicer(dto.role ?? user.role, dto.voicer_id);
     const data: {
+      username?: string;
       role?: string;
       passwordHash?: string;
       passwordEncrypted?: string;
@@ -287,6 +289,19 @@ export class ManagersService {
       data.voicerId = null;
     if (dto.role !== undefined) data.role = dto.role;
     if (dto.region_code !== undefined) data.regionCode = dto.region_code;
+    if (dto.username !== undefined) {
+      const username = dto.username.trim();
+      if (!username)
+        throw new BadRequestException('логин не может быть пустым');
+      if (username !== user.username) {
+        const taken = await this.prisma.dashboardUser.findUnique({
+          where: { username },
+          select: { id: true },
+        });
+        if (taken) throw new ConflictException(`логин '${username}' уже занят`);
+        data.username = username;
+      }
+    }
     if (dto.password !== undefined) {
       data.passwordHash = await argon2.hash(dto.password);
       data.passwordEncrypted = this.crypto.encrypt(dto.password);
