@@ -691,6 +691,31 @@ describe('Manager panel API (e2e)', () => {
       .set(await as('rg-other', 'oth123456'))
       .expect(404);
 
+    // статистика по командам: хед — все по цепочке, тимлид — свои менеджеры
+    const teams = await request(app.getHttpServer())
+      .get('/api/stats/managers')
+      .set(h)
+      .expect(200);
+    const headRow = teams.body.by_team.find((r: any) => r.manager_id === head);
+    const leadRow = teams.body.by_team.find((r: any) => r.manager_id === lead);
+    expect(headRow).toMatchObject({
+      role: 'head',
+      region_code: '0101',
+      members: 3,
+      messages_in: 1,
+      active_chats: 1,
+    });
+    expect(leadRow).toMatchObject({
+      role: 'teamlead',
+      members: 1,
+      messages_in: 1,
+    });
+    expect(
+      teams.body.by_manager.find((r: any) => r.manager_id === manager)
+        .messages_in,
+    ).toBe(1);
+    expect(teams.body.by_team.findIndex((r: any) => r.role === 'head')).toBe(0);
+
     // хед видит свой регион и правит только тимлида у менеджеров региона
     const team = await request(app.getHttpServer())
       .get('/api/managers')

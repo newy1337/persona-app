@@ -69,6 +69,7 @@ export default function Stats() {
   const [showPrices, setShowPrices] = useState(false);
   const [tab, setTab] = useState('overview');
   const [managers, setManagers] = useState(null);
+  const [teams, setTeams] = useState(null);
   const [managersLoading, setManagersLoading] = useState(false);
   const [balance, setBalance] = useState(null);
   const [stages, setStages] = useState(null);
@@ -109,11 +110,11 @@ export default function Stats() {
   }, [tab, range]);
 
   useEffect(() => {
-    if (tab !== 'managers') return undefined;
+    if (tab !== 'managers' && tab !== 'teams') return undefined;
     let alive = true;
     setManagersLoading(true);
     const pull = () => getManagerUsage({ from: range.from, to: range.to })
-      .then((r) => alive && setManagers(r.by_manager ?? []))
+      .then((r) => { if (!alive) return; setManagers(r.by_manager ?? []); setTeams(r.by_team ?? []); })
       .catch((e) => alive && setError(e.detail || e.message))
       .finally(() => alive && setManagersLoading(false));
     pull();
@@ -166,7 +167,7 @@ export default function Stats() {
           {showPrices && <PricesEditor onChanged={load} onError={setError} />}
 
           <div className={p.tabs} role="tablist">
-            {[['overview', 'Обзор'], ['managers', 'По менеджерам'], ['stages', 'Этапы']].map(([id, label]) => (
+            {[['overview', 'Обзор'], ['managers', 'По менеджерам'], ['teams', 'По командам'], ['stages', 'Этапы']].map(([id, label]) => (
               <button
                 key={id}
                 role="tab"
@@ -187,6 +188,18 @@ export default function Stats() {
               <p className={s.empty} data-testid="managers-loading">Считаю по менеджерам…</p>
             ) : (
               <ManagersTable rows={managers} />
+            )
+          ) : tab === 'teams' ? (
+            managersLoading || !teams ? (
+              <p className={s.empty} data-testid="teams-loading">Считаю по командам…</p>
+            ) : (
+              <ManagersTable
+                rows={teams}
+                title="По командам"
+                nameHeader="Команда"
+                hint="Хед — вся цепочка: тимлиды, их менеджеры и прямые менеджеры. Тимлид — его менеджеры. Цифры руководителя включены в команду. Нажмите на строку — раскроются дни."
+                empty="Тимлидов и хедов пока нет"
+              />
             )
           ) : !data ? (
             <p className={s.empty}>Загружаю…</p>
