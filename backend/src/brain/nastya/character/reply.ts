@@ -1,8 +1,17 @@
 import { ModelResponseError } from '../kernel/errors';
 
+// Модель иногда пишет заглушку вместо ответа — собеседнику её отправлять нельзя.
+const PLACEHOLDER_REPLY_RX =
+  /^[\s([<«"'*]*(пустой\s+ответ|нет\s+ответа|без\s+ответа|ответа\s+нет|empty(\s+reply|\s+response)?|no\s+(reply|response)|n\/a)[\s)\]>»"'*.!…]*$/iu;
+
+export function isPlaceholderReply(text: string): boolean {
+  return PLACEHOLDER_REPLY_RX.test(text.trim());
+}
+
 export function enforceReplyRules(reply: string): string {
   const text = reply.replace(/\r\n?/g, '\n').trim();
-  if (!text) throw new ModelResponseError('Model returned an empty reply');
+  if (!text || isPlaceholderReply(text))
+    throw new ModelResponseError('Model returned an empty reply');
   return text
     .split('\n')
     .map((line) => line.replace(/\s+$/, ''))
