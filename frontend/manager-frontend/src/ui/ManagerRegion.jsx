@@ -5,6 +5,7 @@ import s from '../styles/AdminPage.module.scss';
 import { getAccounts as loadAccounts } from '../api/accounts';
 import { PanelUX as ux } from './PanelUX';
 import { VoiceBotLink } from '../pages/VoiceWork/VoiceBotLink';
+import StaffAssignments from '../pages/PhotoSets/StaffAssignments';
 import { DEAL_STAGES, dealStageLabel } from '../data/dealStages';
 import { LEAD_ROLE_FOR, ROLE_LABELS } from '../utils/roles';
 
@@ -489,6 +490,7 @@ export function ManagersPage() {
             admin && user.user_id !== me?.user_id && button('Удалить', () => remove(user), { disabled: pending, className: s.btnSmDanger })));
       }))),
     !loading && !visible.length && h('p', { className: s.empty }, 'Ничего не найдено. Измените поиск.'),
+    me && h(StaffAssignments, { admin }),
     editing && h(ManagerEditor, { key: editing.user_id, user: editing, me, availableRoles: data.roles, voicers: data.items.filter(u => u.role === 'voice'), users: data.items, leadOnly: !admin, onSave: save, onClose: () => setEditing(null) }),
     assigning && h(AccountAssignment, { key: assigning.user_id, user: assigning, users: data.items, accounts, onSave: save, onClose: () => setAssigning(null) }))));
 }
