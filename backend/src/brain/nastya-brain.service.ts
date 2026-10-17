@@ -325,6 +325,14 @@ export class NastyaBrainService implements ReplyBrain {
 
   private async handleLocked(turn: InboundTurn): Promise<void> {
     const { chatId } = turn;
+    // Ни текста, ни вложения (служебное событие Telegram): отвечать не на что,
+    // а пустая реплика в истории заставляет модель отвечать «(пустой ответ)».
+    if (!turn.text.trim() && !turn.media) {
+      this.log.warn(
+        `chat=${chatId}: inbound ${turn.messageId} has no text or media — ignored`,
+      );
+      return;
+    }
     await this.history.ensureContact(chatId, turn.accountId);
     await this.history.mergeLeadFacts(chatId, {
       [FIRST_CONTACT_TS_KEY]: turn.ts,
