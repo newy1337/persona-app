@@ -1,19 +1,21 @@
 -- Образы по регионам: образ принадлежит региону хеда, хед назначает его
--- личностям региона, а диалог закрепляется за образом, на котором начался.
+-- сотрудникам региона, а диалог закрепляется за образом, на котором начался.
 ALTER TABLE "photo_sets" ADD COLUMN "region_code" TEXT;
 CREATE INDEX "idx_photo_sets_region" ON "photo_sets"("region_code");
 
-CREATE TABLE "region_photo_sets" (
-    "region_code" TEXT NOT NULL,
+CREATE TABLE "manager_photo_sets" (
+    "user_id" INTEGER NOT NULL,
     "persona_slug" TEXT NOT NULL,
     "set_id" INTEGER NOT NULL,
     "updated_at" INTEGER NOT NULL,
     "updated_by" INTEGER,
-    CONSTRAINT "region_photo_sets_pkey" PRIMARY KEY ("region_code", "persona_slug"),
-    CONSTRAINT "region_photo_sets_set_id_fkey" FOREIGN KEY ("set_id") REFERENCES "photo_sets"("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "manager_photo_sets_pkey" PRIMARY KEY ("user_id", "persona_slug"),
+    CONSTRAINT "manager_photo_sets_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "dashboard_users"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "manager_photo_sets_set_id_fkey" FOREIGN KEY ("set_id") REFERENCES "photo_sets"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE INDEX "idx_region_photo_sets_set" ON "region_photo_sets"("set_id");
+CREATE INDEX "idx_manager_photo_sets_set" ON "manager_photo_sets"("set_id");
 
+-- Стоп региона: хед выключает образы своего региона.
 CREATE TABLE "region_stops" (
     "region_code" TEXT NOT NULL,
     "reason" TEXT,
@@ -47,12 +49,12 @@ UPDATE "photo_sets" s SET "region_code" = r."region_code"
   ) r
   WHERE s."id" = r.set_id;
 
--- Текущее назначение по аккаунтам становится назначением личности в регионе:
--- берётся образ этого региона, стоящий на большинстве аккаунтов личности.
--- Начатые диалоги уже закреплены за своим образом выше и его не теряют.
-INSERT INTO "region_photo_sets" ("region_code", "persona_slug", "set_id", "updated_at")
-SELECT DISTINCT ON (u."region_code", a."persona_id")
-       u."region_code", a."persona_id", a."photo_set_id",
+-- Текущее назначение по аккаунтам становится назначением сотрудника: по
+-- каждой личности его аккаунтов — образ его региона, стоящий на большинстве
+-- этих аккаунтов.
+INSERT INTO "manager_photo_sets" ("user_id", "persona_slug", "set_id", "updated_at")
+SELECT DISTINCT ON (u."id", a."persona_id")
+       u."id", a."persona_id", a."photo_set_id",
        CAST(EXTRACT(EPOCH FROM NOW()) AS INTEGER)
   FROM "tg_accounts" a
   JOIN "manager_accounts" ma ON ma."tg_account_id" = a."id"
@@ -60,5 +62,5 @@ SELECT DISTINCT ON (u."region_code", a."persona_id")
   JOIN "photo_sets" s ON s."id" = a."photo_set_id"
    AND s."archived_at" IS NULL AND s."region_code" = u."region_code"
  WHERE a."photo_set_id" IS NOT NULL
- GROUP BY u."region_code", a."persona_id", a."photo_set_id"
- ORDER BY u."region_code", a."persona_id", COUNT(*) DESC, a."photo_set_id";
+ GROUP BY u."id", a."persona_id", a."photo_set_id"
+ ORDER BY u."id", a."persona_id", COUNT(*) DESC, a."photo_set_id";

@@ -150,20 +150,18 @@ export class TgAccountsService {
       this.prisma.photoSet.findMany({ select: { id: true, name: true } }),
       this.prisma.managerAccount.findMany({
         where: { tgAccountId: { in: rows.map((a) => a.id) } },
-        select: { tgAccountId: true, user: { select: { regionCode: true } } },
+        select: { tgAccountId: true, userId: true },
       }),
-      this.prisma.regionPhotoSet.findMany(),
+      this.prisma.managerPhotoSet.findMany(),
     ]);
     const setNames = new Map(sets.map((s) => [s.id, s.name]));
-    const regionOf = new Map(
-      links.map((l) => [l.tgAccountId, l.user.regionCode]),
-    );
+    const managerOf = new Map(links.map((l) => [l.tgAccountId, l.userId]));
     const assigned = new Map(
-      regional.map((r) => [`${r.regionCode}:${r.personaSlug}`, r.setId]),
+      regional.map((r) => [`${r.userId}:${r.personaSlug}`, r.setId]),
     );
-    // Образ для новых диалогов — назначенный хедом личности в регионе аккаунта.
+    // Образ для новых диалогов — назначенный хедом менеджеру аккаунта по личности.
     const currentSet = (a: (typeof rows)[number]) =>
-      assigned.get(`${regionOf.get(a.id)}:${a.personaId}`) ?? null;
+      assigned.get(`${managerOf.get(a.id)}:${a.personaId}`) ?? null;
     const chatsBy = new Map(chats.map((c) => [c.accountId, c._count._all]));
     const names = new Map(personas.map((p) => [p.slug, p.name]));
     return rows.map((a) =>

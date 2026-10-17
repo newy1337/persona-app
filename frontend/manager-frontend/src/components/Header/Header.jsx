@@ -4,7 +4,6 @@ import { getStats } from '../../api/stats';
 import { Link, NavLink } from 'react-router-dom';
 import styles from './Header.module.scss';
 import VoiceNotifications from './VoiceNotifications';
-import RegionStop from './RegionStop';
 import { isManagerRole } from '../../utils/roles';
 import {
   LogoChatIcon,
@@ -150,7 +149,6 @@ function Header({
               <span className={styles.liveIcon}><LiveUsersIcon /></span>
             </div>
           )}
-          {me && isManagerRole(me.role) && <RegionStop />}
         </div>
 
         {me && (

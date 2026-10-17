@@ -24,9 +24,11 @@ import { CurrentUser } from 'src/decorators/user.decorator';
 import { AuditService } from 'src/shared/audit.service';
 import { ScopeService } from 'src/shared/scope.service';
 import { PhotoSetsService } from './photo-sets.service';
+import { RegionGateService } from 'src/shared/region-gate.service';
 import {
   AccountAutoSendDto,
-  AssignRegionPhotoSetDto,
+  AssignStaffPhotoSetDto,
+  RegionStopDto,
   CreatePhotoSetDto,
   UpdatePhotoDto,
   UpdatePhotoSetDto,
@@ -42,6 +44,7 @@ export class PhotoSetsController {
     private readonly sets: PhotoSetsService,
     private readonly audit: AuditService,
     private readonly scope: ScopeService,
+    private readonly regionGate: RegionGateService,
   ) {}
 
   @ApiOperation({ summary: 'Образы, доступные пользователю' })
@@ -64,7 +67,7 @@ export class PhotoSetsController {
   }
 
   @ApiOperation({
-    summary: 'Личности региона и их образы (для новых собеседников)',
+    summary: 'Сотрудники региона и их образы для новых собеседников',
   })
   @Get('assignments')
   assignments(
@@ -72,35 +75,95 @@ export class PhotoSetsController {
     @Query('region') region?: string,
   ) {
     this.scope.requireManager(user);
-    return this.sets.regionAssignments(user, region);
+    return this.sets.staffAssignments(user, region);
   }
 
   @ApiOperation({
     summary:
-      'Назначить образ личности региона (хед); начатые диалоги остаются на прежнем',
+      'Назначить образ сотруднику по личности (хед); начатые диалоги остаются на прежнем',
   })
   @Put('assignments')
   @HttpCode(200)
   @UsePipes(ValidationPipe)
-  assignRegion(
-    @Body() dto: AssignRegionPhotoSetDto,
+  assignStaff(
+    @Body() dto: AssignStaffPhotoSetDto,
     @CurrentUser() user: DashboardUser,
   ) {
     return this.audit.wrap(
       {
         userId: user.id,
-        action: 'photo_set.assign_region',
-        resource: `persona:${dto.persona_slug}`,
+        action: 'photo_set.assign_staff',
+        resource: `user:${dto.user_id}`,
         payload: dto,
       },
       () =>
-        this.sets.assignRegion(
+        this.sets.assignStaff(
           user,
+          dto.user_id,
           dto.persona_slug,
           dto.set_id ?? null,
-          dto.region_code,
         ),
     );
+  }
+
+  @ApiOperation({
+    summary: 'Стоп региона: выключены ли образы своего региона (админу — все)',
+  })
+  @Get('region-stop')
+  async regionStopStatus(@CurrentUser() user: DashboardUser) {
+    this.scope.requireManager(user);
+    const stops = await this.regionGate.list();
+    if (this.sets.isAdmin(user))
+      return { region_code: null, engaged: false, can_manage: true, stops };
+    const own = stops.find((s) => s.region_code === user.regionCode) ?? null;
+    return {
+      region_code: user.regionCode,
+      engaged: Boolean(own),
+      since: own?.created_at ?? null,
+      can_manage: this.sets.isHead(user),
+    };
+  }
+
+  @ApiOperation({
+    summary:
+      'Выключить образы региона (хед): фото из образов не уходят, запросы фото — по прежней схеме',
+  })
+  @Post('region-stop')
+  @HttpCode(200)
+  @UsePipes(ValidationPipe)
+  async regionStopEngage(
+    @Body() dto: RegionStopDto,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    const region = this.sets.regionFor(user, dto.region_code);
+    await this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'photo_set.region_stop',
+        resource: `region:${region}`,
+      },
+      () => this.regionGate.engage(region, user.id, dto.reason),
+    );
+    return { region_code: region, engaged: true };
+  }
+
+  @ApiOperation({ summary: 'Снова включить образы региона (хед)' })
+  @Delete('region-stop')
+  @HttpCode(200)
+  async regionStopClear(
+    @CurrentUser() user: DashboardUser,
+    @Query('region') requested?: string,
+  ) {
+    const region = this.sets.regionFor(user, requested);
+    await this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'photo_set.region_resume',
+        resource: `region:${region}`,
+      },
+      () => this.regionGate.clear(region),
+    );
+    return { region_code: region, engaged: false };
   }
 
   @ApiOperation({ summary: 'Автоотправка фото для одного аккаунта' })

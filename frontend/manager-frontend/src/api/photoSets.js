@@ -8,32 +8,26 @@ export function createPhotoSet(name, regionCode) {
   return api.post('/api/photo-sets', { name, ...(regionCode ? { region_code: regionCode } : {}) });
 }
 
-/** Личности региона и образ каждой — его получат новые собеседники. */
-export function getRegionAssignments(regionCode) {
+/** Сотрудники региона и образ, который получат их новые собеседники. */
+export function getStaffAssignments(regionCode) {
   return api.get(`/api/photo-sets/assignments${regionCode ? `?region=${encodeURIComponent(regionCode)}` : ''}`);
 }
 
-export function assignRegionPhotoSet(personaSlug, setId, regionCode) {
-  return api.put('/api/photo-sets/assignments', {
-    persona_slug: personaSlug,
-    set_id: setId,
-    ...(regionCode ? { region_code: regionCode } : {}),
-  });
+export function assignStaffPhotoSet(userId, personaSlug, setId) {
+  return api.put('/api/photo-sets/assignments', { user_id: userId, persona_slug: personaSlug, set_id: setId });
 }
 
+/** Стоп региона — образы региона выключены. */
 export function getRegionStop() {
-  return api.get('/api/operator/region-stop');
+  return api.get('/api/photo-sets/region-stop');
 }
 
-export function engageRegionStop(reason, regionCode) {
-  return api.post('/api/operator/region-stop', {
-    ...(reason ? { reason } : {}),
-    ...(regionCode ? { region_code: regionCode } : {}),
-  });
+export function engageRegionStop(regionCode) {
+  return api.post('/api/photo-sets/region-stop', regionCode ? { region_code: regionCode } : {});
 }
 
 export function clearRegionStop(regionCode) {
-  return api.delete(`/api/operator/region-stop${regionCode ? `?region=${encodeURIComponent(regionCode)}` : ''}`);
+  return api.delete(`/api/photo-sets/region-stop${regionCode ? `?region=${encodeURIComponent(regionCode)}` : ''}`);
 }
 
 export function updatePhotoSet(id, patch) {

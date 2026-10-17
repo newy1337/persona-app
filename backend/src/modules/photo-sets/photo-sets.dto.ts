@@ -32,8 +32,12 @@ export class CreatePhotoSetDto {
   region_code?: string;
 }
 
-/** Хед назначает образ личности своего региона; null — снять назначение. */
-export class AssignRegionPhotoSetDto {
+/** Хед назначает сотруднику своего региона образ по личности; null — снять. */
+export class AssignStaffPhotoSetDto {
+  @ApiProperty()
+  @IsInt()
+  user_id: number;
+
   @ApiProperty()
   @IsString()
   @MinLength(1)
@@ -44,12 +48,6 @@ export class AssignRegionPhotoSetDto {
   @IsOptional()
   @IsInt()
   set_id?: number | null;
-
-  @ApiPropertyOptional({ description: 'Регион (только администратор)' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(32)
-  region_code?: string;
 }
 
 export class RegionStopDto {

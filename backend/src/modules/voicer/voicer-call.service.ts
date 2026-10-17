@@ -7,7 +7,6 @@ import {
   Logger,
   OnApplicationBootstrap,
   OnModuleDestroy,
-  Optional,
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import { Cron } from '@nestjs/schedule';
@@ -21,7 +20,6 @@ import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import { PauseService } from 'src/shared/pause.service';
 import { GlobalGateService } from 'src/shared/global-gate.service';
-import { RegionGateService } from 'src/shared/region-gate.service';
 import { TakeoverReason } from 'src/domain/pause';
 import { VoicerChatService } from './voicer-chat.service';
 import { VoicerAutomationService } from './voicer-automation.service';
@@ -114,7 +112,6 @@ export class VoicerCallService
     private outcomes: VoicerCallOutcomeService,
     private recordings: VoicerCallRecordingService,
     @Inject(REPLY_BRAIN) private brain: ReplyBrain,
-    @Optional() private regionGate?: RegionGateService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -171,8 +168,6 @@ export class VoicerCallService
       throw new BadRequestException('Telegram-аккаунт не подключён');
     if (this.gate.stopped)
       throw new BadRequestException('Отправки остановлены администратором');
-    if (await this.regionGate?.accountStopped(contact.account.id))
-      throw new BadRequestException('Автоматика региона остановлена хедом');
     return {
       task,
       contact,

@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import type { Prisma, PhotoSet, PhotoSetPhoto } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { RegionGateService } from './region-gate.service';
 import { toChatId } from '../utils/ids';
 import { characterDate } from 'src/brain/nastya/kernel/clock';
 import {
@@ -48,40 +49,38 @@ export const facts = (p: PhotoSetPhoto): LibraryPhoto => ({
  */
 @Injectable()
 export class PhotoLibraryService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional() private regionGate?: RegionGateService,
+  ) {}
 
   /**
    * Образ, который сейчас получают новые диалоги аккаунта: назначенный хедом
-   * личности аккаунта в регионе его менеджера. Нет назначения — нет образа.
+   * менеджеру аккаунта по личности аккаунта. Нет назначения — нет образа.
    */
   async currentSetId(accountId: number, db: Db = this.prisma) {
     const account = await db.tgAccount.findUnique({
       where: { id: accountId },
-      select: {
-        personaId: true,
-        manager: { select: { user: { select: { regionCode: true } } } },
-      },
+      select: { personaId: true, manager: { select: { userId: true } } },
     });
-    if (!account) return null;
-    const region = account.manager?.user.regionCode;
-    const assigned = region
-      ? await db.regionPhotoSet.findUnique({
-          where: {
-            regionCode_personaSlug: {
-              regionCode: region,
-              personaSlug: account.personaId,
-            },
-          },
-          select: { setId: true },
-        })
-      : null;
+    if (!account?.manager) return null;
+    const assigned = await db.managerPhotoSet.findUnique({
+      where: {
+        userId_personaSlug: {
+          userId: account.manager.userId,
+          personaSlug: account.personaId,
+        },
+      },
+      select: { setId: true },
+    });
     return assigned?.setId ?? null;
   }
 
   /**
    * Образ диалога. Диалог закрепляется за образом при первом обращении и
    * дальше на нём остаётся: смена образа в регионе касается только новых
-   * собеседников. Архивный образ больше ничего не отправляет.
+   * собеседников. Архивный образ больше ничего не отправляет, а при стопе
+   * региона образа как будто нет — закрепление при этом сохраняется.
    */
   async setForChat(
     chatId: number,
@@ -92,9 +91,19 @@ export class PhotoLibraryService {
       where: { chatId: id },
       select: { accountId: true, photoSet: true },
     });
-    if (contact?.photoSet)
-      return contact.photoSet.archivedAt ? null : contact.photoSet;
     const owner = accountId ?? contact?.accountId ?? null;
+    const set = await this.boundSet(id, contact, owner);
+    if (!set || set.archivedAt) return null;
+    if (await this.regionGate?.photosOff(owner)) return null;
+    return set;
+  }
+
+  private async boundSet(
+    id: bigint,
+    contact: { photoSet: PhotoSet | null } | null,
+    owner: number | null,
+  ): Promise<PhotoSet | null> {
+    if (contact?.photoSet) return contact.photoSet;
     if (!contact || owner == null) return null;
     const setId = await this.currentSetId(owner);
     if (setId == null) return null;
@@ -106,8 +115,7 @@ export class PhotoLibraryService {
       where: { chatId: id },
       select: { photoSet: true },
     });
-    const set = bound?.photoSet ?? null;
-    return set && !set.archivedAt ? set : null;
+    return bound?.photoSet ?? null;
   }
 
   async sends(chatId: number) {

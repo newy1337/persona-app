@@ -152,7 +152,7 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
         addedAt: 1,
       },
     });
-    // Образ получает личность в регионе менеджера аккаунта — его назначает хед.
+    // Образ назначает хед менеджеру аккаунта по личности аккаунта.
     const manager = await prisma.dashboardUser.create({
       data: {
         username: 'manager',
@@ -165,8 +165,8 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
     await prisma.managerAccount.create({
       data: { userId: manager.id, tgAccountId: 1 },
     });
-    await prisma.regionPhotoSet.create({
-      data: { regionCode: 'TST', personaSlug: 'test', setId, updatedAt: 1 },
+    await prisma.managerPhotoSet.create({
+      data: { userId: manager.id, personaSlug: 'test', setId, updatedAt: 1 },
     });
   });
   afterAll(async () => {

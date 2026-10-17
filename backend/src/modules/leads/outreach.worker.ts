@@ -1,10 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  OnModuleInit,
-  Optional,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { appConfig } from 'src/config/app.config';
 import { PrismaService } from 'src/prisma.service';
@@ -12,7 +6,6 @@ import { ClockService } from 'src/shared/clock.service';
 import { HistoryService } from 'src/shared/history.service';
 import { FunnelEventsService } from 'src/shared/funnel-events.service';
 import { GlobalGateService } from 'src/shared/global-gate.service';
-import { RegionGateService } from 'src/shared/region-gate.service';
 import { TelegramService } from 'src/modules/telegram/telegram.service';
 import { LeadsService } from './leads.service';
 import { REPLY_BRAIN, ReplyBrain } from 'src/brain/reply-brain.port';
@@ -46,7 +39,6 @@ export class OutreachWorker implements OnModuleInit {
     private telegram: TelegramService,
     private leads: LeadsService,
     @Inject(REPLY_BRAIN) private brain: ReplyBrain,
-    @Optional() private regionGate?: RegionGateService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -162,7 +154,6 @@ export class OutreachWorker implements OnModuleInit {
     });
     const out: number[] = [];
     for (const { id } of active) {
-      if (await this.regionGate?.accountStopped(id)) continue;
       const usage = await this.usageToday(id, now);
       if (usage.sent_today >= appConfig.outreachDailyPerAccount) continue;
       if (

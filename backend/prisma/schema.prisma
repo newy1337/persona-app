@@ -29,8 +29,9 @@ model DashboardUser {
   requestedVoiceTasks VoiceTask[]     @relation("TaskManager")
   assignedVoiceTasks  VoiceTask[]     @relation("TaskVoicer")
 
-  accounts ManagerAccount[]
-  audit    DashboardAuditLog[]
+  accounts         ManagerAccount[]
+  audit            DashboardAuditLog[]
+  photoAssignments ManagerPhotoSet[]
 
   @@index([leadId], map: "idx_dashboard_users_lead")
   @@map("dashboard_users")
@@ -329,7 +330,7 @@ model MediaShown {
 }
 
 /// Образ: набор фотографий личности. Создаёт и ведёт хед своего региона,
-/// он же назначает образ личностям региона (RegionPhotoSet). Диалог
+/// он же назначает образ сотрудникам региона (ManagerPhotoSet). Диалог
 /// закрепляется за образом, действовавшим при его начале (Contact.photoSetId).
 model PhotoSet {
   id             Int     @id @default(autoincrement())
@@ -352,29 +353,31 @@ model PhotoSet {
   photos      PhotoSetPhoto[]
   accounts    TgAccount[]
   contacts    Contact[]
-  assignments RegionPhotoSet[]
+  assignments ManagerPhotoSet[]
 
   @@index([regionCode], map: "idx_photo_sets_region")
   @@map("photo_sets")
 }
 
-/// Какой образ получают новые диалоги личности в регионе. Назначает хед.
-model RegionPhotoSet {
-  regionCode  String @map("region_code")
+/// Какой образ получают новые диалоги сотрудника. Хед назначает образ своего
+/// региона каждому сотруднику — отдельно по каждой личности его аккаунтов.
+model ManagerPhotoSet {
+  userId      Int    @map("user_id")
   personaSlug String @map("persona_slug")
   setId       Int    @map("set_id")
   updatedAt   Int    @map("updated_at")
   updatedBy   Int?   @map("updated_by")
 
-  set PhotoSet @relation(fields: [setId], references: [id], onDelete: Cascade)
+  user DashboardUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  set  PhotoSet      @relation(fields: [setId], references: [id], onDelete: Cascade)
 
-  @@id([regionCode, personaSlug])
-  @@index([setId], map: "idx_region_photo_sets_set")
-  @@map("region_photo_sets")
+  @@id([userId, personaSlug])
+  @@index([setId], map: "idx_manager_photo_sets_set")
+  @@map("manager_photo_sets")
 }
 
-/// Аварийная остановка автоматики региона: бот, рассылка и войсер молчат
-/// на аккаунтах менеджеров этого региона.
+/// Стоп региона: образы региона выключены. Фото из образов не уходят, запросы
+/// фото идут по прежней схеме; остальная автоматика работает.
 model RegionStop {
   regionCode String  @id @map("region_code")
   reason     String?

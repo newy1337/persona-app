@@ -85,6 +85,18 @@ describe('photo sets by region: the head runs them, chats keep the set they star
     await prisma.managerAccount.create({
       data: { userId: manager.id, tgAccountId: 1 },
     });
+    await prisma.tgAccount.create({
+      data: {
+        id: 4,
+        phoneE164: '+10000000004',
+        personaId: 'denis',
+        addedAt: 1,
+        status: 'active',
+      },
+    });
+    await prisma.managerAccount.create({
+      data: { userId: manager.id, tgAccountId: 4 },
+    });
     await prisma.managerAccount.create({
       data: { userId: spbManager.id, tgAccountId: 2 },
     });
@@ -94,7 +106,8 @@ describe('photo sets by region: the head runs them, chats keep the set they star
     rmSync(dir, { recursive: true, force: true });
   });
   beforeEach(() => {
-    photos = new PhotoLibraryService(prisma);
+    gate = new RegionGateService(prisma, clock as any);
+    photos = new PhotoLibraryService(prisma, gate);
     history = new HistoryService(prisma, clock as any, photos);
     const scope = new ScopeService(prisma, history);
     sets = new PhotoSetsService(
@@ -106,7 +119,6 @@ describe('photo sets by region: the head runs them, chats keep the set they star
       { scoped: () => ({ record: async () => undefined }) } as any,
       photos,
     );
-    gate = new RegionGateService(prisma, clock as any);
   });
 
   it('the head creates sets in his region; managers see them read-only; another region does not see them', async () => {
@@ -137,43 +149,56 @@ describe('photo sets by region: the head runs them, chats keep the set they star
     );
   });
 
-  it('a new set for the persona goes to new clients only; started chats stay on the old one', async () => {
+  it('the head assigns a set to each employee per persona; new clients get it, started chats keep the old one', async () => {
     const autumn = await sets.create(head, 'Надя — образ 1');
     const winter = await sets.create(head, 'Надя — образ 2');
+    const denis = await sets.create(head, 'Денис — город');
     const foreign = await sets.create(otherHead, 'Надя Питер');
-    await expect(sets.assignRegion(head, 'nadya', foreign.id)).rejects.toThrow(
-      /этого региона/,
-    );
     await expect(
-      sets.assignRegion(manager, 'nadya', autumn.id),
+      sets.assignStaff(head, manager.id, 'nadya', foreign.id),
+    ).rejects.toThrow(/этого региона/);
+    await expect(
+      sets.assignStaff(manager, manager.id, 'nadya', autumn.id),
     ).rejects.toThrow(/хед/);
+    await expect(
+      sets.assignStaff(otherHead, manager.id, 'nadya', foreign.id),
+    ).rejects.toThrow(/не найден/);
 
-    const view = await sets.assignRegion(head, 'nadya', autumn.id);
-    expect(view.personas.find((p) => p.slug === 'nadya')).toMatchObject({
-      set_id: autumn.id,
-    });
+    await sets.assignStaff(head, manager.id, 'denis', denis.id);
+    const view = await sets.assignStaff(head, manager.id, 'nadya', autumn.id);
+    // У менеджера аккаунты двух личностей — две строки, у каждой свой образ.
+    expect(
+      view.rows
+        .filter((r) => r.user_id === manager.id)
+        .map((r) => [r.persona_slug, r.set_id]),
+    ).toEqual([
+      ['denis', denis.id],
+      ['nadya', autumn.id],
+    ]);
     await history.ensureContact(5001, 1);
+    await history.ensureContact(5004, 4);
     expect((await photos.setForChat(5001))?.id).toBe(autumn.id);
+    expect((await photos.setForChat(5004))?.id).toBe(denis.id);
 
-    await sets.assignRegion(head, 'nadya', winter.id);
+    await sets.assignStaff(head, manager.id, 'nadya', winter.id);
     await history.ensureContact(5002, 1);
     expect((await photos.setForChat(5002))?.id).toBe(winter.id);
     expect((await photos.setForChat(5001))?.id).toBe(autumn.id);
 
-    // Аккаунт другого региона назначение московского хеда не получает.
+    // Сотруднику без назначения образа нет — фото идут по прежней схеме.
     await history.ensureContact(5003, 2);
     expect(await photos.setForChat(5003)).toBeNull();
   });
 
   it('a set cannot be deleted while assigned or while any of its chats is still going', async () => {
     const set = await sets.create(head, 'Надя — на удаление');
-    await sets.assignRegion(head, 'nadya', set.id);
+    await sets.assignStaff(head, manager.id, 'nadya', set.id);
     await history.ensureContact(6001, 1);
     await history.ensureContact(6002, 1);
-    await expect(sets.remove(set.id)).rejects.toThrow(/назначен личности/);
+    await expect(sets.remove(set.id)).rejects.toThrow(/назначен сотрудникам/);
 
     const other = await sets.create(head, 'Надя — новый');
-    await sets.assignRegion(head, 'nadya', other.id);
+    await sets.assignStaff(head, manager.id, 'nadya', other.id);
     await expect(sets.remove(set.id)).rejects.toThrow(/идёт 2 диалога/);
 
     await stage(6001, 'lead');
@@ -190,13 +215,22 @@ describe('photo sets by region: the head runs them, chats keep the set they star
     expect(await photos.setForChat(6001)).toBeNull();
   });
 
-  it('the region stop silences only accounts of that region', async () => {
-    expect(await gate.accountStopped(1)).toBe(false);
-    await gate.engage('MSK', head.id, 'проверка');
-    expect(await gate.accountStopped(1)).toBe(true);
-    expect(await gate.accountStopped(2)).toBe(false);
-    expect(await gate.accountStopped(null)).toBe(false);
+  it('the region stop switches off photo sets of that region only; chats keep their set for later', async () => {
+    const set = await sets.create(head, 'Надя — стоп');
+    await sets.assignStaff(head, manager.id, 'nadya', set.id);
+    await history.ensureContact(7001, 1);
+    expect((await photos.setForChat(7001))?.id).toBe(set.id);
+
+    await gate.engage('MSK', head.id);
+    expect(await gate.photosOff(1)).toBe(true);
+    expect(await gate.photosOff(2)).toBe(false);
+    expect(await photos.setForChat(7001)).toBeNull();
+    // Новый собеседник во время стопа всё равно закрепляется за образом.
+    await history.ensureContact(7002, 1);
+    expect(await photos.setForChat(7002)).toBeNull();
+
     await gate.clear('MSK');
-    expect(await gate.accountStopped(1)).toBe(false);
+    expect((await photos.setForChat(7001))?.id).toBe(set.id);
+    expect((await photos.setForChat(7002))?.id).toBe(set.id);
   });
 });

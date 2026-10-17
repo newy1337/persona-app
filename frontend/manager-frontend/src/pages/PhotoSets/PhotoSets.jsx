@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Header from '../../components/Header/Header';
 import { PanelUX } from '../../ui/PanelUX';
 import {
-  assignRegionPhotoSet,
+  assignStaffPhotoSet,
+  clearRegionStop,
   createPhotoSet,
   deletePhotoSet,
-  getRegionAssignments,
+  engageRegionStop,
+  getRegionStop,
+  getStaffAssignments,
   deleteSetPhoto,
   getPhotoSets,
   getSetPhotos,
@@ -140,18 +143,52 @@ function chatsWord(n) {
 
 /** Почему образ нельзя удалить — или null, если можно. */
 function removeBlocker(set) {
-  if (set.assigned_personas?.length)
-    return `Назначен: ${set.assigned_personas.map((p) => p.name).join(', ')}`;
+  if (set.assigned_to?.length)
+    return `Назначен: ${[...new Set(set.assigned_to.map((a) => a.username))].join(', ')}`;
   if (set.active_chats > 0)
     return `Идёт ${set.active_chats} ${chatsWord(set.active_chats)}`;
   return null;
 }
 
+function RegionStopButton({ region }) {
+  const [state, setState] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => getRegionStop().then(setState).catch(() => setState(null)), []);
+  useEffect(() => { load(); }, [load, region]);
+  if (!state?.region_code) return null;
+  if (!state.can_manage)
+    return state.engaged ? <span className={s.error} role="status">Образы выключены</span> : null;
+
+  async function toggle() {
+    const engaging = !state.engaged;
+    if (!await PanelUX.confirm({
+      title: engaging ? `Стоп региона ${state.region_code}?` : `Включить образы региона ${state.region_code}?`,
+      message: '',
+      confirmLabel: engaging ? 'Стоп' : 'Включить',
+      danger: engaging,
+    })) return;
+    setBusy(true);
+    try {
+      if (engaging) await engageRegionStop();
+      else await clearRegionStop();
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button type="button" className={state.engaged ? s.btnPrimary : s.btnSmDanger} onClick={toggle} disabled={busy} aria-pressed={state.engaged}>
+      {state.engaged ? 'Включить образы' : 'Стоп региона'}
+    </button>
+  );
+}
+
 /**
- * Какой образ получает каждая личность в регионе. Смена образа касается только
- * новых собеседников: начатые диалоги остаются на прежнем.
+ * Какой образ получают новые собеседники каждого сотрудника — отдельно по
+ * каждой личности его аккаунтов. Начатые диалоги остаются на прежнем образе.
  */
-function RegionAssignments({ admin, version, onChanged }) {
+function StaffAssignments({ admin, version, onChanged }) {
   const [region, setRegion] = useState('');
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState('');
@@ -159,22 +196,23 @@ function RegionAssignments({ admin, version, onChanged }) {
 
   const load = useCallback(() => {
     if (admin && !region.trim()) { setData(null); return; }
-    getRegionAssignments(admin ? region.trim() : undefined).then(setData).catch((e) => setError(e.detail || e.message));
+    getStaffAssignments(admin ? region.trim() : undefined).then(setData).catch((e) => setError(e.detail || e.message));
   }, [admin, region]);
   useEffect(() => { load(); }, [load, version]);
 
-  async function change(persona, value) {
+  async function change(row, value) {
     const setId = value === '' ? null : Number(value);
     const target = data.sets.find((x) => x.id === setId);
     if (!await PanelUX.confirm({
       title: setId == null ? 'Снять образ?' : 'Назначить образ?',
-      message: setId == null ? persona.name : `${persona.name} → «${target?.name}»`,
+      message: setId == null ? `${row.username} · ${row.persona_name}` : `${row.username} · ${row.persona_name} → «${target?.name}»`,
       confirmLabel: setId == null ? 'Снять' : 'Назначить',
     })) return;
-    setBusy(persona.slug);
+    const key = `${row.user_id}:${row.persona_slug}`;
+    setBusy(key);
     setError('');
     try {
-      setData(await assignRegionPhotoSet(persona.slug, setId, admin ? data.region_code : undefined));
+      setData(await assignStaffPhotoSet(row.user_id, row.persona_slug, setId));
       onChanged();
     } catch (e) {
       setError(e.detail || e.message);
@@ -184,39 +222,45 @@ function RegionAssignments({ admin, version, onChanged }) {
   }
 
   return (
-    <section className={p.panel} aria-label="Образы личностей региона" style={{ marginBottom: 16 }}>
+    <section className={p.panel} aria-label="Образы сотрудников" style={{ marginBottom: 16 }}>
       <div className={s.head} style={{ margin: 0 }}>
         <h3 className={s.modalTitle} style={{ margin: 0 }}>
-          Образы личностей{data?.region_code ? ` · регион ${data.region_code}` : ''}
+          Сотрудники{data?.region_code ? ` · регион ${data.region_code}` : ''}
         </h3>
-        {admin && (
-          <input className={s.field} placeholder="Код региона" value={region} maxLength={32}
-            onChange={(e) => setRegion(e.target.value)} aria-label="Регион" style={{ maxWidth: 180 }} />
-        )}
+        <div className={s.actions}>
+          {admin && (
+            <input className={s.field} placeholder="Код региона" value={region} maxLength={32}
+              onChange={(e) => setRegion(e.target.value)} aria-label="Регион" style={{ maxWidth: 180 }} />
+          )}
+          {!admin && <RegionStopButton region={data?.region_code} />}
+        </div>
       </div>
       {error && <p className={s.error} role="alert">{error}</p>}
-      {!data && !admin && <p className={s.hint}>Загружаем…</p>}
-      {data?.region_code && (
+      {data?.region_code && (data.rows.length ? (
         <table className="mr-dialog-table" aria-label="Назначение образов">
-          <thead><tr><th scope="col">Личность</th><th scope="col">Образ</th></tr></thead>
+          <thead><tr><th scope="col">Сотрудник</th><th scope="col">Личность</th><th scope="col">Образ</th></tr></thead>
           <tbody>
-            {data.personas.map((persona) => (
-              <tr key={persona.slug}>
-                <td>{persona.name}</td>
-                <td>
-                  {data.can_assign ? (
-                    <select className={s.select} value={persona.set_id ?? ''} disabled={busy === persona.slug}
-                      onChange={(e) => change(persona, e.target.value)} aria-label={`Образ для ${persona.name}`}>
-                      <option value="">— без образа —</option>
-                      {data.sets.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                    </select>
-                  ) : (persona.set_name || <span className={s.muted}>не назначен</span>)}
-                </td>
-              </tr>
-            ))}
+            {data.rows.map((row) => {
+              const key = `${row.user_id}:${row.persona_slug}`;
+              return (
+                <tr key={key}>
+                  <td>{row.username}</td>
+                  <td>{row.persona_name} <span className={s.muted}>· {row.accounts} акк.</span></td>
+                  <td>
+                    {data.can_assign ? (
+                      <select className={s.select} value={row.set_id ?? ''} disabled={busy === key}
+                        onChange={(e) => change(row, e.target.value)} aria-label={`Образ для ${row.username}, ${row.persona_name}`}>
+                        <option value="">— без образа —</option>
+                        {data.sets.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                      </select>
+                    ) : (row.set_name || <span className={s.muted}>не назначен</span>)}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
-      )}
+      ) : <p className={s.empty}>Нет сотрудников с аккаунтами</p>)}
     </section>
   );
 }
@@ -340,7 +384,7 @@ export default function PhotoSets() {
           </div>
           {error && <p className={s.error} role="alert">{error}</p>}
 
-          <RegionAssignments admin={admin} version={version} onChanged={loadSets} />
+          <StaffAssignments admin={admin} version={version} onChanged={loadSets} />
 
           {!data.items.length && <p className={s.empty}>Образов нет</p>}
           <div className={p.sets}>
@@ -350,7 +394,7 @@ export default function PhotoSets() {
                 <span className={p.setName}>{x.name}</span>
                 <span className={p.setMeta}>
                   {admin && x.region_code ? `${x.region_code} · ` : ''}{x.photos} фото · {x.active_chats} {chatsWord(x.active_chats)} · {x.auto_send ? (x.send_mode === 'request' ? 'по просьбе' : 'автоотправка') : 'вручную'}
-                  {x.assigned_personas?.length > 0 && <> · {x.assigned_personas.map((a) => a.name).join(', ')}</>}
+                  {x.assigned_to?.length > 0 && <> · {[...new Set(x.assigned_to.map((a) => a.username))].join(', ')}</>}
                   {x.needs_review > 0 && <span className={p.review}> · {x.needs_review} проверить</span>}
                 </span>
               </button>
