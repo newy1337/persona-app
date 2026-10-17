@@ -83,6 +83,7 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
     }),
   };
   let messageId = 0;
+  let tgId = 700;
   const incoming = (text: string) => ({
     chatId,
     accountId: 1,
@@ -192,8 +193,9 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
           checkCancelled(opts.signal);
           await opts.beforePart?.();
           await opts.onDispatch?.(i);
-          ids.push(700 + i);
-          await opts.onPart?.(i, 700 + i);
+          const id = ++tgId;
+          ids.push(id);
+          await opts.onPart?.(i, id);
         }
         return ids;
       }),
@@ -275,6 +277,43 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
     );
     expect(later?.candidates.map((c) => Number(c.id))).toEqual([cafeId]);
     expect(later?.shown_before.map((c) => Number(c.id))).toEqual([catId]);
+  });
+
+  it('the photo goes where its caption line is: text first, then the photo with its own caption', async () => {
+    judgeChooses((runtime) => runtime.photo_availability.candidates[0].id);
+    (generateDraft as jest.Mock).mockResolvedValue(
+      'От двух до трёх раз в неделю — хороший режим\n[ФОТО] Вот, это я в своём зале\nА ты где занимаешься?',
+    );
+    const order: string[] = [];
+    transport.sendPhoto.mockImplementation(async (_chat: number, opts: any) => {
+      order.push(`photo:${opts.caption}`);
+      await opts.onDispatch?.();
+      return 500;
+    });
+    const sendText = transport.sendText.getMockImplementation();
+    transport.sendText.mockImplementation(
+      async (chat: number, parts: string[], opts: any) => {
+        order.push(...parts.map((p) => `text:${p}`));
+        return sendText(chat, parts, opts);
+      },
+    );
+    expect(await turn('Я хожу в зал 2-3 раза в неделю')).toBe(1);
+    expect(order).toEqual([
+      'text:От двух до трёх раз в неделю — хороший режим',
+      'photo:Вот, это я в своём зале',
+      'text:А ты где занимаешься?',
+    ]);
+    const rows = await prisma.message.findMany({
+      where: { chatId: BigInt(chatId), role: 'assistant' },
+      orderBy: { id: 'asc' },
+    });
+    expect(rows.map((r) => [r.mediaKind, r.text])).toEqual([
+      [null, 'От двух до трёх раз в неделю — хороший режим'],
+      ['photo', 'Вот, это я в своём зале'],
+      [null, 'А ты где занимаешься?'],
+    ]);
+    expect(rows.some((r) => r.text.includes('[ФОТО]'))).toBe(false);
+    expect(await sends()).toHaveLength(1);
   });
 
   it('a failed photo send is not marked as shown, and the retry reuses the same random_id', async () => {

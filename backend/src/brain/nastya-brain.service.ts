@@ -58,6 +58,7 @@ import {
   acceptPhotoChoice,
   dropFreshClaims,
   hasFalseFreshClaim,
+  splitPhotoCaption,
   withPhotoNote,
 } from 'src/domain/photo-library';
 import { PhotoLibraryService } from 'src/shared/photo-library.service';
@@ -333,6 +334,14 @@ export class NastyaBrainService implements ReplyBrain {
 
   private async handleLocked(turn: InboundTurn): Promise<void> {
     const { chatId } = turn;
+    // Ни текста, ни вложения (служебное событие Telegram): отвечать не на что,
+    // а пустая реплика в истории заставляет модель отвечать «(пустой ответ)».
+    if (!turn.text.trim() && !turn.media) {
+      this.log.warn(
+        `chat=${chatId}: inbound ${turn.messageId} has no text or media — ignored`,
+      );
+      return;
+    }
     await this.history.ensureContact(chatId, turn.accountId);
     await this.history.mergeLeadFacts(chatId, {
       [FIRST_CONTACT_TS_KEY]: turn.ts,
@@ -748,10 +757,27 @@ export class NastyaBrainService implements ReplyBrain {
           await this.schedule.drop(chatId);
           return true;
         }
-        const parts = splitReplyMessages(prepared.reply)
-          .flatMap((m) => splitDisplayMessages(m))
-          .flatMap((d) => splitMessage(d));
-        delivery = prepareDelivery(prepared, parts, this.clock.ts());
+        const bubbles = (text: string) =>
+          text.trim()
+            ? splitReplyMessages(text)
+                .flatMap((m) => splitDisplayMessages(m))
+                .flatMap((d) => splitMessage(d))
+            : [];
+        const photo = prepared.photo;
+        const lead = photo ? bubbles(photo.before ?? '') : [];
+        const parts = photo
+          ? [
+              ...lead,
+              ...(photo.caption ? [photo.caption] : []),
+              ...bubbles(photo.after ?? ''),
+            ]
+          : bubbles(prepared.reply);
+        delivery = prepareDelivery(
+          prepared,
+          parts,
+          this.clock.ts(),
+          lead.length,
+        );
         if (!(await this.schedule.prepare(chatId, delivery))) return false;
       }
       if (
@@ -857,38 +883,47 @@ export class NastyaBrainService implements ReplyBrain {
         if (!(await this.schedule.prepare(chatId, delivery)))
           throw new ReplySuperseded();
       };
-      // Фото из образа — всегда первая часть: подпись к нему и есть первая реплика.
-      const lead = remaining[0]?.photo && delivery.photo ? 1 : 0;
-      if (lead) {
-        if (!this.transport.sendPhoto)
-          throw new Error('Transport cannot send photos');
-        await beforePart();
-        const id = await this.transport.sendPhoto(chatId, {
-          path: delivery.photo!.file_path,
-          caption: remaining[0].text,
-          accountId: due.accountId,
-          typing: persona.rhythm.typing,
-          signal,
-          randomId: remaining[0].randomId,
-          onDispatch: () => dispatched(0),
-        });
-        await confirm(0, id);
+      // Текст до фото, фото с подписью, текст после — в порядке частей.
+      const isPhoto = (i: number) =>
+        Boolean(remaining[i]?.photo && delivery.photo);
+      while (confirmed < remaining.length) {
+        const start = confirmed;
+        if (isPhoto(start)) {
+          if (!this.transport.sendPhoto)
+            throw new Error('Transport cannot send photos');
+          await beforePart();
+          const id = await this.transport.sendPhoto(chatId, {
+            path: delivery.photo!.file_path,
+            caption: remaining[start].text,
+            accountId: due.accountId,
+            typing: persona.rhythm.typing,
+            signal,
+            randomId: remaining[start].randomId,
+            onDispatch: () => dispatched(start),
+          });
+          await confirm(start, id);
+          continue;
+        }
+        let end = start;
+        while (end < remaining.length && !isPhoto(end)) end += 1;
+        const ids = await this.transport.sendText(
+          chatId,
+          remaining.slice(start, end).map((p) => p.text),
+          {
+            accountId: due.accountId,
+            typing: persona.rhythm.typing,
+            signal,
+            beforePart,
+            randomIds: remaining.slice(start, end).map((p) => p.randomId),
+            onPart: (index, id) => confirm(start + index, id),
+            onDispatch: (index) => dispatched(start + index),
+          },
+        );
+        for (let i = confirmed - start; i < ids.length; i += 1)
+          await confirm(start + i, ids[i]);
+        if (confirmed !== end)
+          throw new Error('Transport did not acknowledge every reply part');
       }
-      const ids = await this.transport.sendText(
-        chatId,
-        remaining.slice(lead).map((p) => p.text),
-        {
-          accountId: due.accountId,
-          typing: persona.rhythm.typing,
-          signal,
-          beforePart,
-          randomIds: remaining.slice(lead).map((p) => p.randomId),
-          onPart: (index, id) => confirm(index + lead, id),
-          onDispatch: (index) => dispatched(index + lead),
-        },
-      );
-      for (let i = confirmed - lead; i < ids.length; i += 1)
-        await confirm(i + lead, ids[i]);
       if (delivery.sentCount !== delivery.parts.length)
         throw new Error('Transport did not acknowledge every reply part');
       await this.schedule.drop(chatId);
@@ -1786,6 +1821,12 @@ export class NastyaBrainService implements ReplyBrain {
         `chat=${chatId}: "just taken" claim removed from an ${photoCard.freshness} photo caption`,
       );
     }
+    const photoText =
+      photoCard && libraryPhoto ? splitPhotoCaption(reply) : undefined;
+    if (photoText)
+      reply = [photoText.before, photoText.caption, photoText.after]
+        .filter(Boolean)
+        .join('\n');
     state.history = structuredClone(baseState.history);
     if (attachmentContext) {
       const latest = [...state.history]
@@ -1808,6 +1849,7 @@ export class NastyaBrainService implements ReplyBrain {
               file_path: libraryPhoto.filePath,
               note: this.photos!.note(libraryPhoto, today),
               account_id: photoAccount,
+              ...photoText,
             },
           }
         : {}),

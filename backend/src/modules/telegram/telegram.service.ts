@@ -1197,7 +1197,7 @@ export class TelegramService
             chatId,
             accountId: account.id,
             messageId: message.id,
-            text: message.message ?? '',
+            text: inboundText(message, media),
             ts: message.date,
             media,
           });
@@ -1401,7 +1401,63 @@ export class TelegramService
       throw new Error(
         `no online account owns chat ${chatId} (owner=${ownerId})`,
       );
+    await this.ensurePeer(entry, chatId);
     return entry;
+  }
+
+  /**
+   * StringSession не хранит access hash собеседников: после переподключения
+   * аккаунта клиент знает только тех, кто попался ему с тех пор, и отправка
+   * падает с «Could not find the input entity». Тогда находим человека по нику
+   * из карточки лида, а если ника нет — среди диалогов аккаунта; найденный
+   * попадает в кеш клиента, и дальше отправка идёт обычной дорогой.
+   */
+  private async ensurePeer(account: LiveAccount, chatId: number) {
+    const known = () =>
+      this.call(
+        account,
+        'getInputEntity',
+        () => account.client.getInputEntity(chatId),
+        TG_TYPING_TIMEOUT_MS,
+      )
+        .then(() => true)
+        .catch(() => false);
+    if (await known()) return;
+    const [facts, lead] = await Promise.all([
+      this.history
+        .getLeadFacts(chatId)
+        .catch(() => ({}) as Record<string, unknown>),
+      this.prisma.phoneNumber.findFirst({
+        where: { telegramUserId: toChatId(chatId) },
+        orderBy: { id: 'desc' },
+        select: { telegramUsername: true, usernameKey: true },
+      }),
+    ]);
+    const usernames = [
+      ...new Set(
+        [facts['tg_username'], lead?.telegramUsername, lead?.usernameKey]
+          .filter((u): u is string => typeof u === 'string' && !!u.trim())
+          .map((u) => u.trim().replace(/^@/, '')),
+      ),
+    ];
+    for (const username of usernames) {
+      const peer = await this.call(account, 'getInputEntity @username', () =>
+        account.client.getInputEntity(username),
+      ).catch(() => null);
+      if (peer instanceof Api.InputPeerUser && Number(peer.userId) === chatId)
+        return;
+    }
+    await this.call(account, 'getDialogs', () =>
+      account.client.getDialogs({ limit: 500 }),
+    ).catch((e) =>
+      this.log.warn(
+        `account ${account.id}: dialogs lookup for chat ${chatId} failed: ${e?.message ?? e}`,
+      ),
+    );
+    if (!(await known()))
+      this.log.warn(
+        `account ${account.id}: chat ${chatId} not found by username or in dialogs`,
+      );
   }
 
   /**

@@ -14,6 +14,10 @@ export interface PhotoReplyPlan {
   file_path: string;
   note: string;
   account_id: number;
+  /** Текст до фото, подпись к нему и текст после — в таком порядке и уходят. */
+  before?: string;
+  caption?: string;
+  after?: string;
 }
 export interface PreparedReply {
   voice?: VoiceReplyPlan;
@@ -50,15 +54,24 @@ export function prepareDelivery(
   reply: PreparedReply,
   parts: string[],
   now: number,
+  /** Номер части-подписи; parts.length — фото последним без подписи. */
+  photoAt = 0,
 ): ReplyDelivery {
   const list: ReplyDelivery['parts'] = parts.map((text) => ({
     text,
     randomId: deliveryRandomId(),
   }));
   if (reply.photo) {
-    // Первая реплика становится подписью; слишком длинная идёт следом текстом.
-    if (list[0] && list[0].text.length <= CAPTION_LIMIT) list[0].photo = true;
-    else list.unshift({ text: '', randomId: deliveryRandomId(), photo: true });
+    const at = Math.min(Math.max(0, photoAt), list.length);
+    // Подпись длиннее лимита Telegram идёт сразу за фото обычным текстом.
+    if (list[at] && list[at].text.length <= CAPTION_LIMIT)
+      list[at].photo = true;
+    else
+      list.splice(at, 0, {
+        text: '',
+        randomId: deliveryRandomId(),
+        photo: true,
+      });
   }
   return {
     ...reply,

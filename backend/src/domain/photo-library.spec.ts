@@ -1,6 +1,7 @@
 import {
   acceptPhotoChoice,
   dropFreshClaims,
+  splitPhotoCaption,
   exifDate,
   formatTakenOn,
   hasFalseFreshClaim,
@@ -172,5 +173,27 @@ describe('photo library', () => {
     expect(exifDate(exif)).toBe('2023-08-17');
     expect(exifDate(Buffer.from('0000:00:00 00:00:00'))).toBeNull();
     expect(exifDate(undefined)).toBeNull();
+  });
+
+  it('puts the photo where its caption is, not always first', () => {
+    expect(
+      splitPhotoCaption(
+        'От двух до трёх раз в неделю — хороший режим\n[ФОТО] Вот, это я в своём зале\nА ты где занимаешься?',
+      ),
+    ).toEqual({
+      before: 'От двух до трёх раз в неделю — хороший режим',
+      caption: 'Вот, это я в своём зале',
+      after: 'А ты где занимаешься?',
+    });
+    expect(
+      splitPhotoCaption('Главное регулярность\nВот, это я в своём зале')
+        .caption,
+    ).toBe('Вот, это я в своём зале');
+    expect(splitPhotoCaption('Просто ответ про тренировки')).toEqual({
+      before: 'Просто ответ про тренировки',
+      caption: '',
+      after: '',
+    });
+    expect(splitPhotoCaption('[фото]: Мой Барсик').caption).toBe('Мой Барсик');
   });
 });

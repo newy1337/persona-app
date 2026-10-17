@@ -316,3 +316,40 @@ export function exifDate(exif: Buffer | undefined | null): string | null {
   if (!m) return null;
   return normalizeTakenOn(`${m[1]}-${m[2]}-${m[3]}`);
 }
+
+/** Строка ответа, которую модель отметила подписью к фото. */
+export const CAPTION_MARK = '[ФОТО]';
+const MARK_RX = /^\s*\[\s*фото\s*\]\s*:?\s*/iu;
+/** Если маркер потерялся — строка, которая явно говорит о снимке. */
+const PHOTO_LINE_RX =
+  /(?:^|[\s,.!?«"(])(?:вот|смотри|глянь|зацени|это\s+(?:я|мой|моя|мои|мы)|на\s+фото|фот\S*|сним\S*|кадр\S*|селфи)(?=$|[\s,.!?»")])/iu;
+
+export interface PhotoCaptionSplit {
+  before: string;
+  caption: string;
+  after: string;
+}
+
+/**
+ * Делит ответ на текст до фото, подпись и текст после. Фото уходит на месте
+ * подписи, а не всегда первым: «ответ на вопрос» → «фото: вот я в зале».
+ * Нет ни маркера, ни строки о снимке — фото уходит последним без подписи.
+ */
+export function splitPhotoCaption(reply: string): PhotoCaptionSplit {
+  const lines = String(reply ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n');
+  let at = lines.findIndex((line) => MARK_RX.test(line));
+  if (at < 0) at = lines.findIndex((line) => PHOTO_LINE_RX.test(line));
+  const clean = (list: string[]) =>
+    list
+      .map((line) => line.replace(MARK_RX, ''))
+      .join('\n')
+      .trim();
+  if (at < 0) return { before: clean(lines), caption: '', after: '' };
+  return {
+    before: clean(lines.slice(0, at)),
+    caption: clean([lines[at]]),
+    after: clean(lines.slice(at + 1)),
+  };
+}
