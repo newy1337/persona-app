@@ -141,9 +141,9 @@ function chatsWord(n) {
 /** Почему образ нельзя удалить — или null, если можно. */
 function removeBlocker(set) {
   if (set.assigned_personas?.length)
-    return `Назначен личности: ${set.assigned_personas.map((p) => p.name).join(', ')}. Сначала назначьте ей другой образ.`;
+    return `Назначен: ${set.assigned_personas.map((p) => p.name).join(', ')}`;
   if (set.active_chats > 0)
-    return `Идёт ${set.active_chats} ${chatsWord(set.active_chats)}. Удалить можно, когда все дойдут до этапа «Лид» или уйдут в архив.`;
+    return `Идёт ${set.active_chats} ${chatsWord(set.active_chats)}`;
   return null;
 }
 
@@ -168,9 +168,7 @@ function RegionAssignments({ admin, version, onChanged }) {
     const target = data.sets.find((x) => x.id === setId);
     if (!await PanelUX.confirm({
       title: setId == null ? 'Снять образ?' : 'Назначить образ?',
-      message: setId == null
-        ? `${persona.name}: новые собеседники останутся без фото. Начатые диалоги сохранят свой образ.`
-        : `${persona.name} → «${target?.name}». Получат только новые собеседники; начатые диалоги останутся на прежнем образе.`,
+      message: setId == null ? persona.name : `${persona.name} → «${target?.name}»`,
       confirmLabel: setId == null ? 'Снять' : 'Назначить',
     })) return;
     setBusy(persona.slug);
@@ -196,13 +194,11 @@ function RegionAssignments({ admin, version, onChanged }) {
             onChange={(e) => setRegion(e.target.value)} aria-label="Регион" style={{ maxWidth: 180 }} />
         )}
       </div>
-      <p className={s.hint}>Новый собеседник получает образ, назначенный личности сейчас, и остаётся на нём до конца общения.</p>
       {error && <p className={s.error} role="alert">{error}</p>}
       {!data && !admin && <p className={s.hint}>Загружаем…</p>}
-      {data && !data.region_code && <p className={s.hint}>У вашей учётной записи не указан регион.</p>}
       {data?.region_code && (
         <table className="mr-dialog-table" aria-label="Назначение образов">
-          <thead><tr><th scope="col">Личность</th><th scope="col">Образ для новых собеседников</th></tr></thead>
+          <thead><tr><th scope="col">Личность</th><th scope="col">Образ</th></tr></thead>
           <tbody>
             {data.personas.map((persona) => (
               <tr key={persona.slug}>
@@ -343,7 +339,6 @@ export default function PhotoSets() {
             )}
           </div>
           {error && <p className={s.error} role="alert">{error}</p>}
-          {!data.can_create && <p className={s.hint}>Образы ведёт хед региона. Вы можете их просматривать.</p>}
 
           <RegionAssignments admin={admin} version={version} onChanged={loadSets} />
 
@@ -354,8 +349,8 @@ export default function PhotoSets() {
                 {x.cover_photo_id ? <img className={p.cover} src={photoUrl(x.cover_photo_id, true)} alt="" /> : <span className={p.coverEmpty}>Нет обложки</span>}
                 <span className={p.setName}>{x.name}</span>
                 <span className={p.setMeta}>
-                  {admin && x.region_code ? `${x.region_code} · ` : ''}{x.photos} фото · {x.active_chats} {chatsWord(x.active_chats)} идёт · {x.auto_send ? (x.send_mode === 'request' ? 'по просьбе' : 'автоотправка') : 'вручную'}
-                  {x.assigned_personas?.length > 0 && <> · для новых: {x.assigned_personas.map((a) => a.name).join(', ')}</>}
+                  {admin && x.region_code ? `${x.region_code} · ` : ''}{x.photos} фото · {x.active_chats} {chatsWord(x.active_chats)} · {x.auto_send ? (x.send_mode === 'request' ? 'по просьбе' : 'автоотправка') : 'вручную'}
+                  {x.assigned_personas?.length > 0 && <> · {x.assigned_personas.map((a) => a.name).join(', ')}</>}
                   {x.needs_review > 0 && <span className={p.review}> · {x.needs_review} проверить</span>}
                 </span>
               </button>
@@ -370,7 +365,6 @@ export default function PhotoSets() {
                 <input className={`${s.field} ${p.search}`} placeholder="Поиск" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Поиск по снимкам" />
                 {set.can_edit && <button type="button" className={s.btnSmDanger} onClick={remove} disabled={Boolean(blocker)} title={blocker ?? undefined}>Удалить образ</button>}
               </div>
-              {set.can_edit && blocker && <p className={s.hint}>{blocker}</p>}
               <TagFilter tags={tags} value={tag} onChange={setTag} />
               <PhotoGrid photos={shown} onOpen={setOpen} />
             </section>
