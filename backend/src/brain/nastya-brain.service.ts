@@ -62,6 +62,7 @@ import {
   withPhotoNote,
 } from 'src/domain/photo-library';
 import { PhotoLibraryService } from 'src/shared/photo-library.service';
+import { RegionGateService } from 'src/shared/region-gate.service';
 import { TakeoverReason } from 'src/domain/pause';
 import {
   InboundTurn,
@@ -246,7 +247,14 @@ export class NastyaBrainService implements ReplyBrain {
     @Optional() private autoVoice?: VoicerAutomationService,
     @Optional() private prisma?: PrismaService,
     @Optional() private photos?: PhotoLibraryService,
+    @Optional() private regionGate?: RegionGateService,
   ) {}
+
+  /** Общий аварийный стоп или стоп региона, к которому относится аккаунт. */
+  private async stoppedFor(accountId: number | null | undefined) {
+    if (this.gate.stopped) return true;
+    return Boolean(await this.regionGate?.accountStopped(accountId));
+  }
 
   private judgeDeps(
     scope: UsageScope = {},
@@ -398,7 +406,8 @@ export class NastyaBrainService implements ReplyBrain {
 
     const state = await this.state.reconcile(chatId);
 
-    if (this.gate.stopped) return this.markReadSafe(chatId, turn.accountId);
+    if (await this.stoppedFor(turn.accountId))
+      return this.markReadSafe(chatId, turn.accountId);
     // Чат на менеджере: галочку «прочитано» ставит он сам, когда откроет
     // переписку. Иначе собеседник видит, что его прочли, а ответа нет.
     if ((await this.pause.status(chatId)).status === 'paused') return;
@@ -1359,7 +1368,7 @@ export class NastyaBrainService implements ReplyBrain {
     const value = forecastNextAction({
       chatId,
       nowTs,
-      stopped: this.gate.stopped,
+      stopped: await this.stoppedFor(accountId),
       ready: this.persona.ready,
       hasAccount: accountId !== null,
       accountOnline:
@@ -1464,7 +1473,7 @@ export class NastyaBrainService implements ReplyBrain {
       return false;
     }
     if (
-      this.gate.stopped ||
+      (await this.stoppedFor(call.accountId)) ||
       !this.persona.ready ||
       !(await this.canReach(chatId, call.accountId))
     )
@@ -2268,7 +2277,7 @@ export class NastyaBrainService implements ReplyBrain {
     accountId: number,
     needsModel = true,
   ): Promise<string | null> {
-    if (this.gate.stopped) return 'stopped';
+    if (await this.stoppedFor(accountId)) return 'stopped';
     if (await this.autoVoice?.pending(chatId)) return 'voicer';
     if (needsModel && this.persona.ready === false) return 'model';
     if ((await this.pause.status(chatId)).status === 'paused') return 'paused';

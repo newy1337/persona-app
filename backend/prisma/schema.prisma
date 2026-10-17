@@ -159,9 +159,14 @@ model Contact {
   noteBy             String? @map("note_by")
   noteAt             Int?    @map("note_at")
 
-  account TgAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  /// образ, на котором начался диалог; смена образа в регионе его не меняет
+  photoSetId Int? @map("photo_set_id")
+
+  account  TgAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  photoSet PhotoSet?  @relation(fields: [photoSetId], references: [id], onDelete: SetNull)
 
   @@index([accountId], map: "idx_contacts_account")
+  @@index([photoSetId], map: "idx_contacts_photo_set")
   @@map("contacts")
 }
 
@@ -323,10 +328,15 @@ model MediaShown {
   @@map("media_shown")
 }
 
-/// Образ: общий набор фотографий личности, назначается любому числу аккаунтов.
+/// Образ: набор фотографий личности. Создаёт и ведёт хед своего региона,
+/// он же назначает образ личностям региона (RegionPhotoSet). Диалог
+/// закрепляется за образом, действовавшим при его начале (Contact.photoSetId).
 model PhotoSet {
   id             Int     @id @default(autoincrement())
   name           String
+  /// регион хеда, который ведёт образ. Общих образов нет; NULL бывает только
+  /// у старого неиспользуемого образа — его видит лишь администратор
+  regionCode     String? @map("region_code")
   coverPhotoId   Int?    @map("cover_photo_id")
   autoSend       Boolean @default(true) @map("auto_send")
   /// request — только по просьбе собеседника; initiative — ещё и по своей инициативе.
@@ -339,10 +349,39 @@ model PhotoSet {
   createdAt      Int     @map("created_at")
   updatedAt      Int     @map("updated_at")
 
-  photos   PhotoSetPhoto[]
-  accounts TgAccount[]
+  photos      PhotoSetPhoto[]
+  accounts    TgAccount[]
+  contacts    Contact[]
+  assignments RegionPhotoSet[]
 
+  @@index([regionCode], map: "idx_photo_sets_region")
   @@map("photo_sets")
+}
+
+/// Какой образ получают новые диалоги личности в регионе. Назначает хед.
+model RegionPhotoSet {
+  regionCode  String @map("region_code")
+  personaSlug String @map("persona_slug")
+  setId       Int    @map("set_id")
+  updatedAt   Int    @map("updated_at")
+  updatedBy   Int?   @map("updated_by")
+
+  set PhotoSet @relation(fields: [setId], references: [id], onDelete: Cascade)
+
+  @@id([regionCode, personaSlug])
+  @@index([setId], map: "idx_region_photo_sets_set")
+  @@map("region_photo_sets")
+}
+
+/// Аварийная остановка автоматики региона: бот, рассылка и войсер молчат
+/// на аккаунтах менеджеров этого региона.
+model RegionStop {
+  regionCode String  @id @map("region_code")
+  reason     String?
+  actorId    Int?    @map("actor_id")
+  createdAt  Int     @map("created_at")
+
+  @@map("region_stops")
 }
 
 model PhotoSetPhoto {

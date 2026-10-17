@@ -13,6 +13,7 @@ import sharp from 'sharp';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import { HistoryService } from 'src/shared/history.service';
+import { PhotoLibraryService } from 'src/shared/photo-library.service';
 import { ScopeService } from 'src/shared/scope.service';
 import { Role } from 'src/enums/roles.enum';
 import { appConfig } from 'src/config/app.config';
@@ -49,6 +50,7 @@ export class PhotoSetsService {
     private scope: ScopeService,
     private persona: PersonaService,
     private usage: UsageRecorderService,
+    private library: PhotoLibraryService,
   ) {}
 
   // ── Права ────────────────────────────────────────────────────────────────
@@ -57,32 +59,58 @@ export class PhotoSetsService {
     return user.role === Role.ADMIN;
   }
 
-  canEdit(user: DashboardUser): boolean {
-    return this.isAdmin(user) || Boolean(user.canEditPhotoSets);
+  /** Хед ведёт образы своего региона; без региона он ничего не правит. */
+  isHead(user: DashboardUser): boolean {
+    return user.role === Role.HEAD && Boolean(user.regionCode);
+  }
+
+  canCreate(user: DashboardUser): boolean {
+    return this.isAdmin(user) || this.isHead(user);
+  }
+
+  canEdit(user: DashboardUser, set: Pick<PhotoSet, 'regionCode'>): boolean {
+    if (this.isAdmin(user)) return true;
+    return this.isHead(user) && set.regionCode === user.regionCode;
   }
 
   requireAdmin(user: DashboardUser): void {
     if (!this.isAdmin(user))
-      throw new ForbiddenException(
-        'создавать и назначать образы может администратор',
-      );
+      throw new ForbiddenException('это может только администратор');
+  }
+
+  requireCreator(user: DashboardUser): void {
+    if (!this.canCreate(user))
+      throw new ForbiddenException('создавать образы может хед своего региона');
   }
 
   /**
-   * null — видны все наборы; иначе только назначенные аккаунтам из области
-   * пользователя (у тимлида и хеда — включая аккаунты подчинённых).
+   * null — видны все образы. Иначе — образы своего региона и те, за которыми
+   * закреплены диалоги аккаунтов из области пользователя (у тимлида и хеда —
+   * включая аккаунты подчинённых): менеджер, перешедший из другого региона,
+   * видит образ своих прежних диалогов.
    */
   private async visibleSetIds(user: DashboardUser): Promise<number[] | null> {
     if (this.isAdmin(user)) return null;
-    const rows = await this.prisma.tgAccount.findMany({
-      where: {
-        id: { in: await this.ownAccounts(user) },
-        photoSetId: { not: null },
-      },
-      select: { photoSetId: true },
-      distinct: ['photoSetId'],
-    });
-    return rows.map((r) => r.photoSetId!);
+    const accounts = await this.ownAccounts(user);
+    const [regional, onChats] = await Promise.all([
+      user.regionCode
+        ? this.prisma.photoSet.findMany({
+            where: { regionCode: user.regionCode },
+            select: { id: true },
+          })
+        : [],
+      this.prisma.contact.findMany({
+        where: { accountId: { in: accounts }, photoSetId: { not: null } },
+        select: { photoSetId: true },
+        distinct: ['photoSetId'],
+      }),
+    ]);
+    return [
+      ...new Set([
+        ...regional.map((r) => r.id),
+        ...onChats.map((r) => r.photoSetId!),
+      ]),
+    ];
   }
 
   async requireVisible(user: DashboardUser, setId: number): Promise<PhotoSet> {
@@ -94,13 +122,13 @@ export class PhotoSetsService {
   }
 
   /**
-   * Менять общий набор можно только с отдельным правом: правка сразу видна
-   * на всех аккаунтах, которым он назначен.
+   * Править образ может хед его региона (и администратор). Менеджер и тимлид
+   * образы только просматривают.
    */
   async requireEditable(user: DashboardUser, setId: number): Promise<PhotoSet> {
     const set = await this.requireVisible(user, setId);
-    if (!this.canEdit(user))
-      throw new ForbiddenException('нет права менять образы');
+    if (!this.canEdit(user, set))
+      throw new ForbiddenException('менять образ может только хед его региона');
     return set;
   }
 
@@ -114,15 +142,36 @@ export class PhotoSetsService {
     return photo;
   }
 
+  /** Регион, в котором действует пользователь: у хеда свой, админ указывает. */
+  regionFor(user: DashboardUser, requested?: string | null): string {
+    if (this.isAdmin(user)) {
+      const region = requested?.trim();
+      if (!region) throw new UnprocessableEntityException('укажите регион');
+      return region;
+    }
+    if (!this.isHead(user))
+      throw new ForbiddenException('это может только хед региона');
+    return user.regionCode!;
+  }
+
   // ── Наборы ───────────────────────────────────────────────────────────────
 
   private setView(
     s: PhotoSet,
-    extra: { photos?: number; accounts?: number; review?: number } = {},
+    extra: {
+      photos?: number;
+      accounts?: number;
+      review?: number;
+      chats?: number;
+      activeChats?: number;
+      personas?: { region_code: string; slug: string; name: string }[];
+      canEdit?: boolean;
+    } = {},
   ) {
     return {
       id: s.id,
       name: s.name,
+      region_code: s.regionCode,
       cover_photo_id: s.coverPhotoId,
       auto_send: s.autoSend,
       send_mode: s.sendMode,
@@ -134,7 +183,39 @@ export class PhotoSetsService {
       photos: extra.photos ?? 0,
       accounts: extra.accounts ?? 0,
       needs_review: extra.review ?? 0,
+      chats: extra.chats ?? 0,
+      active_chats: extra.activeChats ?? 0,
+      assigned_personas: extra.personas ?? [],
+      can_edit: extra.canEdit ?? false,
     };
+  }
+
+  /**
+   * Диалоги, закреплённые за образами, и сколько из них ещё идёт. Общение
+   * закончено, когда менеджер довёл диалог до этапа «Лид» (или дальше —
+   * «Депозит») либо убрал его в архив.
+   */
+  private async chatCounts(ids: number[]) {
+    if (!ids.length) return new Map<number, { all: number; active: number }>();
+    const rows = await this.prisma.$queryRaw<
+      { set_id: number; all_chats: bigint; active_chats: bigint }[]
+    >`
+      SELECT c.photo_set_id AS set_id,
+             COUNT(*) AS all_chats,
+             COUNT(*) FILTER (
+               WHERE COALESCE(f.facts::jsonb->>'deal_stage', '')
+                     NOT IN ('lead', 'deposit', 'archive')
+             ) AS active_chats
+        FROM contacts c
+        LEFT JOIN pinned_facts f ON f.chat_id = c.chat_id
+       WHERE c.photo_set_id = ANY(${ids})
+       GROUP BY c.photo_set_id`;
+    return new Map(
+      rows.map((r) => [
+        Number(r.set_id),
+        { all: Number(r.all_chats), active: Number(r.active_chats) },
+      ]),
+    );
   }
 
   async list(user: DashboardUser) {
@@ -144,47 +225,69 @@ export class PhotoSetsService {
       orderBy: { id: 'asc' },
     });
     const ids = sets.map((s) => s.id);
-    const [photos, review, accounts] = await Promise.all([
-      this.prisma.photoSetPhoto.groupBy({
-        by: ['setId'],
-        where: { setId: { in: ids }, deletedAt: null },
-        _count: { _all: true },
-      }),
-      this.prisma.photoSetPhoto.groupBy({
-        by: ['setId'],
-        where: { setId: { in: ids }, deletedAt: null, reviewed: false },
-        _count: { _all: true },
-      }),
-      this.prisma.tgAccount.groupBy({
-        by: ['photoSetId'],
-        where: { photoSetId: { in: ids } },
-        _count: { _all: true },
-      }),
-    ]);
+    const [photos, review, accounts, chats, assignments, names] =
+      await Promise.all([
+        this.prisma.photoSetPhoto.groupBy({
+          by: ['setId'],
+          where: { setId: { in: ids }, deletedAt: null },
+          _count: { _all: true },
+        }),
+        this.prisma.photoSetPhoto.groupBy({
+          by: ['setId'],
+          where: { setId: { in: ids }, deletedAt: null, reviewed: false },
+          _count: { _all: true },
+        }),
+        this.prisma.tgAccount.groupBy({
+          by: ['photoSetId'],
+          where: { photoSetId: { in: ids } },
+          _count: { _all: true },
+        }),
+        this.chatCounts(ids),
+        this.prisma.regionPhotoSet.findMany({ where: { setId: { in: ids } } }),
+        this.personaNames(),
+      ]);
     const count = (rows: any[], key: string) =>
       new Map(rows.map((r) => [r[key], r._count._all as number]));
     const p = count(photos, 'setId');
     const r = count(review, 'setId');
     const a = count(accounts, 'photoSetId');
     return {
-      can_edit: this.canEdit(user),
-      can_manage: this.isAdmin(user),
+      region_code: user.regionCode,
+      can_create: this.canCreate(user),
+      can_assign: this.canCreate(user),
+      // Прежние поля: старые экраны по ним прячут кнопки правки.
+      can_edit: sets.some((s) => this.canEdit(user, s)),
+      can_manage: this.canCreate(user),
       items: sets.map((s) =>
         this.setView(s, {
           photos: p.get(s.id),
           review: r.get(s.id),
           accounts: a.get(s.id),
+          chats: chats.get(s.id)?.all,
+          activeChats: chats.get(s.id)?.active,
+          personas: assignments
+            .filter((x) => x.setId === s.id)
+            .map((x) => ({
+              region_code: x.regionCode,
+              slug: x.personaSlug,
+              name: names.get(x.personaSlug) ?? x.personaSlug,
+            })),
+          canEdit: this.canEdit(user, s),
         }),
       ),
     };
   }
 
-  async create(name: string) {
+  async create(user: DashboardUser, name: string, region?: string | null) {
+    this.requireCreator(user);
+    const regionCode = this.isAdmin(user) ? region?.trim() : user.regionCode;
+    if (!regionCode)
+      throw new UnprocessableEntityException('у образа должен быть регион');
     const now = this.clock.ts();
     const set = await this.prisma.photoSet.create({
-      data: { name: name.trim(), createdAt: now, updatedAt: now },
+      data: { name: name.trim(), regionCode, createdAt: now, updatedAt: now },
     });
-    return this.setView(set);
+    return this.setView(set, { canEdit: true });
   }
 
   async update(setId: number, dto: UpdatePhotoSetDto) {
@@ -213,32 +316,151 @@ export class PhotoSetsService {
           ? { maxPerDay: dto.max_per_day }
           : {}),
         ...(dto.no_repeat !== undefined ? { noRepeat: dto.no_repeat } : {}),
+        ...(dto.region_code?.trim()
+          ? { regionCode: dto.region_code.trim() }
+          : {}),
         updatedAt: this.clock.ts(),
       },
     });
-    return this.setView(set);
+    return this.setView(set, { canEdit: true });
   }
 
   /**
-   * Образ снимается со всех аккаунтов. Если его снимки уже показывали,
-   * он уходит в архив: отметки о показах должны пережить удаление.
+   * Удалить образ можно, только когда все его диалоги закончены (лид или
+   * архив) и он больше не назначен ни одной личности: иначе собеседник,
+   * который уже видел эту девушку, получил бы фото другой. Снимки уже
+   * показывали — образ уходит в архив, отметки о показах переживают удаление.
    */
   async remove(setId: number) {
-    const now = this.clock.ts();
-    const shown = await this.prisma.photoSend.count({
-      where: { photo: { setId } },
+    const assigned = await this.prisma.regionPhotoSet.findMany({
+      where: { setId },
+      select: { personaSlug: true, regionCode: true },
     });
+    if (assigned.length) {
+      const names = await this.personaNames(assigned.map((a) => a.personaSlug));
+      throw new UnprocessableEntityException(
+        `образ назначен личности ${assigned
+          .map(
+            (a) =>
+              `${names.get(a.personaSlug) ?? a.personaSlug} (${a.regionCode})`,
+          )
+          .join(', ')} — сначала назначьте ей другой образ`,
+      );
+    }
+    const active = (await this.chatCounts([setId])).get(setId)?.active ?? 0;
+    if (active)
+      throw new UnprocessableEntityException(
+        `на образе ещё идёт ${active} ${plural(active, 'диалог', 'диалога', 'диалогов')} — удалить его можно, когда все дойдут до этапа «Лид» или уйдут в архив`,
+      );
+    const now = this.clock.ts();
+    const [shown, chats] = await Promise.all([
+      this.prisma.photoSend.count({ where: { photo: { setId } } }),
+      this.prisma.contact.count({ where: { photoSetId: setId } }),
+    ]);
     await this.prisma.tgAccount.updateMany({
       where: { photoSetId: setId },
       data: { photoSetId: null },
     });
-    if (shown)
+    // Закрытые диалоги остаются привязанными к архивному образу — для истории.
+    if (shown || chats)
       await this.prisma.photoSet.update({
         where: { id: setId },
         data: { archivedAt: now, autoSend: false, updatedAt: now },
       });
     else await this.prisma.photoSet.delete({ where: { id: setId } });
-    return { ok: true, archived: Boolean(shown) };
+    return { ok: true, archived: Boolean(shown || chats) };
+  }
+
+  // ── Назначение личностям региона ─────────────────────────────────────────
+
+  private async personaNames(slugs?: string[]) {
+    const rows = await this.prisma.persona.findMany({
+      where: slugs ? { slug: { in: slugs } } : {},
+      select: { slug: true, name: true },
+    });
+    return new Map(rows.map((r) => [r.slug, r.name]));
+  }
+
+  /** Личности и образ каждой в регионе — то, что получат новые диалоги. */
+  async regionAssignments(user: DashboardUser, requested?: string | null) {
+    const region = this.isAdmin(user)
+      ? requested?.trim() || null
+      : user.regionCode;
+    if (!region)
+      return { region_code: null, can_assign: false, personas: [], sets: [] };
+    const [personas, rows, sets] = await Promise.all([
+      this.prisma.persona.findMany({
+        where: { enabled: true },
+        orderBy: [{ isDefault: 'desc' }, { id: 'asc' }],
+        select: { slug: true, name: true },
+      }),
+      this.prisma.regionPhotoSet.findMany({
+        where: { regionCode: region },
+        include: { set: { select: { id: true, name: true } } },
+      }),
+      this.prisma.photoSet.findMany({
+        where: { archivedAt: null, regionCode: region },
+        orderBy: { id: 'asc' },
+        select: { id: true, name: true },
+      }),
+    ]);
+    const byPersona = new Map(rows.map((r) => [r.personaSlug, r]));
+    return {
+      region_code: region,
+      can_assign:
+        this.isAdmin(user) || (this.isHead(user) && user.regionCode === region),
+      personas: personas.map((p) => ({
+        slug: p.slug,
+        name: p.name,
+        set_id: byPersona.get(p.slug)?.setId ?? null,
+        set_name: byPersona.get(p.slug)?.set.name ?? null,
+        updated_at: byPersona.get(p.slug)?.updatedAt ?? null,
+      })),
+      sets,
+    };
+  }
+
+  /**
+   * Назначить личности региона образ. Действует только на новых собеседников:
+   * начатые диалоги уже закреплены за своим образом.
+   */
+  async assignRegion(
+    user: DashboardUser,
+    personaSlug: string,
+    setId: number | null,
+    requested?: string | null,
+  ) {
+    const region = this.regionFor(user, requested);
+    const persona = await this.prisma.persona.findUnique({
+      where: { slug: personaSlug },
+      select: { slug: true },
+    });
+    if (!persona) throw new NotFoundException('личность не найдена');
+    if (setId == null) {
+      await this.prisma.regionPhotoSet.deleteMany({
+        where: { regionCode: region, personaSlug },
+      });
+      return this.regionAssignments(user, region);
+    }
+    const set = await this.prisma.photoSet.findUnique({ where: { id: setId } });
+    if (!set || set.archivedAt) throw new NotFoundException('образ не найден');
+    if (set.regionCode !== region)
+      throw new UnprocessableEntityException(
+        'можно назначить только образ этого региона',
+      );
+    const now = this.clock.ts();
+    await this.prisma.regionPhotoSet.upsert({
+      where: { regionCode_personaSlug: { regionCode: region, personaSlug } },
+      create: {
+        regionCode: region,
+        personaSlug,
+        setId,
+        updatedAt: now,
+        updatedBy: user.id,
+      },
+      update: { setId, updatedAt: now, updatedBy: user.id },
+    });
+    return this.regionAssignments(user, region);
   }
 
   // ── Фото ─────────────────────────────────────────────────────────────────
@@ -449,22 +671,6 @@ export class PhotoSetsService {
 
   // ── Аккаунты ─────────────────────────────────────────────────────────────
 
-  async assign(accountIds: number[], setId: number | null) {
-    if (setId != null) {
-      const set = await this.prisma.photoSet.findUnique({
-        where: { id: setId },
-      });
-      if (!set || set.archivedAt)
-        throw new NotFoundException('образ не найден');
-    }
-    const ids = [...new Set(accountIds)];
-    const { count } = await this.prisma.tgAccount.updateMany({
-      where: { id: { in: ids } },
-      data: { photoSetId: setId },
-    });
-    return { ok: true, updated: count, set_id: setId };
-  }
-
   async setAccountAutoSend(accountId: number, enabled: boolean) {
     const account = await this.prisma.tgAccount.update({
       where: { id: accountId },
@@ -482,13 +688,13 @@ export class PhotoSetsService {
 
   // ── Диалог ───────────────────────────────────────────────────────────────
 
-  /** Библиотека образа, назначенного аккаунту чата, с отметками о показах этому собеседнику. */
+  /** Библиотека образа, закреплённого за диалогом, с отметками о показах этому собеседнику. */
   async chatLibrary(chatId: number, query: { q?: string; tag?: string } = {}) {
     const accountId = await this.history.chatOwnerAccount(chatId);
     const account = accountId
       ? await this.prisma.tgAccount.findUnique({
           where: { id: accountId },
-          include: { photoSet: true },
+          select: { photoAutoSend: true },
         })
       : null;
     const sends = await this.prisma.photoSend.findMany({
@@ -500,7 +706,7 @@ export class PhotoSetsService {
       const prev = sentBy.get(s.photoId);
       sentBy.set(s.photoId, { at: s.sentAt, count: (prev?.count ?? 0) + 1 });
     }
-    const set = account?.photoSet ?? null;
+    const set = await this.library.setForChat(chatId, accountId);
     const rows = set
       ? await this.prisma.photoSetPhoto.findMany({
           where: { setId: set.id, deletedAt: null },
@@ -519,22 +725,24 @@ export class PhotoSetsService {
     };
   }
 
-  /** Снимок для ручной отправки: только из образа, назначенного аккаунту этого чата. */
+  /** Снимок для ручной отправки: только из образа, закреплённого за этим диалогом. */
   async photoForChat(chatId: number, photoId: number) {
-    const accountId = await this.history.chatOwnerAccount(chatId);
-    const account = accountId
-      ? await this.prisma.tgAccount.findUnique({
-          where: { id: accountId },
-          select: { photoSetId: true },
-        })
-      : null;
+    const set = await this.library.setForChat(chatId);
     const photo = await this.prisma.photoSetPhoto.findFirst({
       where: { id: photoId, deletedAt: null },
     });
-    if (!photo || !account?.photoSetId || photo.setId !== account.photoSetId)
-      throw new NotFoundException('фото нет в образе этого аккаунта');
+    if (!photo || !set || photo.setId !== set.id)
+      throw new NotFoundException('фото нет в образе этого диалога');
     return photo;
   }
+}
+
+function plural(n: number, one: string, few: string, many: string) {
+  const m10 = n % 10,
+    m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
 }
 
 export function filterPhotos<T extends PhotoSetPhoto>(

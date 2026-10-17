@@ -17,26 +17,7 @@ import { getLeadPersonas } from '../../api/leads';
 import ProxyDialog, { EMPTY_PROXY, ProxyFields, proxyPayload, proxyValid } from './ProxyDialog';
 import s from '../../styles/AdminPage.module.scss';
 import ClientAvatar from '../../components/ClientAvatar/ClientAvatar';
-import { assignPhotoSet, getPhotoSets, setAccountPhotoAutoSend } from '../../api/photoSets';
-import { api } from '../../api/client';
-
-/** Выделенные аккаунты → «Назначить образ»: один набор сразу на сотни аккаунтов. */
-function BulkPhotoSet({ count, sets, onAssign, onClear }) {
-  const [setId, setSetId] = useState('');
-  if (!count) return null;
-  return (
-    <div className="mr-account-bulk" role="region" aria-label="Действия с выбранными аккаунтами">
-      <span>Выбрано: {count}</span>
-      <select className={s.select} value={setId} onChange={(e) => setSetId(e.target.value)} aria-label="Образ для назначения">
-        <option value="">Выберите образ…</option>
-        {sets.map((x) => <option key={x.id} value={x.id}>{x.name} ({x.photos} фото)</option>)}
-        <option value="none">— Снять образ —</option>
-      </select>
-      <button type="button" className={s.btnPrimary} disabled={!setId} onClick={() => onAssign(setId === 'none' ? null : Number(setId))}>Назначить образ</button>
-      <button type="button" className={s.btn} onClick={onClear}>Снять выделение</button>
-    </div>
-  );
-}
+import { setAccountPhotoAutoSend } from '../../api/photoSets';
 
 const STATUS_LABEL = {
   unauthorized: 'нет сессии',
@@ -143,41 +124,6 @@ export default function Accounts() {
   const [editing, setEditing] = useState(null);
   const [flash, setFlash] = useState(null);
   const [personas, setPersonas] = useState([]);
-  const [photoSets, setPhotoSets] = useState([]);
-  const [admin, setAdmin] = useState(false);
-  const [selected, setSelected] = useState(() => new Set());
-
-  useEffect(() => {
-    api.get('/auth/me').then((me) => setAdmin(me?.role === 'admin')).catch(() => setAdmin(false));
-    getPhotoSets().then((r) => setPhotoSets(r.items ?? [])).catch(() => setPhotoSets([]));
-  }, []);
-
-  const selection = {
-    selected,
-    toggle: (id) => setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    }),
-    toggleAll: (ids) => setSelected((prev) => (ids.every((id) => prev.has(id)) ? new Set() : new Set(ids))),
-  };
-
-  async function assign(setId) {
-    const ids = [...selected];
-    const name = setId == null ? null : photoSets.find((x) => x.id === setId)?.name;
-    const ok = await PanelUX.confirm({
-      title: setId == null ? 'Снять образ?' : 'Назначить образ?',
-      message: setId == null ? `Аккаунтов: ${ids.length}` : `«${name}» · аккаунтов: ${ids.length}`,
-      confirmLabel: setId == null ? 'Снять' : 'Назначить',
-    });
-    if (!ok) return;
-    await run(async () => {
-      const r = await assignPhotoSet(ids, setId);
-      setSelected(new Set());
-      setFlash(setId == null ? `Образ снят с ${r.updated} аккаунтов` : `Образ «${name}» назначен ${r.updated} аккаунтам`);
-    });
-  }
-
   useEffect(() => {
     getPersonas()
       .then((r) => setPersonas(r.items ?? []))
@@ -233,9 +179,8 @@ export default function Accounts() {
           {error && <p className={s.error}>{error}</p>}
           {flash && <p className={s.ok} style={{ margin: '0 0 12px', fontSize: 13 }}>{flash}</p>}
 
-          {admin && <BulkPhotoSet count={selected.size} sets={photoSets} onAssign={assign} onClear={() => setSelected(new Set())} />}
+          <p className={s.hint}>Образ аккаунта задаёт хед региона на странице «Образы» — по личности аккаунта.</p>
           <AccountsTable rows={items} alive={online} onEdit={setEditing} onLogin={setAuth}
-            selection={admin ? selection : undefined}
             onPhotoAutoSend={(row, enabled) => run(() => setAccountPhotoAutoSend(row.id, enabled))}
             onProxy={setProxyFor} onStatus={(row, status) => run(() => setAccountStatus(row.id, status, 'operator:web'))}
             onClearFlood={row => run(() => clearAccountFlood(row.id))} onDelete={remove}

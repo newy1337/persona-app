@@ -115,6 +115,7 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
     const set = await prisma.photoSet.create({
       data: {
         name: 'Денис — образ 1',
+        regionCode: 'TST',
         minIntervalMin: 60,
         maxPerDay: 2,
         createdAt: 1,
@@ -149,8 +150,23 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
         phoneE164: '+10000000001',
         personaId: 'test',
         addedAt: 1,
-        photoSetId: setId,
       },
+    });
+    // Образ получает личность в регионе менеджера аккаунта — его назначает хед.
+    const manager = await prisma.dashboardUser.create({
+      data: {
+        username: 'manager',
+        role: 'manager',
+        regionCode: 'TST',
+        passwordHash: 'x',
+        createdAt: 1,
+      },
+    });
+    await prisma.managerAccount.create({
+      data: { userId: manager.id, tgAccountId: 1 },
+    });
+    await prisma.regionPhotoSet.create({
+      data: { regionCode: 'TST', personaSlug: 'test', setId, updatedAt: 1 },
     });
   });
   afterAll(async () => {
@@ -381,6 +397,7 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
         provider: 'anthropic',
       } as any,
       { scoped: () => ({ record: async () => undefined }) } as any,
+      photos,
     );
     const jpeg = await sharp({
       create: { width: 40, height: 30, channels: 3, background: '#c63' },

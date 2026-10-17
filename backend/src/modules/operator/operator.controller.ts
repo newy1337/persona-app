@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
+  ForbiddenException,
   HttpCode,
   Param,
   ParseIntPipe,
@@ -19,6 +21,9 @@ import { Role } from 'src/enums/roles.enum';
 import { CurrentUser } from 'src/decorators/user.decorator';
 import { AuditService } from 'src/shared/audit.service';
 import { GlobalGateService } from 'src/shared/global-gate.service';
+import { RegionGateService } from 'src/shared/region-gate.service';
+import { RegionStopDto } from 'src/modules/photo-sets/photo-sets.dto';
+import { DashboardUser } from '@prisma/client';
 import { RelayDto, TakeoverDto, TicketDto } from './dto/operator.dto';
 
 @ApiTags('Operator')
@@ -31,7 +36,82 @@ export class OperatorController {
     private readonly operator: OperatorService,
     private readonly audit: AuditService,
     private readonly gate: GlobalGateService,
+    private readonly regionGate: RegionGateService,
   ) {}
+
+  /** Регион, которым распоряжается пользователь: хед — своим, админ — любым. */
+  private stopRegion(user: DashboardUser, requested?: string): string {
+    if (user.role === Role.ADMIN) {
+      const region = requested?.trim();
+      if (!region) throw new BadRequestException('укажите регион');
+      return region;
+    }
+    if (user.role !== Role.HEAD || !user.regionCode)
+      throw new ForbiddenException('остановить регион может только его хед');
+    return user.regionCode;
+  }
+
+  @ApiOperation({
+    summary: 'Стоп региона: включён ли у своего региона (админу — список всех)',
+  })
+  @Get('region-stop')
+  async regionStopStatus(@CurrentUser() user: DashboardUser) {
+    const stops = await this.regionGate.list();
+    if (user.role === Role.ADMIN)
+      return { region_code: null, engaged: false, can_manage: true, stops };
+    const own = stops.find((s) => s.region_code === user.regionCode) ?? null;
+    return {
+      region_code: user.regionCode,
+      engaged: Boolean(own),
+      reason: own?.reason ?? null,
+      since: own?.created_at ?? null,
+      can_manage: user.role === Role.HEAD && Boolean(user.regionCode),
+    };
+  }
+
+  @ApiOperation({
+    summary:
+      'Экстренно остановить автоматику региона: бот, рассылка, войсер (хед)',
+  })
+  @Roles(Role.HEAD)
+  @Post('region-stop')
+  @HttpCode(200)
+  @UsePipes(ValidationPipe)
+  async regionStopEngage(
+    @Body() dto: RegionStopDto,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    const region = this.stopRegion(user, dto.region_code);
+    await this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'operator.region_stop_engage',
+        resource: `region:${region}`,
+        payload: { reason: dto.reason ?? null },
+      },
+      () => this.regionGate.engage(region, user.id, dto.reason),
+    );
+    return { region_code: region, engaged: true };
+  }
+
+  @Roles(Role.HEAD)
+  @Delete('region-stop')
+  @HttpCode(200)
+  async regionStopClear(
+    @CurrentUser() user: DashboardUser,
+    @Query('region') requested?: string,
+  ) {
+    const region = this.stopRegion(user, requested);
+    await this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'operator.region_stop_clear',
+        resource: `region:${region}`,
+      },
+      () => this.regionGate.clear(region),
+    );
+    return { region_code: region, engaged: false };
+  }
 
   @ApiOperation({
     summary: 'Take the chat over; returns the ticket to echo on relay/resume',

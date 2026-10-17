@@ -1,10 +1,16 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { createHash } from 'crypto';
 import { Prisma, VoiceTask } from '@prisma/client';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import { GlobalGateService } from 'src/shared/global-gate.service';
+import { RegionGateService } from 'src/shared/region-gate.service';
 import { REFUSAL_LOCK_KEY } from 'src/domain/lead-facts';
 import { voiceNotice } from './voicer-notice';
 import type { ReplyDelivery } from 'src/brain/reply-delivery';
@@ -46,6 +52,7 @@ export class VoicerAutomationService {
     private prisma: PrismaService,
     private clock: ClockService,
     private gate: GlobalGateService,
+    @Optional() private regionGate?: RegionGateService,
   ) {}
 
   private async eligibility(
@@ -109,29 +116,34 @@ export class VoicerAutomationService {
     const previous = key
       ? await tx.voiceTask.findUnique({ where: { autoKey: key } })
       : null;
+    const regionStopped = await this.regionGate?.accountStopped(
+      contact?.accountId,
+    );
     const reason = this.gate.stopped
       ? 'Автоматика остановлена'
-      : contact?.pauseState === 'paused'
-        ? 'Диалог на паузе'
-        : contact?.blockedByClientAt || parse(facts?.facts)[REFUSAL_LOCK_KEY]
-          ? 'Автоматические сообщения запрещены'
-          : contact?.account?.status !== 'active'
-            ? 'Telegram-аккаунт не подключён'
-            : manager?.role !== 'manager'
-              ? 'У аккаунта не назначен менеджер'
-              : voicer?.role !== 'voice' || !voicer.voiceProfile?.telegramId
-                ? 'Нет подключённого войсера'
-                : !persona?.enabled
-                  ? 'Личность отключена'
-                  : pending || manual
-                    ? 'Уже есть незавершённая отправка'
-                    : !last || last.role !== 'user'
-                      ? 'Нет нового сообщения собеседника'
-                      : previous
-                        ? 'На эти сообщения уже была заявка'
-                        : sent >= AUTO_VOICE_MAX
-                          ? 'Лимит голосовых за общение достигнут'
-                          : '';
+      : regionStopped
+        ? 'Автоматика региона остановлена'
+        : contact?.pauseState === 'paused'
+          ? 'Диалог на паузе'
+          : contact?.blockedByClientAt || parse(facts?.facts)[REFUSAL_LOCK_KEY]
+            ? 'Автоматические сообщения запрещены'
+            : contact?.account?.status !== 'active'
+              ? 'Telegram-аккаунт не подключён'
+              : manager?.role !== 'manager'
+                ? 'У аккаунта не назначен менеджер'
+                : voicer?.role !== 'voice' || !voicer.voiceProfile?.telegramId
+                  ? 'Нет подключённого войсера'
+                  : !persona?.enabled
+                    ? 'Личность отключена'
+                    : pending || manual
+                      ? 'Уже есть незавершённая отправка'
+                      : !last || last.role !== 'user'
+                        ? 'Нет нового сообщения собеседника'
+                        : previous
+                          ? 'На эти сообщения уже была заявка'
+                          : sent >= AUTO_VOICE_MAX
+                            ? 'Лимит голосовых за общение достигнут'
+                            : '';
     return {
       available: !reason,
       reason,
@@ -253,6 +265,8 @@ export class VoicerAutomationService {
     if ((task.autoExpiresAt ?? 0) <= this.clock.ts())
       return 'Время записи истекло — бот подготовит актуальный ответ текстом';
     if (this.gate.stopped) return 'Автоматика остановлена';
+    if (await this.regionGate?.accountStopped(task.sendAccountId))
+      return 'Автоматика региона остановлена';
     if (!task.chatId) return 'Диалог удалён';
     const [contact, last, facts, persona, schedule, manager, manual] =
       await Promise.all([

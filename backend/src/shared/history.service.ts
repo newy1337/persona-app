@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { deliveryRandomId } from 'src/brain/reply-delivery';
 import type { InboundTurn } from 'src/brain/reply-brain.port';
 import { PrismaService } from '../prisma.service';
 import { ClockService } from './clock.service';
+import { PhotoLibraryService } from './photo-library.service';
 import { BOT_ACTIVE_REASON, PauseState } from '../domain/pause';
 import { LeadFacts, parseLeadFacts } from '../domain/lead-facts';
 import { toChatId } from '../utils/ids';
@@ -78,6 +79,7 @@ export class HistoryService {
   constructor(
     private prisma: PrismaService,
     private clock: ClockService,
+    @Optional() private photos?: PhotoLibraryService,
   ) {}
 
   async ensureContact(chatId: number, accountId?: number | null) {
@@ -94,11 +96,18 @@ export class HistoryService {
       }
       return existing;
     }
+    // Новый собеседник сразу закрепляется за образом, который сейчас стоит
+    // у личности в регионе: последующая смена образа его уже не коснётся.
+    const photoSetId =
+      accountId != null && this.photos
+        ? await this.photos.currentSetId(accountId).catch(() => null)
+        : null;
     return this.prisma.contact.create({
       data: {
         chatId: id,
         accountId: accountId ?? null,
         createdAt: this.clock.ts(),
+        photoSetId,
       },
     });
   }

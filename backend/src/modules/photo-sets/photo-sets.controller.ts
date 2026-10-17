@@ -26,7 +26,7 @@ import { ScopeService } from 'src/shared/scope.service';
 import { PhotoSetsService } from './photo-sets.service';
 import {
   AccountAutoSendDto,
-  AssignPhotoSetDto,
+  AssignRegionPhotoSetDto,
   CreatePhotoSetDto,
   UpdatePhotoDto,
   UpdatePhotoSetDto,
@@ -51,33 +51,55 @@ export class PhotoSetsController {
     return this.sets.list(user);
   }
 
-  @ApiOperation({ summary: 'Создать образ (администратор)' })
+  @ApiOperation({ summary: 'Создать образ (хед — в своём регионе)' })
   @Post()
   @HttpCode(200)
   @UsePipes(ValidationPipe)
   create(@Body() dto: CreatePhotoSetDto, @CurrentUser() user: DashboardUser) {
-    this.sets.requireAdmin(user);
+    this.sets.requireCreator(user);
     return this.audit.wrap(
       { userId: user.id, action: 'photo_set.create', payload: dto },
-      () => this.sets.create(dto.name),
+      () => this.sets.create(user, dto.name, dto.region_code),
     );
   }
 
-  @ApiOperation({ summary: 'Назначить образ аккаунтам или снять его' })
-  @Post('assign')
+  @ApiOperation({
+    summary: 'Личности региона и их образы (для новых собеседников)',
+  })
+  @Get('assignments')
+  assignments(
+    @CurrentUser() user: DashboardUser,
+    @Query('region') region?: string,
+  ) {
+    this.scope.requireManager(user);
+    return this.sets.regionAssignments(user, region);
+  }
+
+  @ApiOperation({
+    summary:
+      'Назначить образ личности региона (хед); начатые диалоги остаются на прежнем',
+  })
+  @Put('assignments')
   @HttpCode(200)
   @UsePipes(ValidationPipe)
-  assign(@Body() dto: AssignPhotoSetDto, @CurrentUser() user: DashboardUser) {
-    this.sets.requireAdmin(user);
+  assignRegion(
+    @Body() dto: AssignRegionPhotoSetDto,
+    @CurrentUser() user: DashboardUser,
+  ) {
     return this.audit.wrap(
       {
         userId: user.id,
-        action: 'photo_set.assign',
-        resource:
-          dto.set_id == null ? 'photo_set:none' : `photo_set:${dto.set_id}`,
-        payload: { accounts: dto.tg_account_ids.length },
+        action: 'photo_set.assign_region',
+        resource: `persona:${dto.persona_slug}`,
+        payload: dto,
       },
-      () => this.sets.assign(dto.tg_account_ids, dto.set_id ?? null),
+      () =>
+        this.sets.assignRegion(
+          user,
+          dto.persona_slug,
+          dto.set_id ?? null,
+          dto.region_code,
+        ),
     );
   }
 
@@ -216,6 +238,7 @@ export class PhotoSetsController {
     @CurrentUser() user: DashboardUser,
   ) {
     await this.sets.requireEditable(user, id);
+    if (dto.region_code !== undefined) this.sets.requireAdmin(user);
     return this.audit.wrap(
       {
         userId: user.id,
@@ -227,14 +250,16 @@ export class PhotoSetsController {
     );
   }
 
-  @ApiOperation({ summary: 'Удалить образ (администратор)' })
+  @ApiOperation({
+    summary:
+      'Удалить образ (хед региона): только когда все его диалоги дошли до лида или архива',
+  })
   @Delete(':id')
   async remove(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: DashboardUser,
   ) {
-    this.sets.requireAdmin(user);
-    await this.sets.requireVisible(user, id);
+    await this.sets.requireEditable(user, id);
     return this.audit.wrap(
       {
         userId: user.id,

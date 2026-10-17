@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Header from '../../components/Header/Header';
 import { PanelUX } from '../../ui/PanelUX';
 import {
+  assignRegionPhotoSet,
   createPhotoSet,
   deletePhotoSet,
+  getRegionAssignments,
   deleteSetPhoto,
   getPhotoSets,
   getSetPhotos,
@@ -129,6 +131,100 @@ function Uploader({ setId, onUploaded }) {
   );
 }
 
+function chatsWord(n) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return 'диалог';
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'диалога';
+  return 'диалогов';
+}
+
+/** Почему образ нельзя удалить — или null, если можно. */
+function removeBlocker(set) {
+  if (set.assigned_personas?.length)
+    return `Назначен личности: ${set.assigned_personas.map((p) => p.name).join(', ')}. Сначала назначьте ей другой образ.`;
+  if (set.active_chats > 0)
+    return `Идёт ${set.active_chats} ${chatsWord(set.active_chats)}. Удалить можно, когда все дойдут до этапа «Лид» или уйдут в архив.`;
+  return null;
+}
+
+/**
+ * Какой образ получает каждая личность в регионе. Смена образа касается только
+ * новых собеседников: начатые диалоги остаются на прежнем.
+ */
+function RegionAssignments({ admin, version, onChanged }) {
+  const [region, setRegion] = useState('');
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+
+  const load = useCallback(() => {
+    if (admin && !region.trim()) { setData(null); return; }
+    getRegionAssignments(admin ? region.trim() : undefined).then(setData).catch((e) => setError(e.detail || e.message));
+  }, [admin, region]);
+  useEffect(() => { load(); }, [load, version]);
+
+  async function change(persona, value) {
+    const setId = value === '' ? null : Number(value);
+    const target = data.sets.find((x) => x.id === setId);
+    if (!await PanelUX.confirm({
+      title: setId == null ? 'Снять образ?' : 'Назначить образ?',
+      message: setId == null
+        ? `${persona.name}: новые собеседники останутся без фото. Начатые диалоги сохранят свой образ.`
+        : `${persona.name} → «${target?.name}». Получат только новые собеседники; начатые диалоги останутся на прежнем образе.`,
+      confirmLabel: setId == null ? 'Снять' : 'Назначить',
+    })) return;
+    setBusy(persona.slug);
+    setError('');
+    try {
+      setData(await assignRegionPhotoSet(persona.slug, setId, admin ? data.region_code : undefined));
+      onChanged();
+    } catch (e) {
+      setError(e.detail || e.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  return (
+    <section className={p.panel} aria-label="Образы личностей региона" style={{ marginBottom: 16 }}>
+      <div className={s.head} style={{ margin: 0 }}>
+        <h3 className={s.modalTitle} style={{ margin: 0 }}>
+          Образы личностей{data?.region_code ? ` · регион ${data.region_code}` : ''}
+        </h3>
+        {admin && (
+          <input className={s.field} placeholder="Код региона" value={region} maxLength={32}
+            onChange={(e) => setRegion(e.target.value)} aria-label="Регион" style={{ maxWidth: 180 }} />
+        )}
+      </div>
+      <p className={s.hint}>Новый собеседник получает образ, назначенный личности сейчас, и остаётся на нём до конца общения.</p>
+      {error && <p className={s.error} role="alert">{error}</p>}
+      {!data && !admin && <p className={s.hint}>Загружаем…</p>}
+      {data && !data.region_code && <p className={s.hint}>У вашей учётной записи не указан регион.</p>}
+      {data?.region_code && (
+        <table className="mr-dialog-table" aria-label="Назначение образов">
+          <thead><tr><th scope="col">Личность</th><th scope="col">Образ для новых собеседников</th></tr></thead>
+          <tbody>
+            {data.personas.map((persona) => (
+              <tr key={persona.slug}>
+                <td>{persona.name}</td>
+                <td>
+                  {data.can_assign ? (
+                    <select className={s.select} value={persona.set_id ?? ''} disabled={busy === persona.slug}
+                      onChange={(e) => change(persona, e.target.value)} aria-label={`Образ для ${persona.name}`}>
+                      <option value="">— без образа —</option>
+                      {data.sets.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                    </select>
+                  ) : (persona.set_name || <span className={s.muted}>не назначен</span>)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
 export function PhotoGrid({ photos, onOpen, withSent = false, picked = null }) {
   if (!photos.length) return <p className={s.empty}>Снимков нет.</p>;
   return (
@@ -149,7 +245,9 @@ export function TagFilter({ tags, value, onChange }) {
 }
 
 export default function PhotoSets() {
-  const [data, setData] = useState({ items: [], can_edit: false, can_manage: false });
+  const [data, setData] = useState({ items: [], can_create: false, region_code: null });
+  const [newRegion, setNewRegion] = useState('');
+  const [version, setVersion] = useState(0);
   const [current, setCurrent] = useState(null);
   const [photos, setPhotos] = useState([]);
   const [q, setQ] = useState('');
@@ -171,6 +269,9 @@ export default function PhotoSets() {
   useEffect(() => { setPhotos([]); setTag(''); setQ(''); loadPhotos(); }, [loadPhotos]);
 
   const set = data.items.find((x) => x.id === current) ?? null;
+  // У хеда регион есть всегда; создавать без своего региона может только администратор.
+  const admin = data.can_create && !data.region_code;
+  const blocker = set ? removeBlocker(set) : null;
   const tags = useMemo(() => [...new Set(photos.flatMap((ph) => ph.tags))].sort(), [photos]);
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -182,7 +283,7 @@ export default function PhotoSets() {
     e.preventDefault();
     if (!newName.trim()) return;
     try {
-      const created = await createPhotoSet(newName.trim());
+      const created = await createPhotoSet(newName.trim(), admin ? newRegion.trim() : undefined);
       setNewName('');
       await loadSets();
       setCurrent(created.id);
@@ -193,11 +294,12 @@ export default function PhotoSets() {
 
   async function remove() {
     if (!set) return;
-    if (!await PanelUX.confirm({ title: 'Удалить образ?', message: `«${set.name}» · аккаунтов: ${set.accounts}`, confirmLabel: 'Удалить', danger: true })) return;
+    if (!await PanelUX.confirm({ title: 'Удалить образ?', message: `«${set.name}»${set.chats ? ` · закрытых диалогов на нём: ${set.chats}` : ''}`, confirmLabel: 'Удалить', danger: true })) return;
     try {
       await deletePhotoSet(set.id);
       setCurrent(null);
       loadSets();
+      setVersion((v) => v + 1);
     } catch (err) {
       setError(err.detail || err.message);
     }
@@ -232,14 +334,18 @@ export default function PhotoSets() {
         <div className="container">
           <div className={s.head}>
             <h2 className={s.title}>Образы</h2>
-            {data.can_manage && (
+            {data.can_create && (
               <form onSubmit={create} style={{ display: 'flex', gap: 8 }}>
                 <input className={s.field} placeholder="Аня — образ 1" value={newName} maxLength={120} onChange={(e) => setNewName(e.target.value)} aria-label="Название нового образа" />
-                <button type="submit" className={s.btnPrimary} disabled={!newName.trim()}>Создать образ</button>
+                {admin && <input className={s.field} placeholder="Регион" value={newRegion} maxLength={32} onChange={(e) => setNewRegion(e.target.value)} aria-label="Регион нового образа" style={{ maxWidth: 120 }} />}
+                <button type="submit" className={s.btnPrimary} disabled={!newName.trim() || (admin && !newRegion.trim())}>Создать образ</button>
               </form>
             )}
           </div>
           {error && <p className={s.error} role="alert">{error}</p>}
+          {!data.can_create && <p className={s.hint}>Образы ведёт хед региона. Вы можете их просматривать.</p>}
+
+          <RegionAssignments admin={admin} version={version} onChanged={loadSets} />
 
           {!data.items.length && <p className={s.empty}>Образов нет</p>}
           <div className={p.sets}>
@@ -248,7 +354,8 @@ export default function PhotoSets() {
                 {x.cover_photo_id ? <img className={p.cover} src={photoUrl(x.cover_photo_id, true)} alt="" /> : <span className={p.coverEmpty}>Нет обложки</span>}
                 <span className={p.setName}>{x.name}</span>
                 <span className={p.setMeta}>
-                  {x.photos} фото · {x.accounts} акк. · {x.auto_send ? (x.send_mode === 'request' ? 'по просьбе' : 'автоотправка') : 'вручную'}
+                  {admin && x.region_code ? `${x.region_code} · ` : ''}{x.photos} фото · {x.active_chats} {chatsWord(x.active_chats)} идёт · {x.auto_send ? (x.send_mode === 'request' ? 'по просьбе' : 'автоотправка') : 'вручную'}
+                  {x.assigned_personas?.length > 0 && <> · для новых: {x.assigned_personas.map((a) => a.name).join(', ')}</>}
                   {x.needs_review > 0 && <span className={p.review}> · {x.needs_review} проверить</span>}
                 </span>
               </button>
@@ -257,12 +364,13 @@ export default function PhotoSets() {
 
           {set && (
             <section className={p.panel} aria-label={`Образ ${set.name}`}>
-              <SetSettings set={set} canEdit={data.can_edit} onSaved={() => loadSets()} />
-              {data.can_edit && <Uploader setId={set.id} onUploaded={() => { loadPhotos(); loadSets(); }} />}
+              <SetSettings set={set} canEdit={set.can_edit} onSaved={() => loadSets()} />
+              {set.can_edit && <Uploader setId={set.id} onUploaded={() => { loadPhotos(); loadSets(); }} />}
               <div className={p.toolbar}>
                 <input className={`${s.field} ${p.search}`} placeholder="Поиск" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Поиск по снимкам" />
-                {data.can_manage && <button type="button" className={s.btnSmDanger} onClick={remove}>Удалить образ</button>}
+                {set.can_edit && <button type="button" className={s.btnSmDanger} onClick={remove} disabled={Boolean(blocker)} title={blocker ?? undefined}>Удалить образ</button>}
               </div>
+              {set.can_edit && blocker && <p className={s.hint}>{blocker}</p>}
               <TagFilter tags={tags} value={tag} onChange={setTag} />
               <PhotoGrid photos={shown} onOpen={setOpen} />
             </section>
@@ -272,7 +380,7 @@ export default function PhotoSets() {
       {open && (
         <PhotoEditor
           photo={open}
-          canEdit={data.can_edit}
+          canEdit={Boolean(set?.can_edit)}
           onClose={() => setOpen(null)}
           onSaved={() => { setOpen(null); loadPhotos(); loadSets(); }}
           onDelete={removePhoto}

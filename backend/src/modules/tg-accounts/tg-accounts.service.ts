@@ -73,6 +73,7 @@ export class TgAccountsService {
     extra: {
       chats?: number;
       personaName?: string | null;
+      photoSetId?: number | null;
       photoSetName?: string | null;
     } = {},
   ): TgAccountSummary {
@@ -112,7 +113,7 @@ export class TgAccountsService {
       purpose: a.purpose,
       username: a.username,
       display_name: a.displayName ?? null,
-      photo_set_id: a.photoSetId ?? null,
+      photo_set_id: extra.photoSetId ?? null,
       photo_set_name: extra.photoSetName ?? null,
       photo_auto_send: a.photoAutoSend,
       avatar_url: this.presence.accountAvatarUrl(a.id),
@@ -140,23 +141,38 @@ export class TgAccountsService {
       },
       orderBy: { id: 'asc' },
     });
-    const [chats, personas, sets] = await Promise.all([
+    const [chats, personas, sets, links, regional] = await Promise.all([
       this.prisma.contact.groupBy({
         by: ['accountId'],
         _count: { _all: true },
       }),
       this.prisma.persona.findMany({ select: { slug: true, name: true } }),
       this.prisma.photoSet.findMany({ select: { id: true, name: true } }),
+      this.prisma.managerAccount.findMany({
+        where: { tgAccountId: { in: rows.map((a) => a.id) } },
+        select: { tgAccountId: true, user: { select: { regionCode: true } } },
+      }),
+      this.prisma.regionPhotoSet.findMany(),
     ]);
     const setNames = new Map(sets.map((s) => [s.id, s.name]));
+    const regionOf = new Map(
+      links.map((l) => [l.tgAccountId, l.user.regionCode]),
+    );
+    const assigned = new Map(
+      regional.map((r) => [`${r.regionCode}:${r.personaSlug}`, r.setId]),
+    );
+    // Образ для новых диалогов — назначенный хедом личности в регионе аккаунта.
+    const currentSet = (a: (typeof rows)[number]) =>
+      assigned.get(`${regionOf.get(a.id)}:${a.personaId}`) ?? null;
     const chatsBy = new Map(chats.map((c) => [c.accountId, c._count._all]));
     const names = new Map(personas.map((p) => [p.slug, p.name]));
     return rows.map((a) =>
       this.summary(a, {
         chats: chatsBy.get(a.id) ?? 0,
         personaName: names.get(a.personaId) ?? null,
-        photoSetName: a.photoSetId
-          ? (setNames.get(a.photoSetId) ?? null)
+        photoSetId: currentSet(a),
+        photoSetName: currentSet(a)
+          ? (setNames.get(currentSet(a)!) ?? null)
           : null,
       }),
     );

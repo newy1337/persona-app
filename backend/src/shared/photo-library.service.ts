@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma, PhotoSetPhoto } from '@prisma/client';
+import type { Prisma, PhotoSet, PhotoSetPhoto } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { toChatId } from '../utils/ids';
 import { characterDate } from 'src/brain/nastya/kernel/clock';
@@ -50,6 +50,66 @@ export const facts = (p: PhotoSetPhoto): LibraryPhoto => ({
 export class PhotoLibraryService {
   constructor(private prisma: PrismaService) {}
 
+  /**
+   * Образ, который сейчас получают новые диалоги аккаунта: назначенный хедом
+   * личности аккаунта в регионе его менеджера. Нет назначения — нет образа.
+   */
+  async currentSetId(accountId: number, db: Db = this.prisma) {
+    const account = await db.tgAccount.findUnique({
+      where: { id: accountId },
+      select: {
+        personaId: true,
+        manager: { select: { user: { select: { regionCode: true } } } },
+      },
+    });
+    if (!account) return null;
+    const region = account.manager?.user.regionCode;
+    const assigned = region
+      ? await db.regionPhotoSet.findUnique({
+          where: {
+            regionCode_personaSlug: {
+              regionCode: region,
+              personaSlug: account.personaId,
+            },
+          },
+          select: { setId: true },
+        })
+      : null;
+    return assigned?.setId ?? null;
+  }
+
+  /**
+   * Образ диалога. Диалог закрепляется за образом при первом обращении и
+   * дальше на нём остаётся: смена образа в регионе касается только новых
+   * собеседников. Архивный образ больше ничего не отправляет.
+   */
+  async setForChat(
+    chatId: number,
+    accountId?: number | null,
+  ): Promise<PhotoSet | null> {
+    const id = toChatId(chatId);
+    const contact = await this.prisma.contact.findUnique({
+      where: { chatId: id },
+      select: { accountId: true, photoSet: true },
+    });
+    if (contact?.photoSet)
+      return contact.photoSet.archivedAt ? null : contact.photoSet;
+    const owner = accountId ?? contact?.accountId ?? null;
+    if (!contact || owner == null) return null;
+    const setId = await this.currentSetId(owner);
+    if (setId == null) return null;
+    await this.prisma.contact.updateMany({
+      where: { chatId: id, photoSetId: null },
+      data: { photoSetId: setId },
+    });
+    const bound = await this.prisma.contact.findUnique({
+      where: { chatId: id },
+      select: { photoSet: true },
+    });
+    const set = bound?.photoSet ?? null;
+    return set && !set.archivedAt ? set : null;
+  }
+
   async sends(chatId: number) {
     return this.prisma.photoSend.findMany({
       where: { chatId: toChatId(chatId) },
@@ -64,12 +124,14 @@ export class PhotoLibraryService {
     timeZone: string,
     now: number,
   ): Promise<PhotoAvailability | undefined> {
-    const account = await this.prisma.tgAccount.findUnique({
-      where: { id: accountId },
-      select: { photoAutoSend: true, photoSet: true },
-    });
-    const set = account?.photoSet;
-    if (!set) return undefined;
+    const [account, set] = await Promise.all([
+      this.prisma.tgAccount.findUnique({
+        where: { id: accountId },
+        select: { photoAutoSend: true },
+      }),
+      this.setForChat(chatId, accountId),
+    ]);
+    if (!account || !set) return undefined;
     const [photos, sends] = await Promise.all([
       this.prisma.photoSetPhoto.findMany({
         where: { setId: set.id, deletedAt: null },

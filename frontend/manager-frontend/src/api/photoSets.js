@@ -4,8 +4,36 @@ export function getPhotoSets() {
   return api.get('/api/photo-sets');
 }
 
-export function createPhotoSet(name) {
-  return api.post('/api/photo-sets', { name });
+export function createPhotoSet(name, regionCode) {
+  return api.post('/api/photo-sets', { name, ...(regionCode ? { region_code: regionCode } : {}) });
+}
+
+/** Личности региона и образ каждой — его получат новые собеседники. */
+export function getRegionAssignments(regionCode) {
+  return api.get(`/api/photo-sets/assignments${regionCode ? `?region=${encodeURIComponent(regionCode)}` : ''}`);
+}
+
+export function assignRegionPhotoSet(personaSlug, setId, regionCode) {
+  return api.put('/api/photo-sets/assignments', {
+    persona_slug: personaSlug,
+    set_id: setId,
+    ...(regionCode ? { region_code: regionCode } : {}),
+  });
+}
+
+export function getRegionStop() {
+  return api.get('/api/operator/region-stop');
+}
+
+export function engageRegionStop(reason, regionCode) {
+  return api.post('/api/operator/region-stop', {
+    ...(reason ? { reason } : {}),
+    ...(regionCode ? { region_code: regionCode } : {}),
+  });
+}
+
+export function clearRegionStop(regionCode) {
+  return api.delete(`/api/operator/region-stop${regionCode ? `?region=${encodeURIComponent(regionCode)}` : ''}`);
 }
 
 export function updatePhotoSet(id, patch) {
@@ -44,10 +72,6 @@ export function updateSetPhoto(photoId, patch) {
 
 export function deleteSetPhoto(photoId) {
   return api.delete(`/api/photo-sets/photos/${photoId}`);
-}
-
-export function assignPhotoSet(accountIds, setId) {
-  return api.post('/api/photo-sets/assign', { tg_account_ids: accountIds, set_id: setId });
 }
 
 export function setAccountPhotoAutoSend(accountId, enabled) {

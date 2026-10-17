@@ -21,9 +21,60 @@ export class CreatePhotoSetDto {
   @MinLength(1)
   @MaxLength(120)
   name: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Регион образа: администратор указывает обязательно, хед всегда создаёт в своём',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  region_code?: string;
+}
+
+/** Хед назначает образ личности своего региона; null — снять назначение. */
+export class AssignRegionPhotoSetDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  persona_slug: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsInt()
+  set_id?: number | null;
+
+  @ApiPropertyOptional({ description: 'Регион (только администратор)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  region_code?: string;
+}
+
+export class RegionStopDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  reason?: string;
+
+  @ApiPropertyOptional({ description: 'Регион (только администратор)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  region_code?: string;
 }
 
 export class UpdatePhotoSetDto {
+  @ApiPropertyOptional({
+    description: 'Перевести образ в другой регион (только администратор)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  region_code?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -105,20 +156,6 @@ export class UpdatePhotoDto {
   @IsOptional()
   @IsBoolean()
   auto_send?: boolean;
-}
-
-export class AssignPhotoSetDto {
-  @ApiProperty({ type: [Number] })
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(1000)
-  @IsInt({ each: true })
-  tg_account_ids: number[];
-
-  @ApiPropertyOptional({ nullable: true, description: 'null — снять образ' })
-  @IsOptional()
-  @IsInt()
-  set_id?: number | null;
 }
 
 export class AccountAutoSendDto {
