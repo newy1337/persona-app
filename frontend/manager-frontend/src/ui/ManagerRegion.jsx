@@ -5,7 +5,7 @@ import s from '../styles/AdminPage.module.scss';
 import { getAccounts as loadAccounts } from '../api/accounts';
 import { PanelUX as ux } from './PanelUX';
 import { VoiceBotLink } from '../pages/VoiceWork/VoiceBotLink';
-import StaffAssignments from '../pages/PhotoSets/StaffAssignments';
+import { PhotoCell, RegionStopButton, usePhotoAssignments } from '../pages/PhotoSets/StaffAssignments';
 import { DEAL_STAGES, dealStageLabel } from '../data/dealStages';
 import { LEAD_ROLE_FOR, ROLE_LABELS } from '../utils/roles';
 
@@ -467,14 +467,15 @@ export function ManagersPage() {
   const state = ux.useActions(), pending = state.pending.some(key => key.includes('/api/managers'));
   const visible = data.items.filter(user => [user.username, user.region_code, roles[user.role]].some(value => String(value || '').toLowerCase().includes(query.trim().toLowerCase())));
   const admin = me?.role === 'admin';
+  const photo = usePhotoAssignments(data.items.map(user => user.region_code));
   return h('div', { className: 'app mr-managers' }, h(Nav), h('main', { className: 'main' }, h('div', { className: 'container' },
-    h('div', { className: s.head }, h('h2', { className: s.title }, admin ? 'Менеджеры' : `Моя команда · регион ${me?.region_code || ''}`), admin && !creating && button('+ Создать учётку', () => { setCreating(true); setCredentials(null); }, { className: s.btnPrimary })),
+    h('div', { className: s.head }, h('h2', { className: s.title }, admin ? 'Менеджеры' : `Моя команда · регион ${me?.region_code || ''}`), h('div', { className: s.actions }, !admin && h(RegionStopButton), admin && !creating && button('+ Создать учётку', () => { setCreating(true); setCredentials(null); }, { className: s.btnPrimary }))),
     creating && h(CreateForm, { availableRoles: data.roles, voicers: data.items.filter(u => u.role === 'voice'), users: data.items, onCreate: create, onCancel: () => setCreating(false) }),
-    error && h('p', { className: s.error, role: 'alert' }, error),
+    (error || photo.error) && h('p', { className: s.error, role: 'alert' }, error || photo.error),
     credentials && h(Credentials, { value: credentials, onClose: () => setCredentials(null), onRegenerate: regenerate }),
     h('div', { className: 'mr-manager-toolbar' }, h('input', { className: s.field, type: 'search', 'aria-label': 'Поиск менеджеров', placeholder: 'Логин, регион или роль', value: query, onChange: e => setQuery(e.target.value) }), h('span', { className: 'mr-caption' }, loading ? 'Загружаем…' : `Показано: ${visible.length}`)),
     h('table', { className: 'mr-manager-table', 'aria-label': 'Менеджеры' },
-      h('thead', null, h('tr', null, ['Учётка', 'Роль / регион', 'Аккаунты', 'Действия'].map((title, index) => h('th', { key: title, scope: 'col', style: { width: ['22%', '18%', '28%', '32%'][index] } }, title)))),
+      h('thead', null, h('tr', null, ['Учётка', 'Роль / регион', 'Аккаунты', 'Образ', 'Действия'].map((title, index) => h('th', { key: title, scope: 'col', style: { width: ['18%', '14%', '20%', '26%', '22%'][index] } }, title)))),
       h('tbody', null, visible.map(user => {
         const linked = accounts.filter(account => user.account_ids.includes(account.id));
         return h('tr', { key: user.user_id, 'data-manager-id': user.user_id },
@@ -483,6 +484,7 @@ export function ManagersPage() {
           h('td', { className: 'mr-manager-accounts' }, user.role === 'manager' ? h(React.Fragment, null,
             h('div', { className: 'mr-manager-account-head' }, h('span', null, `Назначено: ${user.account_ids.length}`), admin && button(opening === user.user_id ? 'Загружаем…' : 'Назначить', () => openAccounts(user), { disabled: pending || opening !== null, 'aria-label': `Назначить аккаунты: ${user.username}` })),
             linked.length > 0 && h('div', { className: 'mr-manager-account-preview' }, linked.slice(0, 2).map(account => account.username ? '@' + account.username : account.phone_e164 || `#${account.id}`).join(' · '), linked.length > 2 ? ` · ещё ${linked.length - 2}` : '')) : h('span', { className: 'mr-caption' }, user.role === 'admin' ? 'Доступ ко всем' : user.role === 'teamlead' || user.role === 'head' ? `Команда: ${teamSize(user, data.items)} чел.` : '—')),
+          h('td', { className: 'mr-manager-photo' }, h(PhotoCell, { user, photo })),
           h('td', { className: 'mr-manager-actions' },
             (admin || user.role === 'manager') && button(admin ? 'Изменить' : 'Назначить тимлида', () => setEditing(user), { disabled: pending }),
             admin && user.role === 'voice' && h(VoiceBotLink, { userId: user.user_id, linked: user.telegram_linked }),
@@ -490,7 +492,6 @@ export function ManagersPage() {
             admin && user.user_id !== me?.user_id && button('Удалить', () => remove(user), { disabled: pending, className: s.btnSmDanger })));
       }))),
     !loading && !visible.length && h('p', { className: s.empty }, 'Ничего не найдено. Измените поиск.'),
-    me && h(StaffAssignments, { admin }),
     editing && h(ManagerEditor, { key: editing.user_id, user: editing, me, availableRoles: data.roles, voicers: data.items.filter(u => u.role === 'voice'), users: data.items, leadOnly: !admin, onSave: save, onClose: () => setEditing(null) }),
     assigning && h(AccountAssignment, { key: assigning.user_id, user: assigning, users: data.items, accounts, onSave: save, onClose: () => setAssigning(null) }))));
 }

@@ -261,6 +261,7 @@
  .mr-manager-role{grid-column:2;grid-row:1}
  .mr-manager-accounts{grid-column:1;grid-row:2}
  .mr-manager-actions{grid-column:2;grid-row:2;align-self:end}
+ .mr-manager-photo{grid-column:1/-1;grid-row:3}
 }
 @media(max-width:600px){
  .ux-modal :is(input:not([type=checkbox]),select),.mr-managers :is(input:not([type=checkbox]),select){min-height:40px;font-size:16px}
@@ -273,7 +274,8 @@
  .mr-manager-table tr{grid-template-columns:minmax(0,1fr);padding:14px;gap:12px}
  .mr-manager-role{grid-column:1;grid-row:2;display:flex!important;gap:12px;flex-wrap:wrap}
  .mr-manager-accounts{grid-column:1;grid-row:3}
- .mr-manager-actions{grid-column:1;grid-row:4;padding-top:8px!important;border-top:1px solid #ffffff14!important}
+ .mr-manager-photo{grid-column:1;grid-row:4}
+ .mr-manager-actions{grid-column:1;grid-row:5;padding-top:8px!important;border-top:1px solid #ffffff14!important}
  .mr-manager-toolbar{gap:8px}
  .mr-manager-toolbar input{max-width:none}
  .mr-assignment-item{grid-template-columns:17px minmax(0,1fr);gap:3px 10px;padding:10px}

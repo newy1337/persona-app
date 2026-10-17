@@ -8,22 +8,19 @@ import {
   getStaffAssignments,
 } from '../../api/photoSets';
 import s from '../../styles/AdminPage.module.scss';
-import p from './PhotoSets.module.scss';
 
-function RegionStopButton({ region }) {
+/** Стоп региона: хед выключает и включает образы своего региона. */
+export function RegionStopButton() {
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState(false);
   const load = useCallback(() => getRegionStop().then(setState).catch(() => setState(null)), []);
-  useEffect(() => { load(); }, [load, region]);
-  if (!state?.region_code) return null;
-  if (!state.can_manage)
-    return state.engaged ? <span className={s.error} role="status">Образы выключены</span> : null;
+  useEffect(() => { load(); }, [load]);
+  if (!state?.region_code || !state.can_manage) return null;
 
   async function toggle() {
     const engaging = !state.engaged;
     if (!await PanelUX.confirm({
       title: engaging ? `Стоп региона ${state.region_code}?` : `Включить образы региона ${state.region_code}?`,
-      message: '',
       confirmLabel: engaging ? 'Стоп' : 'Включить',
       danger: engaging,
     })) return;
@@ -45,34 +42,37 @@ function RegionStopButton({ region }) {
 }
 
 /**
- * Какой образ получают новые собеседники каждого сотрудника — отдельно по
- * каждой личности его аккаунтов. Начатые диалоги остаются на прежнем образе.
+ * Назначения образов сотрудникам регионов из списка: по строке на сотрудника
+ * и личность его аккаунтов. Новый образ получают только новые собеседники.
  */
-export default function StaffAssignments({ admin }) {
-  const [region, setRegion] = useState('');
-  const [data, setData] = useState(null);
+export function usePhotoAssignments(regions) {
+  const key = [...new Set(regions.filter(Boolean))].sort().join(',');
+  const [byRegion, setByRegion] = useState({});
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
 
-  const load = useCallback(() => {
-    if (admin && !region.trim()) { setData(null); return; }
-    getStaffAssignments(admin ? region.trim() : undefined).then(setData).catch((e) => setError(e.detail || e.message));
-  }, [admin, region]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!key) return;
+    Promise.all(key.split(',').map((region) => getStaffAssignments(region).then((r) => [region, r])))
+      .then((pairs) => setByRegion(Object.fromEntries(pairs)))
+      .catch((e) => setError(e.detail || e.message));
+  }, [key]);
 
-  async function change(row, value) {
+  async function change(row, region, value) {
+    const data = byRegion[region];
     const setId = value === '' ? null : Number(value);
-    const target = data.sets.find((x) => x.id === setId);
+    const target = data?.sets?.find((x) => x.id === setId);
     if (!await PanelUX.confirm({
       title: setId == null ? 'Снять образ?' : 'Назначить образ?',
       message: setId == null ? `${row.username} · ${row.persona_name}` : `${row.username} · ${row.persona_name} → «${target?.name}»`,
       confirmLabel: setId == null ? 'Снять' : 'Назначить',
     })) return;
-    const key = `${row.user_id}:${row.persona_slug}`;
-    setBusy(key);
+    const id = `${row.user_id}:${row.persona_slug}`;
+    setBusy(id);
     setError('');
     try {
-      setData(await assignStaffPhotoSet(row.user_id, row.persona_slug, setId));
+      const fresh = await assignStaffPhotoSet(row.user_id, row.persona_slug, setId);
+      setByRegion((prev) => ({ ...prev, [region]: fresh }));
     } catch (e) {
       setError(e.detail || e.message);
     } finally {
@@ -80,46 +80,32 @@ export default function StaffAssignments({ admin }) {
     }
   }
 
+  return { byRegion, busy, error, change };
+}
+
+/** Ячейка «Образ» в строке сотрудника. */
+export function PhotoCell({ user, photo }) {
+  const data = photo.byRegion[user.region_code];
+  const rows = data?.rows?.filter((r) => r.user_id === user.user_id) ?? [];
+  if (!rows.length) return null;
   return (
-    <section className={p.panel} aria-label="Образы сотрудников" style={{ marginTop: 24 }}>
-      <div className={s.head} style={{ margin: 0 }}>
-        <h3 className={s.modalTitle} style={{ margin: 0 }}>
-          Образы{data?.region_code ? ` · регион ${data.region_code}` : ''}
-        </h3>
-        <div className={s.actions}>
-          {admin && (
-            <input className={s.field} placeholder="Код региона" value={region} maxLength={32}
-              onChange={(e) => setRegion(e.target.value)} aria-label="Регион" style={{ maxWidth: 180 }} />
-          )}
-          {!admin && <RegionStopButton region={data?.region_code} />}
-        </div>
-      </div>
-      {error && <p className={s.error} role="alert">{error}</p>}
-      {data?.region_code && (data.rows.length ? (
-        <table className="mr-dialog-table" aria-label="Назначение образов">
-          <thead><tr><th scope="col">Сотрудник</th><th scope="col">Личность</th><th scope="col">Образ</th></tr></thead>
-          <tbody>
-            {data.rows.map((row) => {
-              const key = `${row.user_id}:${row.persona_slug}`;
-              return (
-                <tr key={key}>
-                  <td>{row.username}</td>
-                  <td>{row.persona_name} <span className={s.muted}>· {row.accounts} акк.</span></td>
-                  <td>
-                    {data.can_assign ? (
-                      <select className={s.select} value={row.set_id ?? ''} disabled={busy === key}
-                        onChange={(e) => change(row, e.target.value)} aria-label={`Образ для ${row.username}, ${row.persona_name}`}>
-                        <option value="">— без образа —</option>
-                        {data.sets.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                      </select>
-                    ) : (row.set_name || <span className={s.muted}>не назначен</span>)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      ) : <p className={s.empty}>Нет сотрудников с аккаунтами</p>)}
-    </section>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {rows.map((row) => {
+        const id = `${row.user_id}:${row.persona_slug}`;
+        return (
+          <label key={id} className="mr-caption" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ minWidth: 56 }}>{row.persona_name}</span>
+            {data.can_assign ? (
+              <select className={s.select} value={row.set_id ?? ''} disabled={photo.busy === id}
+                onChange={(e) => photo.change(row, user.region_code, e.target.value)}
+                aria-label={`Образ для ${row.username}, ${row.persona_name}`}>
+                <option value="">— без образа —</option>
+                {(data.sets ?? []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            ) : <span>{row.set_name || 'не назначен'}</span>}
+          </label>
+        );
+      })}
+    </div>
   );
 }
