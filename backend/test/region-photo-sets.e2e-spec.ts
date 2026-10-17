@@ -22,7 +22,7 @@ describe('photo sets by region: the head runs them, chats keep the set they star
     photos: PhotoLibraryService;
   let sets: PhotoSetsService, gate: RegionGateService;
   let head: DashboardUser, manager: DashboardUser, otherHead: DashboardUser;
-  let now = 1_000;
+  const now = 1_000;
   const clock = { now: () => new Date(now * 1000), ts: () => now };
 
   const user = (
