@@ -38,6 +38,8 @@ export const appConfig = {
   adminUsername: process.env.ADMIN_USERNAME || 'admin',
   adminPassword: process.env.ADMIN_PASSWORD || '',
   outreachDailyPerAccount: Number(process.env.OUTREACH_DAILY_PER_ACCOUNT || 10),
+  // Сколько аккаунтов одновременно сочиняют ответы (у одного аккаунта — по одному чату за раз).
+  replyLanes: Math.max(1, Number(process.env.REPLY_LANES || 12)),
   outreachMinGapS: Number(process.env.OUTREACH_MIN_GAP_S || 180),
   outreachHours: (process.env.OUTREACH_HOURS_MSK || '10-21')
     .split('-')

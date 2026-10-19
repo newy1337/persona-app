@@ -172,6 +172,9 @@ const LISTEN_PAD_SECONDS = 5;
 const REPLY_RETRY_DELAYS_S = [60, 180, 600, 1800];
 const OFFLINE_RECHECK_SECONDS = 60;
 const REPLY_LANES = 6;
+// Сколько просроченных ответов смотрит один проход насоса: занятые аккаунты
+// пропускаются, поэтому окно шире числа дорожек.
+const DUE_SCAN_LIMIT = 200;
 const QUEUE_ALERT = 15;
 const FORECAST_STALE_SECONDS = 300;
 const FORECAST_REFRESH_LANES = 3;
@@ -539,8 +542,85 @@ export class NastyaBrainService implements ReplyBrain {
   }
 
   private readonly composing = new Set<number>();
+  // Насос ответов: какие аккаунты сейчас сочиняют и какие чаты уже в работе.
+  private readonly pumpAccounts = new Set<number>();
+  private readonly pumpChats = new Set<number>();
+  private pumping: Promise<number> | null = null;
+  private pumpAgain = false;
+  private recovering = false;
   private readonly replyFailures = new Map<number, number>();
 
+  /**
+   * Разбор очереди для крона. В отличие от runDueReplies не ждёт, пока
+   * ответит вся пачка: держит занятыми до appConfig.replyLanes аккаунтов и,
+   * как только один освободился, берёт следующий просроченный чат. Раньше
+   * одна долгая генерация держала всю пачку из 50 чатов, и очередь росла.
+   * У одного аккаунта по-прежнему не больше одного чата за раз.
+   * Возвращает, сколько ответов запущено этим проходом.
+   */
+  async pumpDueReplies(): Promise<number> {
+    if (this.pumping) {
+      this.pumpAgain = true;
+      return 0;
+    }
+    this.pumping = this.pumpOnce();
+    try {
+      return await this.pumping;
+    } finally {
+      this.pumping = null;
+      if (this.pumpAgain) {
+        this.pumpAgain = false;
+        void this.pumpDueReplies().catch(() => undefined);
+      }
+    }
+  }
+
+  private async pumpOnce(): Promise<number> {
+    if (!this.recovering) {
+      this.recovering = true;
+      void this.recoverInbound().finally(() => {
+        this.recovering = false;
+      });
+    }
+    const lanes = appConfig.replyLanes;
+    if (this.pumpAccounts.size >= lanes) return 0;
+    const due = await this.schedule.dueRows(this.clock.ts(), DUE_SCAN_LIMIT);
+    if (due.length >= QUEUE_ALERT) {
+      this.log.warn(
+        `очередь ответов: ${due.length} чатов, в работе ${this.pumpAccounts.size} из ${lanes} аккаунтов`,
+      );
+    }
+    let started = 0;
+    for (const { chatId, accountId } of due) {
+      if (this.pumpAccounts.size >= lanes) break;
+      if (this.pumpAccounts.has(accountId) || this.pumpChats.has(chatId))
+        continue;
+      this.pumpAccounts.add(accountId);
+      this.pumpChats.add(chatId);
+      started += 1;
+      void this.respondScheduled(chatId).finally(() => {
+        this.pumpAccounts.delete(accountId);
+        this.pumpChats.delete(chatId);
+        // Аккаунт освободился — сразу берём следующий чат, не ждём крона.
+        void this.pumpDueReplies().catch(() => undefined);
+      });
+    }
+    return started;
+  }
+
+  private async recoverInbound(): Promise<void> {
+    for (const turn of await this.history.unprocessedInbound()) {
+      try {
+        await this.handleInbound(turn);
+      } catch (e) {
+        this.log.warn(
+          `inbound recovery chat=${turn.chatId}: ${e?.message ?? e}`,
+        );
+      }
+    }
+  }
+
+  /** Разобрать очередь и дождаться всех ответов (тесты и ручной запуск). */
   async runDueReplies(): Promise<number> {
     for (const turn of await this.history.unprocessedInbound()) {
       try {

@@ -51,6 +51,8 @@ export interface ReplyBrain {
   answerAfterCall?(callId: string): Promise<boolean>;
   runInitiative(): Promise<number>;
   runDueReplies(): Promise<number>;
+  /** Неблокирующий разбор очереди для крона; без него крон зовёт runDueReplies. */
+  pumpDueReplies?(): Promise<number>;
   runRituals(): Promise<number>;
   handleDeleted(accountId: number, messageIds: number[]): Promise<void>;
   noteOperatorFacts(
