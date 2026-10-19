@@ -10,6 +10,8 @@ import Leads from './pages/Leads/Leads';
 import Personas from './pages/Personas/Personas';
 import Stats from './pages/Stats/Stats';
 import Settings from './pages/Settings/Settings';
+const Users = lazy(() => import('./pages/Users/Users'));
+const Catalogs = lazy(() => import('./pages/Catalogs/Catalogs'));
 import { isManagerRole } from './utils/roles';
 import Login from './pages/Login/Login';
 import { api, getToken } from './api/client';
@@ -47,6 +49,8 @@ function App() {
       <Route path="/personas" element={admin ? <Personas /> : <Navigate to={home} replace />} />
       <Route path="/stats" element={admin ? <Stats /> : <Navigate to={home} replace />} />
       <Route path="/settings" element={admin ? <Settings /> : <Navigate to={home} replace />} />
+      <Route path="/users" element={admin ? <Suspense fallback={<p role="status">Загружаем…</p>}><Users /></Suspense> : <Navigate to={home} replace />} />
+      <Route path="/catalogs" element={admin ? <Suspense fallback={<p role="status">Загружаем…</p>}><Catalogs /></Suspense> : <Navigate to={home} replace />} />
       <Route path="*" element={<Navigate to={home} replace />} />
     </Routes>
   );

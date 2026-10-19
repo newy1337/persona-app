@@ -42,3 +42,4 @@ coverage/
 # Деплой: снимки базы и отметка последнего выкаченного коммита.
 /backups/
 /.deployed-sha
+/.claude/launch.json

@@ -1014,6 +1014,467 @@ describe('Manager panel API (e2e)', () => {
     expect(r.body.beats.length).toBeGreaterThanOrEqual(r.body.total);
   });
 
+  describe('входящие лиды по API', () => {
+    it('раздаёт лиды менеджерам онлайн по источнику, донору и лимиту, поровну', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      // ключ создаёт админ в настройках; показывается один раз
+      const made = await request(app.getHttpServer())
+        .post('/api/api-keys')
+        .set(h)
+        .send({ name: 'Донор Beboo' })
+        .expect(201);
+      expect(made.body.key).toMatch(/^sk_[A-Za-z0-9_-]{32}$/);
+      expect(made.body.item).toMatchObject({
+        name: 'Донор Beboo',
+        prefix: made.body.key.slice(0, 7),
+        revoked_at: null,
+      });
+      const keyId = made.body.item.id as number;
+      const keys = await request(app.getHttpServer())
+        .get('/api/api-keys')
+        .set(h)
+        .expect(200);
+      expect(JSON.stringify(keys.body)).not.toContain(made.body.key);
+      const key = { 'X-Api-Key': made.body.key };
+      const donors = await request(app.getHttpServer())
+        .post('/api/donors')
+        .set(h)
+        .send({ name: 'Camp A' })
+        .expect(201);
+      const campA = donors.body.items.find((d: any) => d.name === 'Camp A').id;
+      await request(app.getHttpServer())
+        .post('/api/donors')
+        .set(h)
+        .send({ name: 'camp a' })
+        .expect(409);
+
+      // справочник источников: добавить, повтор — отказ
+      const sources = await request(app.getHttpServer())
+        .post('/api/sources')
+        .set(h)
+        .send({ name: 'Beboo' })
+        .expect(201);
+      const beboo = sources.body.items.find((x: any) => x.name === 'Beboo').id;
+      await request(app.getHttpServer())
+        .post('/api/sources')
+        .set(h)
+        .send({ name: 'beboo' })
+        .expect(409);
+
+      const mk = async (body: Record<string, unknown>) =>
+        (
+          await request(app.getHttpServer())
+            .post('/api/managers')
+            .set(h)
+            .send({
+              password: 'inb123456',
+              role: 'manager',
+              region_code: '0501',
+              ...body,
+            })
+            .expect(200)
+        ).body.created_user_id as number;
+      const m1 = await mk({
+        username: 'inb-m1',
+        online: true,
+        lead_sources: ['Beboo'],
+        donor_ids: [campA],
+      });
+      const m2 = await mk({ username: 'inb-m2', online: true, lead_quota: 1 });
+      const m3 = await mk({ username: 'inb-m3', online: false });
+      const listed = (
+        await request(app.getHttpServer())
+          .get('/api/managers')
+          .set(h)
+          .expect(200)
+      ).body.items;
+      expect(listed.find((u: any) => u.user_id === m1)).toMatchObject({
+        online: true,
+        lead_quota: null,
+        lead_sources: ['Beboo'],
+        donor_ids: [campA],
+        donors: ['Camp A'],
+      });
+      expect(listed.find((u: any) => u.user_id === m2)).toMatchObject({
+        online: true,
+        lead_quota: 1,
+        lead_sources: [],
+        donor_ids: [],
+      });
+
+      // без ключа и с чужим ключом — отказ
+      await request(app.getHttpServer())
+        .post('/api/post/leads')
+        .send({ phone: '+79005570001' })
+        .expect(401);
+      await request(app.getHttpServer())
+        .post('/api/post/leads')
+        .set({ 'X-Api-Key': 'wrong' })
+        .send({ phone: '+79005570001' })
+        .expect(401);
+      await request(app.getHttpServer())
+        .post('/api/post/leads')
+        .set(key)
+        .send({ name: 'Без контакта', region: '0501', person: 'nastya' })
+        .expect(422);
+
+      const send = async (body: Record<string, unknown>) =>
+        (
+          await request(app.getHttpServer())
+            .post('/api/post/leads')
+            .set(key)
+            .send({ person: 'nastya', ...body })
+            .expect(201)
+        ).body;
+      const rejected = async (body: Record<string, unknown>) =>
+        (
+          await request(app.getHttpServer())
+            .post('/api/post/leads')
+            .set(key)
+            .send({ person: 'nastya', ...body })
+            .expect(422)
+        ).body;
+      const base = {
+        region: '0501',
+        source: 'beboo',
+        donor: 'CAMP A',
+        account: 'acc-7',
+        age: 30,
+        gender: 'm',
+        city: 'Казань',
+        external_id: 'ext-1',
+        profile_url: 'https://example.com/u/1',
+        last_messages: 'привет, как дела? — норм',
+      };
+      // оба подходят, по нулю за сегодня — первый по id
+      const l1 = await send({ ...base, name: 'Первый', phone: '+79005570001' });
+      expect(l1.assigned_to).toMatchObject({ user_id: m1, username: 'inb-m1' });
+      // у m1 уже один — очередь m2
+      const l2 = await send({
+        ...base,
+        phone: '+79005570002',
+        external_id: 'ext-2',
+      });
+      expect(l2.assigned_to.user_id).toBe(m2);
+      // m2 выбрал лимит 1 — снова m1
+      const l3 = await send({
+        ...base,
+        phone: '+79005570003',
+        external_id: 'ext-3',
+      });
+      expect(l3.assigned_to.user_id).toBe(m1);
+      // в списке видно, сколько каждый получил сегодня
+      const counted = (
+        await request(app.getHttpServer())
+          .get('/api/managers')
+          .set(h)
+          .expect(200)
+      ).body.items;
+      expect(counted.find((u: any) => u.user_id === m1).leads_today).toBe(2);
+      expect(counted.find((u: any) => u.user_id === m2).leads_today).toBe(1);
+      expect(counted.find((u: any) => u.user_id === m3).leads_today).toBe(0);
+      expect(counted.find((u: any) => u.user_id === m1).leads_count).toBe(2);
+      const past = (
+        await request(app.getHttpServer())
+          .get('/api/managers?from=2020-01-01&to=2020-01-02')
+          .set(h)
+          .expect(200)
+      ).body;
+      expect(past.range).toEqual({ from: '2020-01-01', to: '2020-01-02' });
+      expect(past.items.find((u: any) => u.user_id === m1).leads_count).toBe(0);
+      expect(past.items.find((u: any) => u.user_id === m1).leads_today).toBe(2);
+      await request(app.getHttpServer())
+        .get('/api/managers?from=2020-02-01&to=2020-01-02')
+        .set(h)
+        .expect(422);
+      // источник vk: m1 его не принимает, m2 исчерпан, m3 оффлайн — отказ, лид не сохранён
+      const l4 = await rejected({
+        region: '0501',
+        source: 'vk',
+        phone: '+79005570004',
+      });
+      expect(l4.error).toBe('no_recipient');
+      expect(l4.message).toContain('лимит');
+      // повтор телефона — конфликт
+      await request(app.getHttpServer())
+        .post('/api/post/leads')
+        .set(key)
+        .send({ phone: '8 900 557-00-01', region: '0501', person: 'nastya' })
+        .expect(409);
+      // без личности — отказ
+      await request(app.getHttpServer())
+        .post('/api/post/leads')
+        .set(key)
+        .send({ phone: '+79005570098', region: '0501', source: 'beboo' })
+        .expect(400);
+      // без региона — отказ
+      await request(app.getHttpServer())
+        .post('/api/post/leads')
+        .set(key)
+        .send({ phone: '+79005570099', source: 'beboo', person: 'nastya' })
+        .expect(400);
+      // по нику тоже можно
+      const l5 = await send({
+        ...base,
+        external_id: 'ext-5',
+        username: '@inb_lead_five',
+        phone: undefined,
+      });
+      expect(l5.assigned_to.user_id).toBe(m1);
+      // телефон новый, а ник уже у другого лида — тоже дубль, не 500
+      await request(app.getHttpServer())
+        .post('/api/post/leads')
+        .set(key)
+        .send({
+          phone: '+79005570097',
+          username: '@inb_lead_five',
+          region: '0501',
+          person: 'nastya',
+        })
+        .expect(409);
+
+      // оба контакта сразу: сохраняются оба
+      const both = await send({
+        ...base,
+        external_id: 'ext-both',
+        phone: '+79005570096',
+        username: '@inb_both',
+      });
+      const bothRow = (
+        await request(app.getHttpServer())
+          .get('/api/leads?q=ext-both')
+          .set(h)
+          .expect(200)
+      ).body.items[0];
+      expect(bothRow).toMatchObject({
+        id: both.id,
+        phone_e164: '+79005570096',
+        username: 'inb_both',
+      });
+
+      // в списке лидов видны поля донора, а m1 видит только своих
+      const all = (
+        await request(app.getHttpServer())
+          .get('/api/leads?q=ext-1')
+          .set(h)
+          .expect(200)
+      ).body.items;
+      expect(all).toHaveLength(1);
+      expect(all[0]).toMatchObject({
+        id: l1.id,
+        first_name: 'Первый',
+        source_type: 'beboo',
+        donor: 'CAMP A',
+        account_label: 'acc-7',
+        external_id: 'ext-1',
+        profile_url: 'https://example.com/u/1',
+        last_messages: 'привет, как дела? — норм',
+        status: 'pending',
+        manager_username: 'inb-m1',
+      });
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/leads?q=9005570004')
+            .set(h)
+            .expect(200)
+        ).body.items,
+      ).toEqual([]);
+      const m1Login = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ username: 'inb-m1', password: 'inb123456' })
+        .expect(200);
+      const mine = (
+        await request(app.getHttpServer())
+          .get('/api/leads')
+          .set('Authorization', `Bearer ${m1Login.body.tokens.accessToken}`)
+          .expect(200)
+      ).body.items
+        .map((l: any) => l.id)
+        .sort();
+      expect(mine).toEqual([l1.id, l3.id, l5.id, both.id].sort());
+
+      // правка: снять донора и выключить онлайн; удаление донора отвязывает его
+      const edited = (
+        await request(app.getHttpServer())
+          .put(`/api/managers/${m1}`)
+          .set(h)
+          .send({
+            online: false,
+            donor_ids: [],
+            lead_sources: [' vk ', 'vk', ''],
+          })
+          .expect(200)
+      ).body.items.find((u: any) => u.user_id === m1);
+      expect(edited).toMatchObject({
+        online: false,
+        donor_ids: [],
+        lead_sources: ['vk'],
+      });
+      await request(app.getHttpServer())
+        .put(`/api/managers/${m2}`)
+        .set(h)
+        .send({ donor_ids: [campA, 999999] })
+        .expect(422);
+      await request(app.getHttpServer())
+        .put(`/api/managers/${m2}`)
+        .set(h)
+        .send({ donor_ids: [campA] })
+        .expect(200);
+      // удаление источника снимает его у менеджеров
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/sources')
+            .set(h)
+            .expect(200)
+        ).body.items.find((x: any) => x.id === beboo).managers,
+      ).toBe(0);
+      await request(app.getHttpServer())
+        .put(`/api/managers/${m2}`)
+        .set(h)
+        .send({ lead_sources: ['Beboo'] })
+        .expect(200);
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/sources')
+            .set(h)
+            .expect(200)
+        ).body.items.find((x: any) => x.id === beboo).managers,
+      ).toBe(1);
+      await request(app.getHttpServer())
+        .delete(`/api/sources/${beboo}`)
+        .set(h)
+        .expect(200);
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/managers')
+            .set(h)
+            .expect(200)
+        ).body.items.find((u: any) => u.user_id === m2).lead_sources,
+      ).toEqual([]);
+
+      const afterDelete = await request(app.getHttpServer())
+        .delete(`/api/donors/${campA}`)
+        .set(h)
+        .expect(200);
+      expect(afterDelete.body.items).toEqual([]);
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/managers')
+            .set(h)
+            .expect(200)
+        ).body.items.find((u: any) => u.user_id === m2).donor_ids,
+      ).toEqual([]);
+
+      // регион из запроса: в 0502 никого — отказ; кривой регион — 400
+      const far = await rejected({
+        source: 'beboo',
+        phone: '+79005570007',
+        region: '0502',
+      });
+      expect(far.message).toContain('0502');
+      await request(app.getHttpServer())
+        .post('/api/post/leads')
+        .set(key)
+        .send({ phone: '+79005570008', region: 'ab', person: 'nastya' })
+        .expect(400);
+
+      // тимлид и хед тоже принимают лидов: m3 стал тимлидом и вышел онлайн
+      await request(app.getHttpServer())
+        .put(`/api/managers/${m3}`)
+        .set(h)
+        .send({ role: 'teamlead', online: true })
+        .expect(200);
+      const l6 = await send({
+        source: 'vk',
+        phone: '+79005570006',
+        region: '0501',
+      });
+      expect(l6.assigned_to.user_id).toBe(m3);
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/leads?q=9005570006')
+            .set(h)
+            .expect(200)
+        ).body.items[0].requested_region,
+      ).toBe('0501');
+
+      // личность: m3 принимает только Настю; неизвестный slug — отказ
+      await request(app.getHttpServer())
+        .put(`/api/managers/${m3}`)
+        .set(h)
+        .send({ lead_personas: ['nope'] })
+        .expect(422);
+      const withPersona = (
+        await request(app.getHttpServer())
+          .put(`/api/managers/${m3}`)
+          .set(h)
+          .send({ lead_personas: ['nastya'] })
+          .expect(200)
+      ).body.items.find((u: any) => u.user_id === m3);
+      expect(withPersona.lead_personas).toEqual(['nastya']);
+      const lp = await send({
+        source: 'vk',
+        phone: '+79005570010',
+        region: '0501',
+        person: 'настя',
+      });
+      expect(lp.assigned_to.user_id).toBe(m3);
+      const lpRow = (
+        await request(app.getHttpServer())
+          .get('/api/leads?q=9005570010')
+          .set(h)
+          .expect(200)
+      ).body.items[0];
+      expect(lpRow).toMatchObject({
+        persona_id: 'nastya',
+        requested_persona: 'настя',
+      });
+      const other = await rejected({
+        source: 'vk',
+        phone: '+79005570011',
+        region: '0501',
+        person: 'Ольга',
+      });
+      // m3 Ольгу не принимает, m2 принимает любую, но лимит у него выбран
+      expect(other.message).toContain('лимит');
+
+      // отозванный ключ больше не работает, в списке помечен
+      const revoked = await request(app.getHttpServer())
+        .delete(`/api/api-keys/${keyId}`)
+        .set(h)
+        .expect(200);
+      expect(
+        revoked.body.items.find((k: any) => k.id === keyId).revoked_at,
+      ).toEqual(expect.any(Number));
+      await request(app.getHttpServer())
+        .post('/api/post/leads')
+        .set(key)
+        .send({ phone: '+79005570009', region: '0501', person: 'nastya' })
+        .expect(401);
+
+      const prisma = app.get(PrismaService);
+      await prisma.phoneNumber.deleteMany({
+        where: {
+          id: {
+            in: [l1.id, l2.id, l3.id, l5.id, l6.id, lp.id, both.id],
+          },
+        },
+      });
+      await prisma.apiKey.deleteMany({ where: { id: keyId } });
+      for (const id of [m1, m2, m3])
+        await request(app.getHttpServer())
+          .delete(`/api/managers/${id}`)
+          .set(h)
+          .expect(200);
+    });
+  });
+
   describe('leads pool', () => {
     let leadId: number;
 
@@ -1511,6 +1972,41 @@ describe('Manager panel API (e2e)', () => {
         flood_until: null,
         flood_reason: null,
       });
+
+      // И номер, и ник: номер не нашёлся — прозвон пробует ник, потом сдаётся.
+      await prisma.phoneNumber.updateMany({
+        where: { status: 'queued' },
+        data: { status: 'pending' },
+      });
+      const both = await prisma.phoneNumber.create({
+        data: {
+          phoneE164: '+79005556688',
+          usernameKey: 'both_contact',
+          status: 'queued',
+          insertedAt: now,
+        },
+      });
+      const byPhone = jest
+        .spyOn(telegram, 'resolvePhone')
+        .mockResolvedValueOnce({ kind: 'not_found' } as any);
+      const byName = jest
+        .spyOn(telegram, 'resolveUsername')
+        .mockResolvedValueOnce({ kind: 'not_found' } as any);
+      await (worker as any).processOne(a1.body.id, now);
+      expect(byPhone).toHaveBeenCalledWith(
+        a1.body.id,
+        '+79005556688',
+        undefined,
+      );
+      expect(byName).toHaveBeenCalledWith(a1.body.id, 'both_contact');
+      byPhone.mockRestore();
+      byName.mockRestore();
+      const dead = await prisma.phoneNumber.findUnique({
+        where: { id: both.id },
+      });
+      expect(dead).toMatchObject({ status: 'dead' });
+      expect(dead!.lastError).toContain('ни номера, ни @username');
+      await prisma.phoneNumber.delete({ where: { id: both.id } });
 
       await request(app.getHttpServer())
         .delete(`/api/leads/${lead.body.id}`)

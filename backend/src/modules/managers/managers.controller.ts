@@ -1,5 +1,6 @@
 import {
   Body,
+  Query,
   Controller,
   Delete,
   Get,
@@ -12,7 +13,12 @@ import {
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiQuery,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ManagersService } from './managers.service';
 import { Auth } from 'src/decorators/auth.decorator';
 import { Roles } from 'src/decorators/roles.decorator';
@@ -39,9 +45,15 @@ export class ManagersController {
   ) {}
 
   @ApiOperation({ summary: 'All panel users with role and assigned accounts' })
+  @ApiQuery({ name: 'from', required: false, example: '2026-10-01' })
+  @ApiQuery({ name: 'to', required: false, example: '2026-10-07' })
   @Get()
-  async list(@CurrentUser() user: DashboardUser) {
-    return this.managers.list(user);
+  async list(
+    @CurrentUser() user: DashboardUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.managers.list(user, { from, to });
   }
 
   @Get(':userId/credentials')

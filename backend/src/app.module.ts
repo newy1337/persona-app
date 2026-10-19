@@ -20,6 +20,7 @@ import { LeadsModule } from './modules/leads/leads.module';
 import { PersonasModule } from './modules/personas/personas.module';
 import { StatsModule } from './modules/stats/stats.module';
 import { PhotoSetsModule } from './modules/photo-sets/photo-sets.module';
+import { InboundModule } from './modules/inbound/inbound.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { PhotoSetsModule } from './modules/photo-sets/photo-sets.module';
     PersonasModule,
     StatsModule,
     PhotoSetsModule,
+    InboundModule,
   ],
   controllers: [AppController],
   providers: [AppService],

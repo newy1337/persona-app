@@ -160,6 +160,8 @@ function Header({
             {(me.role === 'admin' || isManagerRole(me.role)) && <NavLink to="/accounts" className={navClass}>Аккаунты</NavLink>}
             {(me.role === 'admin' || isManagerRole(me.role)) && <NavLink to="/photo-sets" className={navClass}>Образы</NavLink>}
             {(me.role === 'admin' || me.role === 'head') && <NavLink to="/managers" className={navClass}>{me.role === 'admin' ? 'Менеджеры' : 'Команда'}</NavLink>}
+            {me.role === 'admin' && <NavLink to="/users" className={navClass}>LeadGet</NavLink>}
+            {me.role === 'admin' && <NavLink to="/catalogs" className={navClass}>Справочники</NavLink>}
             {me.role === 'admin' && <NavLink to="/stats" className={navClass}>Статистика</NavLink>}
             {me.role === 'admin' && <NavLink to="/settings" className={navClass}>Настройки</NavLink>}
           </nav>

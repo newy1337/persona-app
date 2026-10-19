@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import Header from '../../components/Header/Header';
+import ApiKeys from './ApiKeys';
 import { getSettings, updateSettings } from '../../api/settings';
 import s from '../../styles/AdminPage.module.scss';
 import p from './Settings.module.scss';
@@ -133,6 +134,8 @@ export default function Settings() {
             !error && <p className={s.muted}>Загружаем…</p>
           )}
         </section>
+
+        <ApiKeys />
         </div>
       </main>
     </div>

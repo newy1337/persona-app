@@ -68,6 +68,14 @@ export interface LeadView extends ManagerAttribution {
   inserted_at: number;
   /** этап сделки из карточки связанного чата; null — чат не связан или этап не задан */
   deal_stage: string | null;
+  donor: string | null;
+  account_label: string | null;
+  external_id: string | null;
+  profile_url: string | null;
+  last_messages: string | null;
+  inbound_at: number | null;
+  requested_region: string | null;
+  requested_persona: string | null;
 }
 
 export interface LeadFilter {
@@ -119,6 +127,8 @@ export function leadSearchClauses(raw: string): Prisma.PhoneNumberWhereInput[] {
     ci('firstName', q),
     ci('city', q),
     ci('notes', q),
+    ci('donor', q),
+    ci('externalId', q),
   ];
   if (/^\d{5,}$/.test(q)) out.push({ telegramUserId: BigInt(q) });
   return out;
@@ -258,6 +268,14 @@ export class LeadsService {
       notes: row.notes,
       first_message: row.firstMessage,
       inserted_at: row.insertedAt,
+      donor: row.donor,
+      account_label: row.accountLabel,
+      external_id: row.externalId,
+      profile_url: row.profileUrl,
+      last_messages: row.lastMessages,
+      inbound_at: row.inboundAt,
+      requested_region: row.requestedRegion,
+      requested_persona: row.requestedPersona,
       deal_stage:
         row.telegramUserId === null
           ? null

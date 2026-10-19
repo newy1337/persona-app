@@ -254,13 +254,23 @@ export class OutreachWorker implements OnModuleInit {
 
     let openerStarted = false;
     try {
-      const resolved = candidate.phoneE164
+      let resolved = candidate.phoneE164
         ? await this.telegram.resolvePhone(
             accountId,
             candidate.phoneE164,
             candidate.firstName ?? undefined,
           )
         : await this.telegram.resolveUsername(accountId, candidate.usernameKey);
+      // Есть и номер, и ник: номер не нашёлся (скрыт приватностью) — пробуем ник.
+      if (
+        resolved.kind === 'not_found' &&
+        candidate.phoneE164 &&
+        candidate.usernameKey
+      )
+        resolved = await this.telegram.resolveUsername(
+          accountId,
+          candidate.usernameKey,
+        );
       if (resolved.kind === 'retry') {
         const until = now + IMPORT_THROTTLE_BACKOFF_S;
         await this.limitAccount(accountId, until, 'лимит импорта контактов');
@@ -283,9 +293,11 @@ export class OutreachWorker implements OnModuleInit {
             lastError:
               resolved.kind === 'found'
                 ? 'аккаунт Telegram удалён'
-                : candidate.phoneE164
-                  ? 'номера нет в Telegram или он скрыт приватностью («кто видит мой номер»)'
-                  : 'такого @username нет (или это канал/группа)',
+                : candidate.phoneE164 && candidate.usernameKey
+                  ? 'ни номера, ни @username нет в Telegram (номер мог быть скрыт приватностью)'
+                  : candidate.phoneE164
+                    ? 'номера нет в Telegram или он скрыт приватностью («кто видит мой номер»)'
+                    : 'такого @username нет (или это канал/группа)',
             attempts: { increment: 1 },
           },
         });
