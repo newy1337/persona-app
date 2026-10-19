@@ -41,6 +41,20 @@ export const appConfig = {
   // Сколько аккаунтов одновременно сочиняют ответы (у одного аккаунта — по одному чату за раз).
   replyLanes: Math.max(1, Number(process.env.REPLY_LANES || 12)),
   outreachMinGapS: Number(process.env.OUTREACH_MIN_GAP_S || 180),
+  // Предупреждение в группу Telegram о низком балансе OpenRouter.
+  balanceAlert: {
+    threshold: Number(process.env.BALANCE_ALERT_THRESHOLD || 300),
+    repeatHours: Math.max(
+      1,
+      Number(process.env.BALANCE_ALERT_REPEAT_HOURS || 12),
+    ),
+    chatId: (process.env.BALANCE_ALERT_CHAT_ID || '').trim(),
+    botToken: (
+      process.env.BALANCE_ALERT_BOT_TOKEN ||
+      process.env.VOICER_BOT_TOKEN ||
+      ''
+    ).trim(),
+  },
   outreachHours: (process.env.OUTREACH_HOURS_MSK || '10-21')
     .split('-')
     .map(Number) as [number, number],
