@@ -54,6 +54,14 @@ import {
 } from 'src/domain/lead-facts';
 import { matchTrigger } from 'src/domain/handoff-triggers';
 import { mentionsMedia } from 'src/domain/media-request';
+import {
+  acceptPhotoChoice,
+  dropFreshClaims,
+  hasFalseFreshClaim,
+  splitPhotoCaption,
+  withPhotoNote,
+} from 'src/domain/photo-library';
+import { PhotoLibraryService } from 'src/shared/photo-library.service';
 import { TakeoverReason } from 'src/domain/pause';
 import {
   InboundTurn,
@@ -164,6 +172,9 @@ const LISTEN_PAD_SECONDS = 5;
 const REPLY_RETRY_DELAYS_S = [60, 180, 600, 1800];
 const OFFLINE_RECHECK_SECONDS = 60;
 const REPLY_LANES = 6;
+// Сколько просроченных ответов смотрит один проход насоса: занятые аккаунты
+// пропускаются, поэтому окно шире числа дорожек.
+const DUE_SCAN_LIMIT = 200;
 const QUEUE_ALERT = 15;
 const FORECAST_STALE_SECONDS = 300;
 const FORECAST_REFRESH_LANES = 3;
@@ -237,6 +248,7 @@ export class NastyaBrainService implements ReplyBrain {
     private transport: OutboundTransport,
     @Optional() private autoVoice?: VoicerAutomationService,
     @Optional() private prisma?: PrismaService,
+    @Optional() private photos?: PhotoLibraryService,
   ) {}
 
   private judgeDeps(
@@ -530,8 +542,85 @@ export class NastyaBrainService implements ReplyBrain {
   }
 
   private readonly composing = new Set<number>();
+  // Насос ответов: какие аккаунты сейчас сочиняют и какие чаты уже в работе.
+  private readonly pumpAccounts = new Set<number>();
+  private readonly pumpChats = new Set<number>();
+  private pumping: Promise<number> | null = null;
+  private pumpAgain = false;
+  private recovering = false;
   private readonly replyFailures = new Map<number, number>();
 
+  /**
+   * Разбор очереди для крона. В отличие от runDueReplies не ждёт, пока
+   * ответит вся пачка: держит занятыми до appConfig.replyLanes аккаунтов и,
+   * как только один освободился, берёт следующий просроченный чат. Раньше
+   * одна долгая генерация держала всю пачку из 50 чатов, и очередь росла.
+   * У одного аккаунта по-прежнему не больше одного чата за раз.
+   * Возвращает, сколько ответов запущено этим проходом.
+   */
+  async pumpDueReplies(): Promise<number> {
+    if (this.pumping) {
+      this.pumpAgain = true;
+      return 0;
+    }
+    this.pumping = this.pumpOnce();
+    try {
+      return await this.pumping;
+    } finally {
+      this.pumping = null;
+      if (this.pumpAgain) {
+        this.pumpAgain = false;
+        void this.pumpDueReplies().catch(() => undefined);
+      }
+    }
+  }
+
+  private async pumpOnce(): Promise<number> {
+    if (!this.recovering) {
+      this.recovering = true;
+      void this.recoverInbound().finally(() => {
+        this.recovering = false;
+      });
+    }
+    const lanes = appConfig.replyLanes;
+    if (this.pumpAccounts.size >= lanes) return 0;
+    const due = await this.schedule.dueRows(this.clock.ts(), DUE_SCAN_LIMIT);
+    if (due.length >= QUEUE_ALERT) {
+      this.log.warn(
+        `очередь ответов: ${due.length} чатов, в работе ${this.pumpAccounts.size} из ${lanes} аккаунтов`,
+      );
+    }
+    let started = 0;
+    for (const { chatId, accountId } of due) {
+      if (this.pumpAccounts.size >= lanes) break;
+      if (this.pumpAccounts.has(accountId) || this.pumpChats.has(chatId))
+        continue;
+      this.pumpAccounts.add(accountId);
+      this.pumpChats.add(chatId);
+      started += 1;
+      void this.respondScheduled(chatId).finally(() => {
+        this.pumpAccounts.delete(accountId);
+        this.pumpChats.delete(chatId);
+        // Аккаунт освободился — сразу берём следующий чат, не ждём крона.
+        void this.pumpDueReplies().catch(() => undefined);
+      });
+    }
+    return started;
+  }
+
+  private async recoverInbound(): Promise<void> {
+    for (const turn of await this.history.unprocessedInbound()) {
+      try {
+        await this.handleInbound(turn);
+      } catch (e) {
+        this.log.warn(
+          `inbound recovery chat=${turn.chatId}: ${e?.message ?? e}`,
+        );
+      }
+    }
+  }
+
+  /** Разобрать очередь и дождаться всех ответов (тесты и ручной запуск). */
   async runDueReplies(): Promise<number> {
     for (const turn of await this.history.unprocessedInbound()) {
       try {
@@ -748,10 +837,27 @@ export class NastyaBrainService implements ReplyBrain {
           await this.schedule.drop(chatId);
           return true;
         }
-        const parts = splitReplyMessages(prepared.reply)
-          .flatMap((m) => splitDisplayMessages(m))
-          .flatMap((d) => splitMessage(d));
-        delivery = prepareDelivery(prepared, parts, this.clock.ts());
+        const bubbles = (text: string) =>
+          text.trim()
+            ? splitReplyMessages(text)
+                .flatMap((m) => splitDisplayMessages(m))
+                .flatMap((d) => splitMessage(d))
+            : [];
+        const photo = prepared.photo;
+        const lead = photo ? bubbles(photo.before ?? '') : [];
+        const parts = photo
+          ? [
+              ...lead,
+              ...(photo.caption ? [photo.caption] : []),
+              ...bubbles(photo.after ?? ''),
+            ]
+          : bubbles(prepared.reply);
+        delivery = prepareDelivery(
+          prepared,
+          parts,
+          this.clock.ts(),
+          lead.length,
+        );
         if (!(await this.schedule.prepare(chatId, delivery))) return false;
       }
       if (
@@ -802,9 +908,20 @@ export class NastyaBrainService implements ReplyBrain {
           throw new Error('Out-of-order delivery acknowledgment');
         const next = structuredClone(delivery);
         const ts = this.clock.ts();
+        const photo =
+          remaining[index].photo && next.photo
+            ? {
+                photoId: next.photo.photo_id,
+                filePath: next.photo.file_path,
+                note: next.photo.note,
+                accountId: due.accountId,
+              }
+            : undefined;
         appendAssistantMessage(
           next.state,
-          remaining[index].text,
+          photo
+            ? withPhotoNote(remaining[index].text, photo.note)
+            : remaining[index].text,
           'dialogue',
           ts,
         );
@@ -825,34 +942,68 @@ export class NastyaBrainService implements ReplyBrain {
           tgMsgId,
           ts,
           next,
+          photo,
         );
         delivery = next;
         confirmed += 1;
+        if (photo)
+          await this.funnel.emit(chatId, 'photo_sent', ts, {
+            photo_id: photo.photoId,
+            source: 'bot',
+          });
         await this.mirrorLeadFacts(chatId, next.state).catch((e) =>
           this.log.warn(
             `lead facts sync failed chat=${chatId}: ${e?.message ?? e}`,
           ),
         );
       };
-      const ids = await this.transport.sendText(
-        chatId,
-        remaining.map((p) => p.text),
-        {
-          accountId: due.accountId,
-          typing: persona.rhythm.typing,
-          signal,
-          beforePart,
-          randomIds: remaining.map((p) => p.randomId),
-          onPart: confirm,
-          onDispatch: async (index) => {
-            await beforePart();
-            delivery.parts[offset + index].dispatchedAt ??= this.clock.ts();
-            if (!(await this.schedule.prepare(chatId, delivery)))
-              throw new ReplySuperseded();
+      const dispatched = async (index: number) => {
+        await beforePart();
+        delivery.parts[offset + index].dispatchedAt ??= this.clock.ts();
+        if (!(await this.schedule.prepare(chatId, delivery)))
+          throw new ReplySuperseded();
+      };
+      // Текст до фото, фото с подписью, текст после — в порядке частей.
+      const isPhoto = (i: number) =>
+        Boolean(remaining[i]?.photo && delivery.photo);
+      while (confirmed < remaining.length) {
+        const start = confirmed;
+        if (isPhoto(start)) {
+          if (!this.transport.sendPhoto)
+            throw new Error('Transport cannot send photos');
+          await beforePart();
+          const id = await this.transport.sendPhoto(chatId, {
+            path: delivery.photo!.file_path,
+            caption: remaining[start].text,
+            accountId: due.accountId,
+            typing: persona.rhythm.typing,
+            signal,
+            randomId: remaining[start].randomId,
+            onDispatch: () => dispatched(start),
+          });
+          await confirm(start, id);
+          continue;
+        }
+        let end = start;
+        while (end < remaining.length && !isPhoto(end)) end += 1;
+        const ids = await this.transport.sendText(
+          chatId,
+          remaining.slice(start, end).map((p) => p.text),
+          {
+            accountId: due.accountId,
+            typing: persona.rhythm.typing,
+            signal,
+            beforePart,
+            randomIds: remaining.slice(start, end).map((p) => p.randomId),
+            onPart: (index, id) => confirm(start + index, id),
+            onDispatch: (index) => dispatched(start + index),
           },
-        },
-      );
-      for (let i = confirmed; i < ids.length; i += 1) await confirm(i, ids[i]);
+        );
+        for (let i = confirmed - start; i < ids.length; i += 1)
+          await confirm(start + i, ids[i]);
+        if (confirmed !== end)
+          throw new Error('Transport did not acknowledge every reply part');
+      }
       if (delivery.sentCount !== delivery.parts.length)
         throw new Error('Transport did not acknowledge every reply part');
       await this.schedule.drop(chatId);
@@ -1576,6 +1727,19 @@ export class NastyaBrainService implements ReplyBrain {
     runtime.time_context = await this.timeContext(loaded, state);
     const voiceAvailability = await this.autoVoice?.context(chatId);
     runtime.voice_availability = voiceAvailability;
+    const photoAccount =
+      incoming?.at(-1)?.turn.accountId ??
+      (await this.history.chatOwnerAccount(chatId));
+    const photoAvailability =
+      this.photos && photoAccount
+        ? await this.photos.context(
+            chatId,
+            photoAccount,
+            config.timeZone ?? 'UTC',
+            this.clock.ts(),
+          )
+        : undefined;
+    runtime.photo_availability = photoAvailability;
     const judgment = await judgeDialogue(
       {
         prompt: prompts.judge_plan,
@@ -1587,9 +1751,13 @@ export class NastyaBrainService implements ReplyBrain {
       this.judgeDeps(scope, variables, signal, loaded),
     );
     checkCancelled(signal);
+    // Просьбу о фото при включённом образе бот ведёт сам: снимок или текст.
+    const photosOwned =
+      judgment.media_request === 'photo' && Boolean(photoAvailability?.enabled);
     if (
       judgment.media_request &&
       judgment.media_request !== 'voice' &&
+      !photosOwned &&
       mentionsMedia(userText)
     ) {
       await this.handOverMediaRequest(
@@ -1623,6 +1791,7 @@ export class NastyaBrainService implements ReplyBrain {
         memory.source_message_ids = [...pendingIds];
     }
     runtime.voice_availability = voiceAvailability;
+    runtime.photo_availability = photoAvailability;
     const voice =
       voiceAvailability?.available && judgment.voice_reply?.send
         ? {
@@ -1634,9 +1803,37 @@ export class NastyaBrainService implements ReplyBrain {
             context_hash: voiceAvailability.context_hash,
           }
         : undefined;
+    const photoId = voice
+      ? null
+      : acceptPhotoChoice(
+          photoAvailability,
+          judgment.photo_reply,
+          judgment.media_request === 'photo',
+        );
+    const photoCard = photoAvailability?.candidates.find(
+      (c) => c.id === photoId,
+    );
+    const libraryPhoto =
+      photoId && photoCard ? await this.photos!.photo(Number(photoId)) : null;
+    if (judgment.photo_reply?.photo_id && !libraryPhoto)
+      this.log.log(
+        `chat=${chatId}: photo ${judgment.photo_reply.photo_id} rejected (${photoAvailability?.reason || 'not a candidate'})`,
+      );
     runtime.delivery_context = {
-      kind: voice ? 'voice' : 'text',
-      reason: voice?.reason || null,
+      kind: voice ? 'voice' : libraryPhoto ? 'photo' : 'text',
+      reason:
+        voice?.reason || (libraryPhoto && judgment.photo_reply?.reason) || null,
+      ...(libraryPhoto && photoCard
+        ? {
+            photo: {
+              description: photoCard.description,
+              place: photoCard.place,
+              taken: photoCard.taken,
+              freshness: photoCard.freshness,
+              details: photoCard.details,
+            },
+          }
+        : {}),
     };
     runtime.time_context = await this.timeContext(loaded, state);
 
@@ -1694,6 +1891,22 @@ export class NastyaBrainService implements ReplyBrain {
         `chat=${chatId}: repeated goodnight/morning dropped from the reply`,
       );
     reply = trimmed;
+    if (
+      photoCard &&
+      libraryPhoto &&
+      hasFalseFreshClaim(reply, photoCard.freshness)
+    ) {
+      reply = dropFreshClaims(reply);
+      this.log.warn(
+        `chat=${chatId}: "just taken" claim removed from an ${photoCard.freshness} photo caption`,
+      );
+    }
+    const photoText =
+      photoCard && libraryPhoto ? splitPhotoCaption(reply) : undefined;
+    if (photoText)
+      reply = [photoText.before, photoText.caption, photoText.after]
+        .filter(Boolean)
+        .join('\n');
     state.history = structuredClone(baseState.history);
     if (attachmentContext) {
       const latest = [...state.history]
@@ -1709,6 +1922,17 @@ export class NastyaBrainService implements ReplyBrain {
     return {
       reply,
       ...(voice && reply.length <= 800 ? { voice } : {}),
+      ...(libraryPhoto && photoAccount && this.transport.sendPhoto
+        ? {
+            photo: {
+              photo_id: libraryPhoto.id,
+              file_path: libraryPhoto.filePath,
+              note: this.photos!.note(libraryPhoto, today),
+              account_id: photoAccount,
+              ...photoText,
+            },
+          }
+        : {}),
       state,
       judgment,
       date: runtime.date,

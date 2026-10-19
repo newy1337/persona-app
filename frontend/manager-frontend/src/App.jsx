@@ -4,11 +4,13 @@ import Dashboard from './pages/Dashboard';
 import ConversationPage from './pages/ConversationPage/ConversationPage';
 const VoiceWork = lazy(() => import('./pages/VoiceWork/VoiceWork'));
 import Accounts from './pages/Accounts/Accounts';
+const PhotoSets = lazy(() => import('./pages/PhotoSets/PhotoSets'));
 import Managers from './pages/Managers/Managers';
 import Leads from './pages/Leads/Leads';
 import Personas from './pages/Personas/Personas';
 import Stats from './pages/Stats/Stats';
 import Settings from './pages/Settings/Settings';
+import { isManagerRole } from './utils/roles';
 import Login from './pages/Login/Login';
 import { api, getToken } from './api/client';
 import './App.scss';
@@ -30,7 +32,7 @@ function App() {
   if (!me) return <Login onDone={check} />;
 
   const admin = me.role === 'admin';
-  const accountsAllowed = admin || me.role === 'manager';
+  const accountsAllowed = admin || isManagerRole(me.role);
   const home = me.role === 'voice' ? '/voice' : '/';
 
   return (
@@ -40,7 +42,8 @@ function App() {
       <Route path="/voice" element={<Suspense fallback={<p role="status">Загружаем…</p>}><VoiceWork /></Suspense>} />
       <Route path="/leads" element={me.role === 'voice' ? <Navigate to={home} replace /> : <Leads />} />
       <Route path="/accounts" element={accountsAllowed ? <Accounts /> : <Navigate to={home} replace />} />
-      <Route path="/managers" element={admin ? <Managers /> : <Navigate to={home} replace />} />
+      <Route path="/photo-sets" element={accountsAllowed ? <Suspense fallback={<p role="status">Загружаем…</p>}><PhotoSets /></Suspense> : <Navigate to={home} replace />} />
+      <Route path="/managers" element={admin || me.role === 'head' ? <Managers /> : <Navigate to={home} replace />} />
       <Route path="/personas" element={admin ? <Personas /> : <Navigate to={home} replace />} />
       <Route path="/stats" element={admin ? <Stats /> : <Navigate to={home} replace />} />
       <Route path="/settings" element={admin ? <Settings /> : <Navigate to={home} replace />} />

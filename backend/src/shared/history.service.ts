@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { deliveryRandomId } from 'src/brain/reply-delivery';
 import type { InboundTurn } from 'src/brain/reply-brain.port';
 import { PrismaService } from '../prisma.service';
 import { ClockService } from './clock.service';
+import { PhotoLibraryService } from './photo-library.service';
 import { BOT_ACTIVE_REASON, PauseState } from '../domain/pause';
 import { LeadFacts, parseLeadFacts } from '../domain/lead-facts';
 import { toChatId } from '../utils/ids';
@@ -25,6 +26,7 @@ export interface StoredMessage {
   deleted_at: number | null;
   edited_at: number | null;
   inbound_payload?: string | null;
+  media_note?: string | null;
 }
 
 export interface AppendMessage {
@@ -39,6 +41,7 @@ export interface AppendMessage {
   filePath?: string | null;
   replyTo?: number | null;
   inboundPayload?: string;
+  mediaNote?: string | null;
 }
 
 const row = (m: any): StoredMessage => ({
@@ -52,6 +55,7 @@ const row = (m: any): StoredMessage => ({
   deleted_at: m.deletedAt ?? null,
   edited_at: m.editedAt ?? null,
   inbound_payload: m.inboundPayload ?? null,
+  media_note: m.mediaNote ?? null,
   ts: m.ts,
   role: m.role,
   text: m.text,
@@ -75,6 +79,7 @@ export class HistoryService {
   constructor(
     private prisma: PrismaService,
     private clock: ClockService,
+    @Optional() private photos?: PhotoLibraryService,
   ) {}
 
   async ensureContact(chatId: number, accountId?: number | null) {
@@ -91,11 +96,18 @@ export class HistoryService {
       }
       return existing;
     }
+    // Новый собеседник сразу закрепляется за образом, который сейчас стоит
+    // у личности в регионе: последующая смена образа его уже не коснётся.
+    const photoSetId =
+      accountId != null && this.photos
+        ? await this.photos.currentSetId(accountId).catch(() => null)
+        : null;
     return this.prisma.contact.create({
       data: {
         chatId: id,
         accountId: accountId ?? null,
         createdAt: this.clock.ts(),
+        photoSetId,
       },
     });
   }
@@ -502,6 +514,7 @@ export class HistoryService {
         filePath: m.filePath ?? null,
         replyTo: m.replyTo ?? null,
         inboundPayload: m.inboundPayload ?? null,
+        mediaNote: m.mediaNote ?? null,
         processedAt: m.role === 'assistant' ? this.clock.ts() : null,
       },
     });
@@ -741,6 +754,7 @@ export class HistoryService {
       kind?: string;
       filePath?: string | null;
       replyTo?: number | null;
+      photoId?: number | null;
     } = {},
   ): Promise<number> {
     const r = await this.prisma.pendingReply.create({
@@ -753,6 +767,7 @@ export class HistoryService {
         kind: extra.kind ?? 'text',
         filePath: extra.filePath ?? null,
         replyTo: extra.replyTo ?? null,
+        photoId: extra.photoId ?? null,
       },
     });
     return r.id;

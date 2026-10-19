@@ -4,6 +4,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma.service';
+import { Role } from 'src/enums/roles.enum';
 import { ClockService } from 'src/shared/clock.service';
 import { fromChatId } from 'src/utils/ids';
 import {
@@ -143,6 +144,120 @@ const view = (b: Bucket) => ({
   cost_usd: usd(b.cost),
   avg_latency_ms: avgLatency(b),
 });
+
+const mergeBucket = (into: Bucket, from: Bucket): void => {
+  into.calls += from.calls;
+  addTokens(into.tokens, from.tokens);
+  into.cost += from.cost;
+  into.latencySum += from.latencySum;
+  into.latencyN += from.latencyN;
+};
+
+/** Сырые агрегаты одного менеджера за период; команда — слияние таких по людям. */
+interface ManagerAgg {
+  spend: Bucket;
+  spendDays: Map<string, Bucket>;
+  chats: Set<string>;
+  talk: MessageCounts;
+  leads: LeadCounts;
+  stages: {
+    total: Record<string, number>;
+    byDay: Map<string, Record<string, number>>;
+  };
+}
+
+const emptyAgg = (): ManagerAgg => ({
+  spend: bucket(),
+  spendDays: new Map(),
+  chats: new Set(),
+  talk: { in: 0, out: 0, manual: 0, chats: new Set(), byDay: new Map() },
+  leads: { uploaded: 0, valid: 0, replied: 0, byDay: new Map() },
+  stages: { total: zeroStages(), byDay: new Map() },
+});
+
+function mergeAgg(into: ManagerAgg, from: ManagerAgg): ManagerAgg {
+  mergeBucket(into.spend, from.spend);
+  for (const [day, b] of from.spendDays) {
+    if (!into.spendDays.has(day)) into.spendDays.set(day, bucket());
+    mergeBucket(into.spendDays.get(day)!, b);
+  }
+  for (const c of from.chats) into.chats.add(c);
+  into.talk.in += from.talk.in;
+  into.talk.out += from.talk.out;
+  into.talk.manual += from.talk.manual;
+  for (const c of from.talk.chats) into.talk.chats.add(c);
+  for (const [day, d] of from.talk.byDay) {
+    const t = talkDay(into.talk, day);
+    t.in += d.in;
+    t.out += d.out;
+    t.manual += d.manual;
+    for (const c of d.chats) t.chats.add(c);
+  }
+  into.leads.uploaded += from.leads.uploaded;
+  into.leads.valid += from.leads.valid;
+  into.leads.replied += from.leads.replied;
+  for (const [day, d] of from.leads.byDay) {
+    let t = into.leads.byDay.get(day);
+    if (!t)
+      into.leads.byDay.set(day, (t = { uploaded: 0, valid: 0, replied: 0 }));
+    t.uploaded += d.uploaded;
+    t.valid += d.valid;
+    t.replied += d.replied;
+  }
+  for (const [stage, n] of Object.entries(from.stages.total))
+    into.stages.total[stage] = (into.stages.total[stage] ?? 0) + n;
+  for (const [day, counts] of from.stages.byDay) {
+    if (!into.stages.byDay.has(day)) into.stages.byDay.set(day, zeroStages());
+    const t = into.stages.byDay.get(day)!;
+    for (const [stage, n] of Object.entries(counts))
+      t[stage] = (t[stage] ?? 0) + n;
+  }
+  return into;
+}
+
+const share = (part: number, whole: number) =>
+  whole ? Math.round((part / whole) * 1000) / 1000 : 0;
+
+/** Строка таблицы: итог за период и дни, в которых была хоть какая-то работа. */
+function aggRow(agg: ManagerAgg, range: DayRange) {
+  return {
+    ...view(agg.spend),
+    chats: agg.chats.size,
+    messages_in: agg.talk.in,
+    messages_out: agg.talk.out,
+    manual_share: share(agg.talk.manual, agg.talk.out),
+    leads_uploaded: agg.leads.uploaded,
+    leads_valid: agg.leads.valid,
+    leads_replied: agg.leads.replied,
+    active_chats: agg.talk.chats.size,
+    stages: agg.stages.total,
+    days: range.days
+      .map((day) => {
+        const talkDay = agg.talk.byDay.get(day);
+        const leadDay = agg.leads.byDay.get(day);
+        return {
+          day,
+          stages: agg.stages.byDay.get(day) ?? zeroStages(),
+          ...view(agg.spendDays.get(day) ?? bucket()),
+          messages_in: talkDay?.in ?? 0,
+          messages_out: talkDay?.out ?? 0,
+          manual_share: share(talkDay?.manual ?? 0, talkDay?.out ?? 0),
+          leads_uploaded: leadDay?.uploaded ?? 0,
+          leads_valid: leadDay?.valid ?? 0,
+          leads_replied: leadDay?.replied ?? 0,
+          active_chats: talkDay?.chats.size ?? 0,
+        };
+      })
+      .filter(
+        (d) =>
+          d.calls ||
+          d.messages_in ||
+          d.messages_out ||
+          d.leads_uploaded ||
+          Object.values(d.stages).some((n) => n > 0),
+      ),
+  };
+}
 
 function memoPrice(table: PriceTable): (model: string) => ModelPrice | null {
   const cache = new Map<string, ModelPrice | null>();
@@ -394,60 +509,78 @@ export class StatsService {
       ...leads.keys(),
       ...stages.keys(),
     ]);
+    const aggOf = (id: string): ManagerAgg => ({
+      spend: spend.get(id) ?? bucket(),
+      spendDays: spendDays.get(id) ?? new Map(),
+      chats: chats.get(id) ?? new Set(),
+      talk: messages.byManager.get(id) ?? emptyAgg().talk,
+      leads: leads.get(id) ?? emptyAgg().leads,
+      stages: stages.get(id) ?? emptyAgg().stages,
+    });
+    const order = (
+      a: { cost_usd: number; messages_out: number },
+      b: { cost_usd: number; messages_out: number },
+    ) => b.cost_usd - a.cost_usd || b.messages_out - a.messages_out;
+
+    // Команды: тимлид или хед со всеми подчинёнными по цепочке lead_id,
+    // включая себя. Хед видит и тимлидов, и их менеджеров, и прямых менеджеров.
+    const users = await this.prisma.dashboardUser.findMany({
+      where: { role: { in: [Role.TEAMLEAD, Role.HEAD] } },
+      select: { id: true, username: true, role: true, regionCode: true },
+    });
+    const links = await this.prisma.dashboardUser.findMany({
+      where: { leadId: { not: null } },
+      select: { id: true, leadId: true },
+    });
+    const subordinates = new Map<number, number[]>();
+    for (const l of links) {
+      if (!subordinates.has(l.leadId!)) subordinates.set(l.leadId!, []);
+      subordinates.get(l.leadId!)!.push(l.id);
+    }
+    const teamOf = (leadId: number): number[] => {
+      const seen = new Set<number>([leadId]);
+      const queue = [leadId];
+      while (queue.length) {
+        for (const id of subordinates.get(queue.shift()!) ?? [])
+          if (!seen.has(id)) {
+            seen.add(id);
+            queue.push(id);
+          }
+      }
+      return [...seen];
+    };
+    const roleRank: Record<string, number> = { head: 0, teamlead: 1 };
+    const by_team = users
+      .map((u) => {
+        const members = teamOf(u.id);
+        const agg = emptyAgg();
+        for (const id of members) mergeAgg(agg, aggOf(String(id)));
+        return {
+          manager_id: u.id,
+          username: u.username,
+          role: u.role,
+          region_code: u.regionCode,
+          members: members.length - 1,
+          ...aggRow(agg, range),
+        };
+      })
+      .sort(
+        (a, b) =>
+          (roleRank[a.role] ?? 9) - (roleRank[b.role] ?? 9) ||
+          (a.region_code ?? '').localeCompare(b.region_code ?? '') ||
+          order(a, b),
+      );
+
     return {
       range: { from: range.from, to: range.to, days: range.days },
       by_manager: [...ids]
-        .map((id) => {
-          const talk = messages.byManager.get(id);
-          const days = spendDays.get(id) ?? new Map<string, Bucket>();
-          return {
-            manager_id: id === NO_MANAGER ? null : Number(id),
-            username: owners.titles.get(id) ?? `#${id}`,
-            ...view(spend.get(id) ?? bucket()),
-            chats: chats.get(id)?.size ?? 0,
-            messages_in: talk?.in ?? 0,
-            messages_out: talk?.out ?? 0,
-            manual_share: talk?.out
-              ? Math.round((talk.manual / talk.out) * 1000) / 1000
-              : 0,
-            leads_uploaded: leads.get(id)?.uploaded ?? 0,
-            leads_valid: leads.get(id)?.valid ?? 0,
-            leads_replied: leads.get(id)?.replied ?? 0,
-            active_chats: talk?.chats.size ?? 0,
-            stages: stages.get(id)?.total ?? zeroStages(),
-            days: range.days
-              .map((day) => {
-                const talkDay = talk?.byDay.get(day);
-                const leadDay = leads.get(id)?.byDay.get(day);
-                const stageDay = stages.get(id)?.byDay.get(day);
-                return {
-                  day,
-                  stages: stageDay ?? zeroStages(),
-                  ...view(days.get(day) ?? bucket()),
-                  messages_in: talkDay?.in ?? 0,
-                  messages_out: talkDay?.out ?? 0,
-                  manual_share: talkDay?.out
-                    ? Math.round((talkDay.manual / talkDay.out) * 1000) / 1000
-                    : 0,
-                  leads_uploaded: leadDay?.uploaded ?? 0,
-                  leads_valid: leadDay?.valid ?? 0,
-                  leads_replied: leadDay?.replied ?? 0,
-                  active_chats: talkDay?.chats.size ?? 0,
-                };
-              })
-              .filter(
-                (d) =>
-                  d.calls ||
-                  d.messages_in ||
-                  d.messages_out ||
-                  d.leads_uploaded ||
-                  Object.values(d.stages).some((n) => n > 0),
-              ),
-          };
-        })
-        .sort(
-          (a, b) => b.cost_usd - a.cost_usd || b.messages_out - a.messages_out,
-        ),
+        .map((id) => ({
+          manager_id: id === NO_MANAGER ? null : Number(id),
+          username: owners.titles.get(id) ?? `#${id}`,
+          ...aggRow(aggOf(id), range),
+        }))
+        .sort(order),
+      by_team,
     };
   }
 

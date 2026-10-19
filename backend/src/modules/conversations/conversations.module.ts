@@ -12,9 +12,16 @@ import { SettingsModule } from '../settings/settings.module';
 import { BrainModule } from 'src/brain/brain.module';
 import { MediaModule } from '../media/media.module';
 import { TelegramModule } from '../telegram/telegram.module';
+import { PhotoSetsModule } from '../photo-sets/photo-sets.module';
 
 @Module({
-  imports: [SettingsModule, BrainModule, MediaModule, TelegramModule],
+  imports: [
+    SettingsModule,
+    BrainModule,
+    MediaModule,
+    TelegramModule,
+    PhotoSetsModule,
+  ],
   controllers: [ConversationsController],
   providers: [ConversationsService, ChatExportService],
   exports: [ConversationsService],

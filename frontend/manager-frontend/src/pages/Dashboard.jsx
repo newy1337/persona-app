@@ -147,8 +147,8 @@ function Dashboard() {
     load();
   }, [dateFilter, load]);
 
+  // Первую загрузку делает эффект периода выше; здесь только опрос и возврат на вкладку.
   useEffect(() => {
-    load();
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') load();
     }, POLL_MS);

@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -18,6 +19,13 @@ export class CreateManagerDto {
   @IsOptional()
   @IsInt()
   voicer_id?: number | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'руководитель: тимлид для менеджера, хед для тимлида',
+  })
+  @IsOptional()
+  @IsInt()
+  lead_id?: number | null;
   @ApiProperty()
   @IsString()
   @MinLength(1)
@@ -36,7 +44,11 @@ export class CreateManagerDto {
   @ApiPropertyOptional({
     description: 'Код региона менеджера: 3–4 цифры, включая ведущие нули',
   })
-  @ValidateIf((o) => o.role === 'manager' || o.region_code !== undefined)
+  @ValidateIf(
+    (o) =>
+      ['manager', 'teamlead', 'head'].includes(o.role) ||
+      o.region_code !== undefined,
+  )
   @IsString()
   @Matches(/^\d{3,4}$/, { message: 'регион должен содержать 3 или 4 цифры' })
   region_code?: string;
@@ -47,9 +59,25 @@ export class CreateManagerDto {
 }
 
 export class UpdateManagerDto {
+  @ApiPropertyOptional({ description: 'Новый логин; должен быть свободен' })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  username?: string;
+  @ApiPropertyOptional({
+    description: 'Право менять общие образы: правка видна на всех их аккаунтах',
+  })
+  @IsOptional()
+  @IsBoolean()
+  can_edit_photo_sets?: boolean;
   @IsOptional()
   @IsInt()
   voicer_id?: number | null;
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsInt()
+  lead_id?: number | null;
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()

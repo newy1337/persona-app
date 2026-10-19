@@ -44,7 +44,8 @@ export class RhythmScheduler {
     if (this.replying) return;
     this.replying = true;
     try {
-      await this.brain.runDueReplies();
+      if (this.brain.pumpDueReplies) await this.brain.pumpDueReplies();
+      else await this.brain.runDueReplies();
     } catch (e) {
       this.log.error(`due replies tick failed: ${e?.message ?? e}`);
     } finally {
@@ -85,6 +86,7 @@ export class RhythmScheduler {
     PersonaService,
     BrainStateService,
     ReplyScheduleService,
+    UsageRecorderService,
   ],
 })
 export class BrainModule {}

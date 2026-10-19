@@ -18,6 +18,7 @@ import { Auth } from 'src/decorators/auth.decorator';
 import { Roles } from 'src/decorators/roles.decorator';
 import { Role } from 'src/enums/roles.enum';
 import { CurrentUser } from 'src/decorators/user.decorator';
+import { DashboardUser } from '@prisma/client';
 import { AuditService } from 'src/shared/audit.service';
 import {
   AccountOwnerDto,
@@ -29,7 +30,7 @@ import {
 @ApiTags('Managers')
 @ApiBearerAuth()
 @Auth()
-@Roles(Role.ADMIN)
+@Roles(Role.HEAD)
 @Controller('api/managers')
 export class ManagersController {
   constructor(
@@ -39,11 +40,12 @@ export class ManagersController {
 
   @ApiOperation({ summary: 'All panel users with role and assigned accounts' })
   @Get()
-  async list() {
-    return this.managers.list();
+  async list(@CurrentUser() user: DashboardUser) {
+    return this.managers.list(user);
   }
 
   @Get(':userId/credentials')
+  @Roles(Role.ADMIN)
   @Header('Cache-Control', 'no-store')
   async credentials(
     @Param('userId', ParseIntPipe) target: number,
@@ -60,6 +62,7 @@ export class ManagersController {
   }
 
   @Post(':userId/password')
+  @Roles(Role.ADMIN)
   @HttpCode(200)
   @Header('Cache-Control', 'no-store')
   async regeneratePassword(
@@ -78,6 +81,7 @@ export class ManagersController {
 
   @ApiOperation({ summary: 'Create a panel user' })
   @Post()
+  @Roles(Role.ADMIN)
   @HttpCode(200)
   @UsePipes(ValidationPipe)
   async create(
@@ -94,6 +98,7 @@ export class ManagersController {
     summary: 'Assign several accounts to one manager (null releases)',
   })
   @Put('accounts')
+  @Roles(Role.ADMIN)
   @HttpCode(200)
   @UsePipes(ValidationPipe)
   async setOwnerBulk(
@@ -112,6 +117,7 @@ export class ManagersController {
 
   @ApiOperation({ summary: 'Set the owner of one account (null releases)' })
   @Put('accounts/:tgAccountId')
+  @Roles(Role.ADMIN)
   @HttpCode(200)
   @UsePipes(ValidationPipe)
   async setOwner(
@@ -136,16 +142,17 @@ export class ManagersController {
   async update(
     @Param('userId', ParseIntPipe) target: number,
     @Body() dto: UpdateManagerDto,
-    @CurrentUser('id') userId: number,
+    @CurrentUser() user: DashboardUser,
   ) {
     return this.audit.wrap(
-      { userId, action: 'manager.update', resource: `user:${target}` },
-      () => this.managers.update(target, dto),
+      { userId: user.id, action: 'manager.update', resource: `user:${target}` },
+      () => this.managers.update(target, dto, user),
     );
   }
 
   @ApiOperation({ summary: 'Delete a panel user (not yourself)' })
   @Delete(':userId')
+  @Roles(Role.ADMIN)
   @HttpCode(200)
   async remove(
     @Param('userId', ParseIntPipe) target: number,

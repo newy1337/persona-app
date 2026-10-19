@@ -1,8 +1,9 @@
 import { api } from './client';
 
-export function getLeads({ status, q } = {}) {
+export function getLeads({ status, q, deal_stage } = {}) {
   const p = new URLSearchParams();
   if (status) p.set('status', status);
+  if (deal_stage) p.set('deal_stage', deal_stage);
   if (q) p.set('q', q);
   const qs = p.toString();
   return api.get(`/api/leads${qs ? `?${qs}` : ''}`);

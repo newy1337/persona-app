@@ -16,17 +16,24 @@ model DashboardUser {
   role              String  @default("manager")
   lastLogin         Int?    @map("last_login")
   createdAt         Int     @map("created_at")
+  canEditPhotoSets  Boolean @default(false) @map("can_edit_photo_sets")
 
   voicerId            Int?            @map("voicer_id")
   voicer              DashboardUser?  @relation("ManagerVoicer", fields: [voicerId], references: [id], onDelete: SetNull)
   voicedManagers      DashboardUser[] @relation("ManagerVoicer")
+  /// руководитель: у менеджера — тимлид, у тимлида — хед; они видят диалоги подчинённых
+  leadId              Int?            @map("lead_id")
+  lead                DashboardUser?  @relation("ManagerLead", fields: [leadId], references: [id], onDelete: SetNull)
+  subordinates        DashboardUser[] @relation("ManagerLead")
   voiceProfile        VoicerProfile?
   requestedVoiceTasks VoiceTask[]     @relation("TaskManager")
   assignedVoiceTasks  VoiceTask[]     @relation("TaskVoicer")
 
-  accounts ManagerAccount[]
-  audit    DashboardAuditLog[]
+  accounts         ManagerAccount[]
+  audit            DashboardAuditLog[]
+  photoAssignments ManagerPhotoSet[]
 
+  @@index([leadId], map: "idx_dashboard_users_lead")
   @@map("dashboard_users")
 }
 
@@ -120,11 +127,15 @@ model TgAccount {
   displayName          String? @map("display_name")
   floodUntil           Int?    @map("flood_until")
   floodReason          String? @map("flood_reason")
+  photoSetId           Int?    @map("photo_set_id")
+  photoAutoSend        Boolean @default(true) @map("photo_auto_send")
 
   manager  ManagerAccount?
+  photoSet PhotoSet?       @relation(fields: [photoSetId], references: [id], onDelete: SetNull)
   contacts Contact[]
 
   @@index([personaId, status], map: "idx_tg_persona_status")
+  @@index([photoSetId], map: "idx_tg_photo_set")
   @@map("tg_accounts")
 }
 
@@ -149,9 +160,14 @@ model Contact {
   noteBy             String? @map("note_by")
   noteAt             Int?    @map("note_at")
 
-  account TgAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  /// образ, на котором начался диалог; смена образа в регионе его не меняет
+  photoSetId Int? @map("photo_set_id")
+
+  account  TgAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  photoSet PhotoSet?  @relation(fields: [photoSetId], references: [id], onDelete: SetNull)
 
   @@index([accountId], map: "idx_contacts_account")
+  @@index([photoSetId], map: "idx_contacts_photo_set")
   @@map("contacts")
 }
 
@@ -173,6 +189,8 @@ model Message {
   editedAt        Int?    @map("edited_at")
   processedAt     Int?    @map("processed_at")
   inboundPayload  String? @map("inbound_payload")
+  /// Что было на отправленном фото из образа: модель видит это в истории.
+  mediaNote       String? @map("media_note")
 
   @@unique([chatId, sourceMessageId], map: "uq_messages_chat_source_message")
   @@index([chatId, id], map: "idx_messages_chat")
@@ -227,6 +245,7 @@ model PendingReply {
   createdTs      Int            @map("created_ts")
   sentTs         Int?           @map("sent_ts")
   error          String?
+  photoId        Int?           @map("photo_id")
   voicerDelivery VoiceDelivery?
 
   @@index([chatId, status], map: "idx_pending_replies_status")
@@ -308,6 +327,116 @@ model MediaShown {
 
   @@id([chatId, path])
   @@map("media_shown")
+}
+
+/// Образ: набор фотографий личности. Создаёт и ведёт хед своего региона,
+/// он же назначает образ сотрудникам региона (ManagerPhotoSet). Диалог
+/// закрепляется за образом, действовавшим при его начале (Contact.photoSetId).
+model PhotoSet {
+  id             Int     @id @default(autoincrement())
+  name           String
+  /// регион хеда, который ведёт образ. Общих образов нет; NULL бывает только
+  /// у старого неиспользуемого образа — его видит лишь администратор
+  regionCode     String? @map("region_code")
+  coverPhotoId   Int?    @map("cover_photo_id")
+  autoSend       Boolean @default(true) @map("auto_send")
+  /// request — только по просьбе собеседника; initiative — ещё и по своей инициативе.
+  sendMode       String  @default("initiative") @map("send_mode")
+  minIntervalMin Int     @default(120) @map("min_interval_min")
+  maxPerDay      Int     @default(2) @map("max_per_day")
+  noRepeat       Boolean @default(true) @map("no_repeat")
+  /// Удалённый образ, снимки которого уже показывали: скрыт, история цела.
+  archivedAt     Int?    @map("archived_at")
+  createdAt      Int     @map("created_at")
+  updatedAt      Int     @map("updated_at")
+
+  photos      PhotoSetPhoto[]
+  accounts    TgAccount[]
+  contacts    Contact[]
+  assignments ManagerPhotoSet[]
+
+  @@index([regionCode], map: "idx_photo_sets_region")
+  @@map("photo_sets")
+}
+
+/// Какой образ получают новые диалоги сотрудника. Хед назначает образ своего
+/// региона каждому сотруднику — отдельно по каждой личности его аккаунтов.
+model ManagerPhotoSet {
+  userId      Int    @map("user_id")
+  personaSlug String @map("persona_slug")
+  setId       Int    @map("set_id")
+  updatedAt   Int    @map("updated_at")
+  updatedBy   Int?   @map("updated_by")
+
+  user DashboardUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  set  PhotoSet      @relation(fields: [setId], references: [id], onDelete: Cascade)
+
+  @@id([userId, personaSlug])
+  @@index([setId], map: "idx_manager_photo_sets_set")
+  @@map("manager_photo_sets")
+}
+
+/// Стоп региона: образы региона выключены. Фото из образов не уходят, запросы
+/// фото идут по прежней схеме; остальная автоматика работает.
+model RegionStop {
+  regionCode String  @id @map("region_code")
+  reason     String?
+  actorId    Int?    @map("actor_id")
+  createdAt  Int     @map("created_at")
+
+  @@map("region_stops")
+}
+
+model PhotoSetPhoto {
+  id          Int     @id @default(autoincrement())
+  setId       Int     @map("set_id")
+  filePath    String  @map("file_path")
+  thumbPath   String  @map("thumb_path")
+  sha256      String
+  width       Int     @default(0)
+  height      Int     @default(0)
+  description String  @default("")
+  place       String?
+  /// YYYY, YYYY-MM или YYYY-MM-DD; NULL — дата неизвестна.
+  takenOn     String? @map("taken_on")
+  details     String  @default("")
+  tags        String  @default("[]")
+  autoSend    Boolean @default(true) @map("auto_send")
+  /// false — описание предложено системой и человек его ещё не смотрел.
+  reviewed    Boolean @default(false)
+  createdAt   Int     @map("created_at")
+  updatedAt   Int     @map("updated_at")
+  deletedAt   Int?    @map("deleted_at")
+
+  set   PhotoSet    @relation(fields: [setId], references: [id], onDelete: Cascade)
+  sends PhotoSend[]
+
+  @@unique([setId, sha256], map: "uq_photo_set_sha")
+  @@index([setId, deletedAt], map: "idx_photo_set_photos")
+  @@map("photo_set_photos")
+}
+
+/// Какие снимки уже видел собеседник. Хранится по чату и фото, а не по
+/// аккаунту или менеджеру: смена набора или менеджера отметки не обнуляет.
+model PhotoSend {
+  id        Int     @id @default(autoincrement())
+  chatId    BigInt  @map("chat_id")
+  photoId   Int     @map("photo_id")
+  accountId Int?    @map("account_id")
+  messageId Int?    @unique @map("message_id")
+  tgMsgId   Int?    @map("tg_msg_id")
+  caption   String  @default("")
+  note      String  @default("")
+  /// bot | manager
+  source    String
+  actor     String?
+  sentAt    Int     @map("sent_at")
+
+  photo PhotoSetPhoto @relation(fields: [photoId], references: [id], onDelete: Cascade)
+
+  @@index([chatId, sentAt], map: "idx_photo_sends_chat")
+  @@index([photoId], map: "idx_photo_sends_photo")
+  @@map("photo_sends")
 }
 
 model InboundMedia {
@@ -408,52 +537,53 @@ model VoicerProfile {
 }
 
 model VoiceTask {
-  source               String           @default("manager")
-  autoKey              String?          @unique @map("auto_key")
-  autoReplyId          String?          @map("auto_reply_id")
-  autoContextId        Int?             @map("auto_context_id")
-  autoContextHash      String?          @map("auto_context_hash")
-  autoExpiresAt        Int?             @map("auto_expires_at")
-  autoPersonaUpdatedAt Int?             @map("auto_persona_updated_at")
-  id                   Int              @id @default(autoincrement())
-  managerId            Int?             @map("manager_id")
-  voicerId             Int?             @map("voicer_id")
-  managerName          String           @map("manager_name")
-  voicerName           String           @map("voicer_name")
-  manager              DashboardUser?   @relation("TaskManager", fields: [managerId], references: [id], onDelete: SetNull)
-  voicer               DashboardUser?   @relation("TaskVoicer", fields: [voicerId], references: [id], onDelete: SetNull)
+  source               String               @default("manager")
+  autoKey              String?              @unique @map("auto_key")
+  autoReplyId          String?              @map("auto_reply_id")
+  autoContextId        Int?                 @map("auto_context_id")
+  autoContextHash      String?              @map("auto_context_hash")
+  autoExpiresAt        Int?                 @map("auto_expires_at")
+  autoPersonaUpdatedAt Int?                 @map("auto_persona_updated_at")
+  id                   Int                  @id @default(autoincrement())
+  managerId            Int?                 @map("manager_id")
+  voicerId             Int?                 @map("voicer_id")
+  managerName          String               @map("manager_name")
+  voicerName           String               @map("voicer_name")
+  manager              DashboardUser?       @relation("TaskManager", fields: [managerId], references: [id], onDelete: SetNull)
+  voicer               DashboardUser?       @relation("TaskVoicer", fields: [voicerId], references: [id], onDelete: SetNull)
   kind                 String
-  voiceMode            String           @default("library") @map("voice_mode")
-  sendAccountId        Int?             @map("send_account_id")
-  sendRequestedById    Int?             @map("send_requested_by_id")
+  voiceMode            String               @default("library") @map("voice_mode")
+  sendAccountId        Int?                 @map("send_account_id")
+  sendRequestedById    Int?                 @map("send_requested_by_id")
   title                String
-  script               String           @default("")
-  emotion              String           @default("")
-  tempo                String           @default("")
-  instructions         String           @default("")
-  contactLabel         String           @map("contact_label")
-  contactRef           String           @default("") @map("contact_ref")
-  chatId               BigInt?          @map("chat_id")
-  chatGrantAccountId   Int?             @map("chat_grant_account_id")
-  chatGrantedById      Int?             @map("chat_granted_by_id")
-  personaSlug          String           @map("persona_slug")
-  personaName          String           @map("persona_name")
+  script               String               @default("")
+  emotion              String               @default("")
+  tempo                String               @default("")
+  instructions         String               @default("")
+  contactLabel         String               @map("contact_label")
+  contactRef           String               @default("") @map("contact_ref")
+  chatId               BigInt?              @map("chat_id")
+  chatGrantAccountId   Int?                 @map("chat_grant_account_id")
+  chatGrantedById      Int?                 @map("chat_granted_by_id")
+  personaSlug          String               @map("persona_slug")
+  personaName          String               @map("persona_name")
   biography            String
-  status               String           @default("queued")
-  priority             Int              @default(0)
-  revision             Int              @default(1)
-  feedback             String           @default("")
-  outcome              String           @default("")
-  createdAt            Int              @map("created_at")
-  updatedAt            Int              @map("updated_at")
-  dueAt                Int?             @map("due_at")
-  notifyVersion        Int              @default(1) @map("notify_version")
-  notifiedVersion      Int              @default(0) @map("notified_version")
-  notifyAfter          Int              @default(0) @map("notify_after")
-  notifyError          String?          @map("notify_error")
-  botMessageId         Int?             @map("bot_message_id")
-  botChatId            BigInt?          @map("bot_chat_id")
+  status               String               @default("queued")
+  priority             Int                  @default(0)
+  revision             Int                  @default(1)
+  feedback             String               @default("")
+  outcome              String               @default("")
+  createdAt            Int                  @map("created_at")
+  updatedAt            Int                  @map("updated_at")
+  dueAt                Int?                 @map("due_at")
+  notifyVersion        Int                  @default(1) @map("notify_version")
+  notifiedVersion      Int                  @default(0) @map("notified_version")
+  notifyAfter          Int                  @default(0) @map("notify_after")
+  notifyError          String?              @map("notify_error")
+  botMessageId         Int?                 @map("bot_message_id")
+  botChatId            BigInt?              @map("bot_chat_id")
   calls                VoiceCall[]
+  callRecordings       VoiceCallRecording[]
   recordings           VoiceRecording[]
   deliveries           VoiceDelivery[]
   notices              VoiceNotice[]
@@ -527,23 +657,42 @@ model VoicerBotState {
 }
 
 model VoiceCall {
-  id             String    @id
-  taskId         Int       @map("task_id")
-  task           VoiceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  id             String              @id
+  taskId         Int                 @map("task_id")
+  task           VoiceTask           @relation(fields: [taskId], references: [id], onDelete: Cascade)
   revision       Int
-  accountId      Int       @map("account_id")
-  chatId         BigInt    @map("chat_id")
-  voicerId       Int       @map("voicer_id")
-  status         String    @default("connecting")
-  reason         String    @default("")
-  createdAt      Int       @map("created_at")
-  connectedAt    Int?      @map("connected_at")
-  endedAt        Int?      @map("ended_at")
-  finalizedAt    Int?      @map("finalized_at")
-  resumeStatus   String    @default("pending") @map("resume_status")
-  followupStatus String    @default("none") @map("followup_status")
-  note           String    @default("")
+  accountId      Int                 @map("account_id")
+  chatId         BigInt              @map("chat_id")
+  voicerId       Int                 @map("voicer_id")
+  status         String              @default("connecting")
+  reason         String              @default("")
+  createdAt      Int                 @map("created_at")
+  connectedAt    Int?                @map("connected_at")
+  endedAt        Int?                @map("ended_at")
+  finalizedAt    Int?                @map("finalized_at")
+  resumeStatus   String              @default("pending") @map("resume_status")
+  followupStatus String              @default("none") @map("followup_status")
+  note           String              @default("")
+  recording      VoiceCallRecording?
 
   @@index([taskId, createdAt])
   @@map("voice_calls")
+}
+
+/// Диктофон: запись звонка из кабинета, обе стороны, подпись ставит войсер после звонка.
+model VoiceCallRecording {
+  id        Int       @id @default(autoincrement())
+  callId    String    @unique @map("call_id")
+  call      VoiceCall @relation(fields: [callId], references: [id], onDelete: Cascade)
+  taskId    Int       @map("task_id")
+  task      VoiceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  title     String
+  filePath  String    @map("file_path")
+  duration  Int
+  createdAt Int       @map("created_at")
+  /// когда войсер подписал запись; пусто — стоит подпись по умолчанию
+  titledAt  Int?      @map("titled_at")
+
+  @@index([taskId, id])
+  @@map("voice_call_recordings")
 }

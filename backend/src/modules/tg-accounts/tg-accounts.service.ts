@@ -30,6 +30,9 @@ const HEARTBEAT_ALIVE_S = 120;
 
 export interface TgAccountSummary {
   id: number;
+  photo_set_id: number | null;
+  photo_set_name: string | null;
+  photo_auto_send: boolean;
   phone_e164: string;
   persona_id: string;
   status: string;
@@ -67,7 +70,12 @@ export class TgAccountsService {
 
   summary(
     a: TgAccount,
-    extra: { chats?: number; personaName?: string | null } = {},
+    extra: {
+      chats?: number;
+      personaName?: string | null;
+      photoSetId?: number | null;
+      photoSetName?: string | null;
+    } = {},
   ): TgAccountSummary {
     let geo: string | null = null;
     try {
@@ -105,6 +113,9 @@ export class TgAccountsService {
       purpose: a.purpose,
       username: a.username,
       display_name: a.displayName ?? null,
+      photo_set_id: extra.photoSetId ?? null,
+      photo_set_name: extra.photoSetName ?? null,
+      photo_auto_send: a.photoAutoSend,
       avatar_url: this.presence.accountAvatarUrl(a.id),
       lost_at:
         a.status === 'banned' || a.status === 'unauthorized'
@@ -130,19 +141,37 @@ export class TgAccountsService {
       },
       orderBy: { id: 'asc' },
     });
-    const [chats, personas] = await Promise.all([
+    const [chats, personas, sets, links, regional] = await Promise.all([
       this.prisma.contact.groupBy({
         by: ['accountId'],
         _count: { _all: true },
       }),
       this.prisma.persona.findMany({ select: { slug: true, name: true } }),
+      this.prisma.photoSet.findMany({ select: { id: true, name: true } }),
+      this.prisma.managerAccount.findMany({
+        where: { tgAccountId: { in: rows.map((a) => a.id) } },
+        select: { tgAccountId: true, userId: true },
+      }),
+      this.prisma.managerPhotoSet.findMany(),
     ]);
+    const setNames = new Map(sets.map((s) => [s.id, s.name]));
+    const managerOf = new Map(links.map((l) => [l.tgAccountId, l.userId]));
+    const assigned = new Map(
+      regional.map((r) => [`${r.userId}:${r.personaSlug}`, r.setId]),
+    );
+    // Образ для новых диалогов — назначенный хедом менеджеру аккаунта по личности.
+    const currentSet = (a: (typeof rows)[number]) =>
+      assigned.get(`${managerOf.get(a.id)}:${a.personaId}`) ?? null;
     const chatsBy = new Map(chats.map((c) => [c.accountId, c._count._all]));
     const names = new Map(personas.map((p) => [p.slug, p.name]));
     return rows.map((a) =>
       this.summary(a, {
         chats: chatsBy.get(a.id) ?? 0,
         personaName: names.get(a.personaId) ?? null,
+        photoSetId: currentSet(a),
+        photoSetName: currentSet(a)
+          ? (setNames.get(currentSet(a)!) ?? null)
+          : null,
       }),
     );
   }

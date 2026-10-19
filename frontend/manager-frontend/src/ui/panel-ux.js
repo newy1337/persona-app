@@ -55,7 +55,7 @@ export function createPanelUX({ React, api, styles: s }) {
     return h('div', { className: 'ux-overlay', onMouseDown: event => { if (event.target === event.currentTarget && !busy) onClose(); } },
       h('section', { ref, className: `ux-modal ${wide ? 'ux-modal-wide' : ''}`, role: 'dialog', 'aria-modal': true, 'aria-labelledby': titleId, tabIndex: -1, 'aria-busy': busy },
         h('header', { className: 'ux-modal-head' }, h('h3', { id: titleId }, title)),
-        h('div', { className: 'ux-modal-body' }, children),
+        children ? h('div', { className: 'ux-modal-body' }, children) : null,
         footer && h('footer', { className: 'ux-modal-footer' }, footer)));
   }
   function FeedbackHost() {
@@ -68,7 +68,7 @@ export function createPanelUX({ React, api, styles: s }) {
         item.status !== 'pending' && h('button', { type: 'button', 'aria-label': 'Закрыть уведомление', onClick: () => actions.dismiss(item.id) }, '×')))),
       question && h(Modal, { title: question.title || 'Подтвердите действие', onClose: () => answer(false), footer: h(React.Fragment, null,
         h('button', { type: 'button', className: s.btn, 'data-autofocus': true, onClick: () => answer(false) }, 'Отмена'),
-        h('button', { type: 'button', className: question.danger ? s.btnDanger : s.btnPrimary, onClick: () => answer(true) }, question.confirmLabel || 'Подтвердить')) }, h('p', { className: 'ux-confirm-text' }, question.message)));
+        h('button', { type: 'button', className: question.danger ? s.btnDanger : s.btnPrimary, onClick: () => answer(true) }, question.confirmLabel || 'Подтвердить')) }, question.message ? h('p', { className: 'ux-confirm-text' }, question.message) : null));
   }
   function DeleteLeadModal({ lead, onCancel, onConfirm }) {
     const [telegram, setTelegram] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');

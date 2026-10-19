@@ -41,6 +41,8 @@ import {
   StickerDto,
 } from './dto/attachment.dto';
 import { UploadsService } from '../media/uploads.service';
+import { PhotoSetsService } from '../photo-sets/photo-sets.service';
+import { SendLibraryPhotoDto } from '../photo-sets/photo-sets.dto';
 import { kindForFile } from 'src/domain/attachments';
 import type { Request } from 'express';
 import { Req, UnprocessableEntityException } from '@nestjs/common';
@@ -57,6 +59,7 @@ export class ConversationsController {
     private readonly audit: AuditService,
     private readonly uploads: UploadsService,
     private readonly chatExport: ChatExportService,
+    private readonly photoSets: PhotoSetsService,
   ) {}
 
   @ApiOperation({
@@ -100,6 +103,28 @@ export class ConversationsController {
         payload: { kind: dto.kind },
       },
       () => this.conversations.sendAttachment(chatId, dto),
+    );
+  }
+
+  @ApiOperation({ summary: 'Отправить снимок из образа аккаунта этого чата' })
+  @Post(':chatId/library-photo')
+  @HttpCode(200)
+  @UsePipes(ValidationPipe)
+  async libraryPhoto(
+    @Param('chatId', ParseIntPipe) chatId: number,
+    @Body() dto: SendLibraryPhotoDto,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    await this.scope.requireChatOwned(user, chatId);
+    const photo = await this.photoSets.photoForChat(chatId, dto.photo_id);
+    return this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'conversation.library_photo',
+        resource: `chat:${chatId}`,
+        payload: { photo_id: dto.photo_id },
+      },
+      () => this.conversations.sendLibraryPhoto(chatId, photo, dto),
     );
   }
 

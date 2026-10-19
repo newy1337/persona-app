@@ -30,6 +30,7 @@ import {
 } from './voicer.dto';
 import { VoicerChatService } from './voicer-chat.service';
 import { VoicerBriefService } from './voicer-brief.service';
+import { VoicerCallRecordingService } from './voicer-call-recording.service';
 
 const pageNumber = (value?: string) =>
   Math.max(1, Math.min(10000, Number.parseInt(value ?? '1', 10) || 1));
@@ -45,6 +46,7 @@ export class VoicerController {
     private chats: VoicerChatService,
     private calls: VoicerCallService,
     private briefs: VoicerBriefService,
+    private callRecordings: VoicerCallRecordingService,
   ) {}
 
   @Get('tasks/:id/brief')
@@ -291,15 +293,53 @@ export class VoicerController {
   }
 
   @Get('recordings')
-  recordings(
+  async recordings(
     @CurrentUser() user: DashboardUser,
     @Query('q') q = '',
     @Query('page') page?: string,
   ) {
-    return this.voicer.recordings(
-      user,
-      String(q).slice(0, 160),
-      pageNumber(page),
+    const search = String(q).slice(0, 160),
+      current = pageNumber(page);
+    const voice = await this.voicer.recordings(user, search, current);
+    // Записи звонков лежат в своей таблице: на первой странице они идут
+    // вперемешку с голосовыми по времени, дальше — только голосовые.
+    if (current !== 1) return voice;
+    const calls = await this.callRecordings.list(user, search);
+    const items = [...voice.items, ...calls]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, 40);
+    return { ...voice, items, total: voice.total + calls.length };
+  }
+
+  @Get('calls/:callId/recording/file')
+  async callRecordingFile(
+    @CurrentUser() user: DashboardUser,
+    @Param('callId') callId: string,
+    @Res() response: Response,
+  ) {
+    const file = await this.callRecordings.file(user, callId);
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename="call.ogg"; filename*=UTF-8''${encodeURIComponent(file.title + '.ogg')}`,
+    );
+    response.type('audio/ogg').send(file.data);
+  }
+
+  @Put('calls/:callId/recording')
+  renameCallRecording(
+    @CurrentUser() user: DashboardUser,
+    @Param('callId') callId: string,
+    @Body() dto: RecordingTitleDto,
+  ) {
+    return this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'voicer.call_recording_rename',
+        resource: `voice_call:${callId}`,
+      },
+      () => this.callRecordings.rename(user, callId, dto.title),
     );
   }
 

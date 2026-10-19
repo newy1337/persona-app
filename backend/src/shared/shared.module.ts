@@ -12,6 +12,8 @@ import { FunnelEventsService } from './funnel-events.service';
 import { GlobalGateService } from './global-gate.service';
 import { PresenceService } from './presence.service';
 import { ManagerAttributionService } from './manager-attribution.service';
+import { PhotoLibraryService } from './photo-library.service';
+import { RegionGateService } from './region-gate.service';
 import { VoicerAutomationService } from 'src/modules/voicer/voicer-automation.service';
 import { VoicerDeliveryService } from 'src/modules/voicer/voicer-delivery.service';
 
@@ -29,6 +31,8 @@ const providers = [
   GlobalGateService,
   PresenceService,
   ManagerAttributionService,
+  PhotoLibraryService,
+  RegionGateService,
   VoicerDeliveryService,
   VoicerAutomationService,
 ];

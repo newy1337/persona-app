@@ -140,6 +140,7 @@ export interface MemoryUpdate {
 
 export interface Judgment {
   voice_reply?: { send: boolean; emotion: string; reason: string };
+  photo_reply?: { photo_id: string; reason: string };
   question_review?: {
     questions: Array<{ id: string; text: string }>;
     unanswered_ids: string[];
@@ -231,6 +232,7 @@ export interface RuntimeSnapshot {
     target_max: number;
     max_characters: number;
   };
+  photo_availability?: import('src/domain/photo-library').PhotoAvailability;
   conversation_context?: import('../character/conversation').ConversationContext;
   time_context?: TurnTime;
   day_continuity?: DayContinuity;
@@ -240,6 +242,13 @@ export interface RuntimeSnapshot {
     kind: string;
     reason: string | null;
     sent_parts?: string[];
+    photo?: {
+      description: string;
+      place: string;
+      taken: string;
+      freshness: string;
+      details: string;
+    };
   };
   date: string;
   day: Record<string, unknown>;

@@ -15,6 +15,7 @@ import {
   writeFromAnother,
 } from '../../api/leads';
 import s from '../../styles/AdminPage.module.scss';
+import { DEAL_STAGE_FILTERS, dealStageLabel } from '../../data/dealStages';
 
 const STATUS = [
   { key: '', label: 'Все' },
@@ -169,6 +170,7 @@ export default function Leads() {
   const navigate = useNavigate();
   const [data, setData] = useState({ items: [], counts: {} });
   const [status, setStatus] = useState('');
+  const [dealStage, setDealStage] = useState('');
   const [q, setQ] = useState('');
   const [outreach, setOutreach] = useState(null);
   const [error, setError] = useState(null);
@@ -184,11 +186,11 @@ export default function Leads() {
   }, []);
 
   const load = useCallback(() => {
-    Promise.all([getLeads({ status, q }), getOutreachStatus().catch(() => null)])
+    Promise.all([getLeads({ status, q, deal_stage: dealStage }), getOutreachStatus().catch(() => null)])
       .then(([d, o]) => { setData(d); setOutreach(o); })
       .catch((e) => setError(e.detail || e.message))
       .finally(() => setReady(true));
-  }, [status, q]);
+  }, [status, q, dealStage]);
 
   useEffect(() => {
     load();
@@ -215,6 +217,7 @@ export default function Leads() {
   const toggle = (id) => setSelected((v) => { const n = new Set(v); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const ids = [...selected];
   const counts = data.counts ?? {};
+  const stageCounts = data.stages ?? {};
 
   return (
     <div className="app mr-leads">
@@ -268,8 +271,22 @@ export default function Leads() {
             </div>
             <input className={s.field} placeholder="поиск: телефон, @username, имя, город" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 240 }} />
           </div>
+          <div className={s.actions} style={{ margin: '0 0 12px', alignItems: 'center' }} data-testid="lead-stage-filters" aria-label="Этап сделки">
+            <span className={s.muted} style={{ fontSize: 12 }}>Этап:</span>
+            <button className={`${s.btnSm} ${dealStage === '' ? s.btnSelected : ''}`} onClick={() => setDealStage('')}>Любой</button>
+            {DEAL_STAGE_FILTERS.map((st) => (
+              <button
+                key={st.id}
+                className={`${s.btnSm} ${dealStage === st.id ? s.btnSelected : ''}`}
+                onClick={() => setDealStage(dealStage === st.id ? '' : st.id)}
+                aria-pressed={dealStage === st.id}
+              >
+                {st.label} <span className={s.muted}>{stageCounts[st.id] ?? 0}</span>
+              </button>
+            ))}
+          </div>
 
-          <LeadsTable ready={ready} rows={data.items} query={q} status={status} selected={selected}
+          <LeadsTable ready={ready} rows={data.items} query={q} status={status || dealStage} selected={selected}
             onToggle={toggle} onSelectVisible={checked => setSelected(previous => {
               const next = new Set(previous);
               for (const row of data.items) { if (checked) next.add(row.id); else next.delete(row.id); }
@@ -279,7 +296,7 @@ export default function Leads() {
             onQueue={ids => run(() => startOutreach(ids))} onUnqueue={ids => run(() => stopOutreach(ids))}
             onReassign={row => run(() => writeFromAnother(row.id))} onDelete={setDeleting}
             onPersonaChange={(id, persona_id) => run(() => updateLead(id, { persona_id }))}
-            personas={personas} helpers={{ PersonaSelect, statusLabels: LABEL, statusClasses: BADGE, date: fmtTs }} />
+            personas={personas} helpers={{ PersonaSelect, statusLabels: LABEL, statusClasses: BADGE, date: fmtTs, dealStage: dealStageLabel }} />
         </div>
       </main>
       {importing && <ImportDialog personas={personas} onClose={() => { setImporting(false); load(); }} />}

@@ -75,7 +75,10 @@ function Cells({ row, share }) {
   );
 }
 
-export default function ManagersTable({ rows }) {
+const ROLE_TITLE = { head: 'хед', teamlead: 'тимлид' };
+const people = (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'человек' : 'чел.'}`;
+
+export default function ManagersTable({ rows, title = 'По менеджерам', nameHeader = 'Менеджер', hint = 'Нажмите на строку — раскроются дни. Заголовок столбца сортирует таблицу.', empty = 'За период работы не было' }) {
   const [open, setOpen] = useState(() => new Set());
   const [sort, setSort] = useState('cost_usd');
 
@@ -113,21 +116,21 @@ export default function ManagersTable({ rows }) {
   if (!rows?.length) {
     return (
       <section className={p.card}>
-        <h3 className={p.cardTitle}>По менеджерам</h3>
-        <p className={s.muted}>За период работы не было</p>
+        <h3 className={p.cardTitle}>{title}</h3>
+        <p className={s.muted}>{empty}</p>
       </section>
     );
   }
 
   return (
     <section className={p.card}>
-      <h3 className={p.cardTitle}>По менеджерам</h3>
-      <p className={s.hint}>Нажмите на строку — раскроются дни. Заголовок столбца сортирует таблицу.</p>
+      <h3 className={p.cardTitle}>{title}</h3>
+      <p className={s.hint}>{hint}</p>
       <div className={s.tableWrap}>
         <table className={`${s.table} ${p.managers}`}>
           <thead>
             <tr>
-              <th>Менеджер</th>
+              <th>{nameHeader}</th>
               {COLUMNS.map((c) => (
                 <th
                   key={c.id}
@@ -150,6 +153,11 @@ export default function ManagersTable({ rows }) {
                   <td>
                     <span className={p.caret} aria-hidden="true">{shown ? '▾' : '▸'}</span>
                     {r.username}
+                    {r.role && (
+                      <div className={s.muted} data-testid={`team-meta-${id}`}>
+                        {[ROLE_TITLE[r.role] ?? r.role, r.region_code ? `регион ${r.region_code}` : null, `команда: ${people(r.members ?? 0)}`].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
                   </td>
                   <Cells row={r} share={total.cost_usd ? r.cost_usd / total.cost_usd : null} />
                 </tr>,

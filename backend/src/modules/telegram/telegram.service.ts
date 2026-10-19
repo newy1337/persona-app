@@ -1696,6 +1696,92 @@ export class TelegramService
   }
 
   /**
+   * Фото из образа от лица бота. Как и текст ответа, идёт с явным random_id:
+   * повтор после сбоя Telegram сводит к уже отправленному сообщению.
+   */
+  async sendPhoto(
+    chatId: number,
+    opts: {
+      path: string;
+      caption: string;
+      randomId: string;
+      accountId?: number | null;
+      typing?: TypingStyle;
+      signal?: AbortSignal;
+      onDispatch?: () => Promise<void>;
+    },
+  ): Promise<number> {
+    const account = await this.accountFor(chatId, opts.accountId);
+    const style = opts.typing ?? DEFAULT_TYPING;
+    if (style.enabled && opts.caption)
+      await this.typeLike(account, chatId, opts.caption, style, opts.signal);
+    checkCancelled(opts.signal);
+    await this.call(
+      account,
+      'setTyping',
+      () =>
+        account.client.invoke(
+          new Api.messages.SetTyping({
+            peer: chatId,
+            action: new Api.SendMessageUploadPhotoAction({ progress: 0 }),
+          }),
+        ),
+      TG_TYPING_TIMEOUT_MS,
+    ).catch(() => undefined);
+    const buffer = readFileSync(opts.path);
+    const sent = await this.deliver(chatId, () =>
+      this.call(
+        account,
+        'sendPhoto',
+        async () => {
+          const peer = await account.client.getInputEntity(chatId);
+          const uploaded = await account.client.uploadFile({
+            file: new CustomFile(
+              basename(opts.path),
+              buffer.length,
+              opts.path,
+              buffer,
+            ),
+            workers: 1,
+          });
+          const [message, entities] = await _parseMessageText(
+            account.client,
+            opts.caption,
+            undefined,
+          );
+          checkCancelled(opts.signal);
+          const request = new Api.messages.SendMedia({
+            peer,
+            media: new Api.InputMediaUploadedPhoto({ file: uploaded }),
+            message,
+            entities,
+            randomId: bigInt(opts.randomId),
+          });
+          await opts.onDispatch?.();
+          // После отправки ждём подтверждения, даже если ход отменят.
+          const result = await account.client.invoke(request);
+          const updates =
+            result instanceof Api.UpdateShort
+              ? [result.update]
+              : result instanceof Api.Updates ||
+                  result instanceof Api.UpdatesCombined
+                ? result.updates
+                : [];
+          const mapping = updates.find(
+            (u) =>
+              u instanceof Api.UpdateMessageID &&
+              u.randomId.toString() === opts.randomId,
+          );
+          if (mapping instanceof Api.UpdateMessageID) return { id: mapping.id };
+          throw new Error('Telegram не подтвердил message_id для фото');
+        },
+        TG_FILE_TIMEOUT_MS,
+      ),
+    );
+    return sent.id;
+  }
+
+  /**
    * Вложение: файл из `uploads/`, https-ссылка (Telegram скачает сам) или
    * file_id стикера. Голосовое и кружок Telegram отличает по флагам — без них
    * они уходят обычным файлом и выглядят как пересылка, а не как своя запись.

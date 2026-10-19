@@ -17,6 +17,7 @@ import { getLeadPersonas } from '../../api/leads';
 import ProxyDialog, { EMPTY_PROXY, ProxyFields, proxyPayload, proxyValid } from './ProxyDialog';
 import s from '../../styles/AdminPage.module.scss';
 import ClientAvatar from '../../components/ClientAvatar/ClientAvatar';
+import { setAccountPhotoAutoSend } from '../../api/photoSets';
 
 const STATUS_LABEL = {
   unauthorized: 'нет сессии',
@@ -123,7 +124,6 @@ export default function Accounts() {
   const [editing, setEditing] = useState(null);
   const [flash, setFlash] = useState(null);
   const [personas, setPersonas] = useState([]);
-
   useEffect(() => {
     getPersonas()
       .then((r) => setPersonas(r.items ?? []))
@@ -179,7 +179,9 @@ export default function Accounts() {
           {error && <p className={s.error}>{error}</p>}
           {flash && <p className={s.ok} style={{ margin: '0 0 12px', fontSize: 13 }}>{flash}</p>}
 
+          <p className={s.hint}>Образ аккаунта задаёт хед региона на странице «Образы» — по личности аккаунта.</p>
           <AccountsTable rows={items} alive={online} onEdit={setEditing} onLogin={setAuth}
+            onPhotoAutoSend={(row, enabled) => run(() => setAccountPhotoAutoSend(row.id, enabled))}
             onProxy={setProxyFor} onStatus={(row, status) => run(() => setAccountStatus(row.id, status, 'operator:web'))}
             onClearFlood={row => run(() => clearAccountFlood(row.id))} onDelete={remove}
             helpers={{ Avatar: ClientAvatar, statusLabel: accountStatusLabel, statusClasses: BADGE, date: fmtTs }} />

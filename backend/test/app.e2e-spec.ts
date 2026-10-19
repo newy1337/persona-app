@@ -270,6 +270,38 @@ describe('Manager panel API (e2e)', () => {
       .set('Authorization', `Bearer ${login.body.tokens.accessToken}`)
       .expect(403);
 
+    // Админ меняет логин: вход по новому, старый не работает, занятый — отказ.
+    await request(app.getHttpServer())
+      .put(`/api/managers/${anna.user_id}`)
+      .set(h)
+      .send({ username: 'admin' })
+      .expect(409);
+    await request(app.getHttpServer())
+      .put(`/api/managers/${anna.user_id}`)
+      .set(h)
+      .send({ username: '   ' })
+      .expect(400);
+    const renamed = await request(app.getHttpServer())
+      .put(`/api/managers/${anna.user_id}`)
+      .set(h)
+      .send({ username: 'anna-new' })
+      .expect(200);
+    expect(
+      renamed.body.items.find((m) => m.user_id === anna.user_id).username,
+    ).toBe('anna-new');
+    await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ username: 'anna', password: 'anna12345' })
+      .expect(401);
+    await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ username: 'anna-new', password: 'anna12345' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/api/manager/stats')
+      .set('Authorization', `Bearer ${login.body.tokens.accessToken}`)
+      .expect(200);
+
     await request(app.getHttpServer())
       .delete(`/api/managers/${anna.user_id}`)
       .set(h)
@@ -524,6 +556,230 @@ describe('Manager panel API (e2e)', () => {
       lead: 1,
       archive: 1,
     });
+  });
+
+  it('регион задаёт иерархию: хед региона один, тимлиды цепляются сами, хед назначает тимлидов менеджерам', async () => {
+    const h = { Authorization: `Bearer ${token}` };
+    const prisma = app.get(PrismaService);
+    const mk = async (body: Record<string, unknown>, expect = 200) =>
+      (
+        await request(app.getHttpServer())
+          .post('/api/managers')
+          .set(h)
+          .send(body)
+          .expect(expect)
+      ).body.created_user_id as number;
+    const head = await mk({
+      username: 'rg-head',
+      password: 'head12345',
+      role: 'head',
+      region_code: '0101',
+    });
+    // второй хед в том же регионе — отказ; тимлиду регион обязателен
+    await mk(
+      {
+        username: 'rg-head2',
+        password: 'head12345',
+        role: 'head',
+        region_code: '0101',
+      },
+      422,
+    );
+    await mk(
+      { username: 'rg-lead-noregion', password: 'lead12345', role: 'teamlead' },
+      400,
+    );
+    const lead = await mk({
+      username: 'rg-lead',
+      password: 'lead12345',
+      role: 'teamlead',
+      region_code: '0101',
+    });
+    const manager = await mk({
+      username: 'rg-man',
+      password: 'man123456',
+      role: 'manager',
+      region_code: '0101',
+      lead_id: lead,
+    });
+    const stranger = await mk({
+      username: 'rg-other',
+      password: 'oth123456',
+      role: 'manager',
+      region_code: '0102',
+    });
+    // менеджеру из другого региона этот тимлид не подходит
+    await mk(
+      {
+        username: 'rg-bad',
+        password: 'bad123456',
+        role: 'manager',
+        region_code: '0102',
+        lead_id: lead,
+      },
+      422,
+    );
+
+    const byId = async (id: number) =>
+      (
+        await request(app.getHttpServer())
+          .get('/api/managers')
+          .set(h)
+          .expect(200)
+      ).body.items.find((u: any) => u.user_id === id);
+    expect((await byId(lead)).lead_id).toBe(head);
+    expect((await byId(manager)).lead_id).toBe(lead);
+    // менеджер региона без тимлида подчиняется хеду напрямую
+    const direct = await mk({
+      username: 'rg-direct',
+      password: 'dir123456',
+      role: 'manager',
+      region_code: '0101',
+    });
+    expect((await byId(direct)).lead_id).toBe(head);
+    expect((await byId(stranger)).lead_id).toBeNull();
+
+    const acc = await request(app.getHttpServer())
+      .post('/api/tg-accounts')
+      .set(h)
+      .send({ phone_e164: '+79001230001', persona_id: 'nastya' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .put(`/api/managers/accounts/${acc.body.id}`)
+      .set(h)
+      .send({ user_id: manager })
+      .expect(200);
+    const chatId = 777001;
+    await prisma.contact.create({
+      data: { chatId: BigInt(chatId), accountId: acc.body.id, createdAt: 1 },
+    });
+    await prisma.message.create({
+      data: {
+        chatId: BigInt(chatId),
+        ts: Math.floor(Date.now() / 1000),
+        role: 'user',
+        text: 'привет',
+        author: 'client',
+        sourceMessageId: 1,
+      },
+    });
+
+    const as = async (username: string, password: string) => ({
+      Authorization: `Bearer ${
+        (
+          await request(app.getHttpServer())
+            .post('/auth/login')
+            .send({ username, password })
+            .expect(200)
+        ).body.tokens.accessToken
+      }`,
+    });
+    const sees = async (auth: Record<string, string>) =>
+      (
+        await request(app.getHttpServer())
+          .get('/api/manager/conversations')
+          .set(auth)
+          .expect(200)
+      ).body.items.some((r: any) => r.chat_id === chatId);
+    const headAuth = await as('rg-head', 'head12345');
+    expect(await sees(await as('rg-man', 'man123456'))).toBe(true);
+    expect(await sees(await as('rg-lead', 'lead12345'))).toBe(true);
+    expect(await sees(headAuth)).toBe(true);
+    expect(await sees(await as('rg-other', 'oth123456'))).toBe(false);
+    await request(app.getHttpServer())
+      .get(`/api/conversations/${chatId}`)
+      .set(await as('rg-other', 'oth123456'))
+      .expect(404);
+
+    // статистика по командам: хед — все по цепочке, тимлид — свои менеджеры
+    const teams = await request(app.getHttpServer())
+      .get('/api/stats/managers')
+      .set(h)
+      .expect(200);
+    const headRow = teams.body.by_team.find((r: any) => r.manager_id === head);
+    const leadRow = teams.body.by_team.find((r: any) => r.manager_id === lead);
+    expect(headRow).toMatchObject({
+      role: 'head',
+      region_code: '0101',
+      members: 3,
+      messages_in: 1,
+      active_chats: 1,
+    });
+    expect(leadRow).toMatchObject({
+      role: 'teamlead',
+      members: 1,
+      messages_in: 1,
+    });
+    expect(
+      teams.body.by_manager.find((r: any) => r.manager_id === manager)
+        .messages_in,
+    ).toBe(1);
+    expect(teams.body.by_team.findIndex((r: any) => r.role === 'head')).toBe(0);
+
+    // хед видит свой регион и правит только тимлида у менеджеров региона
+    const team = await request(app.getHttpServer())
+      .get('/api/managers')
+      .set(headAuth)
+      .expect(200);
+    expect(team.body.items.map((u: any) => u.username).sort()).toEqual([
+      'rg-direct',
+      'rg-head',
+      'rg-lead',
+      'rg-man',
+    ]);
+    await request(app.getHttpServer())
+      .put(`/api/managers/${manager}`)
+      .set(headAuth)
+      .send({ lead_id: null })
+      .expect(200);
+    expect((await byId(manager)).lead_id).toBe(head);
+    await request(app.getHttpServer())
+      .put(`/api/managers/${manager}`)
+      .set(headAuth)
+      .send({ lead_id: lead })
+      .expect(200);
+    expect((await byId(manager)).lead_id).toBe(lead);
+    await request(app.getHttpServer())
+      .put(`/api/managers/${manager}`)
+      .set(headAuth)
+      .send({ role: 'teamlead' })
+      .expect(403);
+    await request(app.getHttpServer())
+      .put(`/api/managers/${stranger}`)
+      .set(headAuth)
+      .send({ lead_id: null })
+      .expect(403);
+    await request(app.getHttpServer())
+      .post('/api/managers')
+      .set(headAuth)
+      .send({ username: 'x', role: 'manager', region_code: '0101' })
+      .expect(403);
+
+    // тимлид стал менеджером — он и его менеджер переходят к хеду региона
+    await request(app.getHttpServer())
+      .put(`/api/managers/${lead}`)
+      .set(h)
+      .send({ role: 'manager' })
+      .expect(200);
+    expect((await byId(manager)).lead_id).toBe(head);
+    expect((await byId(lead)).lead_id).toBe(head);
+    expect(await sees(headAuth)).toBe(true);
+    // хед ушёл в менеджеры — регион без хеда, подчинённые без руководителя
+    await request(app.getHttpServer())
+      .put(`/api/managers/${head}`)
+      .set(h)
+      .send({ role: 'manager' })
+      .expect(200);
+    expect((await byId(manager)).lead_id).toBeNull();
+    expect((await byId(head)).lead_id).toBeNull();
+
+    await prisma.message.deleteMany({ where: { chatId: BigInt(chatId) } });
+    await prisma.contact.delete({ where: { chatId: BigInt(chatId) } });
+    for (const id of [manager, direct, stranger, lead, head])
+      await request(app.getHttpServer())
+        .delete(`/api/managers/${id}`)
+        .set(h)
+        .expect(200);
   });
 
   it('расход по менеджерам: чат без закреплённого аккаунта попадает в строку «без менеджера»', async () => {
@@ -790,6 +1046,50 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .send({ phone: '12345' })
         .expect(422);
+    });
+
+    it('фильтр по этапу сделки: этап берётся из чата лида, none — без этапа', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      const prisma = app.get(PrismaService);
+      const chatId = 424301;
+      await prisma.phoneNumber.update({
+        where: { id: leadId },
+        data: { telegramUserId: BigInt(chatId) },
+      });
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${chatId}/deal-stage`)
+        .set(h)
+        .send({ stage: 'soglas' })
+        .expect(200);
+      const soglas = await request(app.getHttpServer())
+        .get('/api/leads?deal_stage=soglas')
+        .set(h)
+        .expect(200);
+      expect(soglas.body.items.map((l) => l.id)).toEqual([leadId]);
+      expect(soglas.body.items[0].deal_stage).toBe('soglas');
+      expect(soglas.body.stages).toMatchObject({ soglas: 1, vbros: 0 });
+      const vbros = await request(app.getHttpServer())
+        .get('/api/leads?deal_stage=vbros')
+        .set(h)
+        .expect(200);
+      expect(vbros.body.items).toEqual([]);
+      const none = await request(app.getHttpServer())
+        .get('/api/leads?deal_stage=none')
+        .set(h)
+        .expect(200);
+      expect(none.body.items.map((l) => l.id)).not.toContain(leadId);
+      await request(app.getHttpServer())
+        .get('/api/leads?deal_stage=nope')
+        .set(h)
+        .expect(400);
+      await prisma.leadFacts.deleteMany({ where: { chatId: BigInt(chatId) } });
+      await prisma.funnelEvent.deleteMany({
+        where: { chatId: BigInt(chatId) },
+      });
+      await prisma.phoneNumber.update({
+        where: { id: leadId },
+        data: { telegramUserId: null },
+      });
     });
 
     it('imports pasted lines, skipping duplicates and reporting bad rows', async () => {

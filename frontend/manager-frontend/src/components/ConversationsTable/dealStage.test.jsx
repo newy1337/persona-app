@@ -59,3 +59,19 @@ test('с обработчиком в строке появляется селе�
   });
   expect(onDealStage).toHaveBeenCalledWith(1, 'soglas', expect.objectContaining({ chat_id: 1 }));
 });
+
+test('чипы этапов считают строки и фильтруют список', async () => {
+  await act(async () => root.render(<ConversationsTable rows={[
+    row({ chat_id: 1, id: 1, name: 'Первый', deal_stage: 'soglas' }),
+    row({ chat_id: 2, id: 2, name: 'Второй', deal_stage: 'vbros' }),
+    row({ chat_id: 3, id: 3, name: 'Третий' }),
+  ]} />));
+  const chips = [...host.querySelectorAll('[data-testid="deal-stage-filters"] button')];
+  expect(chips.map((b) => b.textContent)).toEqual(['Вброс · 1', 'Соглас · 1', 'Без этапа · 1']);
+  await act(async () => chips[1].click());
+  const names = [...host.querySelectorAll('tbody tr')].map((tr) => tr.textContent);
+  expect(names.length).toBe(1);
+  expect(names[0]).toContain('Первый');
+  await act(async () => chips[2].click());
+  expect([...host.querySelectorAll('tbody tr')].map((tr) => tr.textContent).join(' ')).toContain('Третий');
+});

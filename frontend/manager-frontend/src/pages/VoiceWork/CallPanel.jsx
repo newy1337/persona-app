@@ -7,6 +7,9 @@ const labels = { microphone: 'Подключаем микрофон…', connect
 export function CallPanel({ task, onActive }) {
   const [state, setState] = useState(''), [reason, setReason] = useState(''), [active, setActive] = useState(false), [muted, setMuted] = useState(false), [seconds, setSeconds] = useState(0);
   const resources = useRef(null), alive = useRef(true), startAt = useRef(0);
+  // Диктофон: после состоявшегося звонка войсер подписывает запись.
+  const [label, setLabel] = useState(null), [title, setTitle] = useState(''), [labelBusy, setLabelBusy] = useState(false), [labelError, setLabelError] = useState(''), [labelDone, setLabelDone] = useState(false);
+  const hadTalk = useRef(false);
   function release() {
     const r = resources.current; resources.current = null;
     if (!r) return;
@@ -44,8 +47,8 @@ export function CallPanel({ task, onActive }) {
         if (r.stopped) return;
         if (data instanceof ArrayBuffer) { r.node.port.postMessage(data, [data]); return; }
         const status = JSON.parse(data); setState(status.status); setReason(status.reason || '');
-        if (status.connected_at) startAt.current = status.connected_at;
-        if (status.ended || status.status === 'failed') { startAt.current = 0; release(); }
+        if (status.connected_at) { startAt.current = status.connected_at; hadTalk.current = true; }
+        if (status.ended || status.status === 'failed') { startAt.current = 0; release(); if (hadTalk.current) offerLabel(); }
       };
       r.node.port.onmessage = ({ data }) => {
         if (!r.stopped && r.socket.readyState === WebSocket.OPEN) {
@@ -59,6 +62,24 @@ export function CallPanel({ task, onActive }) {
       if (!r.stopped && alive.current) { setState('failed'); setReason(e.name === 'NotAllowedError' ? 'Разрешите доступ к микрофону в настройках браузера' : e.name === 'NotFoundError' ? 'Микрофон не найден' : PanelUX.readableError(e)); release(); }
     }
   }
+  async function offerLabel() {
+    hadTalk.current = false;
+    try { const row = await api.get(`/api/voicer/tasks/${task.id}/call`); if (alive.current && row?.id) { setLabel(row.id); setTitle(''); setLabelDone(false); setLabelError(''); } }
+    catch { /* подписать можно и позже из библиотеки */ }
+  }
+  async function saveLabel(e) {
+    e.preventDefault();
+    if (labelBusy || !title.trim() || !label) return;
+    setLabelBusy(true); setLabelError('');
+    // Запись собирается ffmpeg пару секунд после звонка: на 409 пробуем ещё.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      try { await api.put(`/api/voicer/calls/${label}/recording`, { title: title.trim() }); if (alive.current) { setLabelDone(true); setLabelBusy(false); } return; }
+      catch (err) {
+        if (err?.status !== 409 || attempt === 5) { if (alive.current) { setLabelError(PanelUX.readableError(err)); setLabelBusy(false); } return; }
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    }
+  }
   function mute() { const enabled = muted; resources.current?.stream?.getAudioTracks().forEach(t => { t.enabled = enabled; }); setMuted(!muted); }
   if (!active && task.status === 'completed') return null;
   return <section className={`${v.callPanel} ${active ? v.callActive : ''}`} aria-label="Звонок с сайта">
@@ -67,10 +88,21 @@ export function CallPanel({ task, onActive }) {
     {!task.chatId && <p className={v.warning}>Менеджеру нужно привязать диалог к заданию.</p>}
     {state && <p role="status">{labels[state] || state}{state === 'connected' && ` · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`}</p>}
     {reason && <p className={state === 'failed' ? s.error : s.hint}>{reason}</p>}
+    {label && !active && <form className={v.callLabel} onSubmit={saveLabel} aria-label="Подпись записи звонка" data-testid="call-label">
+      <label className={s.label}>Подпись записи звонка
+        <input className={s.field} value={title} maxLength={160} placeholder="Например: обсудили условия, перезвонить в пятницу" disabled={labelBusy || labelDone} onChange={e => setTitle(e.target.value)} />
+      </label>
+      <div className={v.actions}>
+        <button className={s.btnPrimary} disabled={labelBusy || labelDone || !title.trim()}>{labelBusy ? 'Сохраняем…' : labelDone ? 'Подписано' : 'Сохранить подпись'}</button>
+        {!labelDone && <button type="button" className={s.btn} disabled={labelBusy} onClick={() => setLabel(null)}>Позже</button>}
+      </div>
+      {labelError && <p className={s.error} role="alert">{labelError}</p>}
+      {labelDone && <p className={s.hint}>Запись с подписью лежит в «Библиотеке».</p>}
+    </form>}
     <div className={v.actions}>
       {!active && <button className={s.btnPrimary} disabled={task.status !== 'in_progress' || !task.chatId} onClick={start}>Позвонить с сайта</button>}
       {active && <><button className={s.btn} onClick={mute} disabled={!resources.current?.stream}>{muted ? 'Включить микрофон' : 'Выключить микрофон'}</button>
-        <button className={s.btnDanger} onClick={() => { setState('ended'); setReason('Вы завершили звонок'); startAt.current = 0; release(); }}>Завершить вызов</button></>}
+        <button className={s.btnDanger} onClick={() => { setState('ended'); setReason('Вы завершили звонок'); startAt.current = 0; release(); if (hadTalk.current) offerLabel(); }}>Завершить вызов</button></>}
     </div>
   </section>;
 }

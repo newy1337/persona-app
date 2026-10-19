@@ -1,0 +1,171 @@
+@use '../../styles/variables' as *;
+
+.sets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.setCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 0 12px;
+  overflow: hidden;
+  text-align: left;
+  color: $text-primary;
+  background: $bg-card;
+  border: 1px solid $border-subtle;
+  border-radius: $radius-lg;
+  cursor: pointer;
+  font: inherit;
+
+  &:hover { border-color: $border-control-hover; }
+}
+.setCardActive { border-color: $accent-blue; }
+
+.cover {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: $bg-surface;
+}
+.coverEmpty {
+  composes: cover;
+  display: grid;
+  place-items: center;
+  color: $text-muted;
+  font-size: 12px;
+}
+.setName { padding: 0 12px; font-weight: 600; }
+.setMeta { padding: 0 12px; font-size: 12px; color: $text-secondary; }
+.review { color: $status-orange; }
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background: $bg-section;
+  border: 1px solid $border-subtle;
+  border-radius: $radius-lg;
+}
+
+.settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.search { flex: 1 1 220px; }
+
+.tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag {
+  padding: 2px 8px;
+  font-size: 12px;
+  color: $text-secondary;
+  background: transparent;
+  border: 1px solid $border-control;
+  border-radius: $radius-full;
+  cursor: pointer;
+  font-family: inherit;
+}
+.tagActive { composes: tag; color: $accent-cyan; border-color: rgba($accent-cyan, 0.5); }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.photo {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: $bg-card;
+  border: 1px solid $border-subtle;
+  border-radius: $radius-md;
+}
+.photoPicked { border-color: $accent-blue; box-shadow: 0 0 0 1px $accent-blue; }
+.photoButton {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  background: $bg-surface;
+}
+.caption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.desc { color: $text-primary; }
+.descEmpty { color: $text-muted; font-style: italic; }
+.facts { color: $text-secondary; }
+.badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.flag {
+  padding: 1px 6px;
+  font-size: 11px;
+  border-radius: $radius-full;
+  color: $text-secondary;
+  border: 1px solid $border-control;
+}
+.flagWarn { composes: flag; color: $status-orange; border-color: rgba($status-orange, 0.4); }
+.flagSent { composes: flag; color: $color-green; border-color: rgba($color-green, 0.4); }
+.flagOff { composes: flag; color: $text-muted; }
+
+.drop {
+  padding: 18px;
+  text-align: center;
+  color: $text-secondary;
+  border: 1px dashed $border-control;
+  border-radius: $radius-md;
+}
+.dropActive { composes: drop; border-color: $accent-cyan; color: $accent-cyan; }
+
+.editor {
+  width: 640px;
+}
+.editorBody {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 14px;
+  align-items: start;
+
+  @media (max-width: 640px) { grid-template-columns: 1fr; }
+}
+.preview {
+  width: 100%;
+  border-radius: $radius-md;
+  background: $bg-surface;
+}
+.fields { display: flex; flex-direction: column; gap: 10px; }
+.textarea { min-height: 64px; resize: vertical; padding-top: 8px; padding-bottom: 8px; }
+
+.picker {
+  width: 860px;
+}
+.pickerGrid {
+  composes: grid;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}

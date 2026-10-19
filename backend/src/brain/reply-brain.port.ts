@@ -51,6 +51,8 @@ export interface ReplyBrain {
   answerAfterCall?(callId: string): Promise<boolean>;
   runInitiative(): Promise<number>;
   runDueReplies(): Promise<number>;
+  /** Неблокирующий разбор очереди для крона; без него крон зовёт runDueReplies. */
+  pumpDueReplies?(): Promise<number>;
   runRituals(): Promise<number>;
   handleDeleted(accountId: number, messageIds: number[]): Promise<void>;
   noteOperatorFacts(
@@ -108,6 +110,19 @@ export interface OutboundTransport {
     messageIds: number[],
     accountId?: number | null,
   ): Promise<void>;
+  /** Фото с подписью; random_id не даёт повтору после сбоя создать дубликат. */
+  sendPhoto?(
+    chatId: number,
+    opts: {
+      path: string;
+      caption: string;
+      randomId: string;
+      accountId?: number | null;
+      typing?: TypingStyle;
+      signal?: AbortSignal;
+      onDispatch?: () => Promise<void>;
+    },
+  ): Promise<number>;
   isOnline?(accountId: number): boolean;
   editText?(chatId: number, tgMsgId: number, text: string): Promise<void>;
 }
