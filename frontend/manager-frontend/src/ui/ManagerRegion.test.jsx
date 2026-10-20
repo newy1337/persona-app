@@ -89,3 +89,16 @@ test('failed lead deletion stays open and supports retry', async () => {
   expect(host.querySelector('[role=alert]').textContent).toContain('Попробуйте ещё раз');
   await click('Удалить'); expect(confirm).toHaveBeenCalledTimes(2);
 });
+
+test('галочка «Может менять образы» не растягивается: у строки свой класс, правило задаёт ей фиксированный размер', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const css = readFileSync(fileURLToPath(import.meta.url).replace(/ManagerRegion\.test\.jsx$/, 'manager-region.css'), 'utf8');
+  expect(css).toMatch(/\.mr-manager-form label\.mr-check-row input\[type=checkbox\]\{[^}]*width:17px/);
+  vi.spyOn(api, 'get').mockImplementation(async path => path === '/api/managers' ? { ...users, items: [...users.items, { user_id: 9, username: 'boss', role: 'head', region_code: '0123', account_ids: [] }] } : path === '/api/tg-accounts' ? accounts : { user_id: 1, role: 'admin' });
+  await render(<ManagersPage />);
+  await act(async () => [...host.querySelectorAll('[data-manager-id="9"] button')].find(b => b.textContent === 'Изменить').click());
+  const row = host.querySelector('#manager-editor label.mr-check-row');
+  expect(row).not.toBeNull();
+  expect(row.textContent).toContain('Может менять образы');
+});

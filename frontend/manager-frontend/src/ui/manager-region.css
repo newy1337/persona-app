@@ -240,6 +240,9 @@
 .mr-manager-actions button{margin:3px 6px 3px 0;max-width:100%}
 .mr-manager-form{display:grid;gap:16px}
 .mr-manager-form label input,.mr-manager-form label select{width:100%;box-sizing:border-box}
+/* Галочка в форме учётки: общее правило выше растягивало её на всю строку и выталкивало подпись. */
+.mr-manager-form label.mr-check-row{display:flex;flex-direction:row;align-items:center;gap:10px;font-size:13px}
+.mr-manager-form label.mr-check-row input[type=checkbox]{width:17px;height:17px;flex:0 0 17px;margin:0}
 .mr-assignment-filters{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
 .mr-assignment-list{max-height:340px;overflow-y:auto;overscroll-behavior:contain;border:1px solid #ffffff18;border-radius:10px;padding:4px;background:#0b1120}
 .mr-assignment-list>p{padding:8px 12px}

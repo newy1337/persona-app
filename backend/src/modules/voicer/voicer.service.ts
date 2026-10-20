@@ -85,7 +85,9 @@ export class VoicerService {
     if (user.role === 'admin') return {};
     if (user.role === 'manager') return { managerId: user.id };
     if (isManagerRole(user.role))
-      return { managerId: { in: await this.scope.teamIds(user.id) } };
+      return {
+        managerId: { in: await this.scope.teamIds(user.id, user.regionCode) },
+      };
     if (user.role === 'voice') return { voicerId: user.id };
     throw new ForbiddenException();
   }
