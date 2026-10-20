@@ -27,6 +27,12 @@ export const appConfig = {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
+  // Свой шлюз к Claude (OpenRouter-совместимый): запросы сначала идут в него,
+  // при ошибке — в основной провайдер. Пусто — шлюз не используется.
+  llmGatewayUrl: (process.env.LLM_GATEWAY_URL || '').trim(),
+  llmGatewayApiKey: (process.env.LLM_GATEWAY_API_KEY || '').trim(),
+  llmGatewayTimeoutMs:
+    Math.max(5, Number(process.env.LLM_GATEWAY_TIMEOUT_S || 90)) * 1000,
   anthropicWorkspaceId: process.env.ANTHROPIC_WORKSPACE_ID || '',
   generatorModel: process.env.GENERATOR_MODEL || 'claude-sonnet-5',
   judgeModel: (process.env.JUDGE_MODEL || '').trim(),

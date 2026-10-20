@@ -1,4 +1,5 @@
 import type { UsageDb } from '../memory/client';
+import { responseRoute } from './gateway';
 
 export interface Logger {
   info(message: string, ...rest: unknown[]): void;
@@ -105,7 +106,7 @@ export async function recordUsage(
   try {
     await db.record({
       ...usageValues(response, record.model),
-      provider: record.provider,
+      provider: responseRoute(response) ?? record.provider,
       model: record.model,
       stage: record.stage,
       elapsedMs: count(record.elapsedMs),
