@@ -2042,6 +2042,165 @@ describe('Manager panel API (e2e)', () => {
           .expect(200);
     });
 
+    it('хед и менеджер не трогают чаты чужого региона через операторские ручки, даже при старой связи между регионами', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      const prisma = app.get(PrismaService);
+      const now = Math.floor(Date.now() / 1000);
+      const mk = async (body: Record<string, unknown>) =>
+        (
+          await request(app.getHttpServer())
+            .post('/api/managers')
+            .set(h)
+            .send({ password: 'reg123456', ...body })
+            .expect(200)
+        ).body.created_user_id as number;
+      const as = async (username: string) => ({
+        Authorization: `Bearer ${
+          (
+            await request(app.getHttpServer())
+              .post('/auth/login')
+              .send({ username, password: 'reg123456' })
+              .expect(200)
+          ).body.tokens.accessToken
+        }`,
+      });
+      const headA = await mk({
+        username: 'iso-head-a',
+        role: 'head',
+        region_code: '0801',
+      });
+      const manA = await mk({
+        username: 'iso-man-a',
+        role: 'manager',
+        region_code: '0801',
+      });
+      const headB = await mk({
+        username: 'iso-head-b',
+        role: 'head',
+        region_code: '0802',
+      });
+      const manB = await mk({
+        username: 'iso-man-b',
+        role: 'manager',
+        region_code: '0802',
+      });
+      const accounts: Record<string, number> = {};
+      for (const [tag, owner, phone] of [
+        ['a', manA, '+79001110081'],
+        ['b', manB, '+79001110082'],
+      ] as const) {
+        const acc = await request(app.getHttpServer())
+          .post('/api/tg-accounts')
+          .set(h)
+          .send({ phone_e164: phone, persona_id: 'nastya' })
+          .expect(200);
+        await request(app.getHttpServer())
+          .put(`/api/managers/accounts/${acc.body.id}`)
+          .set(h)
+          .send({ user_id: owner })
+          .expect(200);
+        accounts[tag] = acc.body.id;
+      }
+      const chatA = 880001;
+      const chatB = 880002;
+      for (const [chat, accountId] of [
+        [chatA, accounts.a],
+        [chatB, accounts.b],
+      ] as const) {
+        await prisma.contact.create({
+          data: { chatId: BigInt(chat), accountId, createdAt: 1 },
+        });
+        await prisma.message.create({
+          data: {
+            chatId: BigInt(chat),
+            ts: now,
+            role: 'user',
+            text: 'привет',
+            author: 'client',
+            sourceMessageId: 1,
+          },
+        });
+      }
+      const headAAuth = await as('iso-head-a');
+      const manAAuth = await as('iso-man-a');
+
+      // операторские ручки: чужой чат — 404 для хеда и менеджера, свой — можно, админ — везде
+      for (const auth of [headAAuth, manAAuth]) {
+        await request(app.getHttpServer())
+          .post('/api/operator/takeover')
+          .set(auth)
+          .send({ persona: 'nastya', chat: chatB, operator: 'x' })
+          .expect(404);
+        await request(app.getHttpServer())
+          .get(`/api/operator/status/${chatB}`)
+          .set(auth)
+          .expect(404);
+        await request(app.getHttpServer())
+          .get(`/api/operator/pending?chat=${chatB}`)
+          .set(auth)
+          .expect(404);
+        await request(app.getHttpServer())
+          .post('/api/operator/relay')
+          .set(auth)
+          .send({
+            persona: 'nastya',
+            chat: chatB,
+            operator: 'x',
+            issued_ts: 1,
+            text: 'привет',
+          })
+          .expect(404);
+        await request(app.getHttpServer())
+          .post('/api/operator/resume')
+          .set(auth)
+          .send({ persona: 'nastya', chat: chatB, operator: 'x', issued_ts: 1 })
+          .expect(404);
+      }
+      await request(app.getHttpServer())
+        .get(`/api/operator/status/${chatA}`)
+        .set(headAAuth)
+        .expect(200);
+      await request(app.getHttpServer())
+        .get(`/api/operator/status/${chatB}`)
+        .set(h)
+        .expect(200);
+
+      // старая связь: менеджер региона B прицеплен к тимлиду-хеду региона A — область хеда A его не включает
+      await prisma.dashboardUser.update({
+        where: { id: manB },
+        data: { leadId: headA },
+      });
+      const seen = async () =>
+        (
+          await request(app.getHttpServer())
+            .get('/api/manager/conversations')
+            .set(headAAuth)
+            .expect(200)
+        ).body.items.map((c: any) => c.chat_id);
+      expect(await seen()).toEqual([chatA]);
+      await request(app.getHttpServer())
+        .get(`/api/conversations/${chatB}`)
+        .set(headAAuth)
+        .expect(404);
+
+      await prisma.message.deleteMany({
+        where: { chatId: { in: [BigInt(chatA), BigInt(chatB)] } },
+      });
+      await prisma.contact.deleteMany({
+        where: { chatId: { in: [BigInt(chatA), BigInt(chatB)] } },
+      });
+      for (const id of Object.values(accounts))
+        await request(app.getHttpServer())
+          .delete(`/api/tg-accounts/${id}`)
+          .set(h)
+          .expect(200);
+      for (const id of [manA, manB, headA, headB])
+        await request(app.getHttpServer())
+          .delete(`/api/managers/${id}`)
+          .set(h)
+          .expect(200);
+    });
+
     it('флуд на аккаунте: метка «флуд до …», лид сразу свободен другому; «написать с другого»; «снять флуд»', async () => {
       const h = { Authorization: `Bearer ${token}` };
       const prisma = app.get(PrismaService);

@@ -16,8 +16,10 @@ import { OperatorService } from './operator.service';
 import { Auth } from 'src/decorators/auth.decorator';
 import { Roles } from 'src/decorators/roles.decorator';
 import { Role } from 'src/enums/roles.enum';
+import type { DashboardUser } from '@prisma/client';
 import { CurrentUser } from 'src/decorators/user.decorator';
 import { AuditService } from 'src/shared/audit.service';
+import { ScopeService } from 'src/shared/scope.service';
 import { GlobalGateService } from 'src/shared/global-gate.service';
 import { RelayDto, TakeoverDto, TicketDto } from './dto/operator.dto';
 
@@ -31,6 +33,7 @@ export class OperatorController {
     private readonly operator: OperatorService,
     private readonly audit: AuditService,
     private readonly gate: GlobalGateService,
+    private readonly scope: ScopeService,
   ) {}
 
   @ApiOperation({
@@ -39,7 +42,9 @@ export class OperatorController {
   @Post('takeover')
   @HttpCode(200)
   @UsePipes(ValidationPipe)
-  async takeover(@Body() dto: TakeoverDto, @CurrentUser('id') userId: number) {
+  async takeover(@Body() dto: TakeoverDto, @CurrentUser() user: DashboardUser) {
+    await this.scope.requireChatOwned(user, dto.chat);
+    const userId = user.id;
     return this.audit.wrap(
       { userId, action: 'operator.takeover', resource: `chat:${dto.chat}` },
       () => this.operator.takeover(dto.persona, dto.chat, dto.operator),
@@ -52,7 +57,9 @@ export class OperatorController {
   @Post('relay')
   @HttpCode(200)
   @UsePipes(ValidationPipe)
-  async relay(@Body() dto: RelayDto, @CurrentUser('id') userId: number) {
+  async relay(@Body() dto: RelayDto, @CurrentUser() user: DashboardUser) {
+    await this.scope.requireChatOwned(user, dto.chat);
+    const userId = user.id;
     const deferredId = await this.audit.wrap(
       { userId, action: 'operator.relay', resource: `chat:${dto.chat}` },
       () => this.operator.relayText(dto, dto.text),
@@ -64,7 +71,9 @@ export class OperatorController {
   @Post('resume')
   @HttpCode(200)
   @UsePipes(ValidationPipe)
-  async resume(@Body() dto: TicketDto, @CurrentUser('id') userId: number) {
+  async resume(@Body() dto: TicketDto, @CurrentUser() user: DashboardUser) {
+    await this.scope.requireChatOwned(user, dto.chat);
+    const userId = user.id;
     await this.audit.wrap(
       { userId, action: 'operator.resume', resource: `chat:${dto.chat}` },
       () => this.operator.resume(dto),
@@ -76,13 +85,21 @@ export class OperatorController {
     summary: 'Typed pause state of a chat (why the bot is silent)',
   })
   @Get('status/:chatId')
-  async status(@Param('chatId', ParseIntPipe) chatId: number) {
+  async status(
+    @Param('chatId', ParseIntPipe) chatId: number,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    await this.scope.requireChatOwned(user, chatId);
     return this.operator.status(chatId);
   }
 
   @ApiOperation({ summary: 'Pending operator actions of a chat' })
   @Get('pending')
-  async pending(@Query('chat', ParseIntPipe) chat: number) {
+  async pending(
+    @Query('chat', ParseIntPipe) chat: number,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    await this.scope.requireChatOwned(user, chat);
     return this.operator.pending(chat);
   }
 

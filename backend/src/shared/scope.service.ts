@@ -39,7 +39,9 @@ export class ScopeService {
         accountIds: [],
         isAdmin,
       };
-    const userIds = await this.teamIds(user.id);
+    // Тимлид и хед видят только свой регион: даже если по старым данным к ним
+    // привязан человек из другого региона, он в область не попадает.
+    const userIds = await this.teamIds(user.id, user.regionCode);
     const accountIds = (
       await this.prisma.managerAccount.findMany({
         where: { userId: { in: userIds } },
@@ -50,13 +52,25 @@ export class ScopeService {
     return { user, role: user.role, userIds, accountIds, isAdmin };
   }
 
-  /** Сам пользователь плюс все подчинённые вниз по цепочке руководителей. */
-  async teamIds(userId: number): Promise<number[]> {
+  /**
+   * Сам пользователь плюс все подчинённые вниз по цепочке руководителей. С
+   * регионом в команду входят только люди этого региона и без региона:
+   * подчинённый из чужого региона не попадает, и его подчинённые тоже.
+   */
+  async teamIds(
+    userId: number,
+    region: string | null = null,
+  ): Promise<number[]> {
     const seen = new Set<number>([userId]);
     let frontier = [userId];
     while (frontier.length) {
       const rows = await this.prisma.dashboardUser.findMany({
-        where: { leadId: { in: frontier } },
+        where: {
+          leadId: { in: frontier },
+          ...(region
+            ? { OR: [{ regionCode: region }, { regionCode: null }] }
+            : {}),
+        },
         select: { id: true },
       });
       frontier = rows.map((r) => r.id).filter((id) => !seen.has(id));
