@@ -48,6 +48,7 @@ import {
   type ClientActivity,
 } from 'src/shared/presence.service';
 import { VoiceEncoderService } from 'src/modules/media/voice-encoder.service';
+import { closeClient } from './close-client';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const TG_CALL_TIMEOUT_MS = 60_000;
@@ -82,16 +83,8 @@ function extensionOf(name: string | null, doc: unknown): string {
 const INBOUND_MAX_BYTES = 50 * 1024 * 1024;
 const INBOUND_BACKFILL_DAYS = 7;
 const CLIENT_STATUS_ACTIVE_DAYS = 14;
-const DISCONNECT_TIMEOUT_MS = 10_000;
 const STALE_CONNECT_SECONDS = 300;
 
-async function closeQuietly(client: TelegramClient): Promise<void> {
-  await withTimeout(
-    client.disconnect(),
-    DISCONNECT_TIMEOUT_MS,
-    () => new Error('disconnect timeout'),
-  ).catch(() => undefined);
-}
 const TELEGRAM_SERVICE_IDS = new Set([
   777000, 42777, 333000, 1087968824, 1271266957,
 ]);
@@ -226,13 +219,7 @@ export class TelegramService
 
   async onModuleDestroy() {
     this.stopping = true;
-    for (const acc of this.live.values()) {
-      try {
-        await acc.client.disconnect();
-      } catch {
-        // shutting down anyway
-      }
-    }
+    for (const acc of this.live.values()) await closeClient(acc.client);
     this.live.clear();
   }
 
@@ -387,17 +374,19 @@ export class TelegramService
         () => new TelegramTimeoutError(accountId, label, TG_CALL_TIMEOUT_MS),
       );
     let authorized: boolean;
+    const connecting = client.connect();
     try {
-      await limited(client.connect(), 'connect');
+      await limited(connecting, 'connect');
       authorized = await limited(client.isUserAuthorized(), 'isUserAuthorized');
     } catch (e) {
-      await closeQuietly(client);
+      // GramJS может достучаться позже нашего таймаута — закроем и тогда.
+      await closeClient(client, { pending: connecting });
       const loss = accountLoss(e);
       if (loss) await this.onAccountLost(accountId, loss);
       throw e;
     }
     if (!authorized) {
-      await closeQuietly(client);
+      await closeClient(client);
       await this.prisma.tgAccount.update({
         where: { id: accountId },
         data: {
@@ -414,7 +403,7 @@ export class TelegramService
     try {
       me = await limited(client.getMe(), 'getMe');
     } catch (e) {
-      await closeQuietly(client);
+      await closeClient(client);
       const loss = accountLoss(e);
       if (loss) await this.onAccountLost(accountId, loss);
       throw e;
@@ -506,7 +495,7 @@ export class TelegramService
     const entry = this.live.get(accountId);
     if (!entry) return;
     this.live.delete(accountId);
-    await closeQuietly(entry.client);
+    await closeClient(entry.client);
   }
 
   /**

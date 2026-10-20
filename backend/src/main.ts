@@ -4,6 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json, raw } from 'express';
 import { AppModule } from './app.module';
 import { swaggerOptions } from './utils/swagger-options';
+import { startEventLoopWatchdog } from './shared/event-loop-watchdog';
 
 process.on('unhandledRejection', (reason) => {
   // eslint-disable-next-line no-console
@@ -69,5 +70,7 @@ async function bootstrap() {
 
   app.enableShutdownHooks();
   await app.listen(Number(process.env.PORT ?? 8011));
+  // Завис основной поток дольше WATCHDOG_STALL_S — процесс убивается, Docker поднимает заново.
+  startEventLoopWatchdog(Number(process.env.WATCHDOG_STALL_S ?? 120) * 1000);
 }
 bootstrap();

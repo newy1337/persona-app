@@ -11,6 +11,7 @@ import { PrismaService } from 'src/prisma.service';
 import { CryptoService } from 'src/shared/crypto.service';
 import { ClockService } from 'src/shared/clock.service';
 import { TelegramService } from './telegram.service';
+import { closeClient } from './close-client';
 import { TelegramClient } from 'telegram';
 import { withTimeout } from 'src/domain/timeout';
 import { toString } from 'qrcode';
@@ -246,17 +247,13 @@ export class LoginService {
       });
       job.username = me.username ?? me.firstName ?? null;
       job.status = JOB_DONE;
-      await client.disconnect();
+      await closeClient(client);
       await this.telegram.connect(job.account_id);
     } catch (e) {
       job.status = JOB_FAILED;
       job.error = job.cancelled ? 'отменено оператором' : loginErrorText(e);
       this.log.warn(`auth job ${job.job_id} failed: ${job.error}`);
-      await withTimeout(
-        client.disconnect(),
-        10_000,
-        () => new Error('disconnect timeout'),
-      ).catch(() => undefined);
+      await closeClient(client);
       await this.restoreAfterFailure(job.account_id);
     } finally {
       job.client = undefined;
@@ -311,7 +308,7 @@ export class LoginService {
       job.password.cancel('отменено оператором');
       job.status = JOB_FAILED;
       job.error = 'отменено оператором';
-      void job.client?.disconnect().catch(() => undefined);
+      if (job.client) void closeClient(job.client);
     }
     return snapshot(job);
   }
