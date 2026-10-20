@@ -10,6 +10,7 @@ import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import { MANAGER_ROLES } from 'src/enums/roles.enum';
 import {
+  BUFFER_STATUS,
   leadKey,
   mskDayStart,
   normalizePhone,
@@ -25,7 +26,10 @@ import { InboundLeadDto } from './dto/inbound-lead.dto';
 export interface InboundResult {
   id: number;
   status: string;
-  assigned_to: { user_id: number; username: string };
+  /** кому ушёл; null — лид в буфере */
+  assigned_to: { user_id: number; username: string } | null;
+  /** лид только с ником попал в буфер региона */
+  buffered: boolean;
 }
 
 @Injectable()
@@ -157,6 +161,55 @@ export class InboundService {
               `${leadKey(contact)} уже в базе (лид #${existing.id}, ${existing.status})`,
             );
           const now = this.clock.ts();
+          const reassigned = dto.reassigned === true;
+          // Перезабив принимает только регион, где это включено.
+          if (reassigned) {
+            const setting = await tx.regionSetting.findUnique({
+              where: { regionCode: tags.region },
+            });
+            if (!setting?.acceptReassigned)
+              throw new UnprocessableEntityException({
+                statusCode: 422,
+                error: 'reassigned_not_accepted',
+                message: `регион ${tags.region} не принимает перезабив`,
+              });
+          }
+          const fields = {
+            phoneE164: phone,
+            usernameKey: username,
+            firstName: dto.name?.trim() || null,
+            city: dto.city?.trim() || null,
+            age: dto.age ?? null,
+            gender: dto.gender ?? null,
+            sourceType: tags.source ?? 'api',
+            donor: tags.donor,
+            accountLabel: dto.account?.trim() || null,
+            externalId: dto.external_id?.trim() || null,
+            profileUrl: dto.profile_url?.trim() || null,
+            lastMessages: dto.last_messages?.trim() || null,
+            requestedRegion: tags.region,
+            requestedPersona: person,
+            personaId: persona,
+            reassigned,
+            inboundAt: now,
+            insertedAt: now,
+          };
+          // Только ник, без телефона — в буфер региона: раздавать такой лид
+          // не сразу, решают хед и тимлиды.
+          if (!phone) {
+            const row = await tx.phoneNumber.create({
+              data: { ...fields, status: BUFFER_STATUS, bufferedAt: now },
+            });
+            this.log.log(
+              `inbound lead #${row.id} ${leadKey(contact)} → буфер региона ${tags.region}`,
+            );
+            return {
+              id: row.id,
+              status: row.status,
+              assigned_to: null,
+              buffered: true,
+            };
+          }
           const { list, names } = await this.recipients(now, tx);
           const picked = pickRecipient(list, tags);
           // Никто не подошёл — лид не берём: отправитель уведёт его в другое место.
@@ -174,26 +227,7 @@ export class InboundService {
             username: names.get(picked.id) ?? String(picked.id),
           };
           const row = await tx.phoneNumber.create({
-            data: {
-              phoneE164: phone,
-              usernameKey: username,
-              firstName: dto.name?.trim() || null,
-              city: dto.city?.trim() || null,
-              age: dto.age ?? null,
-              gender: dto.gender ?? null,
-              sourceType: tags.source ?? 'api',
-              donor: tags.donor,
-              accountLabel: dto.account?.trim() || null,
-              externalId: dto.external_id?.trim() || null,
-              profileUrl: dto.profile_url?.trim() || null,
-              lastMessages: dto.last_messages?.trim() || null,
-              requestedRegion: tags.region,
-              requestedPersona: person,
-              personaId: persona,
-              ownerUserId: owner.id,
-              inboundAt: now,
-              insertedAt: now,
-            },
+            data: { ...fields, ownerUserId: owner.id },
           });
           this.log.log(
             `inbound lead #${row.id} ${leadKey(contact)} → ${owner.username}`,
@@ -202,6 +236,7 @@ export class InboundService {
             id: row.id,
             status: row.status,
             assigned_to: { user_id: owner.id, username: owner.username },
+            buffered: false,
           };
         },
         { maxWait: 10_000, timeout: 15_000 },

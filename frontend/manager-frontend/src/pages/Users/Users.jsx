@@ -7,6 +7,8 @@ import { getManagers, updateManager } from '../../api/managers';
 import { getDonors } from '../../api/donors';
 import { getSources } from '../../api/sources';
 import { getPersonas } from '../../api/personas';
+import { getRegionSettings } from '../../api/buffer';
+import { ReassignSwitch } from '../../ui/ReassignSwitch';
 import { ROLE_LABELS, isManagerRole } from '../../utils/roles';
 import s from '../../styles/AdminPage.module.scss';
 import './users.css';
@@ -135,6 +137,7 @@ export default function Users() {
   const [donors, setDonors] = useState([]);
   const [sources, setSources] = useState([]);
   const [personas, setPersonas] = useState([]);
+  const [reassign, setReassign] = useState({});
   const [query, setQuery] = useState('');
   const [region, setRegion] = useState('');
   const [range, setRange] = useState(() => ({ from: mskToday(), to: mskToday() }));
@@ -145,7 +148,8 @@ export default function Users() {
   const toggleSort = (col) => setSort((was) => (was.col === col ? (was.dir === 'desc' ? { col, dir: 'asc' } : { col: null, dir: 'desc' }) : { col, dir: 'desc' }));
 
   const load = useCallback(async () => {
-    const [m, d, src, ps] = await Promise.all([getManagers(range), getDonors(), getSources(), getPersonas().catch(() => ({ items: [] }))]);
+    const [m, d, src, ps, rs] = await Promise.all([getManagers(range), getDonors(), getSources(), getPersonas().catch(() => ({ items: [] })), getRegionSettings().catch(() => ({ items: [] }))]);
+    setReassign(Object.fromEntries((rs.items ?? []).map((x) => [x.region_code, x.accept_reassigned])));
     setUsers(m.items ?? []);
     setDonors(d.items ?? []);
     setSources(src.items ?? []);
@@ -221,7 +225,9 @@ export default function Users() {
                 </thead>
                 {groups.map(({ region, items }) => (
                   <tbody key={region || 'none'} className="us-region" aria-label={region ? `Регион ${region}` : 'Без региона'}>
-                    <tr className="us-region-row"><td colSpan={7}><span className="us-region-title">{region ? `Регион ${region}` : 'Без региона'} <span className={s.muted}>· {items.length}</span></span></td></tr>
+                    <tr className="us-region-row"><td colSpan={7}><span className="us-region-title">{region ? `Регион ${region}` : 'Без региона'} <span className={s.muted}>· {items.length}</span>
+                      {region && <span style={{ marginLeft: 'auto', textTransform: 'none', letterSpacing: 0 }}><ReassignSwitch region={region} value={Boolean(reassign[region])} onChange={(row) => setReassign((was) => ({ ...was, [row.region_code]: row.accept_reassigned }))} /></span>}
+                    </span></td></tr>
                     {items.map((u) => <UserRow key={u.user_id} user={u} personaNames={personaNames} onSave={save} onError={setError} onPick={(kind, user) => setPicker({ kind, user })} />)}
                   </tbody>
                 ))}

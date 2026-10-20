@@ -16,6 +16,7 @@ import { PhoneNumber, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import {
+  BUFFER_STATUS,
   LEAD_STATUSES,
   LeadDraft,
   leadKey,
@@ -76,6 +77,8 @@ export interface LeadView extends ManagerAttribution {
   inbound_at: number | null;
   requested_region: string | null;
   requested_persona: string | null;
+  reassigned: boolean;
+  buffered_at: number | null;
 }
 
 export interface LeadFilter {
@@ -146,9 +149,15 @@ export class LeadsService {
     private attribution: ManagerAttributionService,
   ) {}
 
+  /**
+   * Лиды раздела «Лиды» в области пользователя. Лиды из буфера сюда не
+   * попадают никогда: у них своя страница.
+   */
   private scopeWhere(scope: LeadScope | null): Prisma.PhoneNumberWhereInput {
-    if (scope === null) return {};
+    const notBuffered = { status: { not: BUFFER_STATUS } };
+    if (scope === null) return notBuffered;
     return {
+      ...notBuffered,
       OR: [
         {
           ownerUserId: {
@@ -276,6 +285,8 @@ export class LeadsService {
       inbound_at: row.inboundAt,
       requested_region: row.requestedRegion,
       requested_persona: row.requestedPersona,
+      reassigned: row.reassigned,
+      buffered_at: row.bufferedAt,
       deal_stage:
         row.telegramUserId === null
           ? null

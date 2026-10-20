@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -66,6 +67,15 @@ export class InboundLeadDto {
   @Matches(/\S/, { message: 'личность обязательна' })
   @MaxLength(64)
   person: string;
+
+  @ApiPropertyOptional({
+    example: false,
+    description:
+      'перезабив: true — лид повторный; регион, который не принимает перезабив, такой лид отбивает',
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'reassigned — true или false' })
+  reassigned?: boolean;
 
   @ApiPropertyOptional({ example: 'beboo', description: 'источник, текстом' })
   @IsOptional()

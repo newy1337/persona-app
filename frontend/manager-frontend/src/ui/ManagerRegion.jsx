@@ -6,6 +6,7 @@ import { getAccounts as loadAccounts } from '../api/accounts';
 import { PanelUX as ux } from './PanelUX';
 import { VoiceBotLink } from '../pages/VoiceWork/VoiceBotLink';
 import { PhotoCell, RegionStopButton, usePhotoAssignments } from '../pages/PhotoSets/StaffAssignments';
+import { OwnRegionReassign } from './ReassignSwitch';
 import { DEAL_STAGES, dealStageLabel } from '../data/dealStages';
 import { LEAD_ROLE_FOR, ROLE_LABELS } from '../utils/roles';
 import PickerModal from './PickerModal';
@@ -160,7 +161,7 @@ export function LeadsTable({ ready = true, rows, query, status, selected, onTogg
               row.first_message && h('div', { className: 'mr-dialog-muted', title: row.first_message }, h('span', { className: 'mr-caption' }, row.first_contact_at ? 'Первое сообщение: ' : 'Напишем: '), row.first_message.length > 80 ? `${row.first_message.slice(0, 80)}…` : row.first_message),
               (row.telegram_username || row.telegram_user_id) && h('div', { className: 'mr-lead-telegram' }, h('span', { className: 'mr-caption' }, 'Telegram: '), row.telegram_username ? telegramLink(row.telegram_username) : String(row.telegram_user_id)),
               (row.donor || row.inbound_at || row.account_label || row.external_id) && h('div', { className: 'mr-dialog-muted mr-lead-inbound', 'data-testid': 'lead-inbound' },
-                [row.inbound_at ? `Источник: ${row.source_type}` : null, row.requested_region ? `Регион: ${row.requested_region}` : null, row.requested_persona ? `Личность: ${row.requested_persona}` : null, row.donor ? `Донор: ${row.donor}` : null, row.account_label ? `Аккаунт: ${row.account_label}` : null, row.external_id ? `ID: ${row.external_id}` : null].filter(Boolean).join(' · ')),
+                [row.inbound_at ? `Источник: ${row.source_type}` : null, row.requested_region ? `Регион: ${row.requested_region}` : null, row.requested_persona ? `Личность: ${row.requested_persona}` : null, row.reassigned ? 'Перезабив' : null, row.donor ? `Донор: ${row.donor}` : null, row.account_label ? `Аккаунт: ${row.account_label}` : null, row.external_id ? `ID: ${row.external_id}` : null].filter(Boolean).join(' · ')),
               row.profile_url && h('div', { className: 'mr-dialog-muted' }, h('span', { className: 'mr-caption' }, 'Профиль: '), httpHref(row.profile_url) ? h('a', { href: httpHref(row.profile_url), target: '_blank', rel: 'noreferrer' }, row.profile_url.replace(/^https?:\/\//i, '').slice(0, 60)) : h('span', { 'data-testid': 'profile-text' }, String(row.profile_url).slice(0, 60))),
               row.last_messages && h('details', { className: 'mr-lead-error mr-lead-history' }, h('summary', null, 'История общения от донора'), h('p', null, row.last_messages))),
             h('td', { className: 'mr-lead-owner' }, h(Attribution, { value: row }),
@@ -484,7 +485,7 @@ export function ManagersPage() {
   const admin = me?.role === 'admin';
   const photo = usePhotoAssignments(data.items.map(user => user.region_code));
   return h('div', { className: 'app mr-managers' }, h(Nav), h('main', { className: 'main' }, h('div', { className: 'container' },
-    h('div', { className: s.head }, h('h2', { className: s.title }, admin ? 'Менеджеры' : `Моя команда · регион ${me?.region_code || ''}`), h('div', { className: s.actions }, !admin && h(RegionStopButton), admin && !creating && button('+ Создать учётку', () => { setCreating(true); setCredentials(null); }, { className: s.btnPrimary }))),
+    h('div', { className: s.head }, h('h2', { className: s.title }, admin ? 'Менеджеры' : `Моя команда · регион ${me?.region_code || ''}`), h('div', { className: s.actions }, !admin && h(OwnRegionReassign), !admin && h(RegionStopButton), admin && !creating && button('+ Создать учётку', () => { setCreating(true); setCredentials(null); }, { className: s.btnPrimary }))),
     creating && h(CreateForm, { availableRoles: data.roles, voicers: data.items.filter(u => u.role === 'voice'), users: data.items, donors, onCreate: create, onCancel: () => setCreating(false) }),
     (error || photo.error) && h('p', { className: s.error, role: 'alert' }, error || photo.error),
     credentials && h(Credentials, { value: credentials, onClose: () => setCredentials(null), onRegenerate: regenerate }),

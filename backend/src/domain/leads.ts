@@ -8,6 +8,12 @@ export const LEAD_STATUSES = [
 ] as const;
 export type LeadStatus = (typeof LEAD_STATUSES)[number];
 
+/**
+ * Лид в буфере: пришёл по API только с ником, без телефона. Не раздаётся и не
+ * виден в «Лидах»; хед и тимлиды региона берут его в работу или отклоняют.
+ */
+export const BUFFER_STATUS = 'buffer';
+
 export const isLeadStatus = (v: unknown): v is LeadStatus =>
   typeof v === 'string' && (LEAD_STATUSES as readonly string[]).includes(v);
 

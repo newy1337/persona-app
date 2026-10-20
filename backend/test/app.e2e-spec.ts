@@ -1269,14 +1269,18 @@ describe('Manager panel API (e2e)', () => {
           donor: 'CAMP A',
         })
         .expect(400);
-      // по нику тоже можно
+      // только ник, без телефона — в буфер региона, не раздаётся
       const l5 = await send({
         ...base,
         external_id: 'ext-5',
         username: '@inb_lead_five',
         phone: undefined,
       });
-      expect(l5.assigned_to.user_id).toBe(m1);
+      expect(l5).toMatchObject({
+        status: 'buffer',
+        buffered: true,
+        assigned_to: null,
+      });
       // телефон новый, а ник уже у другого лида — тоже дубль, не 500
       await request(app.getHttpServer())
         .post('/api/post/leads')
@@ -1349,7 +1353,7 @@ describe('Manager panel API (e2e)', () => {
       ).body.items
         .map((l: any) => l.id)
         .sort();
-      expect(mine).toEqual([l1.id, l3.id, l5.id, both.id].sort());
+      expect(mine).toEqual([l1.id, l3.id, both.id].sort());
 
       // правка: снять донора и выключить онлайн; удаление донора отвязывает его
       const edited = (
@@ -1659,6 +1663,330 @@ describe('Manager panel API (e2e)', () => {
         .delete(`/api/managers/${manager}`)
         .set(h)
         .expect(200);
+    });
+  });
+
+  describe('буфер и перезабив', () => {
+    it('лид только с ником — в буфер: видят хед и тимлиды региона, берут в работу или отклоняют с архивом', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      const prisma = app.get(PrismaService);
+      const made = await request(app.getHttpServer())
+        .post('/api/api-keys')
+        .set(h)
+        .send({ name: 'Буфер' })
+        .expect(201);
+      const key = { 'X-Api-Key': made.body.key };
+      const mk = async (body: Record<string, unknown>) =>
+        (
+          await request(app.getHttpServer())
+            .post('/api/managers')
+            .set(h)
+            .send({ password: 'buf123456', ...body })
+            .expect(200)
+        ).body.created_user_id as number;
+      const as = async (username: string) => ({
+        Authorization: `Bearer ${
+          (
+            await request(app.getHttpServer())
+              .post('/auth/login')
+              .send({ username, password: 'buf123456' })
+              .expect(200)
+          ).body.tokens.accessToken
+        }`,
+      });
+      const head = await mk({
+        username: 'buf-head',
+        role: 'head',
+        region_code: '0901',
+      });
+      const lead = await mk({
+        username: 'buf-lead',
+        role: 'teamlead',
+        region_code: '0901',
+      });
+      const man = await mk({
+        username: 'buf-man',
+        role: 'manager',
+        region_code: '0901',
+        online: true,
+      });
+      const otherHead = await mk({
+        username: 'buf-head-2',
+        role: 'head',
+        region_code: '0902',
+      });
+      const headAuth = await as('buf-head');
+      const leadAuth = await as('buf-lead');
+      const manAuth = await as('buf-man');
+      const otherAuth = await as('buf-head-2');
+      const post = (body: Record<string, unknown>) =>
+        request(app.getHttpServer())
+          .post('/api/post/leads')
+          .set(key)
+          .send({ region: '0901', person: 'nastya', donor: 'camp', ...body });
+
+      // ник без телефона — в буфер; с телефоном — обычная раздача
+      const a = (
+        await post({ username: '@buf_alpha', name: 'Альфа' }).expect(201)
+      ).body;
+      expect(a).toMatchObject({
+        status: 'buffer',
+        buffered: true,
+        assigned_to: null,
+      });
+      const b = (await post({ username: '@buf_beta' }).expect(201)).body;
+      const withPhone = (
+        await post({ phone: '+79005590001', username: '@buf_phone' }).expect(
+          201,
+        )
+      ).body;
+      expect(withPhone).toMatchObject({
+        buffered: false,
+        assigned_to: { user_id: man },
+      });
+
+      // буфер: хед и тимлид региона видят, менеджер — нет, хед другого региона — пусто
+      const seen = async (auth: Record<string, string>) =>
+        (
+          await request(app.getHttpServer())
+            .get('/api/buffer')
+            .set(auth)
+            .expect(200)
+        ).body.items.map((x: any) => x.username);
+      expect(await seen(headAuth)).toEqual(['buf_alpha', 'buf_beta']);
+      expect(await seen(leadAuth)).toEqual(['buf_alpha', 'buf_beta']);
+      expect(await seen(otherAuth)).toEqual([]);
+      await request(app.getHttpServer())
+        .get('/api/buffer')
+        .set(manAuth)
+        .expect(403);
+      const adminView = await request(app.getHttpServer())
+        .get('/api/buffer?region=0901')
+        .set(h)
+        .expect(200);
+      expect(adminView.body.items[0]).toMatchObject({
+        username: 'buf_alpha',
+        first_name: 'Альфа',
+        region_code: '0901',
+        donor: 'camp',
+        declined_before: null,
+      });
+      // в «Лидах» буфера нет ни у кого
+      const leadsOf = async (auth: Record<string, string>) =>
+        (
+          await request(app.getHttpServer())
+            .get('/api/leads?q=buf_')
+            .set(auth)
+            .expect(200)
+        ).body.items.map((x: any) => x.username);
+      expect(await leadsOf(h)).toEqual(['buf_phone']);
+      await request(app.getHttpServer())
+        .post(`/api/buffer/${a.id}/take`)
+        .set(otherAuth)
+        .expect(404);
+
+      // тимлид берёт «альфу» в работу: она в его лидах, буфер без неё
+      const afterTake = await request(app.getHttpServer())
+        .post(`/api/buffer/${a.id}/take`)
+        .set(leadAuth)
+        .expect(200);
+      expect(afterTake.body.items.map((x: any) => x.username)).toEqual([
+        'buf_beta',
+      ]);
+      expect(await leadsOf(leadAuth)).toContain('buf_alpha');
+      expect(
+        (await prisma.phoneNumber.findUnique({ where: { id: a.id } }))!,
+      ).toMatchObject({ status: 'pending', ownerUserId: lead });
+
+      // хед отклоняет «бету»: лид удалён, слепок с причиной сохранён
+      await request(app.getHttpServer())
+        .post(`/api/buffer/${b.id}/decline`)
+        .set(headAuth)
+        .send({ reason: 'спам' })
+        .expect(200);
+      expect(
+        await prisma.phoneNumber.findUnique({ where: { id: b.id } }),
+      ).toBeNull();
+      const archived = await prisma.declinedLead.findMany({
+        where: { usernameKey: 'buf_beta' },
+      });
+      expect(archived).toHaveLength(1);
+      expect(archived[0]).toMatchObject({
+        reason: 'спам',
+        regionCode: '0901',
+        declinedById: head,
+      });
+      expect(JSON.parse(archived[0].snapshot)).toMatchObject({
+        usernameKey: 'buf_beta',
+        donor: 'camp',
+      });
+      // тот же ник снова — опять в буфер, но с пометкой «уже отклоняли»
+      const again = (await post({ username: '@buf_beta' }).expect(201)).body;
+      const flagged = (
+        await request(app.getHttpServer())
+          .get('/api/buffer')
+          .set(headAuth)
+          .expect(200)
+      ).body.items.find((x: any) => x.id === again.id);
+      expect(flagged.declined_before).toMatchObject({
+        count: 1,
+        last_reason: 'спам',
+      });
+
+      await prisma.phoneNumber.deleteMany({
+        where: { id: { in: [a.id, again.id, withPhone.id] } },
+      });
+      await prisma.declinedLead.deleteMany({
+        where: { usernameKey: 'buf_beta' },
+      });
+      await prisma.apiKey.deleteMany({ where: { id: made.body.item.id } });
+      for (const id of [man, lead, head, otherHead])
+        await request(app.getHttpServer())
+          .delete(`/api/managers/${id}`)
+          .set(h)
+          .expect(200);
+    });
+
+    it('перезабив: регион с выключенной ручкой отбивает reassigned=true, включённый — раздаёт', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      const prisma = app.get(PrismaService);
+      const made = await request(app.getHttpServer())
+        .post('/api/api-keys')
+        .set(h)
+        .send({ name: 'Перезабив' })
+        .expect(201);
+      const key = { 'X-Api-Key': made.body.key };
+      const mk = async (body: Record<string, unknown>) =>
+        (
+          await request(app.getHttpServer())
+            .post('/api/managers')
+            .set(h)
+            .send({ password: 'rea123456', ...body })
+            .expect(200)
+        ).body.created_user_id as number;
+      const as = async (username: string) => ({
+        Authorization: `Bearer ${
+          (
+            await request(app.getHttpServer())
+              .post('/auth/login')
+              .send({ username, password: 'rea123456' })
+              .expect(200)
+          ).body.tokens.accessToken
+        }`,
+      });
+      const head = await mk({
+        username: 'rea-head',
+        role: 'head',
+        region_code: '0911',
+      });
+      const tl = await mk({
+        username: 'rea-lead',
+        role: 'teamlead',
+        region_code: '0911',
+      });
+      const man = await mk({
+        username: 'rea-man',
+        role: 'manager',
+        region_code: '0911',
+        online: true,
+      });
+      const headAuth = await as('rea-head');
+      const leadAuth = await as('rea-lead');
+      const post = (body: Record<string, unknown>) =>
+        request(app.getHttpServer())
+          .post('/api/post/leads')
+          .set(key)
+          .send({ region: '0911', person: 'nastya', donor: 'camp', ...body });
+
+      // по умолчанию выключено: перезабив отбивается, обычный лид — раздаётся
+      const off = await post({
+        phone: '+79005591001',
+        reassigned: true,
+      }).expect(422);
+      expect(off.body).toMatchObject({ error: 'reassigned_not_accepted' });
+      expect(off.body.message).toContain('0911');
+      const plain = (
+        await post({ phone: '+79005591002', reassigned: false }).expect(201)
+      ).body;
+      expect(plain.assigned_to.user_id).toBe(man);
+      await post({ phone: '+79005591003', reassigned: 'да' }).expect(400);
+
+      // ручку меняет хед своего региона (и админ); тимлид и чужой регион — нет
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/region-settings')
+            .set(headAuth)
+            .expect(200)
+        ).body,
+      ).toEqual({
+        items: [{ region_code: '0911', accept_reassigned: false }],
+        can_manage: true,
+      });
+      await request(app.getHttpServer())
+        .put('/api/region-settings/0911')
+        .set(leadAuth)
+        .send({ accept_reassigned: true })
+        .expect(403);
+      await request(app.getHttpServer())
+        .put('/api/region-settings/0912')
+        .set(headAuth)
+        .send({ accept_reassigned: true })
+        .expect(403);
+      await request(app.getHttpServer())
+        .put('/api/region-settings/ab')
+        .set(h)
+        .send({ accept_reassigned: true })
+        .expect(400);
+      await request(app.getHttpServer())
+        .put('/api/region-settings/0911')
+        .set(headAuth)
+        .send({ accept_reassigned: true })
+        .expect(200);
+
+      // включено: перезабив раздаётся, в лиде видна пометка; только ник — в буфер
+      const on = (
+        await post({ phone: '+79005591004', reassigned: true }).expect(201)
+      ).body;
+      expect(on.assigned_to.user_id).toBe(man);
+      const row = (
+        await request(app.getHttpServer())
+          .get('/api/leads?q=9005591004')
+          .set(h)
+          .expect(200)
+      ).body.items[0];
+      expect(row.reassigned).toBe(true);
+      const buffered = (
+        await post({ username: '@rea_buffer', reassigned: true }).expect(201)
+      ).body;
+      expect(buffered.buffered).toBe(true);
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/region-settings')
+            .set(h)
+            .expect(200)
+        ).body.items,
+      ).toContainEqual({ region_code: '0911', accept_reassigned: true });
+
+      // выключили обратно — снова отбивается
+      await request(app.getHttpServer())
+        .put('/api/region-settings/0911')
+        .set(h)
+        .send({ accept_reassigned: false })
+        .expect(200);
+      await post({ phone: '+79005591005', reassigned: true }).expect(422);
+
+      await prisma.phoneNumber.deleteMany({
+        where: { id: { in: [plain.id, on.id, buffered.id] } },
+      });
+      await prisma.regionSetting.deleteMany({ where: { regionCode: '0911' } });
+      await prisma.apiKey.deleteMany({ where: { id: made.body.item.id } });
+      for (const id of [man, tl, head])
+        await request(app.getHttpServer())
+          .delete(`/api/managers/${id}`)
+          .set(h)
+          .expect(200);
     });
   });
 

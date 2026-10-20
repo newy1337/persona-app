@@ -508,6 +508,10 @@ model PhoneNumber {
   requestedRegion    String? @map("requested_region")
   /// личность, которую прислал отправитель (как есть, текстом)
   requestedPersona   String? @map("requested_persona")
+  /// перезабив: отправитель пометил лид как повторный (reassigned в API)
+  reassigned         Boolean @default(false)
+  /// когда лид попал в буфер (только ник, без телефона); статус 'buffer'
+  bufferedAt         Int?    @map("buffered_at")
 
   @@index([telegramUserId], map: "idx_phone_telegram_user")
   @@index([ownerUserId], map: "idx_phone_owner")
@@ -774,4 +778,33 @@ model VoiceCallRecording {
 
   @@index([taskId, id])
   @@map("voice_call_recordings")
+}
+
+/// Отклонённые из буфера лиды: сам лид удаляется, а здесь остаётся слепок —
+/// чтобы было видно, что этого собеседника уже когда-то отклоняли.
+model DeclinedLead {
+  id           Int     @id @default(autoincrement())
+  phoneE164    String? @map("phone_e164")
+  usernameKey  String? @map("username_key")
+  regionCode   String? @map("region_code")
+  /// все поля лида на момент отклонения, JSON
+  snapshot     String
+  reason       String?
+  declinedAt   Int     @map("declined_at")
+  declinedById Int?    @map("declined_by_id")
+
+  @@index([usernameKey], map: "idx_declined_leads_username")
+  @@index([phoneE164], map: "idx_declined_leads_phone")
+  @@map("declined_leads")
+}
+
+/// Настройки региона для входящих лидов. Нет строки — всё выключено.
+model RegionSetting {
+  regionCode       String  @id @map("region_code")
+  /// принимать перезабив (reassigned=true); выключено — такие лиды отбиваются
+  acceptReassigned Boolean @default(false) @map("accept_reassigned")
+  updatedAt        Int     @map("updated_at")
+  updatedById      Int?    @map("updated_by_id")
+
+  @@map("region_settings")
 }

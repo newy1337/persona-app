@@ -159,6 +159,7 @@ function Header({
             {me.role === 'admin' && <NavLink to="/personas" className={navClass}>Личности</NavLink>}
             {(me.role === 'admin' || isManagerRole(me.role)) && <NavLink to="/accounts" className={navClass}>Аккаунты</NavLink>}
             {(me.role === 'admin' || isManagerRole(me.role)) && <NavLink to="/photo-sets" className={navClass}>Образы</NavLink>}
+            {['admin', 'head', 'teamlead'].includes(me.role) && <NavLink to="/buffer" className={navClass}>Буфер</NavLink>}
             {(me.role === 'admin' || me.role === 'head') && <NavLink to="/managers" className={navClass}>{me.role === 'admin' ? 'Менеджеры' : 'Команда'}</NavLink>}
             {me.role === 'admin' && <NavLink to="/users" className={navClass}>LeadGet</NavLink>}
             {me.role === 'admin' && <NavLink to="/catalogs" className={navClass}>Справочники</NavLink>}
