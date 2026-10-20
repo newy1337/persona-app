@@ -92,6 +92,25 @@ export class VoicerService {
     throw new ForbiddenException();
   }
 
+  /**
+   * От чьего имени пользователь ставит задания и распоряжается ими: менеджер —
+   * от своего, тимлид — от менеджеров своей команды, админ — от любого (null).
+   * Хед заданий не ставит: у него нет войсера и прямых менеджеров в работе.
+   */
+  async actsFor(user: DashboardUser): Promise<number[] | null> {
+    if (user.role === 'admin') return null;
+    if (user.role !== 'teamlead') return [user.id];
+    const team = await this.scope.teamIds(user.id, user.regionCode);
+    const managers = await this.prisma.dashboardUser.findMany({
+      where: {
+        id: { in: team.filter((id) => id !== user.id) },
+        role: 'manager',
+      },
+      select: { id: true },
+    });
+    return managers.map((m) => m.id);
+  }
+
   async task(user: DashboardUser, id: number) {
     const task = await this.prisma.voiceTask.findFirst({
       where: { id, ...(await this.scopeWhere(user)) },
@@ -167,7 +186,11 @@ export class VoicerService {
         ? []
         : await this.prisma.dashboardUser.findMany({
             where:
-              user.role === 'admin' ? { role: 'manager' } : { id: user.id },
+              user.role === 'admin'
+                ? { role: 'manager' }
+                : user.role === 'teamlead'
+                  ? { id: { in: (await this.actsFor(user)) ?? [] } }
+                  : { id: user.id },
             select: {
               id: true,
               username: true,
@@ -254,8 +277,14 @@ export class VoicerService {
       throw new BadRequestException(
         'Для одноразового голосового выберите диалог получателя',
       );
-    const managerId = user.role === 'admin' ? dto.manager_id : user.id;
+    // Менеджер ставит только себе; тимлид и админ выбирают менеджера.
+    const managerId = user.role === 'manager' ? user.id : dto.manager_id;
     if (!managerId) throw new BadRequestException('Выберите менеджера');
+    const allowed = await this.actsFor(user);
+    if (allowed && !allowed.includes(managerId))
+      throw new ForbiddenException(
+        'Задание можно поставить только менеджеру своей команды',
+      );
     const manager = await this.prisma.dashboardUser.findUnique({
       where: { id: managerId },
       include: { voicer: true },
@@ -363,9 +392,10 @@ export class VoicerService {
     });
     if (!contact?.account) throw new NotFoundException('чат не найден');
     const owner = contact.account.manager;
+    const allowed = await this.actsFor(actor);
     if (
-      actor.role !== 'admin' &&
-      (actor.id !== managerId || owner?.userId !== managerId)
+      allowed &&
+      (!allowed.includes(managerId) || owner?.userId !== managerId)
     )
       throw new NotFoundException('чат не найден');
     if (owner && owner.userId !== managerId) {
@@ -411,9 +441,10 @@ export class VoicerService {
     if (task.revision !== dto.revision)
       throw new ConflictException('Задание обновилось. Откройте его заново');
     const isVoicer = user.role === 'voice' && task.voicerId === user.id;
+    const allowed = user.role === 'voice' ? [] : await this.actsFor(user);
     const isManager =
-      user.role === 'admin' ||
-      (user.role === 'manager' && task.managerId === user.id);
+      allowed === null ||
+      (task.managerId !== null && allowed.includes(task.managerId));
     if (dto.action === 'call_note') {
       if (!isVoicer && !isManager) throw new ForbiddenException();
       const call = task.calls[0];
@@ -886,13 +917,14 @@ export class VoicerService {
     }
   }
 
-  private libraryTransaction(
+  private async libraryTransaction(
     requestKey: string,
     id: number,
     chatId: string,
     r: VoiceRecording & { task: VoiceTask },
     user: DashboardUser,
   ) {
+    const allowed = await this.actsFor(user);
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.voiceDelivery.findUnique({
         where: { requestKey },
@@ -917,9 +949,10 @@ export class VoicerService {
         where: { chatId: BigInt(chatId) },
         include: { account: { include: { manager: true } } },
       });
+      const owner = contact?.account?.manager?.userId ?? null;
       if (
         !contact?.account ||
-        (user.role !== 'admin' && contact.account.manager?.userId !== user.id)
+        (allowed && (owner === null || !allowed.includes(owner)))
       )
         throw new NotFoundException('Диалог недоступен для отправки');
       const unfinished = await tx.voiceDelivery.findFirst({
