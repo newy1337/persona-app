@@ -9,7 +9,7 @@ describe('вход в Telegram-аккаунт из панели', () => {
   function service(connect: () => Promise<void>) {
     const client = {
       connect: jest.fn(connect),
-      disconnect: jest.fn(async () => undefined),
+      destroy: jest.fn(async () => undefined),
       start: jest.fn(),
       signInUserWithQrCode: jest.fn(),
       getMe: jest.fn(async () => ({ id: 1, username: 'acc' })),
@@ -54,7 +54,7 @@ describe('вход в Telegram-аккаунт из панели', () => {
         status: 'failed',
         error: 'отменено оператором',
       });
-      expect(client.disconnect).toHaveBeenCalled();
+      expect(client.destroy).toHaveBeenCalled();
       await jest.advanceTimersByTimeAsync(45_000);
       expect(login.get(job.job_id).client).toBeUndefined();
       expect(unhandled).toEqual([]);
