@@ -39,7 +39,7 @@ export default function PickerModal({ title, items, value, onSave, onClose, empt
           <label key={i.id} className="mr-assignment-item">
             <input type="checkbox" checked={picked.has(i.id)} disabled={busy} onChange={() => toggle(i.id)} />
             <span>{i.name}</span>
-            <span className={s.muted}>{i.managers != null ? `${i.managers} менедж.` : ''}</span>
+            <span className={s.muted}>{i.note ?? (i.managers != null ? `${i.managers} менедж.` : '')}</span>
           </label>
         ))}
       </div>

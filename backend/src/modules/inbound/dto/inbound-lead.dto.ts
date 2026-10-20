@@ -89,10 +89,15 @@ export class InboundLeadDto {
   @MaxLength(128)
   external_id?: string;
 
-  @ApiPropertyOptional({ description: 'ссылка на профиль в соцсети' })
+  @ApiPropertyOptional({
+    description: 'ссылка на профиль в соцсети: только http:// или https://',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(512)
+  @Matches(/^https?:\/\/\S+$/i, {
+    message: 'ссылка на профиль должна начинаться с http:// или https://',
+  })
   profile_url?: string;
 
   @ApiPropertyOptional({

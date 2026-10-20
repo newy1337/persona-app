@@ -10,18 +10,14 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { IsString, MaxLength, MinLength } from 'class-validator';
 import type { DashboardUser } from '@prisma/client';
 import { Auth } from 'src/decorators/auth.decorator';
 import { Roles } from 'src/decorators/roles.decorator';
 import { CurrentUser } from 'src/decorators/user.decorator';
 import { Role } from 'src/enums/roles.enum';
 import { AuditService } from 'src/shared/audit.service';
+import { CatalogNameDto } from './catalog';
 import { SourcesService } from './sources.service';
-
-class CreateSourceDto {
-  @IsString() @MinLength(1) @MaxLength(64) name: string;
-}
 
 @ApiTags('sources')
 @ApiBearerAuth()
@@ -43,7 +39,7 @@ export class SourcesController {
   @ApiOperation({ summary: 'Добавить источник' })
   @Post()
   @UsePipes(new ValidationPipe({ whitelist: true }))
-  create(@Body() dto: CreateSourceDto, @CurrentUser() user: DashboardUser) {
+  create(@Body() dto: CatalogNameDto, @CurrentUser() user: DashboardUser) {
     return this.audit.wrap(
       { userId: user.id, action: 'source.create', payload: { name: dto.name } },
       () => this.sources.create(dto.name),

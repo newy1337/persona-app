@@ -30,6 +30,7 @@ import {
   PERSONA_SECTIONS,
   PersonaService,
 } from './../src/brain/persona.service';
+import { InboundService } from './../src/modules/inbound/inbound.service';
 import { OutreachWorker } from './../src/modules/leads/outreach.worker';
 import { REPLY_BRAIN as REPLY_BRAIN_TOKEN } from './../src/brain/reply-brain.port';
 import { TelegramService } from './../src/modules/telegram/telegram.service';
@@ -1444,6 +1445,48 @@ describe('Manager panel API (e2e)', () => {
       // m3 Ольгу не принимает, m2 принимает любую, но лимит у него выбран
       expect(other.message).toContain('лимит');
 
+      // ссылка на профиль: только http(s), иначе в панели получится javascript:-ссылка
+      await request(app.getHttpServer())
+        .post('/api/post/leads')
+        .set(key)
+        .send({
+          phone: '+79005570012',
+          region: '0501',
+          person: 'nastya',
+          profile_url: 'javascript:alert(1)',
+        })
+        .expect(400);
+
+      // отключённая личность — отказ, лид не сохраняется
+      const disabledPersona = await request(app.getHttpServer())
+        .post('/api/personas')
+        .set(h)
+        .send({ name: 'Выключенная', slug: 'inb-off' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .put(`/api/personas/${disabledPersona.body.id}`)
+        .set(h)
+        .send({ enabled: false })
+        .expect(200);
+      const off = await rejected({
+        phone: '+79005570013',
+        region: '0501',
+        person: 'inb-off',
+      });
+      expect(off.error).toBe('persona_disabled');
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/leads?q=9005570013')
+            .set(h)
+            .expect(200)
+        ).body.items,
+      ).toEqual([]);
+      await request(app.getHttpServer())
+        .delete(`/api/personas/${disabledPersona.body.id}`)
+        .set(h)
+        .expect(200);
+
       // отозванный ключ больше не работает, в списке помечен
       const revoked = await request(app.getHttpServer())
         .delete(`/api/api-keys/${keyId}`)
@@ -1472,6 +1515,88 @@ describe('Manager panel API (e2e)', () => {
           .delete(`/api/managers/${id}`)
           .set(h)
           .expect(200);
+    });
+
+    it('параллельные запросы не обходят лимит и не плодят дубли', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      const prisma = app.get(PrismaService);
+      const made = await request(app.getHttpServer())
+        .post('/api/api-keys')
+        .set(h)
+        .send({ name: 'Параллель' })
+        .expect(201);
+      const key = { 'X-Api-Key': made.body.key };
+      const manager = (
+        await request(app.getHttpServer())
+          .post('/api/managers')
+          .set(h)
+          .send({
+            username: 'par-m1',
+            password: 'par123456',
+            role: 'manager',
+            region_code: '0503',
+            online: true,
+            lead_quota: 1,
+          })
+          .expect(200)
+      ).body.created_user_id as number;
+      const post = (body: Record<string, unknown>) =>
+        request(app.getHttpServer())
+          .post('/api/post/leads')
+          .set(key)
+          .send({ region: '0503', person: 'nastya', ...body });
+
+      // Пауза после чтения счётчиков растягивает окно гонки: без общей
+      // блокировки все пять запросов успели бы увидеть «сегодня 0».
+      const service = app.get(InboundService);
+      const original = service.recipients.bind(service);
+      const slow = jest
+        .spyOn(service, 'recipients')
+        .mockImplementation(async (...args) => {
+          const result = await original(...args);
+          await new Promise((done) => setTimeout(done, 60));
+          return result;
+        });
+
+      // лимит 1, пять запросов одновременно: берёт ровно один
+      const burst = await Promise.all(
+        [1, 2, 3, 4, 5].map((i) => post({ phone: `+7900558000${i}` })),
+      );
+      slow.mockRestore();
+      expect(burst.filter((r) => r.status === 201)).toHaveLength(1);
+      expect(burst.filter((r) => r.status === 422)).toHaveLength(4);
+      expect(burst.find((r) => r.status === 422)!.body.error).toBe(
+        'no_recipient',
+      );
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/managers')
+            .set(h)
+            .expect(200)
+        ).body.items.find((u: any) => u.user_id === manager).leads_today,
+      ).toBe(1);
+
+      // один и тот же номер дважды одновременно: один 201, второй 409
+      await request(app.getHttpServer())
+        .put(`/api/managers/${manager}`)
+        .set(h)
+        .send({ lead_quota: null })
+        .expect(200);
+      const twins = await Promise.all([
+        post({ phone: '+79005589999' }),
+        post({ phone: '+79005589999' }),
+      ]);
+      expect(twins.map((r) => r.status).sort()).toEqual([201, 409]);
+
+      await prisma.phoneNumber.deleteMany({
+        where: { ownerUserId: manager },
+      });
+      await prisma.apiKey.deleteMany({ where: { id: made.body.item.id } });
+      await request(app.getHttpServer())
+        .delete(`/api/managers/${manager}`)
+        .set(h)
+        .expect(200);
     });
   });
 
@@ -1841,6 +1966,80 @@ describe('Manager panel API (e2e)', () => {
         .delete(`/api/tg-accounts/${accIra.body.id}`)
         .set(h)
         .expect(200);
+    });
+
+    it('лид хеда или тимлида пишет аккаунт менеджера из его команды, чужой команды — нет', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      const prisma = app.get(PrismaService);
+      const worker = app.get(OutreachWorker);
+      const telegram = app.get(TelegramService);
+      const now = Math.floor(Date.now() / 1000);
+      const mk = async (body: Record<string, unknown>) =>
+        (
+          await request(app.getHttpServer())
+            .post('/api/managers')
+            .set(h)
+            .send({ password: 'own123456', region_code: '0601', ...body })
+            .expect(200)
+        ).body.created_user_id as number;
+      const head = await mk({ username: 'own-head', role: 'head' });
+      const mine = await mk({ username: 'own-man', role: 'manager' });
+      const outsider = await mk({
+        username: 'own-out',
+        role: 'manager',
+        region_code: '0602',
+      });
+      const acc = await request(app.getHttpServer())
+        .post('/api/tg-accounts')
+        .set(h)
+        .send({ phone_e164: '+79001110061', persona_id: 'nastya' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .put(`/api/managers/accounts/${acc.body.id}`)
+        .set(h)
+        .send({ user_id: mine })
+        .expect(200);
+      const lead = (owner: number, username: string) =>
+        prisma.phoneNumber.create({
+          data: {
+            usernameKey: username,
+            ownerUserId: owner,
+            status: 'queued',
+            insertedAt: now,
+          },
+        });
+      const headLead = await lead(head, 'own_head_lead');
+      const outLead = await lead(outsider, 'own_out_lead');
+      await prisma.phoneNumber.updateMany({
+        where: { status: 'queued', id: { notIn: [headLead.id, outLead.id] } },
+        data: { status: 'pending' },
+      });
+      const resolve = jest
+        .spyOn(telegram, 'resolveUsername')
+        .mockResolvedValue({ kind: 'not_found' } as any);
+      await (worker as any).processOne(acc.body.id, now);
+      await (worker as any).processOne(acc.body.id, now + 400);
+      const calls = resolve.mock.calls.map((c) => c[1]);
+      resolve.mockRestore();
+      // аккаунт менеджера под хедом берёт лид хеда, лид менеджера из другой команды остаётся
+      expect(calls).toEqual(['own_head_lead']);
+      expect(
+        (await prisma.phoneNumber.findUnique({ where: { id: outLead.id } }))!
+          .status,
+      ).toBe('queued');
+
+      await prisma.phoneNumber.deleteMany({
+        where: { id: { in: [headLead.id, outLead.id] } },
+      });
+      await request(app.getHttpServer())
+        .delete(`/api/tg-accounts/${acc.body.id}`)
+        .set(h)
+        .expect(200);
+      for (const id of [mine, outsider, head])
+        await request(app.getHttpServer())
+          .delete(`/api/managers/${id}`)
+          .set(h)
+          .expect(200);
     });
 
     it('флуд на аккаунте: метка «флуд до …», лид сразу свободен другому; «написать с другого»; «снять флуд»', async () => {

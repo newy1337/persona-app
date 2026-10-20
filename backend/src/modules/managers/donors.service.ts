@@ -1,11 +1,7 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-  UnprocessableEntityException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
+import { freeCatalogName } from './catalog';
 
 /** Доноры — справочник, как кампании: имя и сколько менеджеров его принимают. */
 @Injectable()
@@ -30,12 +26,17 @@ export class DonorsService {
   }
 
   async create(rawName: string) {
-    const name = rawName.trim();
-    if (!name) throw new UnprocessableEntityException('имя донора пустое');
-    const taken = await this.prisma.donor.findFirst({
-      where: { name: { equals: name, mode: 'insensitive' } },
-    });
-    if (taken) throw new ConflictException(`донор «${taken.name}» уже есть`);
+    const name = await freeCatalogName(
+      rawName,
+      {
+        empty: 'имя донора пустое',
+        taken: (existing) => `донор «${existing}» уже есть`,
+      },
+      (candidate) =>
+        this.prisma.donor.findFirst({
+          where: { name: { equals: candidate, mode: 'insensitive' } },
+        }),
+    );
     await this.prisma.donor.create({
       data: { name, createdAt: this.clock.ts() },
     });

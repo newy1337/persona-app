@@ -43,7 +43,9 @@ function UserRow({ user, personaNames, onSave, onError, onPick }) {
   const [online, setOnline] = useState(Boolean(user.online));
   const [quota, setQuota] = useState(user.lead_quota ?? '');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { setOnline(Boolean(user.online)); setQuota(user.lead_quota ?? ''); }, [user]);
+  // Следим за значениями, а не за объектом: после любого сохранения список приходит заново,
+  // и сброс по объекту стирал бы лимит, который админ ещё печатает в другой строке.
+  useEffect(() => { setOnline(Boolean(user.online)); setQuota(user.lead_quota ?? ''); }, [user.online, user.lead_quota]);
   const quotaValue = quota === '' ? null : Number(quota);
 
   async function toggleOnline() {
@@ -86,10 +88,10 @@ function UserRow({ user, personaNames, onSave, onError, onPick }) {
       <td className="us-quota">
         {manager ? (
           <div className="us-stepper" role="group" aria-label={`Лимит клиентов в сутки: ${user.username}`}>
-            <button type="button" className="us-step" disabled={busy || quota === ''} aria-label={`Меньше: ${user.username}`} onClick={() => step(-1)}>−</button>
+            <button type="button" className="us-step" disabled={busy || quota === ''} aria-label={`Меньше: ${user.username}`} onMouseDown={(e) => e.preventDefault()} onClick={() => step(-1)}>−</button>
             <input className="us-step-input" inputMode="numeric" value={quota} placeholder="∞" aria-label={`Лимит клиентов в сутки: ${user.username}`} disabled={busy}
               onChange={(e) => setQuota(e.target.value.replace(/\D/g, '').slice(0, 5))} onBlur={() => saveQuota()} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveQuota(); } }} />
-            <button type="button" className="us-step" disabled={busy} aria-label={`Больше: ${user.username}`} onClick={() => step(1)}>+</button>
+            <button type="button" className="us-step" disabled={busy} aria-label={`Больше: ${user.username}`} onMouseDown={(e) => e.preventDefault()} onClick={() => step(1)}>+</button>
           </div>
         ) : dash}
       </td>
@@ -171,6 +173,13 @@ export default function Users() {
   const onlineCount = users.filter((u) => isManagerRole(u.role) && u.online).length;
   const pickUser = picker && users.find((u) => u.user_id === picker.user.user_id);
   const personaNames = useMemo(() => new Map(personas.map((x) => [x.id, x.name])), [personas]);
+  // Источники менеджера, которых нет в справочнике (заведены через API или удалены), остаются
+  // в списке с пометкой: иначе сохранение выбора молча стёрло бы их.
+  const sourceItems = useMemo(() => {
+    const known = new Set(sources.map((x) => x.name.toLowerCase()));
+    const orphans = (pickUser?.lead_sources ?? []).filter((n) => !known.has(n.toLowerCase()));
+    return [...sources, ...orphans.map((n) => ({ id: `orphan:${n}`, name: n, note: 'нет в справочнике' }))];
+  }, [sources, pickUser]);
 
   return (
     <div className="app us-page">
@@ -247,9 +256,9 @@ export default function Users() {
       {pickUser && picker.kind === 'sources' && (
         <PickerModal
           title={`Источники: ${pickUser.username}`}
-          items={sources}
-          value={new Set(sources.filter((x) => (pickUser.lead_sources ?? []).some((n) => n.toLowerCase() === x.name.toLowerCase())).map((x) => x.id))}
-          onSave={(ids) => save(pickUser.user_id, { lead_sources: sources.filter((x) => ids.includes(x.id)).map((x) => x.name) })}
+          items={sourceItems}
+          value={new Set(sourceItems.filter((x) => (pickUser.lead_sources ?? []).some((n) => n.toLowerCase() === x.name.toLowerCase())).map((x) => x.id))}
+          onSave={(ids) => save(pickUser.user_id, { lead_sources: sourceItems.filter((x) => ids.includes(x.id)).map((x) => x.name) })}
           onClose={() => setPicker(null)}
           emptyHint="Источников нет. Добавьте их в справочниках."
           anyHint="Ничего не выбрано — принимает лидов из любых источников."

@@ -1,11 +1,7 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-  UnprocessableEntityException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
+import { freeCatalogName } from './catalog';
 import { MANAGER_ROLES } from 'src/enums/roles.enum';
 
 /** Справочник источников: имя и сколько менеджеров его принимают. */
@@ -38,12 +34,17 @@ export class SourcesService {
   }
 
   async create(rawName: string) {
-    const name = rawName.trim();
-    if (!name) throw new UnprocessableEntityException('имя источника пустое');
-    const taken = await this.prisma.leadSource.findFirst({
-      where: { name: { equals: name, mode: 'insensitive' } },
-    });
-    if (taken) throw new ConflictException(`источник «${taken.name}» уже есть`);
+    const name = await freeCatalogName(
+      rawName,
+      {
+        empty: 'имя источника пустое',
+        taken: (existing) => `источник «${existing}» уже есть`,
+      },
+      (candidate) =>
+        this.prisma.leadSource.findFirst({
+          where: { name: { equals: candidate, mode: 'insensitive' } },
+        }),
+    );
     await this.prisma.leadSource.create({
       data: { name, createdAt: this.clock.ts() },
     });

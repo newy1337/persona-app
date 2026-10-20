@@ -3,7 +3,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { api } from '../api/client';
-import { ManagersPage, CreateLeadForm, AccountsTable } from './ManagerRegion';
+import { ManagersPage, CreateLeadForm, AccountsTable, LeadsTable } from './ManagerRegion';
 import { PanelUX } from './PanelUX';
 
 vi.mock('../components/Header/Header', () => ({ default: () => null }));
@@ -88,4 +88,15 @@ test('failed lead deletion stays open and supports retry', async () => {
   await click('Удалить'); expect(host.querySelector('[role=dialog]')).not.toBeNull();
   expect(host.querySelector('[role=alert]').textContent).toContain('Попробуйте ещё раз');
   await click('Удалить'); expect(confirm).toHaveBeenCalledTimes(2);
+});
+
+test('ссылка на профиль лида: http(s) — ссылкой, javascript: — просто текстом', async () => {
+  const row = (id, profile_url) => ({ id, status: 'pending', username: `u${id}`, profile_url, inbound_at: 1, source_type: 'api' });
+  await render(<LeadsTable rows={[row(1, 'https://example.com/u/1'), row(2, 'javascript:alert(1)')]} selected={new Set()} personas={[]}
+    onToggle={() => {}} onSelectVisible={() => {}} onClearSelection={() => {}} onChat={() => {}} onQueue={() => {}} onUnqueue={() => {}} onReassign={() => {}} onDelete={() => {}} onPersonaChange={() => {}}
+    helpers={{ PersonaSelect: () => null, statusLabels: {}, statusClasses: {}, date: () => '' }} />);
+  const links = [...host.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+  expect(links).toContain('https://example.com/u/1');
+  expect(links.some((href) => /^javascript:/i.test(href || ''))).toBe(false);
+  expect(host.querySelector('[data-testid="profile-text"]').textContent).toBe('javascript:alert(1)');
 });

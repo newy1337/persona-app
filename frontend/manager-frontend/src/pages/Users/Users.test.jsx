@@ -22,7 +22,7 @@ const sources = { items: [{ id: 5, name: 'beboo', managers: 1 }, { id: 6, name: 
 const personas = { items: [{ id: 1, slug: 'nastya', name: 'Настя' }, { id: 2, slug: 'olga', name: 'Ольга' }] };
 beforeEach(() => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
-  vi.spyOn(api, 'get').mockImplementation(async (path) => path.startsWith('/api/managers') ? users : path === '/api/donors' ? donors : path === '/api/sources' ? sources : path === '/api/personas' ? personas : {});
+  vi.spyOn(api, 'get').mockImplementation(async (path) => path.startsWith('/api/managers') ? JSON.parse(JSON.stringify(users)) : path === '/api/donors' ? donors : path === '/api/sources' ? sources : path === '/api/personas' ? personas : {});
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); });
 const render = async (el) => act(async () => root.render(el));
@@ -145,4 +145,43 @@ test('личности: имя в строке, выбор в попапе ух�
   await act(async () => boxes[1].click());
   await act(async () => [...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Сохранить').click());
   expect(put).toHaveBeenCalledWith('/api/managers/2', { lead_personas: ['olga'] });
+});
+
+test('кнопки ± не отбирают фокус у поля лимита, чтобы набранное число не сохранялось раньше клика', async () => {
+  await render(<Users />);
+  const row = host.querySelector('[data-user-id="3"]');
+  for (const label of ['Больше: m_one', 'Меньше: m_one']) {
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    row.querySelector(`[aria-label="${label}"]`).dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+  }
+});
+
+test('сохранение в другой строке не стирает лимит, который печатают', async () => {
+  vi.spyOn(api, 'put').mockResolvedValue(users);
+  await render(<Users />);
+  const quota = host.querySelector('input[aria-label="Лимит клиентов в сутки: m_two"]');
+  await type(quota, '12');
+  await act(async () => host.querySelector('[data-user-id="3"] [role=switch]').click());
+  expect(host.querySelector('input[aria-label="Лимит клиентов в сутки: m_two"]').value).toBe('12');
+});
+
+test('источник, которого нет в справочнике, виден в попапе и не пропадает при сохранении', async () => {
+  const put = vi.spyOn(api, 'put').mockResolvedValue(users);
+  const manager = users.items.find((u) => u.user_id === 3);
+  manager.lead_sources = ['beboo', 'legacy-x'];
+  try {
+    await render(<Users />);
+    await act(async () => host.querySelector('[aria-label="Источники: m_one"]').click());
+    const dialog = host.querySelector('[role=dialog]');
+    expect(dialog.textContent).toContain('legacy-x');
+    expect(dialog.textContent).toContain('нет в справочнике');
+    const boxes = [...dialog.querySelectorAll('input[type=checkbox]')];
+    expect(boxes.map((b) => b.checked)).toEqual([true, false, true]);
+    await act(async () => boxes[1].click());
+    await act(async () => [...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Сохранить').click());
+    expect(put).toHaveBeenCalledWith('/api/managers/3', { lead_sources: ['beboo', 'vk', 'legacy-x'] });
+  } finally {
+    manager.lead_sources = ['beboo'];
+  }
 });

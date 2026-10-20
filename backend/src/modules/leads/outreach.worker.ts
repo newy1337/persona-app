@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { appConfig } from 'src/config/app.config';
 import { PrismaService } from 'src/prisma.service';
+import { allowedOwners } from 'src/domain/lead-owners';
 import { ClockService } from 'src/shared/clock.service';
 import { HistoryService } from 'src/shared/history.service';
 import { FunnelEventsService } from 'src/shared/funnel-events.service';
@@ -198,13 +199,18 @@ export class OutreachWorker implements OnModuleInit {
       }),
       this.prisma.dashboardUser.findMany({
         where: { role: { not: 'admin' } },
-        select: { id: true },
+        select: { id: true, leadId: true },
       }),
     ]);
-    const mine = accountManagers.map((m) => m.userId);
+    // Свои владельцы: менеджеры аккаунта и их руководители (лид тимлида или
+    // хеда пишет аккаунт кого-то из его команды).
+    const mine = allowedOwners(
+      accountManagers.map((m) => m.userId),
+      managers,
+    );
     const foreignManagers = managers
       .map((m) => m.id)
-      .filter((id) => !mine.includes(id));
+      .filter((id) => !mine.has(id));
     const candidate = await this.prisma.phoneNumber.findFirst({
       where: {
         status: 'queued',

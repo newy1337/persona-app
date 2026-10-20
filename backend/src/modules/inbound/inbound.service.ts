@@ -4,6 +4,7 @@ import {
   Logger,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import { MANAGER_ROLES } from 'src/enums/roles.enum';
@@ -35,12 +36,20 @@ export class InboundService {
     private clock: ClockService,
   ) {}
 
-  /** Кто может принять входящий лид прямо сейчас: менеджеры, тимлиды и хеды с их счётчиками за сегодня. */
-  async recipients(now = this.clock.ts()): Promise<Recipient[]> {
-    const users = await this.prisma.dashboardUser.findMany({
+  /**
+   * Кто может принять входящий лид прямо сейчас: менеджеры, тимлиды и хеды с
+   * их счётчиками за сегодня. Имена нужны ответу, чтобы не читать владельца
+   * отдельным запросом.
+   */
+  async recipients(
+    now = this.clock.ts(),
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<{ list: Recipient[]; names: Map<number, string> }> {
+    const users = await db.dashboardUser.findMany({
       where: { role: { in: [...MANAGER_ROLES] } },
       select: {
         id: true,
+        username: true,
         regionCode: true,
         online: true,
         leadQuota: true,
@@ -49,8 +58,9 @@ export class InboundService {
         donors: { select: { donor: { select: { name: true } } } },
       },
     });
-    if (!users.length) return [];
-    const today = await this.prisma.phoneNumber.findMany({
+    const names = new Map(users.map((u) => [u.id, u.username]));
+    if (!users.length) return { list: [], names };
+    const today = await db.phoneNumber.findMany({
       where: {
         ownerUserId: { in: users.map((u) => u.id) },
         inboundAt: { gte: mskDayStart(now) },
@@ -65,7 +75,7 @@ export class InboundService {
       row.last = Math.max(row.last ?? 0, t.inboundAt ?? 0) || null;
       stats.set(t.ownerUserId, row);
     }
-    return users.map((u) => ({
+    const list = users.map((u) => ({
       id: u.id,
       region: u.regionCode,
       online: u.online,
@@ -76,9 +86,14 @@ export class InboundService {
       todayCount: stats.get(u.id)?.count ?? 0,
       lastReceivedAt: stats.get(u.id)?.last ?? null,
     }));
+    return { list, names };
   }
 
-  /** slug личности по slug или имени без учёта регистра; null — такой нет. */
+  /**
+   * slug личности по slug или имени без учёта регистра; null — такой нет.
+   * Отключённая личность — отказ: у неё нет аккаунтов в прозвоне, лид с ней
+   * никогда не ушёл бы.
+   */
   private async personaSlug(raw: string): Promise<string | null> {
     const row = await this.prisma.persona.findFirst({
       where: {
@@ -87,8 +102,14 @@ export class InboundService {
           { name: { equals: raw, mode: 'insensitive' } },
         ],
       },
-      select: { slug: true },
+      select: { slug: true, enabled: true },
     });
+    if (row && !row.enabled)
+      throw new UnprocessableEntityException({
+        statusCode: 422,
+        error: 'persona_disabled',
+        message: `личность «${raw}» отключена`,
+      });
     return row?.slug ?? null;
   }
 
@@ -106,21 +127,6 @@ export class InboundService {
     if (!phone && !username)
       throw new UnprocessableEntityException('нужен phone или username');
     const contact = { phone_e164: phone, username };
-    // Дубль ищем и по телефону, и по нику: оба уникальны в базе.
-    const existing = await this.prisma.phoneNumber.findFirst({
-      where: {
-        OR: [
-          ...(phone ? [{ phoneE164: phone }] : []),
-          ...(username ? [{ usernameKey: username }] : []),
-        ],
-      },
-    });
-    if (existing)
-      throw new ConflictException(
-        `${leadKey(contact)} уже в базе (лид #${existing.id}, ${existing.status})`,
-      );
-
-    const now = this.clock.ts();
     // Личность от поставщика узнаём по slug или имени; не узнали — сравниваем как есть.
     const person = dto.person.trim();
     const persona = await this.personaSlug(person);
@@ -130,52 +136,84 @@ export class InboundService {
       region: dto.region.trim(),
       persona: persona ?? person,
     };
-    const list = await this.recipients(now);
-    const picked = pickRecipient(list, tags);
-    // Никто не подошёл — лид не берём: отправитель уведёт его в другое место.
-    if (!picked) {
-      const reason = skipReason(list, tags);
-      this.log.log(`inbound ${leadKey(contact)} rejected: ${reason}`);
-      throw new UnprocessableEntityException({
-        statusCode: 422,
-        error: 'no_recipient',
-        message: reason,
-      });
+    try {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          // Раздача читает счётчики и тут же пишет лид: без общей блокировки
+          // параллельные запросы видят одни и те же счётчики и обходят лимит.
+          // Дубль проверяем под той же блокировкой.
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('inbound_leads'))`;
+          const existing = await tx.phoneNumber.findFirst({
+            where: {
+              OR: [
+                ...(phone ? [{ phoneE164: phone }] : []),
+                ...(username ? [{ usernameKey: username }] : []),
+              ],
+            },
+          });
+          if (existing)
+            throw new ConflictException(
+              `${leadKey(contact)} уже в базе (лид #${existing.id}, ${existing.status})`,
+            );
+          const now = this.clock.ts();
+          const { list, names } = await this.recipients(now, tx);
+          const picked = pickRecipient(list, tags);
+          // Никто не подошёл — лид не берём: отправитель уведёт его в другое место.
+          if (!picked) {
+            const reason = skipReason(list, tags);
+            this.log.log(`inbound ${leadKey(contact)} rejected: ${reason}`);
+            throw new UnprocessableEntityException({
+              statusCode: 422,
+              error: 'no_recipient',
+              message: reason,
+            });
+          }
+          const owner = {
+            id: picked.id,
+            username: names.get(picked.id) ?? String(picked.id),
+          };
+          const row = await tx.phoneNumber.create({
+            data: {
+              phoneE164: phone,
+              usernameKey: username,
+              firstName: dto.name?.trim() || null,
+              city: dto.city?.trim() || null,
+              age: dto.age ?? null,
+              gender: dto.gender ?? null,
+              sourceType: tags.source ?? 'api',
+              donor: tags.donor,
+              accountLabel: dto.account?.trim() || null,
+              externalId: dto.external_id?.trim() || null,
+              profileUrl: dto.profile_url?.trim() || null,
+              lastMessages: dto.last_messages?.trim() || null,
+              requestedRegion: tags.region,
+              requestedPersona: person,
+              personaId: persona,
+              ownerUserId: owner.id,
+              inboundAt: now,
+              insertedAt: now,
+            },
+          });
+          this.log.log(
+            `inbound lead #${row.id} ${leadKey(contact)} → ${owner.username}`,
+          );
+          return {
+            id: row.id,
+            status: row.status,
+            assigned_to: { user_id: owner.id, username: owner.username },
+          };
+        },
+        { maxWait: 10_000, timeout: 15_000 },
+      );
+    } catch (e) {
+      // Тот же номер или ник успел занять другой путь (ручное добавление) —
+      // уникальный индекс всё равно отдаём как дубль, не как 500.
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      )
+        throw new ConflictException(`${leadKey(contact)} уже в базе`);
+      throw e;
     }
-    const owner = await this.prisma.dashboardUser.findUniqueOrThrow({
-      where: { id: picked.id },
-      select: { id: true, username: true },
-    });
-
-    const row = await this.prisma.phoneNumber.create({
-      data: {
-        phoneE164: phone,
-        usernameKey: username,
-        firstName: dto.name?.trim() || null,
-        city: dto.city?.trim() || null,
-        age: dto.age ?? null,
-        gender: dto.gender ?? null,
-        sourceType: tags.source ?? 'api',
-        donor: tags.donor,
-        accountLabel: dto.account?.trim() || null,
-        externalId: dto.external_id?.trim() || null,
-        profileUrl: dto.profile_url?.trim() || null,
-        lastMessages: dto.last_messages?.trim() || null,
-        requestedRegion: tags.region,
-        requestedPersona: person,
-        personaId: persona,
-        ownerUserId: owner.id,
-        inboundAt: now,
-        insertedAt: now,
-      },
-    });
-    this.log.log(
-      `inbound lead #${row.id} ${leadKey(contact)} → ${owner.username}`,
-    );
-    return {
-      id: row.id,
-      status: row.status,
-      assigned_to: { user_id: owner.id, username: owner.username },
-    };
   }
 }
