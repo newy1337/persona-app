@@ -9,6 +9,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { LEAD_GENDERS } from 'src/domain/leads';
 
@@ -22,10 +23,11 @@ export class InboundLeadDto {
   @ApiPropertyOptional({
     example: '+7 900 123-45-67',
     description:
-      'телефон; можно вместе с username — прозвон сначала по номеру, потом по нику',
+      'телефон; нужен phone или username (можно оба — прозвон сначала по номеру, потом по нику)',
   })
-  @IsOptional()
-  @IsString()
+  // Нет ни телефона, ни ника — проверяем phone, и запрос отбивается с 400.
+  @ValidateIf((o) => o.phone !== undefined || o.username === undefined)
+  @IsString({ message: 'нужен phone или username' })
   @MinLength(4)
   @MaxLength(64)
   phone?: string;
@@ -37,11 +39,14 @@ export class InboundLeadDto {
   @MaxLength(64)
   username?: string;
 
-  @ApiPropertyOptional({ example: 'camp-42', description: 'донор, текстом' })
-  @IsOptional()
-  @IsString()
+  @ApiProperty({
+    example: 'camp-42',
+    description: 'донор, текстом, обязателен',
+  })
+  @IsString({ message: 'донор обязателен' })
+  @Matches(/\S/, { message: 'донор обязателен' })
   @MaxLength(64)
-  donor?: string;
+  donor: string;
 
   @ApiProperty({
     example: '001',
@@ -58,7 +63,7 @@ export class InboundLeadDto {
       'личность (slug или имя), обязательна: лид уходит тому, кто её принимает',
   })
   @IsString({ message: 'личность обязательна' })
-  @MinLength(1, { message: 'личность обязательна' })
+  @Matches(/\S/, { message: 'личность обязательна' })
   @MaxLength(64)
   person: string;
 

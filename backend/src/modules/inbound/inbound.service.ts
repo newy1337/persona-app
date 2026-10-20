@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -125,14 +126,14 @@ export class InboundService {
         `не похоже на телефон: «${dto.phone}»`,
       );
     if (!phone && !username)
-      throw new UnprocessableEntityException('нужен phone или username');
+      throw new BadRequestException('нужен phone или username');
     const contact = { phone_e164: phone, username };
     // Личность от поставщика узнаём по slug или имени; не узнали — сравниваем как есть.
     const person = dto.person.trim();
     const persona = await this.personaSlug(person);
     const tags = {
       source: dto.source?.trim() || null,
-      donor: dto.donor?.trim() || null,
+      donor: dto.donor.trim(),
       region: dto.region.trim(),
       persona: persona ?? person,
     };

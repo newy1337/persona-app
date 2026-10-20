@@ -1123,15 +1123,48 @@ describe('Manager panel API (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/post/leads')
         .set(key)
-        .send({ name: 'Без контакта', region: '0501', person: 'nastya' })
-        .expect(422);
+        .send({
+          name: 'Без контакта',
+          region: '0501',
+          person: 'nastya',
+          donor: 'CAMP A',
+        })
+        .expect(400)
+        .expect((r) =>
+          expect(JSON.stringify(r.body)).toContain('нужен phone или username'),
+        );
+      // обязательны регион, личность и донор: без любого или пустой — 400
+      for (const [drop, text] of [
+        ['donor', 'донор обязателен'],
+        ['person', 'личность обязательна'],
+        ['region', 'регион обязателен'],
+      ] as const) {
+        const body: Record<string, unknown> = {
+          phone: '+79005570095',
+          region: '0501',
+          person: 'nastya',
+          donor: 'CAMP A',
+        };
+        delete body[drop];
+        const r = await request(app.getHttpServer())
+          .post('/api/post/leads')
+          .set(key)
+          .send(body)
+          .expect(400);
+        expect(JSON.stringify(r.body)).toContain(text);
+        await request(app.getHttpServer())
+          .post('/api/post/leads')
+          .set(key)
+          .send({ ...body, [drop]: '   ' })
+          .expect(400);
+      }
 
       const send = async (body: Record<string, unknown>) =>
         (
           await request(app.getHttpServer())
             .post('/api/post/leads')
             .set(key)
-            .send({ person: 'nastya', ...body })
+            .send({ person: 'nastya', donor: 'CAMP A', ...body })
             .expect(201)
         ).body;
       const rejected = async (body: Record<string, unknown>) =>
@@ -1139,7 +1172,7 @@ describe('Manager panel API (e2e)', () => {
           await request(app.getHttpServer())
             .post('/api/post/leads')
             .set(key)
-            .send({ person: 'nastya', ...body })
+            .send({ person: 'nastya', donor: 'CAMP A', ...body })
             .expect(422)
         ).body;
       const base = {
@@ -1207,19 +1240,34 @@ describe('Manager panel API (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/post/leads')
         .set(key)
-        .send({ phone: '8 900 557-00-01', region: '0501', person: 'nastya' })
+        .send({
+          phone: '8 900 557-00-01',
+          region: '0501',
+          person: 'nastya',
+          donor: 'CAMP A',
+        })
         .expect(409);
       // без личности — отказ
       await request(app.getHttpServer())
         .post('/api/post/leads')
         .set(key)
-        .send({ phone: '+79005570098', region: '0501', source: 'beboo' })
+        .send({
+          phone: '+79005570098',
+          region: '0501',
+          source: 'beboo',
+          donor: 'CAMP A',
+        })
         .expect(400);
       // без региона — отказ
       await request(app.getHttpServer())
         .post('/api/post/leads')
         .set(key)
-        .send({ phone: '+79005570099', source: 'beboo', person: 'nastya' })
+        .send({
+          phone: '+79005570099',
+          source: 'beboo',
+          person: 'nastya',
+          donor: 'CAMP A',
+        })
         .expect(400);
       // по нику тоже можно
       const l5 = await send({
@@ -1238,6 +1286,7 @@ describe('Manager panel API (e2e)', () => {
           username: '@inb_lead_five',
           region: '0501',
           person: 'nastya',
+          donor: 'CAMP A',
         })
         .expect(409);
 
@@ -1388,7 +1437,12 @@ describe('Manager panel API (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/post/leads')
         .set(key)
-        .send({ phone: '+79005570008', region: 'ab', person: 'nastya' })
+        .send({
+          phone: '+79005570008',
+          region: 'ab',
+          person: 'nastya',
+          donor: 'CAMP A',
+        })
         .expect(400);
 
       // тимлид и хед тоже принимают лидов: m3 стал тимлидом и вышел онлайн
@@ -1460,6 +1514,7 @@ describe('Manager panel API (e2e)', () => {
           phone: '+79005570012',
           region: '0501',
           person: 'nastya',
+          donor: 'CAMP A',
           profile_url: 'javascript:alert(1)',
         })
         .expect(400);
@@ -1551,7 +1606,7 @@ describe('Manager panel API (e2e)', () => {
         request(app.getHttpServer())
           .post('/api/post/leads')
           .set(key)
-          .send({ region: '0503', person: 'nastya', ...body });
+          .send({ region: '0503', person: 'nastya', donor: 'camp', ...body });
 
       // Пауза после чтения счётчиков растягивает окно гонки: без общей
       // блокировки все пять запросов успели бы увидеть «сегодня 0».
