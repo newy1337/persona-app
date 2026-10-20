@@ -1363,6 +1363,13 @@ export class NastyaBrainService implements ReplyBrain {
     { at: number; value: NextBotAction }
   >();
 
+  peekNextAction(chatId: number, maxAgeSeconds: number): NextBotAction | null {
+    const cached = this.nextActionCache.get(chatId);
+    if (!cached || this.clock.ts() - cached.at >= maxAgeSeconds)
+      this.refreshNextAction(chatId);
+    return cached?.value ?? null;
+  }
+
   async nextAction(chatId: number, maxAgeSeconds = 0): Promise<NextBotAction> {
     const nowTs = this.clock.ts();
     const cached = this.nextActionCache.get(chatId);

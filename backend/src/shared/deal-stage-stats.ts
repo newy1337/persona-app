@@ -64,17 +64,23 @@ export async function stagesReachedEver(
   prisma: PrismaService,
   chatIds: Set<string> | null = null,
 ): Promise<Record<string, number>> {
-  const rows = await prisma.$queryRaw<{ chat_id: bigint; stage: string }[]>`
-    SELECT p.chat_id, k.stage
-    FROM pinned_facts p, jsonb_object_keys(COALESCE(p.facts::jsonb->'deal_reached', '{}'::jsonb)) AS k(stage)`;
-  const archived = await prisma.$queryRaw<{ chat_id: bigint }[]>`
-    SELECT chat_id FROM pinned_facts WHERE facts::jsonb->>'deal_stage' = 'archive'`;
+  // Дашборд опрашивает это раз в 10 секунд: один проход по таблице, и JSON
+  // разбирается только у чатов, где этапы вообще были.
+  const rows = await prisma.$queryRaw<
+    { chat_id: bigint; stages: string[]; archived: boolean }[]
+  >`
+    SELECT p.chat_id,
+      ARRAY(SELECT jsonb_object_keys(COALESCE(j.v->'deal_reached', '{}'::jsonb))) AS stages,
+      COALESCE(j.v->>'deal_stage' = 'archive', false) AS archived
+    FROM pinned_facts p, LATERAL (SELECT p.facts::jsonb AS v) j
+    WHERE p.facts LIKE '%"deal_%'`;
   const out = zeroStages();
-  for (const r of rows)
-    if (r.stage in out && (!chatIds || chatIds.has(String(r.chat_id))))
-      out[r.stage] += 1;
-  out.archive = archived.filter(
-    (r) => !chatIds || chatIds.has(String(r.chat_id)),
-  ).length;
+  let archive = 0;
+  for (const r of rows) {
+    if (chatIds && !chatIds.has(String(r.chat_id))) continue;
+    for (const stage of r.stages) if (stage in out) out[stage] += 1;
+    if (r.archived) archive += 1;
+  }
+  out.archive = archive;
   return out;
 }

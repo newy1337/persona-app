@@ -133,6 +133,20 @@ export class ManagerService {
   private async withNextActions(
     rows: ManagerChatRow[],
   ): Promise<ManagerChatRow[]> {
+    // Список не ждёт прогнозов: на холодном кеше это ~10 запросов на каждый из
+    // сотен чатов, и весь дашборд висел секунды. Нет в кеше — строка без
+    // прогноза, он досчитается в фоне и придёт со следующим опросом.
+    const peek = this.brain.peekNextAction?.bind(this.brain);
+    if (peek)
+      return rows.map((row) => {
+        let next: NextBotAction | null = null;
+        try {
+          next = peek(row.chat_id, ManagerService.FORECAST_MAX_AGE_S);
+        } catch {
+          // прогноз — подсказка, без него строка остаётся
+        }
+        return { ...row, next_bot_action: next };
+      });
     return Promise.all(
       rows.map(async (row) => ({
         ...row,

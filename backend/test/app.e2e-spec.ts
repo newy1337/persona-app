@@ -309,6 +309,36 @@ describe('Manager panel API (e2e)', () => {
       .expect(200);
   });
 
+  it('stage tiles count reached stages and archive in one pass', async () => {
+    const h = { Authorization: `Bearer ${token}` };
+    const prisma = app.get(PrismaService);
+    const tiles = async () =>
+      (await request(app.getHttpServer()).get('/api/manager/stats').set(h))
+        .body as Record<string, number>;
+    const before = await tiles();
+    const facts = {
+      9300001: { deal_reached: { vbros: 1, soglas: 2 }, deal_stage: 'soglas' },
+      9300002: { deal_reached: { vbros: 1 }, deal_stage: 'archive' },
+      9300003: { deal_stage: 'archive' },
+      9300004: { name: 'без этапов' },
+      9300005: { deal_reached: { unknown_stage: 1 } },
+    };
+    for (const [chatId, f] of Object.entries(facts))
+      await prisma.leadFacts.upsert({
+        where: { chatId: BigInt(chatId) },
+        create: { chatId: BigInt(chatId), facts: JSON.stringify(f) },
+        update: { facts: JSON.stringify(f) },
+      });
+    const after = await tiles();
+    expect(after.stage_vbros - before.stage_vbros).toBe(2);
+    expect(after.stage_soglas - before.stage_soglas).toBe(1);
+    expect(after.stage_predloga - before.stage_predloga).toBe(0);
+    expect(after.stage_archive - before.stage_archive).toBe(2);
+    await prisma.leadFacts.deleteMany({
+      where: { chatId: { in: Object.keys(facts).map(BigInt) } },
+    });
+  });
+
   it('restored auto-password and region work with the real database and login', async () => {
     const h = { Authorization: `Bearer ${token}` };
     const created = await request(app.getHttpServer())

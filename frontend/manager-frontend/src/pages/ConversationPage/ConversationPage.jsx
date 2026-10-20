@@ -167,7 +167,7 @@ function MediaContent({ chatId, msg, inbound = null }) {
     const caption = text.split('\n').slice(1).join('\n').trim();
     const label = caption ? <p>{caption}</p> : null;
     let body = null;
-    if (k === 'photo') body = <img className={styles.mediaItem} src={src} alt="Фото клиента" />;
+    if (k === 'photo') body = <img className={styles.mediaItem} src={src} alt="Фото клиента" loading="lazy" decoding="async" />;
     else if (k === 'video_note') body = <video className={`${styles.mediaItem} ${styles.videoNote}`} src={src} controls playsInline preload="metadata" />;
     else if (k === 'video') body = <video className={styles.mediaItem} src={src} controls playsInline preload="metadata" />;
     else if (k === 'animation') body = <video className={styles.mediaItem} src={src} autoPlay loop muted playsInline preload="metadata" />;
@@ -178,7 +178,7 @@ function MediaContent({ chatId, msg, inbound = null }) {
     return text.split('\n\n').map((para, j) => <p key={j}>{para}</p>);
   }
   if (kind === 'photo') {
-    return <img className={styles.mediaItem} src={src} alt="Фото" />;
+    return <img className={styles.mediaItem} src={src} alt="Фото" loading="lazy" decoding="async" />;
   }
   if (kind === 'video' || kind === 'video_note') {
     return <video className={styles.mediaItem} src={src} controls preload="metadata" />;
