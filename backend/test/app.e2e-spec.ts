@@ -728,11 +728,18 @@ describe('Manager panel API (e2e)', () => {
       'rg-lead',
       'rg-man',
     ]);
-    await request(app.getHttpServer())
+    // ответ на правку — список хеда, а не вся база
+    const afterEdit = await request(app.getHttpServer())
       .put(`/api/managers/${manager}`)
       .set(headAuth)
       .send({ lead_id: null })
       .expect(200);
+    expect(afterEdit.body.items.map((u: any) => u.username).sort()).toEqual(
+      team.body.items.map((u: any) => u.username).sort(),
+    );
+    expect(
+      afterEdit.body.items.every((u: any) => u.region_code === '0101'),
+    ).toBe(true);
     expect((await byId(manager)).lead_id).toBe(head);
     await request(app.getHttpServer())
       .put(`/api/managers/${manager}`)

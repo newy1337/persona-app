@@ -462,7 +462,8 @@ export class ManagersService {
     // руководителя уходят к хеду своего региона.
     for (const code of new Set([user.regionCode, nextRegion]))
       await this.attachOrphansToHead(code);
-    return this.list();
+    // Ответ — тот же список, что видит автор правки: хеду — только его регион.
+    return this.list(viewer);
   }
 
   async credentials(userId: number) {
