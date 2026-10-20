@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Header from '../../components/Header/Header';
 import { PanelUX } from '../../ui/PanelUX';
 import {
+  bindMyPhotoSet,
   createPhotoSet,
   deletePhotoSet,
   deleteSetPhoto,
+  getMyPhotoSets,
   getPhotoSets,
   getSetPhotos,
   photoUrl,
@@ -164,6 +166,54 @@ export function TagFilter({ tags, value, onChange }) {
   );
 }
 
+/**
+ * Мои образы: хед назначил их моей учётке, а к личностям привязываю я. У
+ * личности один действующий образ: новый образ на ту же личность получает
+ * новых собеседников, начатые диалоги остаются на прежнем.
+ */
+export function MyPhotoSets({ onChanged = () => {} }) {
+  const [mine, setMine] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => { getMyPhotoSets().then(setMine).catch(() => setMine(null)); }, []);
+  if (!mine?.sets?.length) return null;
+
+  async function bind(set, slug) {
+    const taken = slug ? mine.sets.find((x) => x.persona_slug === slug && x.set_id !== set.set_id) : null;
+    if (taken && !await PanelUX.confirm({
+      title: `«${set.set_name}» на личность ${mine.personas.find((p_) => p_.slug === slug)?.name ?? slug}?`,
+      message: `Новые собеседники получат «${set.set_name}». Начатые диалоги останутся на «${taken.set_name}», он уйдёт в запас.`,
+      confirmLabel: 'Привязать',
+    })) return;
+    setBusy(set.set_id);
+    setError('');
+    try { setMine(await bindMyPhotoSet(set.set_id, slug)); onChanged(); }
+    catch (e) { setError(e.detail || e.message); }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <section className={p.panel} aria-label="Мои образы" data-testid="my-photo-sets">
+      <h3 style={{ margin: 0, fontSize: 16 }}>Мои образы</h3>
+      <p className={s.hint} style={{ margin: 0 }}>
+        Привяжите образ к личности — фото из него будут уходить новым собеседникам ваших аккаунтов этой личности.
+        У личности один действующий образ; начатые диалоги остаются на своём.
+      </p>
+      {!mine.personas.length && <p className={s.hint} style={{ margin: 0 }}>У вас нет аккаунтов — привязать не к чему.</p>}
+      {mine.sets.map((x) => (
+        <label key={x.set_id} className={s.label} style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) minmax(200px, 2fr)', alignItems: 'center', gap: 12, maxWidth: 640 }}>
+          <span style={{ fontWeight: 600 }}>{x.set_name}</span>
+          <select className={s.select} value={x.persona_slug ?? ''} disabled={busy === x.set_id} onChange={(e) => bind(x, e.target.value)} aria-label={`Личность для образа ${x.set_name}`}>
+            <option value="">— в запасе, фото не уходят —</option>
+            {mine.personas.map((p_) => <option key={p_.slug} value={p_.slug}>{p_.name} · аккаунтов: {p_.accounts}</option>)}
+          </select>
+        </label>
+      ))}
+      {error && <p className={s.error} role="alert">{error}</p>}
+    </section>
+  );
+}
+
 export default function PhotoSets() {
   const [data, setData] = useState({ items: [], can_create: false, region_code: null });
   const [newRegion, setNewRegion] = useState('');
@@ -261,6 +311,7 @@ export default function PhotoSets() {
             )}
           </div>
           {error && <p className={s.error} role="alert">{error}</p>}
+          <MyPhotoSets onChanged={loadSets} />
 
           {!data.items.length && <p className={s.empty}>Образов нет</p>}
           <div className={p.sets}>
@@ -270,7 +321,7 @@ export default function PhotoSets() {
                 <span className={p.setName}>{x.name}</span>
                 <span className={p.setMeta}>
                   {admin && x.region_code ? `${x.region_code} · ` : ''}{x.photos} фото · {x.active_chats} {chatsWord(x.active_chats)} · {x.auto_send ? (x.send_mode === 'request' ? 'по просьбе' : 'автоотправка') : 'вручную'}
-                  {x.assigned_to?.length > 0 && <> · {[...new Set(x.assigned_to.map((a) => a.username))].join(', ')}</>}
+                  {x.assigned_to?.length > 0 && <> · {x.assigned_to.map((a) => `${a.username} (${a.persona || 'в запасе'})`).join(', ')}</>}
                   {x.needs_review > 0 && <span className={p.review}> · {x.needs_review} проверить</span>}
                 </span>
               </button>

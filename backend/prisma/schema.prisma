@@ -370,17 +370,23 @@ model PhotoSet {
 
 /// Какой образ получают новые диалоги сотрудника. Хед назначает образ своего
 /// региона каждому сотруднику — отдельно по каждой личности его аккаунтов.
+/// Образы учётки: хед назначает сотруднику образы (сколько угодно), сотрудник
+/// привязывает каждый к одной из личностей своих аккаунтов. У личности один
+/// действующий образ: новый образ на ту же личность забирает новых
+/// собеседников, начатые диалоги остаются на прежнем (Contact.photoSetId).
 model ManagerPhotoSet {
-  userId      Int    @map("user_id")
-  personaSlug String @map("persona_slug")
-  setId       Int    @map("set_id")
-  updatedAt   Int    @map("updated_at")
-  updatedBy   Int?   @map("updated_by")
+  userId      Int     @map("user_id")
+  setId       Int     @map("set_id")
+  /// личность, к которой сотрудник привязал образ; null — образ в запасе
+  personaSlug String? @map("persona_slug")
+  updatedAt   Int     @map("updated_at")
+  updatedBy   Int?    @map("updated_by")
 
   user DashboardUser @relation(fields: [userId], references: [id], onDelete: Cascade)
   set  PhotoSet      @relation(fields: [setId], references: [id], onDelete: Cascade)
 
-  @@id([userId, personaSlug])
+  @@id([userId, setId])
+  @@unique([userId, personaSlug], map: "manager_photo_sets_user_persona_key")
   @@index([setId], map: "idx_manager_photo_sets_set")
   @@map("manager_photo_sets")
 }
@@ -514,15 +520,15 @@ model PhoneNumber {
 /// Ключ для внешних систем (входящие лиды). Храним только хеш; сам ключ
 /// показывается один раз при создании. Отзыв — revoked_at.
 model ApiKey {
-  id          Int     @id @default(autoincrement())
+  id          Int    @id @default(autoincrement())
   name        String
-  keyHash     String  @unique @map("key_hash")
+  keyHash     String @unique @map("key_hash")
   /// первые символы ключа, чтобы узнать его в списке
   prefix      String
-  createdAt   Int     @map("created_at")
-  createdById Int?    @map("created_by_id")
-  lastUsedAt  Int?    @map("last_used_at")
-  revokedAt   Int?    @map("revoked_at")
+  createdAt   Int    @map("created_at")
+  createdById Int?   @map("created_by_id")
+  lastUsedAt  Int?   @map("last_used_at")
+  revokedAt   Int?   @map("revoked_at")
 
   @@map("api_keys")
 }

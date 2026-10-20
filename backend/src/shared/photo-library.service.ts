@@ -55,8 +55,9 @@ export class PhotoLibraryService {
   ) {}
 
   /**
-   * Образ, который сейчас получают новые диалоги аккаунта: назначенный хедом
-   * менеджеру аккаунта по личности аккаунта. Нет назначения — нет образа.
+   * Образ, который сейчас получают новые диалоги аккаунта: из образов,
+   * назначенных хедом менеджеру аккаунта, тот, что менеджер привязал к личности
+   * этого аккаунта. Такого нет — нет образа.
    */
   async currentSetId(accountId: number, db: Db = this.prisma) {
     const account = await db.tgAccount.findUnique({
@@ -64,7 +65,7 @@ export class PhotoLibraryService {
       select: { personaId: true, manager: { select: { userId: true } } },
     });
     if (!account?.manager) return null;
-    const assigned = await db.managerPhotoSet.findUnique({
+    const bound = await db.managerPhotoSet.findUnique({
       where: {
         userId_personaSlug: {
           userId: account.manager.userId,
@@ -73,7 +74,7 @@ export class PhotoLibraryService {
       },
       select: { setId: true },
     });
-    return assigned?.setId ?? null;
+    return bound?.setId ?? null;
   }
 
   /**

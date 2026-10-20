@@ -273,7 +273,9 @@ export class PhotoSetsService {
             .map((x) => ({
               user_id: x.userId,
               username: x.user.username,
-              persona: names.get(x.personaSlug) ?? x.personaSlug,
+              persona: x.personaSlug
+                ? (names.get(x.personaSlug) ?? x.personaSlug)
+                : null,
             })),
           canEdit: this.canEdit(user, s),
         }),
@@ -384,6 +386,10 @@ export class PhotoSetsService {
    * сотрудник и личность его аккаунтов: у кого аккаунты двух личностей, тому
    * образ назначается отдельно для каждой.
    */
+  /**
+   * Сотрудники региона с аккаунтами: какие образы им назначены и к какой
+   * личности каждый привязан. Одна строка на сотрудника.
+   */
   async staffAssignments(user: DashboardUser, requested?: string | null) {
     const region = this.isAdmin(user)
       ? requested?.trim() || null
@@ -404,6 +410,7 @@ export class PhotoSetsService {
       this.prisma.managerPhotoSet.findMany({
         where: { user: { regionCode: region } },
         include: { set: { select: { name: true } } },
+        orderBy: { setId: 'asc' },
       }),
       this.prisma.photoSet.findMany({
         where: { archivedAt: null, regionCode: region },
@@ -412,27 +419,17 @@ export class PhotoSetsService {
       }),
       this.personaNames(),
     ]);
-    const byKey = new Map(
-      assigned.map((a) => [`${a.userId}:${a.personaSlug}`, a]),
-    );
-    const rows = staff.flatMap((u) =>
-      [...new Set(u.accounts.map((a) => a.account.personaId))]
-        .sort()
-        .map((slug) => {
-          const a = byKey.get(`${u.id}:${slug}`);
-          return {
-            user_id: u.id,
-            username: u.username,
-            role: u.role,
-            persona_slug: slug,
-            persona_name: names.get(slug) ?? slug,
-            accounts: u.accounts.filter((x) => x.account.personaId === slug)
-              .length,
-            set_id: a?.setId ?? null,
-            set_name: a?.set.name ?? null,
-          };
-        }),
-    );
+    const rows = staff.map((u) => ({
+      user_id: u.id,
+      username: u.username,
+      role: u.role,
+      accounts: u.accounts.length,
+      personas: this.personaChoices(u.accounts, names),
+      sets: this.assignedView(
+        assigned.filter((a) => a.userId === u.id),
+        names,
+      ),
+    }));
     return {
       region_code: region,
       can_assign:
@@ -442,16 +439,48 @@ export class PhotoSetsService {
     };
   }
 
-  /**
-   * Назначить сотруднику образ по личности. Действует только на новых
-   * собеседников: начатые диалоги уже закреплены за своим образом.
-   */
-  async assignStaff(
-    user: DashboardUser,
-    userId: number,
-    personaSlug: string,
-    setId: number | null,
+  private assignedView(
+    rows: Array<{
+      setId: number;
+      personaSlug: string | null;
+      set: { name: string };
+    }>,
+    names: Map<string, string>,
   ) {
+    return rows.map((a) => ({
+      set_id: a.setId,
+      set_name: a.set.name,
+      persona_slug: a.personaSlug,
+      persona_name: a.personaSlug
+        ? (names.get(a.personaSlug) ?? a.personaSlug)
+        : null,
+    }));
+  }
+
+  /** Личности аккаунтов сотрудника и сколько у каждой аккаунтов. */
+  private personaChoices(
+    accounts: Array<{ account: { personaId: string } }>,
+    names: Map<string, string>,
+  ) {
+    const count = new Map<string, number>();
+    for (const a of accounts)
+      count.set(a.account.personaId, (count.get(a.account.personaId) ?? 0) + 1);
+    return [...count.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([slug, accounts]) => ({
+        slug,
+        name: names.get(slug) ?? slug,
+        accounts,
+      }));
+  }
+
+  /**
+   * Хед задаёт набор образов учётки сотрудника целиком. Новые образы приходят
+   * без личности — привязывает их сам сотрудник; оставшиеся сохраняют свою
+   * личность. Снятый образ перестаёт получать новых собеседников, начатые
+   * диалоги остаются на нём.
+   */
+  async assignStaff(user: DashboardUser, userId: number, setIds: number[]) {
     const target = await this.prisma.dashboardUser.findUnique({
       where: { id: userId },
       select: { regionCode: true },
@@ -460,31 +489,103 @@ export class PhotoSetsService {
     const region = this.regionFor(user, target.regionCode);
     if (target.regionCode !== region)
       throw new NotFoundException('сотрудник не найден');
-    if (setId == null) {
-      await this.prisma.managerPhotoSet.deleteMany({
-        where: { userId, personaSlug },
+    const wanted = [...new Set(setIds)];
+    if (wanted.length) {
+      const found = await this.prisma.photoSet.findMany({
+        where: { id: { in: wanted } },
       });
-      return this.staffAssignments(user, region);
+      if (found.length !== wanted.length || found.some((s) => s.archivedAt))
+        throw new NotFoundException('образ не найден');
+      if (found.some((s) => s.regionCode !== region))
+        throw new UnprocessableEntityException(
+          'можно назначить только образ этого региона',
+        );
     }
-    const set = await this.prisma.photoSet.findUnique({ where: { id: setId } });
-    if (!set || set.archivedAt) throw new NotFoundException('образ не найден');
-    if (set.regionCode !== region)
-      throw new UnprocessableEntityException(
-        'можно назначить только образ этого региона',
-      );
     const now = this.clock.ts();
-    await this.prisma.managerPhotoSet.upsert({
-      where: { userId_personaSlug: { userId, personaSlug } },
-      create: {
-        userId,
-        personaSlug,
-        setId,
-        updatedAt: now,
-        updatedBy: user.id,
-      },
-      update: { setId, updatedAt: now, updatedBy: user.id },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.managerPhotoSet.deleteMany({
+        where: { userId, setId: { notIn: wanted } },
+      });
+      const have = new Set(
+        (
+          await tx.managerPhotoSet.findMany({
+            where: { userId },
+            select: { setId: true },
+          })
+        ).map((r) => r.setId),
+      );
+      const fresh = wanted.filter((id) => !have.has(id));
+      if (fresh.length)
+        await tx.managerPhotoSet.createMany({
+          data: fresh.map((setId) => ({
+            userId,
+            setId,
+            personaSlug: null,
+            updatedAt: now,
+            updatedBy: user.id,
+          })),
+        });
     });
     return this.staffAssignments(user, region);
+  }
+
+  /** Образы, назначенные самому пользователю, и личности его аккаунтов. */
+  async mine(user: DashboardUser) {
+    const [own, accounts, names] = await Promise.all([
+      this.prisma.managerPhotoSet.findMany({
+        where: { userId: user.id, set: { archivedAt: null } },
+        include: { set: { select: { name: true } } },
+        orderBy: { setId: 'asc' },
+      }),
+      this.prisma.managerAccount.findMany({
+        where: { userId: user.id },
+        select: { account: { select: { personaId: true } } },
+      }),
+      this.personaNames(),
+    ]);
+    return {
+      sets: this.assignedView(own, names),
+      personas: this.personaChoices(accounts, names),
+    };
+  }
+
+  /**
+   * Сотрудник привязывает назначенный ему образ к личности своих аккаунтов
+   * (null — убрать в запас). У личности один действующий образ: если к ней уже
+   * был привязан другой, тот уходит в запас — его начатые диалоги остаются на
+   * нём, новые собеседники получают новый.
+   */
+  async choosePersona(
+    user: DashboardUser,
+    setId: number,
+    personaSlug: string | null,
+  ) {
+    const own = await this.prisma.managerPhotoSet.findUnique({
+      where: { userId_setId: { userId: user.id, setId } },
+    });
+    if (!own) throw new NotFoundException('этот образ вам не назначен');
+    if (personaSlug !== null) {
+      const has = await this.prisma.managerAccount.count({
+        where: { userId: user.id, account: { personaId: personaSlug } },
+      });
+      if (!has)
+        throw new UnprocessableEntityException(
+          'у вас нет аккаунтов этой личности',
+        );
+    }
+    const now = this.clock.ts();
+    await this.prisma.$transaction(async (tx) => {
+      if (personaSlug !== null)
+        await tx.managerPhotoSet.updateMany({
+          where: { userId: user.id, personaSlug, setId: { not: setId } },
+          data: { personaSlug: null, updatedAt: now, updatedBy: user.id },
+        });
+      await tx.managerPhotoSet.update({
+        where: { userId_setId: { userId: user.id, setId } },
+        data: { personaSlug, updatedAt: now, updatedBy: user.id },
+      });
+    });
+    return this.mine(user);
   }
 
   // ── Фото ─────────────────────────────────────────────────────────────────

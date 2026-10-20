@@ -9,11 +9,7 @@
         "slots": 0
       },
       "min_turns": 8,
-      "ask_slots": [
-        "work",
-        "location",
-        "age"
-      ]
+      "ask_slots": ["work", "location", "age"]
     },
     {
       "id": "smalltalk",
@@ -24,11 +20,7 @@
         "slots": 1
       },
       "min_turns": 16,
-      "ask_slots": [
-        "work",
-        "location",
-        "age"
-      ]
+      "ask_slots": ["work", "location", "age"]
     }
   ],
   "slots": [

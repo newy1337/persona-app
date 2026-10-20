@@ -157,9 +157,12 @@ export class TgAccountsService {
     const setNames = new Map(sets.map((s) => [s.id, s.name]));
     const managerOf = new Map(links.map((l) => [l.tgAccountId, l.userId]));
     const assigned = new Map(
-      regional.map((r) => [`${r.userId}:${r.personaSlug}`, r.setId]),
+      regional
+        .filter((r) => r.personaSlug)
+        .map((r) => [`${r.userId}:${r.personaSlug}`, r.setId]),
     );
-    // Образ для новых диалогов — назначенный хедом менеджеру аккаунта по личности.
+    // Образ для новых диалогов — тот образ менеджера аккаунта, который он
+    // привязал к личности этого аккаунта.
     const currentSet = (a: (typeof rows)[number]) =>
       assigned.get(`${managerOf.get(a.id)}:${a.personaId}`) ?? null;
     const chatsBy = new Map(chats.map((c) => [c.accountId, c._count._all]));

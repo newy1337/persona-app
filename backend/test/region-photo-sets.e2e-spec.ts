@@ -149,56 +149,126 @@ describe('photo sets by region: the head runs them, chats keep the set they star
     );
   });
 
-  it('the head assigns a set to each employee per persona; new clients get it, started chats keep the old one', async () => {
+  it('хед назначает учётке несколько образов, сотрудник привязывает их к личностям; новый образ на ту же личность — только для новых собеседников', async () => {
     const autumn = await sets.create(head, 'Надя — образ 1');
     const winter = await sets.create(head, 'Надя — образ 2');
-    const denis = await sets.create(head, 'Денис — город');
+    const city = await sets.create(head, 'Денис — город');
     const foreign = await sets.create(otherHead, 'Надя Питер');
     await expect(
-      sets.assignStaff(head, manager.id, 'nadya', foreign.id),
+      sets.assignStaff(head, manager.id, [autumn.id, foreign.id]),
     ).rejects.toThrow(/этого региона/);
     await expect(
-      sets.assignStaff(manager, manager.id, 'nadya', autumn.id),
+      sets.assignStaff(manager, manager.id, [autumn.id]),
     ).rejects.toThrow(/хед/);
     await expect(
-      sets.assignStaff(otherHead, manager.id, 'nadya', foreign.id),
+      sets.assignStaff(otherHead, manager.id, [foreign.id]),
     ).rejects.toThrow(/не найден/);
 
-    await sets.assignStaff(head, manager.id, 'denis', denis.id);
-    const view = await sets.assignStaff(head, manager.id, 'nadya', autumn.id);
-    // У менеджера аккаунты двух личностей — две строки, у каждой свой образ.
-    expect(
-      view.rows
-        .filter((r) => r.user_id === manager.id)
-        .map((r) => [r.persona_slug, r.set_id]),
-    ).toEqual([
-      ['denis', denis.id],
-      ['nadya', autumn.id],
+    // Хед назначает три образа одной учётке: одна строка, образы без личности.
+    const view = await sets.assignStaff(head, manager.id, [
+      autumn.id,
+      winter.id,
+      city.id,
     ]);
+    expect(view.rows.filter((r) => r.user_id === manager.id)).toHaveLength(1);
+    const row = view.rows.find((r) => r.user_id === manager.id)!;
+    expect(row.sets.map((x) => [x.set_id, x.persona_slug])).toEqual([
+      [autumn.id, null],
+      [winter.id, null],
+      [city.id, null],
+    ]);
+    expect(row.personas.map((x) => x.slug)).toEqual(['denis', 'nadya']);
     await history.ensureContact(5001, 1);
-    await history.ensureContact(5004, 4);
-    expect((await photos.setForChat(5001))?.id).toBe(autumn.id);
-    expect((await photos.setForChat(5004))?.id).toBe(denis.id);
+    expect(await photos.setForChat(5001)).toBeNull();
 
-    await sets.assignStaff(head, manager.id, 'nadya', winter.id);
+    // Сотрудник привязывает «образ 1» к Наде и «город» к Денису.
+    await expect(
+      sets.choosePersona(manager, autumn.id, 'nobody'),
+    ).rejects.toThrow(/нет аккаунтов этой личности/);
+    await expect(
+      sets.choosePersona(manager, foreign.id, 'nadya'),
+    ).rejects.toThrow(/не назначен/);
+    await sets.choosePersona(manager, autumn.id, 'nadya');
+    const mine = await sets.choosePersona(manager, city.id, 'denis');
+    expect(mine.sets.map((x) => [x.set_name, x.persona_name])).toEqual([
+      ['Надя — образ 1', 'Надя'],
+      ['Надя — образ 2', null],
+      ['Денис — город', 'Денис'],
+    ]);
     await history.ensureContact(5002, 1);
-    expect((await photos.setForChat(5002))?.id).toBe(winter.id);
+    await history.ensureContact(5003, 4);
+    expect((await photos.setForChat(5002))?.id).toBe(autumn.id);
+    expect((await photos.setForChat(5003))?.id).toBe(city.id);
+    // Диалог, начатый до привязки, закрепляется при первом обращении после неё.
     expect((await photos.setForChat(5001))?.id).toBe(autumn.id);
 
-    // Сотруднику без назначения образа нет — фото идут по прежней схеме.
-    await history.ensureContact(5003, 2);
-    expect(await photos.setForChat(5003)).toBeNull();
+    // «Образ 2» на ту же Надю: он забирает новых собеседников, «образ 1»
+    // уходит в запас, начатые на нём диалоги остаются на нём.
+    const after = await sets.choosePersona(manager, winter.id, 'nadya');
+    expect(after.sets.map((x) => [x.set_id, x.persona_slug])).toEqual([
+      [autumn.id, null],
+      [winter.id, 'nadya'],
+      [city.id, 'denis'],
+    ]);
+    await history.ensureContact(5004, 1);
+    expect((await photos.setForChat(5004))?.id).toBe(winter.id);
+    expect((await photos.setForChat(5002))?.id).toBe(autumn.id);
+    expect((await photos.setForChat(5001))?.id).toBe(autumn.id);
+    expect((await photos.setForChat(5003))?.id).toBe(city.id);
+
+    // В списке образов видно, кому назначен и на какой личности.
+    const list = await sets.list(head);
+    expect(list.items.find((x) => x.id === autumn.id)?.assigned_to).toEqual([
+      { user_id: manager.id, username: 'mgr_msk', persona: null },
+    ]);
+    expect(list.items.find((x) => x.id === winter.id)?.assigned_to).toEqual([
+      { user_id: manager.id, username: 'mgr_msk', persona: 'Надя' },
+    ]);
+
+    // Хед снимает «город»: Денис без образа для новых, начатый диалог остаётся.
+    await sets.assignStaff(head, manager.id, [autumn.id, winter.id]);
+    await history.ensureContact(5005, 4);
+    expect(await photos.setForChat(5005)).toBeNull();
+    expect((await photos.setForChat(5003))?.id).toBe(city.id);
+    // Оставшиеся образы сохранили привязку.
+    expect(
+      (await sets.mine(manager)).sets.map((x) => [x.set_id, x.persona_slug]),
+    ).toEqual([
+      [autumn.id, null],
+      [winter.id, 'nadya'],
+    ]);
+
+    // Снять все — образов нет; сотруднику без назначения образа нет.
+    await sets.assignStaff(head, manager.id, []);
+    expect((await sets.mine(manager)).sets).toEqual([]);
+    await history.ensureContact(5006, 1);
+    expect(await photos.setForChat(5006)).toBeNull();
+    await history.ensureContact(5007, 2);
+    expect(await photos.setForChat(5007)).toBeNull();
+  });
+
+  it('двадцать образов на одну учётку — можно', async () => {
+    const many = [];
+    for (let i = 0; i < 20; i++)
+      many.push((await sets.create(head, `Пачка ${i}`)).id);
+    const view = await sets.assignStaff(head, manager.id, many);
+    expect(view.rows.find((r) => r.user_id === manager.id)!.sets).toHaveLength(
+      20,
+    );
+    await sets.assignStaff(head, manager.id, []);
   });
 
   it('a set cannot be deleted while assigned or while any of its chats is still going', async () => {
     const set = await sets.create(head, 'Надя — на удаление');
-    await sets.assignStaff(head, manager.id, 'nadya', set.id);
+    await sets.assignStaff(head, manager.id, [set.id]);
+    await sets.choosePersona(manager, set.id, 'nadya');
     await history.ensureContact(6001, 1);
     await history.ensureContact(6002, 1);
     await expect(sets.remove(set.id)).rejects.toThrow(/назначен сотрудникам/);
 
     const other = await sets.create(head, 'Надя — новый');
-    await sets.assignStaff(head, manager.id, 'nadya', other.id);
+    await sets.assignStaff(head, manager.id, [other.id]);
+    await sets.choosePersona(manager, other.id, 'nadya');
     await expect(sets.remove(set.id)).rejects.toThrow(/идёт 2 диалога/);
 
     await stage(6001, 'lead');
@@ -217,7 +287,8 @@ describe('photo sets by region: the head runs them, chats keep the set they star
 
   it('the region stop switches off photo sets of that region only; chats keep their set for later', async () => {
     const set = await sets.create(head, 'Надя — стоп');
-    await sets.assignStaff(head, manager.id, 'nadya', set.id);
+    await sets.assignStaff(head, manager.id, [set.id]);
+    await sets.choosePersona(manager, set.id, 'nadya');
     await history.ensureContact(7001, 1);
     expect((await photos.setForChat(7001))?.id).toBe(set.id);
 
