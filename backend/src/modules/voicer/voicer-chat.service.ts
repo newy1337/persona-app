@@ -72,9 +72,12 @@ export class VoicerChatService {
     q: string,
   ) {
     this.scope.requireManager(user);
-    const owner = user.role === 'admin' ? managerId : user.id;
+    const owner = user.role === 'manager' ? user.id : managerId;
     if (!Number.isSafeInteger(owner) || owner < 1)
       throw new BadRequestException('Выберите менеджера');
+    const allowed = await this.voicer.actsFor(user);
+    if (allowed && !allowed.includes(owner))
+      throw new BadRequestException('Выберите менеджера своей команды');
     return this.search(
       {
         ...(user.role === 'admin'
@@ -88,8 +91,9 @@ export class VoicerChatService {
 
   async sendTargets(user: DashboardUser, q: string) {
     this.scope.requireManager(user);
+    const allowed = await this.voicer.actsFor(user);
     return this.search(
-      user.role === 'admin' ? {} : { manager: { userId: user.id } },
+      allowed === null ? {} : { manager: { userId: { in: allowed } } },
       q,
     );
   }

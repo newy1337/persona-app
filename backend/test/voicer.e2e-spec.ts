@@ -634,6 +634,105 @@ describe('Voicer workflow against a real migrated database', () => {
     api.mockImplementation(async () => ({ message_id: ++seq }));
   });
 
+  it('тимлид ставит задания своим менеджерам и распоряжается ими; чужой менеджер, хед и чужие чаты — нет', async () => {
+    const { id: leadId, token: lead } = await createUser('lead', 'teamlead', {
+      region_code: '0077',
+    });
+    const { token: head } = await createUser('head', 'head', {
+      region_code: '0077',
+    });
+    await request(app.getHttpServer())
+      .put(`/api/managers/${managerId}`)
+      .set(auth(admin))
+      .send({ lead_id: leadId })
+      .expect(200);
+    try {
+      // в выборе менеджера — только своя команда
+      const options = await request(app.getHttpServer())
+        .get('/api/voicer/options')
+        .set(auth(lead))
+        .expect(200);
+      expect(options.body.managers.map((m) => m.id)).toEqual([managerId]);
+
+      // задание своему менеджеру: исполнитель — войсер менеджера
+      const t = await task(lead, { manager_id: managerId });
+      expect(t).toMatchObject({
+        managerId,
+        voicerId: voiceId,
+        status: 'queued',
+      });
+      // тимлид видит и отменяет его
+      await request(app.getHttpServer())
+        .get(`/api/voicer/tasks/${t.id}`)
+        .set(auth(lead))
+        .expect(200);
+      expect((await act(lead, t.id, 'cancel')).status).toBe(200);
+
+      // чужой менеджер — отказ; без менеджера — 400
+      await request(app.getHttpServer())
+        .post('/api/voicer/tasks')
+        .set(auth(lead))
+        .send(payload({ manager_id: otherId }))
+        .expect(403);
+      await request(app.getHttpServer())
+        .post('/api/voicer/tasks')
+        .set(auth(lead))
+        .send(payload())
+        .expect(400);
+
+      // диалоги: свой менеджер — 444 виден, чужой чат 555 — нет
+      const choices = await request(app.getHttpServer())
+        .get(`/api/voicer/conversations?manager_id=${managerId}&persona=nastya`)
+        .set(auth(lead))
+        .expect(200);
+      expect(choices.body.items.map((c) => c.chat_id)).toContain('444');
+      await request(app.getHttpServer())
+        .get(`/api/voicer/conversations?manager_id=${otherId}&persona=nastya`)
+        .set(auth(lead))
+        .expect(400);
+      const withChat = await task(lead, {
+        manager_id: managerId,
+        chat_id: '444',
+        voice_mode: 'once',
+      });
+      expect(withChat.chatId).toBe('444');
+      await request(app.getHttpServer())
+        .post('/api/voicer/tasks')
+        .set(auth(lead))
+        .send(
+          payload({
+            manager_id: managerId,
+            chat_id: '555',
+            voice_mode: 'once',
+          }),
+        )
+        .expect(404);
+      const targets = await request(app.getHttpServer())
+        .get('/api/voicer/send-targets')
+        .set(auth(lead))
+        .expect(200);
+      const ids = targets.body.items.map((c) => c.chat_id);
+      expect(ids).toContain('444');
+      expect(ids).not.toContain('555');
+
+      // хед заданий не ставит
+      await request(app.getHttpServer())
+        .post('/api/voicer/tasks')
+        .set(auth(head))
+        .send(payload({ manager_id: managerId }))
+        .expect(403);
+      // менеджер по-прежнему только себе: чужой manager_id игнорируется
+      const own = await task(manager, { manager_id: otherId });
+      expect(own.managerId).toBe(managerId);
+    } finally {
+      await request(app.getHttpServer())
+        .put(`/api/managers/${managerId}`)
+        .set(auth(admin))
+        .send({ lead_id: null })
+        .expect(200);
+    }
+  });
+
   it('exposes chat only for calls to the assigned voicer, without marking seen', async () => {
     await prisma.message.createMany({
       data: [
