@@ -12,13 +12,23 @@ import {
   ValidateIf,
 } from 'class-validator';
 
-/** Холодка: только источник и контакт; региона, личности и донора нет. */
+/** Холодка: источник, личность и контакт; региона и донора нет. */
 export class ColdLeadDto {
   @ApiProperty({ example: 'beboo', description: 'источник, обязателен' })
   @IsString({ message: 'источник обязателен' })
   @Matches(/\S/, { message: 'источник обязателен' })
   @MaxLength(64)
   source: string;
+
+  @ApiProperty({
+    example: 'nastya',
+    description:
+      'личность (slug), обязательна: привязывается к лиду, получает тот, у кого она добавлена',
+  })
+  @IsString({ message: 'личность обязательна' })
+  @Matches(/\S/, { message: 'личность обязательна' })
+  @MaxLength(64)
+  persona: string;
 
   @ApiPropertyOptional({
     example: '+7-900-123-45-67',

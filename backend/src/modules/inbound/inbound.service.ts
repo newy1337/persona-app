@@ -133,9 +133,9 @@ export class InboundService {
   }
 
   /**
-   * Холодка: источник и контакт, без региона, личности и донора. Раздаётся
+   * Холодка: источник, личность и контакт, без региона и донора. Раздаётся
    * поровну тем, у кого холодка включена (лично и в регионе), кто онлайн, с
-   * квотой и с этим источником. Буфера у холодки нет: региона, чей хед решал
+   * квотой, с этим источником и этой личностью. Буфера у холодки нет: региона, чей хед решал
    * бы за лид только с ником, у неё нет — уходит сразу сотруднику.
    */
   async acceptCold(dto: ColdLeadDto): Promise<InboundResult> {
@@ -153,6 +153,17 @@ export class InboundService {
       throw new BadRequestException('нужен phone или username');
     const contact = { phone_e164: phone, username };
     const source = dto.source.trim();
+    // Личность привязывается к лиду, поэтому должна существовать: неизвестную
+    // не сравниваем «как есть», как в обычных входящих, а отбиваем.
+    const raw = dto.persona.trim();
+    const persona = await this.personaSlug(raw);
+    if (!persona)
+      throw new UnprocessableEntityException({
+        statusCode: 422,
+        error: 'persona_not_found',
+        message: `личности «${raw}» нет`,
+      });
+    const tags = { source, persona };
     try {
       return await this.prisma.$transaction(
         async (tx) => {
@@ -172,9 +183,9 @@ export class InboundService {
             );
           const now = this.clock.ts();
           const { list, names } = await this.recipients(now, tx);
-          const picked = pickColdRecipient(list, source);
+          const picked = pickColdRecipient(list, tags);
           if (!picked) {
-            const reason = coldSkipReason(list, source);
+            const reason = coldSkipReason(list, tags);
             this.log.log(`cold ${leadKey(contact)} rejected: ${reason}`);
             throw new UnprocessableEntityException({
               statusCode: 422,
@@ -193,6 +204,8 @@ export class InboundService {
               city: dto.city?.trim() || null,
               age: dto.age ?? null,
               sourceType: source,
+              personaId: persona,
+              requestedPersona: raw,
               cold: true,
               inboundAt: now,
               insertedAt: now,

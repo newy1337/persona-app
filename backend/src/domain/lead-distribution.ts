@@ -74,35 +74,46 @@ export function pickRecipient(
   return fairest(list.filter((r) => isEligible(r, lead)));
 }
 
+/** Что известно о холодном лиде для раздачи: источник и личность (slug). */
+export interface ColdTags {
+  source: string | null;
+  persona: string | null;
+}
+
 /**
- * Холодка: региона и личности у лида нет. Получают сотрудники любых регионов,
- * у кого холодка включена (и в регионе, и лично), кто онлайн, не выбрал лимит
- * и принимает источник. Счётчик и лимит общие с обычными входящими.
+ * Холодка: региона у лида нет. Получают сотрудники любых регионов, у кого
+ * холодка включена (и в регионе, и лично), кто онлайн, не выбрал лимит и
+ * принимает источник и личность лида. Счётчик и лимит общие с обычными входящими.
  */
-export function isColdEligible(r: Recipient, source: string | null): boolean {
+export function isColdEligible(r: Recipient, lead: ColdTags): boolean {
   return (
-    Boolean(r.cold) && r.online && underQuota(r) && accepts(r.sources, source)
+    Boolean(r.cold) &&
+    r.online &&
+    underQuota(r) &&
+    accepts(r.sources, lead.source) &&
+    accepts(r.personas, lead.persona)
   );
 }
 
 export function pickColdRecipient(
   list: Recipient[],
-  source: string | null,
+  lead: ColdTags,
 ): Recipient | null {
-  return fairest(list.filter((r) => isColdEligible(r, source)));
+  return fairest(list.filter((r) => isColdEligible(r, lead)));
 }
 
-export function coldSkipReason(
-  list: Recipient[],
-  source: string | null,
-): string {
+export function coldSkipReason(list: Recipient[], lead: ColdTags): string {
   const cold = list.filter((r) => r.cold);
   if (!cold.length) return 'холодку никто не получает';
   const online = cold.filter((r) => r.online);
   if (!online.length) return 'из получающих холодку никого нет онлайн';
-  const bySource = online.filter((r) => accepts(r.sources, source));
-  if (!bySource.length) return `никто не принимает источник «${source ?? '—'}»`;
-  if (!bySource.some(underQuota))
+  const bySource = online.filter((r) => accepts(r.sources, lead.source));
+  if (!bySource.length)
+    return `никто не принимает источник «${lead.source ?? '—'}»`;
+  const byPersona = bySource.filter((r) => accepts(r.personas, lead.persona));
+  if (!byPersona.length)
+    return `никто не принимает личность «${lead.persona ?? '—'}»`;
+  if (!byPersona.some(underQuota))
     return 'у подходящих менеджеров исчерпан лимит';
   return 'нет подходящего менеджера';
 }

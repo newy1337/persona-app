@@ -122,10 +122,12 @@ describe('холодка', () => {
       }),
       r({ id: 4, region: '001', cold: false, todayCount: 0 }),
     ];
-    expect(pickColdRecipient(list, 'beboo')?.id).toBe(3);
+    expect(
+      pickColdRecipient(list, { source: 'beboo', persona: 'nastya' })?.id,
+    ).toBe(3);
   });
 
-  it('не берёт оффлайн, с выбранным лимитом и чужим источником; доноры и личности не мешают', () => {
+  it('не берёт оффлайн, с выбранным лимитом и чужим источником; доноры не мешают', () => {
     const list = [
       r({ id: 1, cold: true, online: false }),
       r({ id: 2, cold: true, quota: 1, todayCount: 1 }),
@@ -134,25 +136,59 @@ describe('холодка', () => {
         id: 4,
         cold: true,
         donors: ['camp-9'],
-        personas: ['denis'],
+        personas: ['nastya'],
         todayCount: 5,
       }),
     ];
-    expect(pickColdRecipient(list, 'Beboo')?.id).toBe(4);
+    expect(
+      pickColdRecipient(list, { source: 'Beboo', persona: 'nastya' })?.id,
+    ).toBe(4);
+  });
+
+  it('личность: берёт того, у кого она добавлена или список пуст', () => {
+    const list = [
+      r({ id: 1, cold: true, personas: ['denis'] }),
+      r({ id: 2, cold: true, personas: ['nastya'], todayCount: 3 }),
+      r({ id: 3, cold: true, personas: [], todayCount: 5 }),
+    ];
+    expect(
+      pickColdRecipient(list, { source: 'beboo', persona: 'nastya' })?.id,
+    ).toBe(2);
+    expect(
+      pickColdRecipient(list, { source: 'beboo', persona: 'olga' })?.id,
+    ).toBe(3);
+    expect(
+      coldSkipReason([r({ cold: true, personas: ['denis'] })], {
+        source: 'beboo',
+        persona: 'olga',
+      }),
+    ).toBe('никто не принимает личность «olga»');
   });
 
   it('объясняет, почему никто не подошёл', () => {
-    expect(coldSkipReason([r({ cold: false })], 'beboo')).toBe(
-      'холодку никто не получает',
-    );
-    expect(coldSkipReason([r({ cold: true, online: false })], 'beboo')).toBe(
-      'из получающих холодку никого нет онлайн',
-    );
-    expect(coldSkipReason([r({ cold: true, sources: ['vk'] })], 'beboo')).toBe(
-      'никто не принимает источник «beboo»',
-    );
-    expect(coldSkipReason([r({ cold: true, quota: 0 })], 'beboo')).toBe(
-      'у подходящих менеджеров исчерпан лимит',
-    );
+    expect(
+      coldSkipReason([r({ cold: false })], {
+        source: 'beboo',
+        persona: 'nastya',
+      }),
+    ).toBe('холодку никто не получает');
+    expect(
+      coldSkipReason([r({ cold: true, online: false })], {
+        source: 'beboo',
+        persona: 'nastya',
+      }),
+    ).toBe('из получающих холодку никого нет онлайн');
+    expect(
+      coldSkipReason([r({ cold: true, sources: ['vk'] })], {
+        source: 'beboo',
+        persona: 'nastya',
+      }),
+    ).toBe('никто не принимает источник «beboo»');
+    expect(
+      coldSkipReason([r({ cold: true, quota: 0 })], {
+        source: 'beboo',
+        persona: 'nastya',
+      }),
+    ).toBe('у подходящих менеджеров исчерпан лимит');
   });
 });

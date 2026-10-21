@@ -1707,7 +1707,10 @@ describe('Manager panel API (e2e)', () => {
         .expect(201);
       const key = { 'X-Api-Key': made.body.key };
       const post = (body: Record<string, unknown>) =>
-        request(app.getHttpServer()).post('/api/post/cold').set(key).send(body);
+        request(app.getHttpServer())
+          .post('/api/post/cold')
+          .set(key)
+          .send({ persona: 'nastya', ...body });
       const mk = async (
         username: string,
         region: string,
@@ -1789,7 +1792,8 @@ describe('Manager panel API (e2e)', () => {
         age: 30,
         sourceType: 'beboo',
         cold: true,
-        personaId: null,
+        personaId: 'nastya',
+        requestedPersona: 'nastya',
         requestedRegion: null,
         ownerUserId: c1,
       });
@@ -1814,6 +1818,18 @@ describe('Manager panel API (e2e)', () => {
       await post({ source: 'vk', phone: '79015551234' }).expect(409);
       await post({ phone: '+79015551236' }).expect(400);
       await post({ source: 'vk', city: 'Тула' }).expect(400);
+      // личность обязательна и должна существовать: её привязываем к лиду
+      await post({
+        source: 'vk',
+        phone: '+79015551238',
+        persona: undefined,
+      }).expect(400);
+      const unknown = await post({
+        source: 'vk',
+        phone: '+79015551238',
+        persona: 'no-such-persona',
+      }).expect(422);
+      expect(unknown.body.error).toBe('persona_not_found');
       await request(app.getHttpServer())
         .post('/api/post/cold')
         .send({ source: 'vk', phone: '+79015551237' })
