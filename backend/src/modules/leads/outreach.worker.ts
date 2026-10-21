@@ -260,23 +260,24 @@ export class OutreachWorker implements OnModuleInit {
 
     let openerStarted = false;
     try {
-      let resolved = candidate.phoneE164
-        ? await this.telegram.resolvePhone(
-            accountId,
-            candidate.phoneE164,
-            candidate.firstName ?? undefined,
-          )
-        : await this.telegram.resolveUsername(accountId, candidate.usernameKey);
-      // Есть и номер, и ник: номер не нашёлся (скрыт приватностью) — пробуем ник.
+      // Ник в приоритете: по нему пишем без импорта контакта (лимит импорта
+      // и скрытый приватностью номер не мешают). Ника нет или он не нашёлся —
+      // пробуем номер.
+      const byPhone = () =>
+        this.telegram.resolvePhone(
+          accountId,
+          candidate.phoneE164!,
+          candidate.firstName ?? undefined,
+        );
+      let resolved = candidate.usernameKey
+        ? await this.telegram.resolveUsername(accountId, candidate.usernameKey)
+        : await byPhone();
       if (
         resolved.kind === 'not_found' &&
-        candidate.phoneE164 &&
-        candidate.usernameKey
+        candidate.usernameKey &&
+        candidate.phoneE164
       )
-        resolved = await this.telegram.resolveUsername(
-          accountId,
-          candidate.usernameKey,
-        );
+        resolved = await byPhone();
       if (resolved.kind === 'retry') {
         const until = now + IMPORT_THROTTLE_BACKOFF_S;
         await this.limitAccount(accountId, until, 'лимит импорта контактов');

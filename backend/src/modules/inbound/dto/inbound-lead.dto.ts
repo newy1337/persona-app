@@ -25,7 +25,7 @@ export class InboundLeadDto {
   @ApiPropertyOptional({
     example: '+7 900 123-45-67',
     description:
-      'телефон; нужен phone или username (можно оба — прозвон сначала по номеру, потом по нику)',
+      'телефон; нужен phone или username (можно оба — прозвон сначала по нику, потом по номеру)',
   })
   // Нет ни телефона, ни ника — проверяем phone, и запрос отбивается с 400.
   @ValidateIf((o) => o.phone !== undefined || o.username === undefined)

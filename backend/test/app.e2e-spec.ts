@@ -2916,7 +2916,7 @@ describe('Manager panel API (e2e)', () => {
         flood_reason: null,
       });
 
-      // И номер, и ник: номер не нашёлся — прозвон пробует ник, потом сдаётся.
+      // И номер, и ник: сначала ник, не нашёлся — номер, потом сдаётся.
       await prisma.phoneNumber.updateMany({
         where: { status: 'queued' },
         data: { status: 'pending' },
@@ -2942,6 +2942,9 @@ describe('Manager panel API (e2e)', () => {
         undefined,
       );
       expect(byName).toHaveBeenCalledWith(a1.body.id, 'both_contact');
+      expect(byName.mock.invocationCallOrder[0]).toBeLessThan(
+        byPhone.mock.invocationCallOrder[0],
+      );
       byPhone.mockRestore();
       byName.mockRestore();
       const dead = await prisma.phoneNumber.findUnique({
@@ -2950,6 +2953,35 @@ describe('Manager panel API (e2e)', () => {
       expect(dead).toMatchObject({ status: 'dead' });
       expect(dead!.lastError).toContain('ни номера, ни @username');
       await prisma.phoneNumber.delete({ where: { id: both.id } });
+
+      // Ник нашёлся — номер даже не пробуем (без импорта контакта).
+      const both2 = await prisma.phoneNumber.create({
+        data: {
+          phoneE164: '+79005556689',
+          usernameKey: 'both_contact2',
+          status: 'queued',
+          insertedAt: now,
+        },
+      });
+      const phone2 = jest.spyOn(telegram, 'resolvePhone');
+      const name2 = jest
+        .spyOn(telegram, 'resolveUsername')
+        .mockResolvedValueOnce({
+          kind: 'found',
+          userId: 990011,
+          username: 'both_contact2',
+          deleted: true,
+        } as any);
+      await (worker as any).processOne(a1.body.id, now);
+      expect(name2).toHaveBeenCalledWith(a1.body.id, 'both_contact2');
+      expect(phone2).not.toHaveBeenCalled();
+      phone2.mockRestore();
+      name2.mockRestore();
+      expect(
+        (await prisma.phoneNumber.findUnique({ where: { id: both2.id } }))!
+          .lastError,
+      ).toBe('аккаунт Telegram удалён');
+      await prisma.phoneNumber.delete({ where: { id: both2.id } });
 
       await request(app.getHttpServer())
         .delete(`/api/leads/${lead.body.id}`)
