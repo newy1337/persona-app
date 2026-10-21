@@ -14,6 +14,8 @@ describe('leads domain', () => {
     expect(normalizePhone('8 900 1234567')).toBe('+79001234567');
     expect(normalizePhone('79001234567')).toBe('+79001234567');
     expect(normalizePhone('12025550123')).toBe('+12025550123');
+    expect(normalizePhone('9123456702')).toBe('+79123456702');
+    expect(normalizePhone('-7-912-345-67-02')).toBe('+79123456702');
     expect(normalizePhone('123')).toBeNull();
     expect(normalizePhone('')).toBeNull();
   });

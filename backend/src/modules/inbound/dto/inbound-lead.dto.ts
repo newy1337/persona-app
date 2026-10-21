@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsIn,
@@ -89,7 +90,14 @@ export class InboundLeadDto {
   @MaxLength(128)
   account?: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(14) @Max(99) age?: number;
+  // Возраст приходит и строкой («"34"») — приводим, а не отбиваем.
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'age — целое число' })
+  @Min(14)
+  @Max(99)
+  age?: number;
 
   @ApiPropertyOptional({ enum: LEAD_GENDERS })
   @IsOptional()

@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsInt,
   IsOptional,
@@ -46,6 +47,7 @@ export class ColdLeadDto {
 
   @ApiPropertyOptional({ example: 34 })
   @IsOptional()
+  @Type(() => Number)
   @IsInt({ message: 'age — целое число' })
   @Min(14)
   @Max(99)

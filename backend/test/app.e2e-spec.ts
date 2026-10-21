@@ -1793,10 +1793,15 @@ describe('Manager panel API (e2e)', () => {
         requestedRegion: null,
         ownerUserId: c1,
       });
+      // возраст строкой и номер без кода страны — принимаем и приводим
       const second = await post({
         source: 'vk',
-        phone: '8 (901) 555-12-35',
+        phone: '9015551235',
+        age: '27',
       }).expect(201);
+      expect(
+        await prisma.phoneNumber.findUnique({ where: { id: second.body.id } }),
+      ).toMatchObject({ phoneE164: '+79015551235', age: 27 });
       expect(second.body.assigned_to.user_id).toBe(c2);
       const third = await post({
         source: 'vk',
