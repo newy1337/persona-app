@@ -202,6 +202,8 @@ describe('задержка первых сообщений', () => {
         replyDelay(
           {
             ...base,
+            lastAssistantTs: MSK_10 + 5 * H - M,
+            prevUserTs: MSK_10 + 5 * H - 2 * M,
             inboundTs: MSK_10 + 5 * H,
             userIndex,
             warmupStartTs: null,
@@ -290,8 +292,26 @@ describe('задержка первых сообщений', () => {
     ).toBe('off');
   });
 
-  it('настройки: по умолчанию первые 20, «от» больше «до» — ошибка', () => {
-    expect(DEFAULT_RHYTHM.reply_delay.first_messages).toBe(20);
+  it('молчание важнее первых сообщений: пропал на сутки на 5-м — ответ через часы', () => {
+    const opener = MSK_10 - 24 * H;
+    expect(
+      replyDelay(
+        {
+          inboundTs: MSK_10,
+          firstUserTs: opener - H,
+          lastAssistantTs: opener,
+          prevUserTs: opener - H,
+          userIndex: 5,
+          warmupStartTs: null,
+        },
+        R5,
+        low,
+      ),
+    ).toEqual({ seconds: 3600, reason: 'after_silence' });
+  });
+
+  it('настройки: по умолчанию выключено (0), «от» больше «до» — ошибка', () => {
+    expect(DEFAULT_RHYTHM.reply_delay.first_messages).toBe(0);
     expect(
       rhythmErrors({
         reply_delay: { first_min_minutes: 5, first_max_minutes: 1 },

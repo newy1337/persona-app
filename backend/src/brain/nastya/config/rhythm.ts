@@ -11,7 +11,7 @@ export interface Rhythm {
   timezone_mode?: 'manual' | 'bio';
   reply_delay: {
     enabled: boolean;
-    /** первые N сообщений клиента — своя задержка; разогрев идёт после них */
+    /** первые N сообщений клиента — своя задержка; разогрев идёт после них; 0 — выключено */
     first_messages: number;
     first_min_minutes: number;
     first_max_minutes: number;
@@ -44,7 +44,7 @@ export const DEFAULT_RHYTHM: Rhythm = {
   timezone: 'Europe/Moscow',
   reply_delay: {
     enabled: true,
-    first_messages: 20,
+    first_messages: 0,
     first_min_minutes: 1,
     first_max_minutes: 2,
     warmup_minutes: 90,

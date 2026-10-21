@@ -168,13 +168,29 @@ export function replyDelay(
   random: () => number = Math.random,
 ): ReplyDelay {
   const rd = rhythm.reply_delay;
+  const as = rhythm.after_silence;
+  const sheWroteLast =
+    input.lastAssistantTs !== null &&
+    (input.prevUserTs === null || input.lastAssistantTs >= input.prevUserTs);
+  const lastLine = Math.max(input.lastAssistantTs ?? 0, input.prevUserTs ?? 0);
+  const closedForNight =
+    input.lastGoodnightTs != null && input.lastGoodnightTs >= lastLine - 3600;
+  const silent =
+    as.enabled &&
+    sheWroteLast &&
+    !closedForNight &&
+    awakeSeconds(input.lastAssistantTs!, input.inboundTs, rhythm) >=
+      as.silence_hours * 3600;
+
   // Первые N сообщений клиента — своя задержка с самого начала чата;
-  // разогрев отсчитывается от первого сообщения после них.
+  // разогрев отсчитывается от первого сообщения после них. Молчание важнее:
+  // первые сообщения могут растянуться на дни, а пропавший на сутки клиент
+  // быстрого ответа не ждёт.
   const firstPhase =
     rd.first_messages > 0 &&
     input.userIndex !== undefined &&
     input.userIndex <= rd.first_messages;
-  if (rd.enabled && firstPhase) {
+  if (rd.enabled && firstPhase && !silent) {
     return {
       seconds: Math.round(
         between(rd.first_min_minutes, rd.first_max_minutes, random) * 60,
@@ -187,7 +203,8 @@ export function replyDelay(
   const first = counted
     ? (input.warmupStartTs ?? input.inboundTs)
     : (input.firstUserTs ?? input.inboundTs);
-  const inWarmup = input.inboundTs - first < rd.warmup_minutes * 60;
+  const inWarmup =
+    !firstPhase && input.inboundTs - first < rd.warmup_minutes * 60;
 
   if (rd.enabled && inWarmup) {
     return {
@@ -198,20 +215,7 @@ export function replyDelay(
     };
   }
 
-  const as = rhythm.after_silence;
-  const sheWroteLast =
-    input.lastAssistantTs !== null &&
-    (input.prevUserTs === null || input.lastAssistantTs >= input.prevUserTs);
-  const lastLine = Math.max(input.lastAssistantTs ?? 0, input.prevUserTs ?? 0);
-  const closedForNight =
-    input.lastGoodnightTs != null && input.lastGoodnightTs >= lastLine - 3600;
-  if (
-    as.enabled &&
-    sheWroteLast &&
-    !closedForNight &&
-    awakeSeconds(input.lastAssistantTs!, input.inboundTs, rhythm) >=
-      as.silence_hours * 3600
-  ) {
+  if (silent) {
     return {
       seconds: Math.round(between(as.min_hours, as.max_hours, random) * 3600),
       reason: 'after_silence',
