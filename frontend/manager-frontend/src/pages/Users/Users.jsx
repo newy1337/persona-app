@@ -8,7 +8,7 @@ import { getDonors } from '../../api/donors';
 import { getSources } from '../../api/sources';
 import { getPersonas } from '../../api/personas';
 import { getRegionSettings } from '../../api/buffer';
-import { ReassignSwitch } from '../../ui/ReassignSwitch';
+import { ColdSwitch, ReassignSwitch } from '../../ui/ReassignSwitch';
 import { ROLE_LABELS, isManagerRole } from '../../utils/roles';
 import s from '../../styles/AdminPage.module.scss';
 import './users.css';
@@ -40,14 +40,16 @@ export function summary(names, max = 2) {
   return names.length > max ? `${names.slice(0, max).join(', ')} · ещё ${names.length - max}` : names.join(', ');
 }
 
-function UserRow({ user, personaNames, onSave, onError, onPick }) {
+function UserRow({ user, personaNames, coldRegion, onSave, onError, onPick }) {
   const manager = isManagerRole(user.role);
   const [online, setOnline] = useState(Boolean(user.online));
+  const [cold, setCold] = useState(Boolean(user.cold_leads));
   const [quota, setQuota] = useState(user.lead_quota ?? '');
   const [busy, setBusy] = useState(false);
   // Следим за значениями, а не за объектом: после любого сохранения список приходит заново,
   // и сброс по объекту стирал бы лимит, который админ ещё печатает в другой строке.
   useEffect(() => { setOnline(Boolean(user.online)); setQuota(user.lead_quota ?? ''); }, [user.online, user.lead_quota]);
+  useEffect(() => { setCold(Boolean(user.cold_leads)); }, [user.cold_leads]);
   const quotaValue = quota === '' ? null : Number(quota);
 
   async function toggleOnline() {
@@ -55,6 +57,13 @@ function UserRow({ user, personaNames, onSave, onError, onPick }) {
     setOnline(next); setBusy(true);
     try { await onSave(user.user_id, { online: next }); }
     catch (err) { setOnline(!next); onError(ux.readableError(err)); }
+    finally { setBusy(false); }
+  }
+  async function toggleCold() {
+    const next = !cold;
+    setCold(next); setBusy(true);
+    try { await onSave(user.user_id, { cold_leads: next }); }
+    catch (err) { setCold(!next); onError(ux.readableError(err)); }
     finally { setBusy(false); }
   }
   async function saveQuota(next = quotaValue) {
@@ -86,6 +95,14 @@ function UserRow({ user, personaNames, onSave, onError, onPick }) {
             <span className="us-switch-text">{online ? 'Онлайн' : 'Оффлайн'}</span>
           </button>
         ) : dash}
+      </td>
+      <td className="us-cold">
+        {manager && coldRegion ? (
+          <button type="button" className={`us-switch ${cold ? 'us-switch-on' : ''}`} role="switch" aria-checked={cold} aria-label={`Холодка: ${user.username}`} disabled={busy} onClick={toggleCold}>
+            <span className="us-switch-knob" />
+            <span className="us-switch-text">{cold ? 'Да' : 'Нет'}</span>
+          </button>
+        ) : manager ? <span className={s.muted} title="Включите «Получать холодку» у региона">выкл. в регионе</span> : dash}
       </td>
       <td className="us-quota">
         {manager ? (
@@ -137,7 +154,7 @@ export default function Users() {
   const [donors, setDonors] = useState([]);
   const [sources, setSources] = useState([]);
   const [personas, setPersonas] = useState([]);
-  const [reassign, setReassign] = useState({});
+  const [regionSettings, setRegionSettings] = useState({});
   const [query, setQuery] = useState('');
   const [region, setRegion] = useState('');
   const [range, setRange] = useState(() => ({ from: mskToday(), to: mskToday() }));
@@ -149,7 +166,7 @@ export default function Users() {
 
   const load = useCallback(async () => {
     const [m, d, src, ps, rs] = await Promise.all([getManagers(range), getDonors(), getSources(), getPersonas().catch(() => ({ items: [] })), getRegionSettings().catch(() => ({ items: [] }))]);
-    setReassign(Object.fromEntries((rs.items ?? []).map((x) => [x.region_code, x.accept_reassigned])));
+    setRegionSettings(Object.fromEntries((rs.items ?? []).map((x) => [x.region_code, x])));
     setUsers(m.items ?? []);
     setDonors(d.items ?? []);
     setSources(src.items ?? []);
@@ -164,6 +181,7 @@ export default function Users() {
     setError('');
   }
 
+  const onRegionChange = (row) => setRegionSettings((was) => ({ ...was, [row.region_code]: row }));
   const regions = useMemo(() => [...new Set(users.map((u) => u.region_code).filter(Boolean))].sort(), [users]);
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -210,12 +228,13 @@ export default function Users() {
             <div className={s.tableWrap}>
               <table className={`${s.table} us-table`}>
                 <colgroup>
-                  <col style={{ width: '20%' }} /><col style={{ width: '11%' }} /><col style={{ width: '12%' }} /><col style={{ width: '10%' }} /><col style={{ width: '15%' }} /><col style={{ width: '16%' }} /><col style={{ width: '16%' }} />
+                  <col style={{ width: '17%' }} /><col style={{ width: '10%' }} /><col style={{ width: '10%' }} /><col style={{ width: '12%' }} /><col style={{ width: '9%' }} /><col style={{ width: '14%' }} /><col style={{ width: '14%' }} /><col style={{ width: '14%' }} />
                 </colgroup>
                 <thead>
                   <tr>
                     <th>Пользователь</th>
                     <SortTh col="online" sort={sort} onSort={toggleSort}>Онлайн</SortTh>
+                    <th>Холодка</th>
                     <th>Клиентов в сутки</th>
                     <SortTh col="leads_count" sort={sort} onSort={toggleSort}>{countTitle}</SortTh>
                     <th>Источники</th>
@@ -225,10 +244,10 @@ export default function Users() {
                 </thead>
                 {groups.map(({ region, items }) => (
                   <tbody key={region || 'none'} className="us-region" aria-label={region ? `Регион ${region}` : 'Без региона'}>
-                    <tr className="us-region-row"><td colSpan={7}><span className="us-region-title">{region ? `Регион ${region}` : 'Без региона'} <span className={s.muted}>· {items.length}</span>
-                      {region && <span style={{ marginLeft: 'auto', textTransform: 'none', letterSpacing: 0 }}><ReassignSwitch region={region} value={Boolean(reassign[region])} onChange={(row) => setReassign((was) => ({ ...was, [row.region_code]: row.accept_reassigned }))} /></span>}
+                    <tr className="us-region-row"><td colSpan={8}><span className="us-region-title">{region ? `Регион ${region}` : 'Без региона'} <span className={s.muted}>· {items.length}</span>
+                      {region && <span className="us-region-actions"><ColdSwitch region={region} value={Boolean(regionSettings[region]?.accept_cold)} onChange={onRegionChange} /><ReassignSwitch region={region} value={Boolean(regionSettings[region]?.accept_reassigned)} onChange={onRegionChange} /></span>}
                     </span></td></tr>
-                    {items.map((u) => <UserRow key={u.user_id} user={u} personaNames={personaNames} onSave={save} onError={setError} onPick={(kind, user) => setPicker({ kind, user })} />)}
+                    {items.map((u) => <UserRow key={u.user_id} user={u} personaNames={personaNames} coldRegion={Boolean(region && regionSettings[region]?.accept_cold)} onSave={save} onError={setError} onPick={(kind, user) => setPicker({ kind, user })} />)}
                   </tbody>
                 ))}
               </table>

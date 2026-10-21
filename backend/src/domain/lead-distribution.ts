@@ -21,6 +21,8 @@ export interface Recipient {
   todayCount: number;
   /** когда получил последний входящий; null — ещё ни одного */
   lastReceivedAt: number | null;
+  /** получает холодку: включена у него и в его регионе */
+  cold?: boolean;
 }
 
 export interface InboundTags {
@@ -53,11 +55,8 @@ export function isEligible(r: Recipient, lead: InboundTags): boolean {
   );
 }
 
-export function pickRecipient(
-  list: Recipient[],
-  lead: InboundTags,
-): Recipient | null {
-  const fit = list.filter((r) => isEligible(r, lead));
+/** Меньше всех получил сегодня, при равенстве — дольше ждал: так поровну. */
+function fairest(fit: Recipient[]): Recipient | null {
   if (!fit.length) return null;
   fit.sort(
     (a, b) =>
@@ -66,6 +65,46 @@ export function pickRecipient(
       a.id - b.id,
   );
   return fit[0];
+}
+
+export function pickRecipient(
+  list: Recipient[],
+  lead: InboundTags,
+): Recipient | null {
+  return fairest(list.filter((r) => isEligible(r, lead)));
+}
+
+/**
+ * Холодка: региона и личности у лида нет. Получают сотрудники любых регионов,
+ * у кого холодка включена (и в регионе, и лично), кто онлайн, не выбрал лимит
+ * и принимает источник. Счётчик и лимит общие с обычными входящими.
+ */
+export function isColdEligible(r: Recipient, source: string | null): boolean {
+  return (
+    Boolean(r.cold) && r.online && underQuota(r) && accepts(r.sources, source)
+  );
+}
+
+export function pickColdRecipient(
+  list: Recipient[],
+  source: string | null,
+): Recipient | null {
+  return fairest(list.filter((r) => isColdEligible(r, source)));
+}
+
+export function coldSkipReason(
+  list: Recipient[],
+  source: string | null,
+): string {
+  const cold = list.filter((r) => r.cold);
+  if (!cold.length) return 'холодку никто не получает';
+  const online = cold.filter((r) => r.online);
+  if (!online.length) return 'из получающих холодку никого нет онлайн';
+  const bySource = online.filter((r) => accepts(r.sources, source));
+  if (!bySource.length) return `никто не принимает источник «${source ?? '—'}»`;
+  if (!bySource.some(underQuota))
+    return 'у подходящих менеджеров исчерпан лимит';
+  return 'нет подходящего менеджера';
 }
 
 /** Почему никто не подошёл — для заметки в лиде и ответа отправителю. */

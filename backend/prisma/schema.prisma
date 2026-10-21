@@ -25,6 +25,8 @@ model DashboardUser {
   leadSources       String[] @default([]) @map("lead_sources")
   /// личности (slug), которые принимает; пусто — любые
   leadPersonas      String[] @default([]) @map("lead_personas")
+  /// получает холодку (лиды из /api/post/cold), если её принимает регион
+  coldLeads         Boolean  @default(false) @map("cold_leads")
 
   voicerId            Int?            @map("voicer_id")
   voicer              DashboardUser?  @relation("ManagerVoicer", fields: [voicerId], references: [id], onDelete: SetNull)
@@ -510,6 +512,8 @@ model PhoneNumber {
   requestedPersona   String? @map("requested_persona")
   /// перезабив: отправитель пометил лид как повторный (reassigned в API)
   reassigned         Boolean @default(false)
+  /// холодка: пришёл через /api/post/cold, раздан без региона и личности
+  cold               Boolean @default(false)
   /// когда лид попал в буфер (только ник, без телефона); статус 'buffer'
   bufferedAt         Int?    @map("buffered_at")
 
@@ -803,6 +807,8 @@ model RegionSetting {
   regionCode       String  @id @map("region_code")
   /// принимать перезабив (reassigned=true); выключено — такие лиды отбиваются
   acceptReassigned Boolean @default(false) @map("accept_reassigned")
+  /// принимать холодку: её получают сотрудники региона с включённой холодкой
+  acceptCold       Boolean @default(false) @map("accept_cold")
   updatedAt        Int     @map("updated_at")
   updatedById      Int?    @map("updated_by_id")
 

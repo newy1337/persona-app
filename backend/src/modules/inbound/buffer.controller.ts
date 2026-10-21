@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -35,9 +36,14 @@ class DeclineDto {
   reason?: string;
 }
 
-class ReassignedDto {
+class RegionSettingDto {
+  @IsOptional()
   @IsBoolean({ message: 'accept_reassigned — true или false' })
-  accept_reassigned: boolean;
+  accept_reassigned?: boolean;
+
+  @IsOptional()
+  @IsBoolean({ message: 'accept_cold — true или false' })
+  accept_cold?: boolean;
 }
 
 @ApiTags('buffer')
@@ -114,26 +120,34 @@ export class RegionSettingsController {
   }
 
   @ApiOperation({
-    summary: 'Получать перезабив: хед — свой регион, админ — любой',
+    summary: 'Получать перезабив и холодку: хед — свой регион, админ — любой',
   })
   @Roles(Role.HEAD)
   @Put(':region')
   @HttpCode(200)
   @UsePipes(new ValidationPipe({ whitelist: true }))
-  setReassigned(
+  update(
     @Param('region', ParseRegionPipe) region: string,
-    @Body() dto: ReassignedDto,
+    @Body() dto: RegionSettingDto,
     @CurrentUser() user: DashboardUser,
   ) {
+    if (dto.accept_reassigned === undefined && dto.accept_cold === undefined)
+      throw new BadRequestException('нужен accept_reassigned или accept_cold');
     return this.audit.wrap(
       {
         userId: user.id,
-        action: 'region.accept_reassigned',
+        action:
+          dto.accept_cold !== undefined
+            ? 'region.accept_cold'
+            : 'region.accept_reassigned',
         resource: `region:${region}`,
         payload: dto,
       },
       () =>
-        this.settings.setAcceptReassigned(user, region, dto.accept_reassigned),
+        this.settings.update(user, region, {
+          acceptReassigned: dto.accept_reassigned,
+          acceptCold: dto.accept_cold,
+        }),
     );
   }
 }

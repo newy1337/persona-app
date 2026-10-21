@@ -110,6 +110,7 @@ export class ManagersService {
         lead_quota: u.leadQuota ?? null,
         lead_sources: u.leadSources ?? [],
         lead_personas: u.leadPersonas ?? [],
+        cold_leads: u.coldLeads ?? false,
         donor_ids: (u.donors ?? []).map((d) => d.donor.id),
         donors: (u.donors ?? []).map((d) => d.donor.name),
       })),
@@ -347,6 +348,7 @@ export class ManagersService {
       leadQuota?: number | null;
       leadSources?: string[];
       leadPersonas?: string[];
+      coldLeads?: boolean;
       role?: string;
       passwordHash?: string;
       passwordEncrypted?: string;
@@ -381,6 +383,7 @@ export class ManagersService {
     if (dto.role !== undefined) data.role = dto.role;
     if (dto.region_code !== undefined) data.regionCode = dto.region_code;
     if (dto.online !== undefined) data.online = dto.online;
+    if (dto.cold_leads !== undefined) data.coldLeads = dto.cold_leads;
     if (dto.lead_quota !== undefined) data.leadQuota = dto.lead_quota;
     if (dto.lead_sources !== undefined)
       data.leadSources = cleanSources(dto.lead_sources);

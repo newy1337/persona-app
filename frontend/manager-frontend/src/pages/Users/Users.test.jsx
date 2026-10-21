@@ -185,3 +185,21 @@ test('источник, которого нет в справочнике, ви�
     manager.lead_sources = ['beboo'];
   }
 });
+
+test('холодка: переключатель у менеджера только в регионе, где она включена; кнопка региона шлёт accept_cold', async () => {
+  const settings = { items: [{ region_code: '001', accept_reassigned: false, accept_cold: true }, { region_code: '002', accept_reassigned: false, accept_cold: false }] };
+  api.get.mockImplementation(async (path) => path.startsWith('/api/managers') ? JSON.parse(JSON.stringify(users)) : path === '/api/region-settings' ? settings : path === '/api/donors' ? donors : path === '/api/sources' ? sources : path === '/api/personas' ? personas : {});
+  const put = vi.spyOn(api, 'put').mockImplementation(async (path, body) => path.startsWith('/api/region-settings/') ? { region_code: '002', accept_reassigned: false, accept_cold: body.accept_cold } : users);
+  vi.spyOn(await import('../../ui/PanelUX').then((m) => m.PanelUX), 'confirm').mockResolvedValue(true);
+  await render(<Users />);
+  const cold = host.querySelector('[aria-label="Холодка: m_one"]');
+  expect(cold.getAttribute('aria-checked')).toBe('false');
+  expect(host.querySelector('[aria-label="Холодка: m_two"]')).toBeNull();
+  expect(host.querySelector('[data-user-id="2"]').textContent).toContain('выкл. в регионе');
+  await act(async () => cold.click());
+  expect(put).toHaveBeenCalledWith('/api/managers/3', { cold_leads: true });
+  expect(host.querySelector('[data-testid="cold-001"]').textContent).toBe('Холодка: получаем');
+  await act(async () => host.querySelector('[data-testid="cold-002"]').click());
+  expect(put).toHaveBeenCalledWith('/api/region-settings/002', { accept_cold: true });
+  expect(host.querySelector('[aria-label="Холодка: m_two"]')).not.toBeNull();
+});

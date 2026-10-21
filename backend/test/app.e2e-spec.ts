@@ -1696,6 +1696,144 @@ describe('Manager panel API (e2e)', () => {
     });
   });
 
+  describe('холодка', () => {
+    it('лиды из /api/post/cold поровну уходят тем, у кого холодка включена лично и в регионе', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      const prisma = app.get(PrismaService);
+      const made = await request(app.getHttpServer())
+        .post('/api/api-keys')
+        .set(h)
+        .send({ name: 'Холодка' })
+        .expect(201);
+      const key = { 'X-Api-Key': made.body.key };
+      const post = (body: Record<string, unknown>) =>
+        request(app.getHttpServer()).post('/api/post/cold').set(key).send(body);
+      const mk = async (
+        username: string,
+        region: string,
+        extra: Record<string, unknown> = {},
+      ) => {
+        const id = (
+          await request(app.getHttpServer())
+            .post('/api/managers')
+            .set(h)
+            .send({
+              username,
+              password: 'cold123456',
+              role: 'manager',
+              region_code: region,
+              online: true,
+              ...extra,
+            })
+            .expect(200)
+        ).body.created_user_id as number;
+        return id;
+      };
+      const c1 = await mk('cold-m1', '0921');
+      const c2 = await mk('cold-m2', '0921', { lead_sources: ['vk'] });
+      const c3 = await mk('cold-m3', '0922');
+      const c4 = await mk('cold-m4', '0921');
+      for (const id of [c1, c2, c3])
+        await request(app.getHttpServer())
+          .put(`/api/managers/${id}`)
+          .set(h)
+          .send({ cold_leads: true })
+          .expect(200);
+      const listed = (
+        await request(app.getHttpServer())
+          .get('/api/managers')
+          .set(h)
+          .expect(200)
+      ).body.items;
+      expect(listed.find((u: any) => u.user_id === c1).cold_leads).toBe(true);
+      expect(listed.find((u: any) => u.user_id === c4).cold_leads).toBe(false);
+
+      // регион холодку ещё не принимает — никто не получает
+      const none = await post({ source: 'beboo', phone: '+7-901-555-12-30' });
+      expect(none.status).toBe(422);
+      expect(none.body).toMatchObject({
+        error: 'no_recipient',
+        message: 'холодку никто не получает',
+      });
+
+      await request(app.getHttpServer())
+        .put('/api/region-settings/0921')
+        .set(h)
+        .send({})
+        .expect(400);
+      const on = await request(app.getHttpServer())
+        .put('/api/region-settings/0921')
+        .set(h)
+        .send({ accept_cold: true })
+        .expect(200);
+      expect(on.body).toMatchObject({
+        region_code: '0921',
+        accept_cold: true,
+        accept_reassigned: false,
+      });
+
+      // дефисы, пробелы и скобки в номере не мешают; источник beboo принимает только c1
+      const first = await post({
+        source: 'beboo',
+        phone: '+7-901-555-12-34',
+        city: 'Казань',
+        age: 30,
+      }).expect(201);
+      expect(first.body.assigned_to.user_id).toBe(c1);
+      const row = await prisma.phoneNumber.findUnique({
+        where: { id: first.body.id },
+      });
+      expect(row).toMatchObject({
+        phoneE164: '+79015551234',
+        city: 'Казань',
+        age: 30,
+        sourceType: 'beboo',
+        cold: true,
+        personaId: null,
+        requestedRegion: null,
+        ownerUserId: c1,
+      });
+      const second = await post({
+        source: 'vk',
+        phone: '8 (901) 555-12-35',
+      }).expect(201);
+      expect(second.body.assigned_to.user_id).toBe(c2);
+      const third = await post({
+        source: 'vk',
+        username: '@cold_user_1',
+      }).expect(201);
+      expect([c1, c2]).toContain(third.body.assigned_to.user_id);
+      expect(third.body.buffered).toBe(false);
+
+      // дубль, без источника, без контакта
+      await post({ source: 'vk', phone: '79015551234' }).expect(409);
+      await post({ phone: '+79015551236' }).expect(400);
+      await post({ source: 'vk', city: 'Тула' }).expect(400);
+      await request(app.getHttpServer())
+        .post('/api/post/cold')
+        .send({ source: 'vk', phone: '+79015551237' })
+        .expect(401);
+
+      // в лидах видно, что это холодка
+      const leads = (
+        await request(app.getHttpServer())
+          .get('/api/leads?q=79015551234')
+          .set(h)
+          .expect(200)
+      ).body.items;
+      expect(leads[0]).toMatchObject({ cold: true, source_type: 'beboo' });
+
+      await prisma.phoneNumber.deleteMany({
+        where: { id: { in: [first.body.id, second.body.id, third.body.id] } },
+      });
+      for (const id of [c1, c2, c3, c4])
+        await request(app.getHttpServer())
+          .delete(`/api/managers/${id}`)
+          .set(h)
+          .expect(200);
+    });
+  });
+
   describe('буфер и перезабив', () => {
     it('лид только с ником — в буфер: видят хед и тимлиды региона, берут в работу или отклоняют с архивом', async () => {
       const h = { Authorization: `Bearer ${token}` };
@@ -1950,7 +2088,9 @@ describe('Manager panel API (e2e)', () => {
             .expect(200)
         ).body,
       ).toEqual({
-        items: [{ region_code: '0911', accept_reassigned: false }],
+        items: [
+          { region_code: '0911', accept_reassigned: false, accept_cold: false },
+        ],
         can_manage: true,
       });
       await request(app.getHttpServer())
@@ -1997,7 +2137,11 @@ describe('Manager panel API (e2e)', () => {
             .set(h)
             .expect(200)
         ).body.items,
-      ).toContainEqual({ region_code: '0911', accept_reassigned: true });
+      ).toContainEqual({
+        region_code: '0911',
+        accept_reassigned: true,
+        accept_cold: false,
+      });
 
       // выключили обратно — снова отбивается
       await request(app.getHttpServer())

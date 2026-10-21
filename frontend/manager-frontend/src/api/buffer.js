@@ -21,3 +21,8 @@ export function getRegionSettings() {
 export function setAcceptReassigned(region, accept) {
   return api.put(`/api/region-settings/${encodeURIComponent(region)}`, { accept_reassigned: accept });
 }
+
+/** Холодка: лиды из /api/post/cold без региона и личности. */
+export function setAcceptCold(region, accept) {
+  return api.put(`/api/region-settings/${encodeURIComponent(region)}`, { accept_cold: accept });
+}

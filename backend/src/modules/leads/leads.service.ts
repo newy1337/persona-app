@@ -78,6 +78,8 @@ export interface LeadView extends ManagerAttribution {
   requested_region: string | null;
   requested_persona: string | null;
   reassigned: boolean;
+  /** холодка: пришёл через /api/post/cold */
+  cold: boolean;
   buffered_at: number | null;
 }
 
@@ -286,6 +288,7 @@ export class LeadsService {
       requested_region: row.requestedRegion,
       requested_persona: row.requestedPersona,
       reassigned: row.reassigned,
+      cold: row.cold,
       buffered_at: row.bufferedAt,
       deal_stage:
         row.telegramUserId === null

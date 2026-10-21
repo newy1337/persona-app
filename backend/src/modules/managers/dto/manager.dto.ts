@@ -143,6 +143,12 @@ export class UpdateManagerDto {
   @IsBoolean()
   online?: boolean;
   @ApiPropertyOptional({
+    description: 'получает холодку (если её принимает регион)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  cold_leads?: boolean;
+  @ApiPropertyOptional({
     nullable: true,
     description: 'входящих лидов в сутки; null — без лимита',
   })

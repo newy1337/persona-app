@@ -4,7 +4,7 @@ import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import { Role } from 'src/enums/roles.enum';
 
-/** Настройки регионов для входящих лидов: сейчас — принимать ли перезабив. */
+/** Настройки регионов для входящих лидов: принимать ли перезабив и холодку. */
 @Injectable()
 export class RegionSettingsService {
   constructor(
@@ -12,10 +12,14 @@ export class RegionSettingsService {
     private clock: ClockService,
   ) {}
 
-  private view(region: string, row?: { acceptReassigned: boolean } | null) {
+  private view(
+    region: string,
+    row?: { acceptReassigned: boolean; acceptCold: boolean } | null,
+  ) {
     return {
       region_code: region,
       accept_reassigned: row?.acceptReassigned ?? false,
+      accept_cold: row?.acceptCold ?? false,
     };
   }
 
@@ -37,11 +41,11 @@ export class RegionSettingsService {
     };
   }
 
-  /** Переключить перезабив: хед — только своему региону, админ — любому. */
-  async setAcceptReassigned(
+  /** Переключить перезабив или холодку: хед — только своему региону, админ — любому. */
+  async update(
     user: DashboardUser,
     region: string,
-    accept: boolean,
+    patch: { acceptReassigned?: boolean; acceptCold?: boolean },
   ) {
     if (user.role !== Role.ADMIN && user.regionCode !== region)
       throw new ForbiddenException('можно менять только свой регион');
@@ -50,15 +54,11 @@ export class RegionSettingsService {
       where: { regionCode: region },
       create: {
         regionCode: region,
-        acceptReassigned: accept,
+        ...patch,
         updatedAt: now,
         updatedById: user.id,
       },
-      update: {
-        acceptReassigned: accept,
-        updatedAt: now,
-        updatedById: user.id,
-      },
+      update: { ...patch, updatedAt: now, updatedById: user.id },
     });
     return this.view(region, row);
   }

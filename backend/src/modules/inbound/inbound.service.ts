@@ -17,11 +17,14 @@ import {
   normalizeUsername,
 } from 'src/domain/leads';
 import {
+  coldSkipReason,
+  pickColdRecipient,
   pickRecipient,
   skipReason,
   type Recipient,
 } from 'src/domain/lead-distribution';
 import { InboundLeadDto } from './dto/inbound-lead.dto';
+import { ColdLeadDto } from './dto/cold-lead.dto';
 
 export interface InboundResult {
   id: number;
@@ -60,11 +63,20 @@ export class InboundService {
         leadQuota: true,
         leadSources: true,
         leadPersonas: true,
+        coldLeads: true,
         donors: { select: { donor: { select: { name: true } } } },
       },
     });
     const names = new Map(users.map((u) => [u.id, u.username]));
     if (!users.length) return { list: [], names };
+    const coldRegions = new Set(
+      (
+        await db.regionSetting.findMany({
+          where: { acceptCold: true },
+          select: { regionCode: true },
+        })
+      ).map((r) => r.regionCode),
+    );
     const today = await db.phoneNumber.findMany({
       where: {
         ownerUserId: { in: users.map((u) => u.id) },
@@ -90,6 +102,8 @@ export class InboundService {
       donors: u.donors.map((d) => d.donor.name),
       todayCount: stats.get(u.id)?.count ?? 0,
       lastReceivedAt: stats.get(u.id)?.last ?? null,
+      cold:
+        u.coldLeads && u.regionCode !== null && coldRegions.has(u.regionCode),
     }));
     return { list, names };
   }
@@ -116,6 +130,95 @@ export class InboundService {
         message: `личность «${raw}» отключена`,
       });
     return row?.slug ?? null;
+  }
+
+  /**
+   * Холодка: источник и контакт, без региона, личности и донора. Раздаётся
+   * поровну тем, у кого холодка включена (лично и в регионе), кто онлайн, с
+   * квотой и с этим источником. Буфера у холодки нет: региона, чей хед решал
+   * бы за лид только с ником, у неё нет — уходит сразу сотруднику.
+   */
+  async acceptCold(dto: ColdLeadDto): Promise<InboundResult> {
+    const username = dto.username ? normalizeUsername(dto.username) : null;
+    const phone = dto.phone ? normalizePhone(dto.phone) : null;
+    if (dto.username && !username)
+      throw new UnprocessableEntityException(
+        `не похоже на @username: «${dto.username}»`,
+      );
+    if (dto.phone && !phone)
+      throw new UnprocessableEntityException(
+        `не похоже на телефон: «${dto.phone}»`,
+      );
+    if (!phone && !username)
+      throw new BadRequestException('нужен phone или username');
+    const contact = { phone_e164: phone, username };
+    const source = dto.source.trim();
+    try {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          // Та же блокировка, что у обычных входящих: квота и счётчики общие.
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('inbound_leads'))`;
+          const existing = await tx.phoneNumber.findFirst({
+            where: {
+              OR: [
+                ...(phone ? [{ phoneE164: phone }] : []),
+                ...(username ? [{ usernameKey: username }] : []),
+              ],
+            },
+          });
+          if (existing)
+            throw new ConflictException(
+              `${leadKey(contact)} уже в базе (лид #${existing.id}, ${existing.status})`,
+            );
+          const now = this.clock.ts();
+          const { list, names } = await this.recipients(now, tx);
+          const picked = pickColdRecipient(list, source);
+          if (!picked) {
+            const reason = coldSkipReason(list, source);
+            this.log.log(`cold ${leadKey(contact)} rejected: ${reason}`);
+            throw new UnprocessableEntityException({
+              statusCode: 422,
+              error: 'no_recipient',
+              message: reason,
+            });
+          }
+          const owner = {
+            id: picked.id,
+            username: names.get(picked.id) ?? String(picked.id),
+          };
+          const row = await tx.phoneNumber.create({
+            data: {
+              phoneE164: phone,
+              usernameKey: username,
+              city: dto.city?.trim() || null,
+              age: dto.age ?? null,
+              sourceType: source,
+              cold: true,
+              inboundAt: now,
+              insertedAt: now,
+              ownerUserId: owner.id,
+            },
+          });
+          this.log.log(
+            `cold lead #${row.id} ${leadKey(contact)} → ${owner.username}`,
+          );
+          return {
+            id: row.id,
+            status: row.status,
+            assigned_to: { user_id: owner.id, username: owner.username },
+            buffered: false,
+          };
+        },
+        { maxWait: 10_000, timeout: 15_000 },
+      );
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      )
+        throw new ConflictException(`${leadKey(contact)} уже в базе`);
+      throw e;
+    }
   }
 
   async accept(dto: InboundLeadDto): Promise<InboundResult> {
