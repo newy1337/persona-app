@@ -142,13 +142,17 @@ export function awakeSeconds(
 export interface DelayInput {
   inboundTs: number;
   firstUserTs: number | null;
+  /** какое по счёту это сообщение клиента в разговоре (с 1) */
+  userIndex?: number;
+  /** когда пришло первое сообщение после «первых N» — с него идёт разогрев */
+  warmupStartTs?: number | null;
   lastAssistantTs: number | null;
   prevUserTs: number | null;
   lastGoodnightTs?: number | null;
 }
 
 export type DelayReason =
-  'off' | 'warmup' | 'after_silence' | 'normal' | 'late';
+  'off' | 'first' | 'warmup' | 'after_silence' | 'normal' | 'late';
 
 export interface ReplyDelay {
   seconds: number;
@@ -164,7 +168,25 @@ export function replyDelay(
   random: () => number = Math.random,
 ): ReplyDelay {
   const rd = rhythm.reply_delay;
-  const first = input.firstUserTs ?? input.inboundTs;
+  // Первые N сообщений клиента — своя задержка с самого начала чата;
+  // разогрев отсчитывается от первого сообщения после них.
+  const firstPhase =
+    rd.first_messages > 0 &&
+    input.userIndex !== undefined &&
+    input.userIndex <= rd.first_messages;
+  if (rd.enabled && firstPhase) {
+    return {
+      seconds: Math.round(
+        between(rd.first_min_minutes, rd.first_max_minutes, random) * 60,
+      ),
+      reason: 'first',
+    };
+  }
+  // Без счётчика (или N = 0) разогрев, как раньше, от первого сообщения.
+  const counted = rd.first_messages > 0 && input.userIndex !== undefined;
+  const first = counted
+    ? (input.warmupStartTs ?? input.inboundTs)
+    : (input.firstUserTs ?? input.inboundTs);
   const inWarmup = input.inboundTs - first < rd.warmup_minutes * 60;
 
   if (rd.enabled && inWarmup) {

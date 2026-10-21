@@ -277,6 +277,7 @@ const GOAL_STATE = {
 };
 
 const DELAY_REASON = {
+  first: 'первые сообщения',
   warmup: 'разогрев',
   normal: 'обычная задержка',
   after_silence: 'после молчания',

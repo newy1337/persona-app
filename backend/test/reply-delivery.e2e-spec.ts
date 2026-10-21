@@ -227,10 +227,13 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
     expect(
       (await history.unansweredMessages(chatId)).map((m) => m.text),
     ).toEqual(['New reply']);
+    // Счёт сообщений клиента тоже идёт только с перезапуска истории.
     expect(await history.rhythmMarks(chatId, now + 2)).toEqual({
       firstUserTs: now + 1,
       prevUserTs: now + 1,
       lastAssistantTs: now,
+      userIndex: 2,
+      warmupStartTs: null,
     });
     expect(
       await prisma.message.count({ where: { chatId: BigInt(chatId) } }),

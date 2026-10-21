@@ -524,10 +524,13 @@ export class HistoryService {
   async rhythmMarks(
     chatId: number,
     beforeTs: number,
+    firstMessages = 0,
   ): Promise<{
     firstUserTs: number | null;
     prevUserTs: number | null;
     lastAssistantTs: number | null;
+    userIndex: number;
+    warmupStartTs: number | null;
   }> {
     const id = toChatId(chatId);
     const window = await this.conversationWindow(chatId);
@@ -542,19 +545,34 @@ export class HistoryService {
         orderBy: [{ ts: order }, { id: order }],
         select: { ts: true },
       });
-    const [first, prevUser, lastAssistant] = await Promise.all([
-      this.prisma.message.findFirst({
-        where: { chatId: id, role: 'user', deletedAt: null, ...window },
-        orderBy: { id: 'asc' },
-        select: { ts: true },
-      }),
-      pick('user', 'desc'),
-      pick('assistant', 'desc'),
-    ]);
+    const userWhere = { chatId: id, role: 'user', deletedAt: null, ...window };
+    const [first, prevUser, lastAssistant, before, warmupStart] =
+      await Promise.all([
+        this.prisma.message.findFirst({
+          where: userWhere,
+          orderBy: { id: 'asc' },
+          select: { ts: true },
+        }),
+        pick('user', 'desc'),
+        pick('assistant', 'desc'),
+        this.prisma.message.count({
+          where: { ...userWhere, AND: [window, { ts: { lt: beforeTs } }] },
+        }),
+        firstMessages > 0
+          ? this.prisma.message.findFirst({
+              where: userWhere,
+              orderBy: { id: 'asc' },
+              skip: firstMessages,
+              select: { ts: true },
+            })
+          : null,
+      ]);
     return {
       firstUserTs: first?.ts ?? null,
       prevUserTs: prevUser?.ts ?? null,
       lastAssistantTs: lastAssistant?.ts ?? null,
+      userIndex: before + 1,
+      warmupStartTs: warmupStart?.ts ?? null,
     };
   }
 

@@ -11,6 +11,10 @@ export interface Rhythm {
   timezone_mode?: 'manual' | 'bio';
   reply_delay: {
     enabled: boolean;
+    /** первые N сообщений клиента — своя задержка; разогрев идёт после них */
+    first_messages: number;
+    first_min_minutes: number;
+    first_max_minutes: number;
     warmup_minutes: number;
     warmup_min_minutes: number;
     warmup_max_minutes: number;
@@ -40,6 +44,9 @@ export const DEFAULT_RHYTHM: Rhythm = {
   timezone: 'Europe/Moscow',
   reply_delay: {
     enabled: true,
+    first_messages: 20,
+    first_min_minutes: 1,
+    first_max_minutes: 2,
     warmup_minutes: 90,
     warmup_min_minutes: 1,
     warmup_max_minutes: 2,
@@ -118,6 +125,10 @@ export function mergeRhythm(doc: unknown): Rhythm {
   const as = obj(d.after_silence);
   const D = DEFAULT_RHYTHM;
 
+  const [fMin, fMax] = range(
+    num(rd.first_min_minutes, D.reply_delay.first_min_minutes, 0, 1440),
+    num(rd.first_max_minutes, D.reply_delay.first_max_minutes, 0, 1440),
+  );
   const [wMin, wMax] = range(
     num(rd.warmup_min_minutes, D.reply_delay.warmup_min_minutes, 0, 1440),
     num(rd.warmup_max_minutes, D.reply_delay.warmup_max_minutes, 0, 1440),
@@ -135,6 +146,11 @@ export function mergeRhythm(doc: unknown): Rhythm {
     ...(d.timezone_mode === 'bio' ? { timezone_mode: 'bio' as const } : {}),
     reply_delay: {
       enabled: bool(rd.enabled, D.reply_delay.enabled),
+      first_messages: Math.round(
+        num(rd.first_messages, D.reply_delay.first_messages, 0, 500),
+      ),
+      first_min_minutes: fMin,
+      first_max_minutes: fMax,
       warmup_minutes: num(
         rd.warmup_minutes,
         D.reply_delay.warmup_minutes,
@@ -232,6 +248,14 @@ export function rhythmErrors(doc: unknown): string[] {
 
   const rd = obj(d.reply_delay);
   checkBool(rd.enabled, 'задержка ответа');
+  checkNum(rd.first_messages, 'первые сообщения, сколько', 0, 500);
+  checkNum(rd.first_min_minutes, 'задержка первых сообщений, от', 0, 1440);
+  checkNum(rd.first_max_minutes, 'задержка первых сообщений, до', 0, 1440);
+  checkRange(
+    rd.first_min_minutes,
+    rd.first_max_minutes,
+    'задержка первых сообщений',
+  );
   checkNum(rd.warmup_minutes, 'разогрев, минут', 0, 24 * 60);
   checkNum(rd.warmup_min_minutes, 'задержка в разогреве, от', 0, 1440);
   checkNum(rd.warmup_max_minutes, 'задержка в разогреве, до', 0, 1440);
