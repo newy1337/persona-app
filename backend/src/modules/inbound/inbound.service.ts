@@ -35,6 +35,10 @@ export interface InboundResult {
   buffered: boolean;
 }
 
+// Розданный лид из LeadGet сразу встаёт в очередь первых сообщений: менеджеру
+// не нужно жать «В очередь». Лид из буфера сюда не попадает — его берут руками.
+const INBOUND_STATUS = 'queued';
+
 @Injectable()
 export class InboundService {
   private readonly log = new Logger(InboundService.name);
@@ -207,6 +211,7 @@ export class InboundService {
               personaId: persona,
               requestedPersona: raw,
               cold: true,
+              status: INBOUND_STATUS,
               inboundAt: now,
               insertedAt: now,
               ownerUserId: owner.id,
@@ -343,7 +348,7 @@ export class InboundService {
             username: names.get(picked.id) ?? String(picked.id),
           };
           const row = await tx.phoneNumber.create({
-            data: { ...fields, ownerUserId: owner.id },
+            data: { ...fields, status: INBOUND_STATUS, ownerUserId: owner.id },
           });
           this.log.log(
             `inbound lead #${row.id} ${leadKey(contact)} → ${owner.username}`,

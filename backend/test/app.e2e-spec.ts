@@ -1360,7 +1360,7 @@ describe('Manager panel API (e2e)', () => {
         external_id: 'ext-1',
         profile_url: 'https://example.com/u/1',
         last_messages: 'привет, как дела? — норм',
-        status: 'pending',
+        status: 'queued',
         manager_username: 'inb-m1',
       });
       expect(
@@ -1842,7 +1842,11 @@ describe('Manager panel API (e2e)', () => {
           .set(h)
           .expect(200)
       ).body.items;
-      expect(leads[0]).toMatchObject({ cold: true, source_type: 'beboo' });
+      expect(leads[0]).toMatchObject({
+        cold: true,
+        source_type: 'beboo',
+        status: 'queued',
+      });
 
       await prisma.phoneNumber.deleteMany({
         where: { id: { in: [first.body.id, second.body.id, third.body.id] } },
