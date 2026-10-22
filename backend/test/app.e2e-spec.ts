@@ -2631,6 +2631,146 @@ describe('Manager panel API (e2e)', () => {
           .expect(200);
     });
 
+    it('хед записывает лид на себя или менеджера своей команды, чужого — нет; менеджер — только на себя', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      const prisma = app.get(PrismaService);
+      const mk = async (body: Record<string, unknown>) =>
+        (
+          await request(app.getHttpServer())
+            .post('/api/managers')
+            .set(h)
+            .send({ password: 'add123456', region_code: '0611', ...body })
+            .expect(200)
+        ).body.created_user_id as number;
+      const head = await mk({ username: 'add-head', role: 'head' });
+      const m1 = await mk({ username: 'add-m1', role: 'manager' });
+      const m2 = await mk({ username: 'add-m2', role: 'manager' });
+      const outsider = await mk({
+        username: 'add-out',
+        role: 'manager',
+        region_code: '0612',
+      });
+      const acc1 = await request(app.getHttpServer())
+        .post('/api/tg-accounts')
+        .set(h)
+        .send({ phone_e164: '+79001110071', persona_id: 'nastya' })
+        .expect(200);
+      await prisma.tgAccount.update({
+        where: { id: acc1.body.id },
+        data: { status: 'active' },
+      });
+      await request(app.getHttpServer())
+        .put(`/api/managers/accounts/${acc1.body.id}`)
+        .set(h)
+        .send({ user_id: m1 })
+        .expect(200);
+      const login = async (username: string) => ({
+        Authorization: `Bearer ${
+          (
+            await request(app.getHttpServer())
+              .post('/auth/login')
+              .send({ username, password: 'add123456' })
+              .expect(200)
+          ).body.tokens.accessToken
+        }`,
+      });
+      const hh = await login('add-head');
+      const hm = await login('add-m1');
+
+      const owners = (
+        await request(app.getHttpServer())
+          .get('/api/leads/owners')
+          .set(hh)
+          .expect(200)
+      ).body.items;
+      expect(owners[0]).toMatchObject({ user_id: head, self: true });
+      expect(owners.map((o: any) => o.user_id).sort()).toEqual(
+        [head, m1, m2].sort(),
+      );
+      expect(owners.find((o: any) => o.user_id === m1).account_ids).toEqual([
+        acc1.body.id,
+      ]);
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/leads/owners')
+            .set(hm)
+            .expect(200)
+        ).body.items.map((o: any) => o.user_id),
+      ).toEqual([m1]);
+
+      // на менеджера команды — лид его, с его аккаунтом
+      const forM1 = await request(app.getHttpServer())
+        .post('/api/leads')
+        .set(hh)
+        .send({
+          phone: '@add_for_m1',
+          owner_user_id: m1,
+          preferred_account_id: acc1.body.id,
+        })
+        .expect(200);
+      expect(
+        (await prisma.phoneNumber.findUnique({ where: { id: forM1.body.id } }))!
+          .ownerUserId,
+      ).toBe(m1);
+      // аккаунт m1 лиду m2 не пишет — отказ, а не зависший лид
+      const wrongSender = await request(app.getHttpServer())
+        .post('/api/leads')
+        .set(hh)
+        .send({
+          phone: '@add_for_m2',
+          owner_user_id: m2,
+          preferred_account_id: acc1.body.id,
+        })
+        .expect(422);
+      expect(JSON.stringify(wrongSender.body)).toContain(
+        'не пишет лидам выбранного сотрудника',
+      );
+      // себе — с аккаунтом команды можно (лид хеда пишет аккаунт подчинённого)
+      const forHead = await request(app.getHttpServer())
+        .post('/api/leads')
+        .set(hh)
+        .send({ phone: '@add_for_head', preferred_account_id: acc1.body.id })
+        .expect(200);
+      expect(
+        (await prisma.phoneNumber.findUnique({
+          where: { id: forHead.body.id },
+        }))!.ownerUserId,
+      ).toBe(head);
+      // чужой регион и менеджер на другого — запрет
+      await request(app.getHttpServer())
+        .post('/api/leads')
+        .set(hh)
+        .send({ phone: '@add_for_out', owner_user_id: outsider })
+        .expect(403);
+      await request(app.getHttpServer())
+        .post('/api/leads')
+        .set(hm)
+        .send({ phone: '@add_m1_to_m2', owner_user_id: m2 })
+        .expect(403);
+      // менеджер видит лид, который хед записал на него
+      const seen = (
+        await request(app.getHttpServer())
+          .get('/api/leads?q=add_for_m1')
+          .set(hm)
+          .expect(200)
+      ).body.items;
+      expect(seen.map((x: any) => x.id)).toEqual([forM1.body.id]);
+
+      await prisma.phoneNumber.deleteMany({
+        where: { id: { in: [forM1.body.id, forHead.body.id] } },
+      });
+      await request(app.getHttpServer())
+        .delete(`/api/tg-accounts/${acc1.body.id}`)
+        .set(h)
+        .expect(200);
+      for (const id of [m1, m2, outsider, head])
+        await request(app.getHttpServer())
+          .delete(`/api/managers/${id}`)
+          .set(h)
+          .expect(200);
+    });
+
     it('хед и менеджер не трогают чаты чужого региона через операторские ручки, даже при старой связи между регионами', async () => {
       const h = { Authorization: `Bearer ${token}` };
       const prisma = app.get(PrismaService);

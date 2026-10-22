@@ -53,6 +53,14 @@ export class CreateLeadDto {
   @IsInt()
   @Min(1)
   preferred_account_id?: number | null;
+  @ApiPropertyOptional({
+    description:
+      'чей лид: себе (по умолчанию) или сотруднику своей команды; список — GET /api/leads/owners',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  owner_user_id?: number;
   @ApiPropertyOptional({ enum: LEAD_GENDERS })
   @IsOptional()
   @IsIn(LEAD_GENDERS)

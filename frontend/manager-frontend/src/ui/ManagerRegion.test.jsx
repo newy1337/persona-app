@@ -113,3 +113,36 @@ test('галочка «Может менять образы» не растяг�
   expect(row).not.toBeNull();
   expect(row.textContent).toContain('Может менять образы');
 });
+
+test('хед записывает лид на менеджера команды: аккаунты — только его, owner_user_id уходит в запрос', async () => {
+  const owners = { items: [
+    { user_id: 9, username: 'boss', role: 'head', region_code: '0077', account_ids: [], self: true },
+    { user_id: 2, username: 'manager_test', role: 'manager', region_code: '0077', account_ids: [7] },
+    { user_id: 3, username: 'empty_manager', role: 'manager', region_code: '0077', account_ids: [] },
+  ] };
+  api.get.mockImplementation(async path => path === '/api/leads/owners' ? owners : path === '/api/tg-accounts' ? accounts : {});
+  const post = vi.spyOn(api, 'post').mockResolvedValue({ ok: true });
+  const Select = ({ onChange }) => <select onChange={e => onChange(e.target.value)}><option value="">Любая</option></select>;
+  await render(<CreateLeadForm personas={[{ slug: 'nastya', name: 'Настя' }]} PersonaSelect={Select} onDone={() => {}} onCancel={() => {}} />);
+  const ownerSelect = host.querySelector('select[aria-label="Чей лид"]');
+  expect([...ownerSelect.options].map(o => o.textContent)).toEqual(['Себе (boss)', 'manager_test · менеджер · регион 0077', 'empty_manager · менеджер · регион 0077']);
+  const pick = async (el, value) => act(async () => { el.value = value; el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await pick(ownerSelect, '3');
+  expect([...host.querySelectorAll('.mr-lead-sender option')].map(o => o.value)).toEqual(['']);
+  expect(host.textContent).toContain('У empty_manager нет включённых аккаунтов');
+  await pick(ownerSelect, '2');
+  await pick(host.querySelector('.mr-lead-sender select'), '7');
+  await input(host.querySelector('input'), '@test_contact');
+  await act(async () => host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  expect(post).toHaveBeenCalledWith('/api/leads', expect.objectContaining({ owner_user_id: 2, preferred_account_id: 7 }));
+});
+
+test('менеджеру выбор «Чей лид» не показывается, owner_user_id не уходит', async () => {
+  api.get.mockImplementation(async path => path === '/api/leads/owners' ? { items: [{ user_id: 2, username: 'manager_test', role: 'manager', account_ids: [7], self: true }] } : path === '/api/tg-accounts' ? accounts : {});
+  const post = vi.spyOn(api, 'post').mockResolvedValue({ ok: true });
+  await render(<CreateLeadForm personas={[{ slug: 'nastya', name: 'Настя' }]} PersonaSelect={() => null} onDone={() => {}} onCancel={() => {}} />);
+  expect(host.querySelector('select[aria-label="Чей лид"]')).toBeNull();
+  await input(host.querySelector('input'), '@test_contact');
+  await act(async () => host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  expect(post.mock.calls[0][1].owner_user_id).toBeUndefined();
+});
