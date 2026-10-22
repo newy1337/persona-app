@@ -8,6 +8,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { createOpenRouterClient } from './nastya/llm/openrouter';
+import { gatewayBaseUrl, withGateway } from './nastya/llm/gateway';
 import { appConfig } from 'src/config/app.config';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
@@ -136,7 +137,7 @@ export class PersonaService implements OnModuleInit {
 
   readonly provider = appConfig.llmProvider;
 
-  readonly anthropic: Anthropic =
+  private readonly direct: Anthropic =
     appConfig.llmProvider === 'openrouter'
       ? createOpenRouterClient({
           apiKey: appConfig.openrouterApiKey || 'missing',
@@ -158,6 +159,19 @@ export class PersonaService implements OnModuleInit {
               }
             : {}),
         });
+
+  readonly anthropic: Anthropic = appConfig.llmGatewayUrl
+    ? withGateway(
+        createOpenRouterClient({
+          apiKey: appConfig.llmGatewayApiKey || 'missing',
+          baseUrl: gatewayBaseUrl(appConfig.llmGatewayUrl),
+          timeoutMs: appConfig.llmGatewayTimeoutMs,
+          maxRetries: 0,
+        }),
+        this.direct,
+        { log: this.log },
+      )
+    : this.direct;
 
   constructor(
     private prisma: PrismaService,
@@ -246,6 +260,10 @@ export class PersonaService implements OnModuleInit {
         ? `LLM via OpenRouter (providers: ${appConfig.openrouterProviders.join(', ') || 'any'})${appConfig.openrouterApiKey ? '' : ' — OPENROUTER_API_KEY is empty'}`
         : `LLM via Anthropic API${appConfig.anthropicApiKey ? '' : ' — ANTHROPIC_API_KEY is empty'}`,
     );
+    if (appConfig.llmGatewayUrl)
+      this.log.log(
+        `LLM: сначала шлюз ${gatewayBaseUrl(appConfig.llmGatewayUrl)}${appConfig.llmGatewayApiKey ? '' : ' — LLM_GATEWAY_API_KEY is empty'}, при ошибке — основной провайдер`,
+      );
     await this.seedFromFiles();
     await this.fillPrompts();
   }

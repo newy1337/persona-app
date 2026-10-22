@@ -182,6 +182,144 @@ describe('задержка ответа', () => {
   });
 });
 
+describe('задержка первых сообщений', () => {
+  const R5 = mergeRhythm({
+    reply_delay: {
+      first_messages: 5,
+      first_min_minutes: 0.5,
+      first_max_minutes: 1,
+    },
+  });
+  const base = {
+    firstUserTs: MSK_10,
+    lastAssistantTs: MSK_10 + M,
+    prevUserTs: MSK_10,
+  };
+
+  it('с первого сообщения чата и до N-го — своя задержка, разогрев ещё не идёт', () => {
+    for (const userIndex of [1, 3, 5])
+      expect(
+        replyDelay(
+          {
+            ...base,
+            lastAssistantTs: MSK_10 + 5 * H - M,
+            prevUserTs: MSK_10 + 5 * H - 2 * M,
+            inboundTs: MSK_10 + 5 * H,
+            userIndex,
+            warmupStartTs: null,
+          },
+          R5,
+          high,
+        ),
+      ).toEqual({ seconds: 60, reason: 'first' });
+    expect(
+      replyDelay(
+        { ...base, inboundTs: MSK_10, userIndex: 1, warmupStartTs: null },
+        R5,
+        low,
+      ),
+    ).toEqual({ seconds: 30, reason: 'first' });
+  });
+
+  it('после N-го — разогрев от первого сообщения после них, а не от начала чата', () => {
+    const start = MSK_10 + 5 * H;
+    expect(
+      replyDelay(
+        {
+          ...base,
+          lastAssistantTs: start - M,
+          prevUserTs: start - 2 * M,
+          inboundTs: start,
+          userIndex: 6,
+          warmupStartTs: start,
+        },
+        R5,
+        low,
+      ).reason,
+    ).toBe('warmup');
+    expect(
+      replyDelay(
+        {
+          ...base,
+          inboundTs: start + 80 * M,
+          userIndex: 9,
+          warmupStartTs: start,
+        },
+        R5,
+        low,
+      ).reason,
+    ).toBe('warmup');
+    expect(
+      replyDelay(
+        {
+          ...base,
+          lastAssistantTs: start + 99 * M,
+          prevUserTs: start + 98 * M,
+          inboundTs: start + 100 * M,
+          userIndex: 12,
+          warmupStartTs: start,
+        },
+        R5,
+        low,
+      ).reason,
+    ).toBe('normal');
+  });
+
+  it('N = 0 — как раньше: разогрев от первого сообщения', () => {
+    const R0 = mergeRhythm({ reply_delay: { first_messages: 0 } });
+    expect(
+      replyDelay(
+        {
+          ...base,
+          inboundTs: MSK_10 + 100 * M,
+          userIndex: 1,
+          warmupStartTs: null,
+        },
+        R0,
+        low,
+      ).reason,
+    ).toBe('normal');
+  });
+
+  it('задержка выключена — первые сообщения тоже без неё', () => {
+    const off = mergeRhythm({ reply_delay: { enabled: false } });
+    expect(
+      replyDelay(
+        { ...base, inboundTs: MSK_10, userIndex: 1, warmupStartTs: null },
+        off,
+        low,
+      ).reason,
+    ).toBe('off');
+  });
+
+  it('молчание важнее первых сообщений: пропал на сутки на 5-м — ответ через часы', () => {
+    const opener = MSK_10 - 24 * H;
+    expect(
+      replyDelay(
+        {
+          inboundTs: MSK_10,
+          firstUserTs: opener - H,
+          lastAssistantTs: opener,
+          prevUserTs: opener - H,
+          userIndex: 5,
+          warmupStartTs: null,
+        },
+        R5,
+        low,
+      ),
+    ).toEqual({ seconds: 3600, reason: 'after_silence' });
+  });
+
+  it('настройки: по умолчанию выключено (0), «от» больше «до» — ошибка', () => {
+    expect(DEFAULT_RHYTHM.reply_delay.first_messages).toBe(0);
+    expect(
+      rhythmErrors({
+        reply_delay: { first_min_minutes: 5, first_max_minutes: 1 },
+      }),
+    ).toContain('задержка первых сообщений: «от» больше «до»');
+  });
+});
+
 describe('окна утра и прощания', () => {
   it('окно через полночь и «до 00:00» — конец суток', () => {
     expect(windowSpan({ from: '21:00', to: '00:00' })).toEqual({

@@ -6,8 +6,12 @@ import { getAccounts as loadAccounts } from '../api/accounts';
 import { PanelUX as ux } from './PanelUX';
 import { VoiceBotLink } from '../pages/VoiceWork/VoiceBotLink';
 import { PhotoCell, RegionStopButton, usePhotoAssignments } from '../pages/PhotoSets/StaffAssignments';
+import { OwnRegionReassign } from './ReassignSwitch';
 import { DEAL_STAGES, dealStageLabel } from '../data/dealStages';
 import { LEAD_ROLE_FOR, ROLE_LABELS } from '../utils/roles';
+import { genderLabel } from '../utils/chat';
+import PickerModal from './PickerModal';
+import { httpHref } from '../utils/safeUrl';
 
 const h = React.createElement;
 const { useState, useEffect, useCallback } = React;
@@ -80,8 +84,10 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, 
 }
 
 export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
-  const [draft, setDraft] = useState({ phone: '', first_name: '', city: '', age: '', site: '', first_message: '', persona_id: '', preferred_account_id: '' });
+  const [draft, setDraft] = useState({ phone: '', first_name: '', city: '', age: '', site: '', first_message: '', persona_id: '', preferred_account_id: '', owner_user_id: '' });
   const [accounts, setAccounts] = useState([]);
+  // Тимлид, хед и админ записывают лид на себя или на сотрудника команды; у менеджера выбора нет.
+  const [owners, setOwners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [reload, setReload] = useState(0);
@@ -91,17 +97,19 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
     let active = true;
     setLoading(true); setLoadError('');
     loadAccounts().then(rows => { if (active) setAccounts(rows); }).catch(e => { if (active) setLoadError(errorText(e)); }).finally(() => { if (active) setLoading(false); });
+    api.get('/api/leads/owners').then(r => { if (active) setOwners(Array.isArray(r?.items) ? r.items : []); }).catch(() => { if (active) setOwners([]); });
     return () => { active = false; };
   }, [reload]);
+  const owner = owners.find(o => String(o.user_id) === draft.owner_user_id && !o.self) || null;
   const change = patch => setDraft(previous => ({ ...previous, ...patch }));
   const valid = draft.phone.replace(/\D/g, '').length >= 10 || /^@?[a-zA-Z][\w]{3,}$|t\.me\//.test(draft.phone.trim());
-  const available = accounts.filter(a => a.status === 'active' && personas.some(p => p.slug === a.persona_id) && (!draft.persona_id || a.persona_id === draft.persona_id));
+  const available = accounts.filter(a => a.status === 'active' && personas.some(p => p.slug === a.persona_id) && (!draft.persona_id || a.persona_id === draft.persona_id) && (!owner || owner.account_ids.includes(a.id)));
   async function submit(e) {
     e.preventDefault();
     if (busy || !valid) return;
     setBusy(true); setError('');
     try {
-      await api.post('/api/leads', { phone: draft.phone, first_name: draft.first_name || undefined, city: draft.city || undefined, age: draft.age ? Number(draft.age) : undefined, site: draft.site.trim() || undefined, first_message: draft.first_message.trim() || undefined, persona_id: draft.persona_id || undefined, preferred_account_id: draft.preferred_account_id ? Number(draft.preferred_account_id) : undefined });
+      await api.post('/api/leads', { phone: draft.phone, first_name: draft.first_name || undefined, city: draft.city || undefined, age: draft.age ? Number(draft.age) : undefined, site: draft.site.trim() || undefined, first_message: draft.first_message.trim() || undefined, persona_id: draft.persona_id || undefined, preferred_account_id: draft.preferred_account_id ? Number(draft.preferred_account_id) : undefined, owner_user_id: owner ? owner.user_id : undefined });
       onDone();
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
@@ -109,6 +117,9 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
   const input = (key, title, props = {}) => h('label', { className: s.label }, title, h('input', { className: s.field, value: draft[key], disabled: busy, onChange: e => change({ [key]: e.target.value }), ...props }));
   return h('form', { className: s.form, onSubmit: submit, 'aria-label': 'Добавление лида' },
     input('phone', 'Телефон или @username', { autoFocus: true, placeholder: '+7 900 123-45-67 или @name', maxLength: 64 }),
+    owners.length > 1 && h('label', { className: s.label }, 'Чей лид',
+      h('select', { className: s.select, value: draft.owner_user_id, disabled: busy, 'aria-label': 'Чей лид', onChange: e => change({ owner_user_id: e.target.value, preferred_account_id: '' }) },
+        owners.map(o => h('option', { key: o.user_id, value: o.self ? '' : String(o.user_id) }, o.self ? `Себе (${o.username})` : [o.username, ROLE_LABELS[o.role] || o.role, o.region_code ? `регион ${o.region_code}` : null].filter(Boolean).join(' · '))))),
     input('first_name', 'Имя', { maxLength: 64 }), input('city', 'Город', { maxLength: 64 }),
     input('age', 'Возраст', { inputMode: 'numeric' }), input('site', 'Сайт знакомств', { placeholder: 'beboo', maxLength: 64 }),
     h('label', { className: s.label }, 'С какой личности писать', draft.preferred_account_id ? h('select', { className: s.select, disabled: true, value: draft.persona_id, title: 'Личность выбранного аккаунта' }, h('option', { value: draft.persona_id }, personas.find(p => p.slug === draft.persona_id)?.name || draft.persona_id)) : h(PersonaSelect, { personas, value: draft.persona_id, onChange: value => change({ persona_id: value }) })),
@@ -119,7 +130,7 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
           change({ preferred_account_id: e.target.value, ...(chosen ? { persona_id: chosen.persona_id } : {}) });
         } }, h('option', { value: '' }, loading ? 'Загружаем аккаунты…' : 'Автоматически'), available.map(a => h('option', { key: a.id, value: String(a.id) }, [a.username ? `@${a.username}` : a.first_name || a.phone_e164 || `Аккаунт #${a.id}`, a.username ? a.phone_e164 : null, personas.find(p => p.slug === a.persona_id)?.name].filter(Boolean).join(' · '))))),
       h('p', { className: 'mr-caption' }, draft.preferred_account_id ? 'Напишет только выбранный аккаунт. Если он временно недоступен, лид останется в очереди.' : 'Без выбора аккаунт подбирается автоматически, как раньше.'),
-      !loading && !loadError && available.length === 0 && h('p', { className: 'mr-caption' }, 'Нет включённых аккаунтов для этой личности.'),
+      !loading && !loadError && available.length === 0 && h('p', { className: 'mr-caption' }, owner ? `У ${owner.username} нет включённых аккаунтов${draft.persona_id ? ' этой личности' : ''} — лид будет ждать в очереди.` : 'Нет включённых аккаунтов для этой личности.'),
       loadError && h('div', { role: 'alert' }, h('p', { className: s.error }, `Не удалось загрузить аккаунты: ${loadError}`), button('Повторить', () => setReload(n => n + 1)))),
     h('div', { className: s.formFull },
       h('label', { className: s.label }, 'Первое сообщение',
@@ -152,11 +163,15 @@ export function LeadsTable({ ready = true, rows, query, status, selected, onTogg
           return h('tr', { key: row.id, className: `mr-lead-row ${selected.has(row.id) ? 'mr-lead-selected' : ''}`, 'data-lead-id': row.id, 'data-lead-status': row.status },
             h('td', { className: 'mr-lead-person' },
               h('label', { className: 'mr-lead-identity' }, h('input', { type: 'checkbox', checked: selected.has(row.id), 'aria-label': `Выбрать лид: ${name}`, onChange: () => onToggle(row.id) }), h('span', { className: 'mr-lead-name' }, name)),
-              h('div', { className: 'mr-dialog-muted' }, [row.age ? `${row.age} лет` : null, row.city].filter(Boolean).join(' · ') || 'Возраст и город не указаны'),
+              h('div', { className: 'mr-dialog-muted' }, [row.age ? `${row.age} лет` : null, genderLabel(row.gender, true), row.city].filter(Boolean).join(' · ') || 'Возраст и город не указаны'),
               h('div', { className: 'mr-dialog-contact' }, row.phone_e164 || null, row.username && telegramLink(row.username)),
               h('div', { className: 'mr-dialog-muted' }, `#${row.id}`, row.site ? ` · Сайт: ${row.site}` : ''),
               row.first_message && h('div', { className: 'mr-dialog-muted', title: row.first_message }, h('span', { className: 'mr-caption' }, row.first_contact_at ? 'Первое сообщение: ' : 'Напишем: '), row.first_message.length > 80 ? `${row.first_message.slice(0, 80)}…` : row.first_message),
-              (row.telegram_username || row.telegram_user_id) && h('div', { className: 'mr-lead-telegram' }, h('span', { className: 'mr-caption' }, 'Telegram: '), row.telegram_username ? telegramLink(row.telegram_username) : String(row.telegram_user_id))),
+              (row.telegram_username || row.telegram_user_id) && h('div', { className: 'mr-lead-telegram' }, h('span', { className: 'mr-caption' }, 'Telegram: '), row.telegram_username ? telegramLink(row.telegram_username) : String(row.telegram_user_id)),
+              (row.donor || row.inbound_at || row.account_label || row.external_id) && h('div', { className: 'mr-dialog-muted mr-lead-inbound', 'data-testid': 'lead-inbound' },
+                [row.inbound_at ? `Источник: ${row.source_type}` : null, row.requested_region ? `Регион: ${row.requested_region}` : null, row.requested_persona ? `Личность: ${row.requested_persona}` : null, row.reassigned ? 'Перезабив' : null, row.cold ? 'Холодка' : null, row.donor ? `Донор: ${row.donor}` : null, row.account_label ? `Аккаунт: ${row.account_label}` : null, row.external_id ? `ID: ${row.external_id}` : null].filter(Boolean).join(' · ')),
+              row.profile_url && h('div', { className: 'mr-dialog-muted' }, h('span', { className: 'mr-caption' }, 'Профиль: '), httpHref(row.profile_url) ? h('a', { href: httpHref(row.profile_url), target: '_blank', rel: 'noreferrer' }, row.profile_url.replace(/^https?:\/\//i, '').slice(0, 60)) : h('span', { 'data-testid': 'profile-text' }, String(row.profile_url).slice(0, 60))),
+              row.last_messages && h('details', { className: 'mr-lead-error mr-lead-history' }, h('summary', null, 'История общения от донора'), h('p', null, row.last_messages))),
             h('td', { className: 'mr-lead-owner' }, h(Attribution, { value: row }),
               h('div', { className: 'mr-dialog-account' }, h('span', { className: 'mr-caption' }, row.preferred_account_id && !row.first_contact_at ? 'Выбран: ' : 'Аккаунт: '), senderId ? h(React.Fragment, null, senderUsername && telegramLink(senderUsername), ` #${senderId}`) : 'автоматически')),
             h('td', { className: 'mr-lead-persona', 'data-label': 'Личность' }, row.first_contact_at || row.preferred_account_id ? h('span', { className: 'mr-lead-persona-name', title: row.preferred_account_id ? 'Личность выбранного аккаунта' : undefined }, row.persona_name || row.persona_id || 'Не указана') :
@@ -277,9 +292,11 @@ function VoicerSelect({ voicers, value, onChange, disabled }) {
     h('option', { value: '' }, 'Не назначен'), voicers.map(v => h('option', { key: v.user_id, value: v.user_id }, `${v.username}${v.telegram_linked ? '' : ' · Telegram не подключён'}`))), h('span', { className: 'mr-caption' }, 'Назначение применяется к новым заданиям.'));
 }
 
-function CreateForm({ availableRoles, voicers, users = [], onCreate, onCancel }) {
+function CreateForm({ availableRoles, voicers, users = [], donors = [], onCreate, onCancel }) {
   const [username, setUsername] = useState('');
   const [role, setRole] = useState('manager');
+  const [donorIds, setDonorIds] = useState(() => new Set());
+  const [pickingDonors, setPickingDonors] = useState(false);
   const [region, setRegion] = useState('');
   const [voicer, setVoicer] = useState('');
   const [lead, setLead] = useState('');
@@ -291,7 +308,7 @@ function CreateForm({ availableRoles, voicers, users = [], onCreate, onCancel })
     e.preventDefault();
     if (!valid || busy) return;
     setBusy(true); setError('');
-    try { await onCreate({ username: username.trim(), role, ...(region ? { region_code: region } : {}), ...(role === 'manager' ? { voicer_id: voicer ? Number(voicer) : null } : {}), ...(LEAD_ROLE_FOR[role] ? { lead_id: lead ? Number(lead) : null } : {}) }); }
+    try { await onCreate({ username: username.trim(), role, ...(region ? { region_code: region } : {}), ...(role === 'manager' ? { voicer_id: voicer ? Number(voicer) : null } : {}), ...(LEAD_ROLE_FOR[role] ? { lead_id: lead ? Number(lead) : null } : {}), ...(role === 'manager' && donorIds.size ? { donor_ids: [...donorIds] } : {}) }); }
     catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
@@ -301,6 +318,10 @@ function CreateForm({ availableRoles, voicers, users = [], onCreate, onCancel })
     h('label', { className: s.label }, 'Регион (3–4 цифры)', h('input', { className: s.field, type: 'text', inputMode: 'numeric', pattern: '[0-9]{3,4}', maxLength: 4, required: needsRegion, placeholder: 'Например, 077', value: region, onChange: e => setRegion(e.target.value.replace(/\D/g, '').slice(0, 4)) })),
     role === 'manager' && h(VoicerSelect, { voicers, value: voicer, onChange: setVoicer }),
     h(LeadSelect, { role, region, users, value: lead, onChange: setLead }),
+    role === 'manager' && donors.length > 0 && h('div', { className: s.label, 'data-testid': 'create-donors' }, 'Доноры',
+      h('button', { type: 'button', className: s.btnSm, onClick: () => setPickingDonors(true) }, donorIds.size ? `Выбрано: ${donorIds.size}` : 'Любые — выбрать'),
+      h('span', { className: 'mr-caption' }, 'Чьих лидов принимает по API. Онлайн, лимит и источники — на странице LeadGet.')),
+    pickingDonors && h(PickerModal, { title: 'Доноры нового менеджера', items: donors, value: donorIds, onSave: async ids => setDonorIds(new Set(ids)), onClose: () => setPickingDonors(false), anyHint: 'Ничего не выбрано — принимает лидов любых доноров.' }),
     h('p', { className: 'mr-full mr-caption' }, 'Пароль создастся автоматически. После создания можно скопировать логин и пароль.'),
     error && h('p', { className: `${s.error} mr-full`, role: 'alert' }, error),
     h('div', { className: `${s.actions} mr-full` },
@@ -431,9 +452,12 @@ export function ManagersPage() {
   const [creating, setCreating] = useState(false), [credentials, setCredentials] = useState(null), [editing, setEditing] = useState(null), [assigning, setAssigning] = useState(null);
   const [query, setQuery] = useState('');
   const [opening, setOpening] = useState(null);
+  const [donors, setDonors] = useState([]);
   const reload = useCallback(async () => {
     const [users, accountRows, currentUser] = await Promise.all([api.get('/api/managers'), loadAccounts(), api.get('/auth/me')]);
-    setData(users); setAccounts(accountRows); setMe(currentUser); return { users, accountRows };
+    setData(users); setAccounts(accountRows); setMe(currentUser);
+    if (currentUser?.role === 'admin') api.get('/api/donors').then(d => setDonors(Array.isArray(d?.items) ? d.items : [])).catch(() => setDonors([]));
+    return { users, accountRows };
   }, []);
   useEffect(() => { reload().catch(e => setError(ux.readableError(e))).finally(() => setLoading(false)); }, [reload]);
   async function showCredentials(user) {
@@ -469,8 +493,8 @@ export function ManagersPage() {
   const admin = me?.role === 'admin';
   const photo = usePhotoAssignments(data.items.map(user => user.region_code));
   return h('div', { className: 'app mr-managers' }, h(Nav), h('main', { className: 'main' }, h('div', { className: 'container' },
-    h('div', { className: s.head }, h('h2', { className: s.title }, admin ? 'Менеджеры' : `Моя команда · регион ${me?.region_code || ''}`), h('div', { className: s.actions }, !admin && h(RegionStopButton), admin && !creating && button('+ Создать учётку', () => { setCreating(true); setCredentials(null); }, { className: s.btnPrimary }))),
-    creating && h(CreateForm, { availableRoles: data.roles, voicers: data.items.filter(u => u.role === 'voice'), users: data.items, onCreate: create, onCancel: () => setCreating(false) }),
+    h('div', { className: s.head }, h('h2', { className: s.title }, admin ? 'Менеджеры' : `Моя команда · регион ${me?.region_code || ''}`), h('div', { className: s.actions }, !admin && h(OwnRegionReassign), !admin && h(RegionStopButton), admin && !creating && button('+ Создать учётку', () => { setCreating(true); setCredentials(null); }, { className: s.btnPrimary }))),
+    creating && h(CreateForm, { availableRoles: data.roles, voicers: data.items.filter(u => u.role === 'voice'), users: data.items, donors, onCreate: create, onCancel: () => setCreating(false) }),
     (error || photo.error) && h('p', { className: s.error, role: 'alert' }, error || photo.error),
     credentials && h(Credentials, { value: credentials, onClose: () => setCredentials(null), onRegenerate: regenerate }),
     h('div', { className: 'mr-manager-toolbar' }, h('input', { className: s.field, type: 'search', 'aria-label': 'Поиск менеджеров', placeholder: 'Логин, регион или роль', value: query, onChange: e => setQuery(e.target.value) }), h('span', { className: 'mr-caption' }, loading ? 'Загружаем…' : `Показано: ${visible.length}`)),

@@ -8,6 +8,12 @@ export const LEAD_STATUSES = [
 ] as const;
 export type LeadStatus = (typeof LEAD_STATUSES)[number];
 
+/**
+ * Лид в буфере: пришёл по API только с ником, без телефона. Не раздаётся и не
+ * виден в «Лидах»; хед и тимлиды региона берут его в работу или отклоняют.
+ */
+export const BUFFER_STATUS = 'buffer';
+
 export const isLeadStatus = (v: unknown): v is LeadStatus =>
   typeof v === 'string' && (LEAD_STATUSES as readonly string[]).includes(v);
 
@@ -23,6 +29,9 @@ export function normalizePhone(raw: string): string | null {
   if (!digits) return null;
   if (digits.length === 11 && digits.startsWith('8'))
     digits = `7${digits.slice(1)}`;
+  // Мобильный без кода страны («9123456702»): доноры шлют и так; с «+9…»
+  // такой номер не дозвонился бы никому.
+  if (digits.length === 10 && digits.startsWith('9')) digits = `7${digits}`;
   if (digits.length < 10 || digits.length > 15) return null;
   return `+${digits}`;
 }

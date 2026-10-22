@@ -32,21 +32,31 @@ export class CreatePhotoSetDto {
 }
 
 /** Хед назначает сотруднику своего региона образ по личности; null — снять. */
+/** Хед задаёт набор образов учётки сотрудника целиком; пусто — снять все. */
 export class AssignStaffPhotoSetDto {
   @ApiProperty()
   @IsInt()
   user_id: number;
 
+  @ApiProperty({ type: [Number] })
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsInt({ each: true })
+  set_ids: number[];
+}
+
+/** Сотрудник привязывает свой образ к личности; null — убрать в запас. */
+export class ChoosePhotoPersonaDto {
   @ApiProperty()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(64)
-  persona_slug: string;
+  @IsInt()
+  set_id: number;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
-  @IsInt()
-  set_id?: number | null;
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  persona_slug?: string | null;
 }
 
 export class RegionStopDto {

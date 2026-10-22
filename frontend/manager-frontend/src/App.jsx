@@ -10,6 +10,9 @@ import Leads from './pages/Leads/Leads';
 import Personas from './pages/Personas/Personas';
 import Stats from './pages/Stats/Stats';
 import Settings from './pages/Settings/Settings';
+const Users = lazy(() => import('./pages/Users/Users'));
+const Catalogs = lazy(() => import('./pages/Catalogs/Catalogs'));
+const Buffer = lazy(() => import('./pages/Buffer/Buffer'));
 import { isManagerRole } from './utils/roles';
 import Login from './pages/Login/Login';
 import { api, getToken } from './api/client';
@@ -43,10 +46,13 @@ function App() {
       <Route path="/leads" element={me.role === 'voice' ? <Navigate to={home} replace /> : <Leads />} />
       <Route path="/accounts" element={accountsAllowed ? <Accounts /> : <Navigate to={home} replace />} />
       <Route path="/photo-sets" element={accountsAllowed ? <Suspense fallback={<p role="status">Загружаем…</p>}><PhotoSets /></Suspense> : <Navigate to={home} replace />} />
+      <Route path="/buffer" element={['admin', 'head', 'teamlead'].includes(me.role) ? <Suspense fallback={<p role="status">Загружаем…</p>}><Buffer /></Suspense> : <Navigate to={home} replace />} />
       <Route path="/managers" element={admin || me.role === 'head' ? <Managers /> : <Navigate to={home} replace />} />
       <Route path="/personas" element={admin ? <Personas /> : <Navigate to={home} replace />} />
       <Route path="/stats" element={admin ? <Stats /> : <Navigate to={home} replace />} />
       <Route path="/settings" element={admin ? <Settings /> : <Navigate to={home} replace />} />
+      <Route path="/users" element={admin ? <Suspense fallback={<p role="status">Загружаем…</p>}><Users /></Suspense> : <Navigate to={home} replace />} />
+      <Route path="/catalogs" element={admin ? <Suspense fallback={<p role="status">Загружаем…</p>}><Catalogs /></Suspense> : <Navigate to={home} replace />} />
       <Route path="*" element={<Navigate to={home} replace />} />
     </Routes>
   );

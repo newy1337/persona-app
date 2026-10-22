@@ -477,7 +477,11 @@ export class NastyaBrainService implements ReplyBrain {
       dueAt = outOfNight(nowTs + seconds, persona.rhythm, chatId);
       delay = { seconds: dueAt - nowTs, reason: 'late' };
     } else {
-      const marks = await this.history.rhythmMarks(chatId, turn.ts);
+      const marks = await this.history.rhythmMarks(
+        chatId,
+        turn.ts,
+        persona.rhythm.reply_delay.first_messages,
+      );
       delay = replyDelay(
         {
           inboundTs: turn.ts,
@@ -1362,6 +1366,13 @@ export class NastyaBrainService implements ReplyBrain {
     number,
     { at: number; value: NextBotAction }
   >();
+
+  peekNextAction(chatId: number, maxAgeSeconds: number): NextBotAction | null {
+    const cached = this.nextActionCache.get(chatId);
+    if (!cached || this.clock.ts() - cached.at >= maxAgeSeconds)
+      this.refreshNextAction(chatId);
+    return cached?.value ?? null;
+  }
 
   async nextAction(chatId: number, maxAgeSeconds = 0): Promise<NextBotAction> {
     const nowTs = this.clock.ts();

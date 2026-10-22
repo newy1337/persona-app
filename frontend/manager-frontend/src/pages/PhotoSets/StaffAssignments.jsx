@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { PanelUX } from '../../ui/PanelUX';
+import PickerModal from '../../ui/PickerModal';
 import {
-  assignStaffPhotoSet,
+  assignStaffPhotoSets,
   clearRegionStop,
   engageRegionStop,
   getRegionStop,
@@ -42,14 +43,16 @@ export function RegionStopButton() {
 }
 
 /**
- * Назначения образов сотрудникам регионов из списка: по строке на сотрудника
- * и личность его аккаунтов. Новый образ получают только новые собеседники.
+ * Назначения образов сотрудникам регионов из списка: по строке на сотрудника.
+ * Хед задаёт набор образов учётки, к личностям их привязывает сам сотрудник
+ * на странице «Образы». Новый образ получают только новые собеседники.
  */
 export function usePhotoAssignments(regions) {
   const key = [...new Set(regions.filter(Boolean))].sort().join(',');
   const [byRegion, setByRegion] = useState({});
-  const [busy, setBusy] = useState('');
+  const [busy, setBusy] = useState(null);
   const [error, setError] = useState('');
+  const [picking, setPicking] = useState(null);
 
   useEffect(() => {
     if (!key) return;
@@ -58,54 +61,53 @@ export function usePhotoAssignments(regions) {
       .catch((e) => setError(e.detail || e.message));
   }, [key]);
 
-  async function change(row, region, value) {
-    const data = byRegion[region];
-    const setId = value === '' ? null : Number(value);
-    const target = data?.sets?.find((x) => x.id === setId);
-    if (!await PanelUX.confirm({
-      title: setId == null ? 'Снять образ?' : 'Назначить образ?',
-      message: setId == null ? `${row.username} · ${row.persona_name}` : `${row.username} · ${row.persona_name} → «${target?.name}»`,
-      confirmLabel: setId == null ? 'Снять' : 'Назначить',
-    })) return;
-    const id = `${row.user_id}:${row.persona_slug}`;
-    setBusy(id);
+  async function save(row, region, setIds) {
+    setBusy(row.user_id);
     setError('');
     try {
-      const fresh = await assignStaffPhotoSet(row.user_id, row.persona_slug, setId);
+      const fresh = await assignStaffPhotoSets(row.user_id, setIds);
       setByRegion((prev) => ({ ...prev, [region]: fresh }));
-    } catch (e) {
-      setError(e.detail || e.message);
     } finally {
-      setBusy('');
+      setBusy(null);
     }
   }
 
-  return { byRegion, busy, error, change };
+  return { byRegion, busy, error, picking, setPicking, save };
 }
 
-/** Ячейка «Образ» в строке сотрудника. */
+/** Подпись образа: к какой личности его привязал сотрудник. */
+export function personaNote(set) {
+  return set.persona_name ? `${set.set_name} → ${set.persona_name}` : `${set.set_name} → в запасе`;
+}
+
+/** Ячейка «Образ» в строке сотрудника: образы учётки и выбор их в попапе. */
 export function PhotoCell({ user, photo }) {
   const data = photo.byRegion[user.region_code];
-  const rows = data?.rows?.filter((r) => r.user_id === user.user_id) ?? [];
-  if (!rows.length) return null;
+  const row = data?.rows?.find((r) => r.user_id === user.user_id);
+  if (!row) return null;
+  const picking = photo.picking === row.user_id;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {rows.map((row) => {
-        const id = `${row.user_id}:${row.persona_slug}`;
-        return (
-          <label key={id} className="mr-caption" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ minWidth: 56 }}>{row.persona_name}</span>
-            {data.can_assign ? (
-              <select className={s.select} value={row.set_id ?? ''} disabled={photo.busy === id}
-                onChange={(e) => photo.change(row, user.region_code, e.target.value)}
-                aria-label={`Образ для ${row.username}, ${row.persona_name}`}>
-                <option value="">— без образа —</option>
-                {(data.sets ?? []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-              </select>
-            ) : <span>{row.set_name || 'не назначен'}</span>}
-          </label>
-        );
-      })}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} data-testid={`photo-cell-${user.user_id}`}>
+      {row.sets.length === 0 && <span className="mr-caption">без образа</span>}
+      {row.sets.map((x) => (
+        <span key={x.set_id} className="mr-caption" style={{ color: x.persona_name ? undefined : '#f5b14a' }}>{personaNote(x)}</span>
+      ))}
+      {data.can_assign && (
+        <button type="button" className={s.btnSm} disabled={photo.busy === row.user_id} onClick={() => photo.setPicking(row.user_id)} aria-label={`Образы для ${row.username}`}>
+          {row.sets.length ? `Образы: ${row.sets.length}` : 'Назначить образы'}
+        </button>
+      )}
+      {picking && (
+        <PickerModal
+          title={`Образы: ${row.username}`}
+          items={(data.sets ?? []).map((x) => ({ id: x.id, name: x.name }))}
+          value={new Set(row.sets.map((x) => x.set_id))}
+          onSave={(ids) => photo.save(row, user.region_code, ids)}
+          onClose={() => photo.setPicking(null)}
+          emptyHint="В регионе нет образов. Создайте их на странице «Образы»."
+          anyHint="К личностям образы привязывает сам сотрудник на странице «Образы». Снятый образ больше не получает новых собеседников, начатые диалоги остаются на нём."
+        />
+      )}
     </div>
   );
 }

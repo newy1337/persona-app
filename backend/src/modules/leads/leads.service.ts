@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -12,10 +13,12 @@ import { HistoryService } from 'src/shared/history.service';
 import { TelegramService } from 'src/modules/telegram/telegram.service';
 import { profileErrorText } from 'src/domain/tg-profile';
 import { UPLOADS_DIR } from '../media/uploads.service';
-import { PhoneNumber, Prisma } from '@prisma/client';
+import { DashboardUser, PhoneNumber, Prisma } from '@prisma/client';
+import { MANAGER_ROLES } from 'src/enums/roles.enum';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import {
+  BUFFER_STATUS,
   LEAD_STATUSES,
   LeadDraft,
   leadKey,
@@ -24,6 +27,7 @@ import {
   parseLeadLines,
 } from 'src/domain/leads';
 import { fromChatId } from 'src/utils/ids';
+import { allowedOwners } from 'src/domain/lead-owners';
 import {
   DEAL_STAGE_FILTERS,
   DEAL_STAGES,
@@ -68,6 +72,18 @@ export interface LeadView extends ManagerAttribution {
   inserted_at: number;
   /** этап сделки из карточки связанного чата; null — чат не связан или этап не задан */
   deal_stage: string | null;
+  donor: string | null;
+  account_label: string | null;
+  external_id: string | null;
+  profile_url: string | null;
+  last_messages: string | null;
+  inbound_at: number | null;
+  requested_region: string | null;
+  requested_persona: string | null;
+  reassigned: boolean;
+  /** холодка: пришёл через /api/post/cold */
+  cold: boolean;
+  buffered_at: number | null;
 }
 
 export interface LeadFilter {
@@ -119,6 +135,8 @@ export function leadSearchClauses(raw: string): Prisma.PhoneNumberWhereInput[] {
     ci('firstName', q),
     ci('city', q),
     ci('notes', q),
+    ci('donor', q),
+    ci('externalId', q),
   ];
   if (/^\d{5,}$/.test(q)) out.push({ telegramUserId: BigInt(q) });
   return out;
@@ -136,9 +154,15 @@ export class LeadsService {
     private attribution: ManagerAttributionService,
   ) {}
 
+  /**
+   * Лиды раздела «Лиды» в области пользователя. Лиды из буфера сюда не
+   * попадают никогда: у них своя страница.
+   */
   private scopeWhere(scope: LeadScope | null): Prisma.PhoneNumberWhereInput {
-    if (scope === null) return {};
+    const notBuffered = { status: { not: BUFFER_STATUS } };
+    if (scope === null) return notBuffered;
     return {
+      ...notBuffered,
       OR: [
         {
           ownerUserId: {
@@ -184,7 +208,89 @@ export class LeadsService {
     return slug;
   }
 
-  private async senderOf(dto: CreateLeadDto, scope: LeadScope | null) {
+  /**
+   * На кого можно записать новый лид: сам пользователь и его команда (у
+   * менеджера — только он сам), у админа — сам и все сотрудники. С аккаунтами:
+   * форма показывает аккаунты выбранного владельца.
+   */
+  async ownerChoices(user: DashboardUser, teamIds: number[] | null) {
+    const rows = await this.prisma.dashboardUser.findMany({
+      where:
+        teamIds === null
+          ? {
+              OR: [{ id: user.id }, { role: { in: [...MANAGER_ROLES] } }],
+            }
+          : { id: { in: teamIds }, role: { in: [...MANAGER_ROLES] } },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        regionCode: true,
+        accounts: { select: { tgAccountId: true } },
+      },
+      orderBy: [{ regionCode: 'asc' }, { username: 'asc' }],
+    });
+    const items = rows.map((u) => ({
+      user_id: u.id,
+      username: u.username,
+      role: u.role,
+      region_code: u.regionCode,
+      account_ids: u.accounts.map((a) => a.tgAccountId),
+      self: u.id === user.id,
+    }));
+    return {
+      items: [...items.filter((u) => u.self), ...items.filter((u) => !u.self)],
+    };
+  }
+
+  /** Владелец нового лида: по умолчанию сам; другой — только из своей команды. */
+  async ownerFor(
+    user: DashboardUser,
+    scope: LeadScope | null,
+    requested: number | undefined,
+  ): Promise<number> {
+    if (requested === undefined || requested === user.id) return user.id;
+    const target = await this.prisma.dashboardUser.findUnique({
+      where: { id: requested },
+      select: { role: true },
+    });
+    const inTeam = scope === null || (scope.userIds ?? []).includes(requested);
+    if (!target || !MANAGER_ROLES.includes(target.role) || !inTeam)
+      throw new ForbiddenException(
+        'лид можно записать только на себя или сотрудника своей команды',
+      );
+    return requested;
+  }
+
+  /** Может ли аккаунт писать лиду этого владельца — то же правило, что у прозвона. */
+  private async canSend(accountId: number, ownerUserId: number) {
+    const [links, users, owner] = await Promise.all([
+      this.prisma.managerAccount.findMany({
+        where: { tgAccountId: accountId },
+        select: { userId: true },
+      }),
+      this.prisma.dashboardUser.findMany({
+        where: { role: { not: 'admin' } },
+        select: { id: true, leadId: true },
+      }),
+      this.prisma.dashboardUser.findUnique({
+        where: { id: ownerUserId },
+        select: { role: true },
+      }),
+    ]);
+    // Лиды админа прозвон берёт любым аккаунтом.
+    if (owner?.role === 'admin') return true;
+    return allowedOwners(
+      links.map((l) => l.userId),
+      users,
+    ).has(ownerUserId);
+  }
+
+  private async senderOf(
+    dto: CreateLeadDto,
+    scope: LeadScope | null,
+    ownerUserId: number | null = null,
+  ) {
     const personaId = await this.personaOf(dto.persona_id);
     const preferredAccountId = dto.preferred_account_id ?? null;
     if (preferredAccountId === null) return { personaId, preferredAccountId };
@@ -193,6 +299,15 @@ export class LeadsService {
         'можно выбрать только свой Telegram-аккаунт',
       );
     }
+    // Прозвон отдаёт лид только аккаунтам владельца и его подчинённых: чужой
+    // аккаунт лид бы не взял, и он завис бы в очереди.
+    if (
+      ownerUserId !== null &&
+      !(await this.canSend(preferredAccountId, ownerUserId))
+    )
+      throw new UnprocessableEntityException(
+        'этот аккаунт не пишет лидам выбранного сотрудника — выберите его аккаунт или «Автоматически»',
+      );
     const account = await this.prisma.tgAccount.findUnique({
       where: { id: preferredAccountId },
       select: { status: true, personaId: true },
@@ -258,6 +373,17 @@ export class LeadsService {
       notes: row.notes,
       first_message: row.firstMessage,
       inserted_at: row.insertedAt,
+      donor: row.donor,
+      account_label: row.accountLabel,
+      external_id: row.externalId,
+      profile_url: row.profileUrl,
+      last_messages: row.lastMessages,
+      inbound_at: row.inboundAt,
+      requested_region: row.requestedRegion,
+      requested_persona: row.requestedPersona,
+      reassigned: row.reassigned,
+      cold: row.cold,
+      buffered_at: row.bufferedAt,
       deal_stage:
         row.telegramUserId === null
           ? null
@@ -437,7 +563,7 @@ export class LeadsService {
     scope: LeadScope | null = null,
   ): Promise<LeadView> {
     const contact = this.contactOf(dto);
-    const sender = await this.senderOf(dto, scope);
+    const sender = await this.senderOf(dto, scope, ownerUserId);
     const existing = contact.phone_e164
       ? await this.prisma.phoneNumber.findUnique({
           where: { phoneE164: contact.phone_e164 },

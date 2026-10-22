@@ -68,3 +68,29 @@ export function saveShown(set, storage = globalThis.sessionStorage) {
     // без sessionStorage баннер просто покажется ещё раз после перехода по страницам
   }
 }
+
+/**
+ * Баннеры голосовых: какой самый свежий уже всплывал у этого пользователя в этом
+ * браузере. Всплывают только уведомления новее него — иначе то же уведомление
+ * выскакивало бы на каждой странице, а после закрытия по очереди всплыли бы
+ * все старые непрочитанные. Прочитать их можно в колокольчике.
+ */
+export const VOICE_SEEN_KEY = 'nastya_voice_banner_seen';
+
+export function loadVoiceSeen(userId, storage = globalThis.localStorage) {
+  try {
+    const raw = storage?.getItem(`${VOICE_SEEN_KEY}:${userId}`);
+    const n = raw == null ? NaN : Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveVoiceSeen(userId, id, storage = globalThis.localStorage) {
+  try {
+    storage?.setItem(`${VOICE_SEEN_KEY}:${userId}`, String(id));
+  } catch {
+    // приватный режим: баннер может всплыть ещё раз после перезагрузки, не страшно
+  }
+}

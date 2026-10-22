@@ -10,11 +10,18 @@ import * as argon2 from 'argon2';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from 'src/prisma.service';
+import { mskDayStart } from 'src/domain/leads';
+import { dayKey, resolveRange } from 'src/modules/stats/range';
 import type { DashboardUser } from '@prisma/client';
 import { ClockService } from 'src/shared/clock.service';
 import { Role, ROLES } from 'src/enums/roles.enum';
 import { CreateManagerDto, UpdateManagerDto } from './dto/manager.dto';
 import { CryptoService } from 'src/shared/crypto.service';
+
+/** Источники: без пустых и дублей, обрезанные; сравнение при раздаче без учёта регистра. */
+const cleanSources = (list: string[] | undefined): string[] => [
+  ...new Set((list ?? []).map((s) => s.trim()).filter(Boolean)),
+];
 
 @Injectable()
 export class ManagersService {
@@ -24,7 +31,10 @@ export class ManagersService {
     private crypto: CryptoService,
   ) {}
 
-  async list(viewer: DashboardUser | null = null) {
+  async list(
+    viewer: DashboardUser | null = null,
+    period: { from?: string; to?: string } = {},
+  ) {
     const users = await this.prisma.dashboardUser.findMany({
       orderBy: { id: 'asc' },
       include: {
@@ -35,8 +45,39 @@ export class ManagersService {
         voicer: { select: { id: true, username: true } },
         lead: { select: { id: true, username: true } },
         voiceProfile: { select: { telegramId: true, telegramUsername: true } },
+        donors: { select: { donor: { select: { id: true, name: true } } } },
       },
     });
+    // Сколько входящих лидов каждый получил: за сегодня (МСК) и за период,
+    // по умолчанию период — сегодня.
+    const now = this.clock.ts();
+    const todayKey = dayKey(now);
+    const range = resolveRange(
+      { from: period.from ?? todayKey, to: period.to ?? todayKey },
+      now,
+    );
+    const inbound = await this.prisma.phoneNumber.findMany({
+      where: {
+        ownerUserId: { not: null },
+        inboundAt: { gte: Math.min(range.start, mskDayStart(now)) },
+      },
+      select: { ownerUserId: true, inboundAt: true },
+    });
+    const leadsToday = new Map<number, number>();
+    const leadsCount = new Map<number, number>();
+    for (const row of inbound) {
+      if (row.ownerUserId === null || row.inboundAt === null) continue;
+      if (row.inboundAt >= mskDayStart(now))
+        leadsToday.set(
+          row.ownerUserId,
+          (leadsToday.get(row.ownerUserId) ?? 0) + 1,
+        );
+      if (row.inboundAt >= range.start && row.inboundAt < range.end)
+        leadsCount.set(
+          row.ownerUserId,
+          (leadsCount.get(row.ownerUserId) ?? 0) + 1,
+        );
+    }
     // Хед видит только свой регион: людей, которыми руководит, и себя.
     const visible =
       viewer && viewer.role === Role.HEAD
@@ -48,6 +89,7 @@ export class ManagersService {
         : users;
     return {
       roles: [...ROLES].sort(),
+      range: { from: range.from, to: range.to },
       items: visible.map((u) => ({
         user_id: u.id,
         username: u.username,
@@ -62,6 +104,15 @@ export class ManagersService {
         telegram_username: u.voiceProfile?.telegramUsername ?? null,
         password_available: Boolean(u.passwordEncrypted),
         account_ids: u.accounts.map((a) => a.tgAccountId),
+        online: u.online,
+        leads_today: leadsToday.get(u.id) ?? 0,
+        leads_count: leadsCount.get(u.id) ?? 0,
+        lead_quota: u.leadQuota ?? null,
+        lead_sources: u.leadSources ?? [],
+        lead_personas: u.leadPersonas ?? [],
+        cold_leads: u.coldLeads ?? false,
+        donor_ids: (u.donors ?? []).map((d) => d.donor.id),
+        donors: (u.donors ?? []).map((d) => d.donor.name),
       })),
     };
   }
@@ -78,6 +129,38 @@ export class ManagersService {
     ) {
       throw new UnprocessableEntityException('Выберите учётку с ролью войсера');
     }
+  }
+
+  /** Личности менеджера — slug из справочника личностей; неизвестные — отказ. */
+  private async cleanPersonas(list: string[] | undefined): Promise<string[]> {
+    const wanted = cleanSources(list);
+    if (!wanted.length) return [];
+    const known = await this.prisma.persona.findMany({
+      where: { slug: { in: wanted } },
+      select: { slug: true },
+    });
+    if (known.length !== wanted.length)
+      throw new UnprocessableEntityException('неизвестная личность в списке');
+    return wanted;
+  }
+
+  /** Доноры менеджера целиком заменяются списком; неизвестные id — отказ. */
+  private async setDonors(
+    userId: number,
+    ids: number[],
+    tx: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const wanted = [...new Set(ids)];
+    if (wanted.length) {
+      const known = await tx.donor.count({ where: { id: { in: wanted } } });
+      if (known !== wanted.length)
+        throw new UnprocessableEntityException('неизвестный донор в списке');
+    }
+    await tx.managerDonor.deleteMany({ where: { userId } });
+    if (wanted.length)
+      await tx.managerDonor.createMany({
+        data: wanted.map((donorId) => ({ userId, donorId })),
+      });
   }
 
   /** Хед региона: один на регион, к нему автоматически цепляются тимлиды региона. */
@@ -209,6 +292,10 @@ export class ManagersService {
           voicerId: dto.voicer_id ?? null,
           leadId,
           createdAt: this.clock.ts(),
+          online: dto.online ?? false,
+          leadQuota: dto.lead_quota ?? null,
+          leadSources: cleanSources(dto.lead_sources),
+          leadPersonas: await this.cleanPersonas(dto.lead_personas),
         },
       });
       createdId = created.id;
@@ -220,6 +307,7 @@ export class ManagersService {
           : `не удалось создать пользователя (${e?.name})`,
       );
     }
+    if (dto.donor_ids?.length) await this.setDonors(createdId, dto.donor_ids);
     if (dto.role === Role.HEAD)
       await this.attachRegionToHead(createdId, region);
     return { ...(await this.list()), created_user_id: createdId };
@@ -256,6 +344,11 @@ export class ManagersService {
     await this.validateVoicer(dto.role ?? user.role, dto.voicer_id);
     const data: {
       username?: string;
+      online?: boolean;
+      leadQuota?: number | null;
+      leadSources?: string[];
+      leadPersonas?: string[];
+      coldLeads?: boolean;
       role?: string;
       passwordHash?: string;
       passwordEncrypted?: string;
@@ -289,6 +382,13 @@ export class ManagersService {
       data.voicerId = null;
     if (dto.role !== undefined) data.role = dto.role;
     if (dto.region_code !== undefined) data.regionCode = dto.region_code;
+    if (dto.online !== undefined) data.online = dto.online;
+    if (dto.cold_leads !== undefined) data.coldLeads = dto.cold_leads;
+    if (dto.lead_quota !== undefined) data.leadQuota = dto.lead_quota;
+    if (dto.lead_sources !== undefined)
+      data.leadSources = cleanSources(dto.lead_sources);
+    if (dto.lead_personas !== undefined)
+      data.leadPersonas = await this.cleanPersonas(dto.lead_personas);
     if (dto.username !== undefined) {
       const username = dto.username.trim();
       if (!username)
@@ -343,6 +443,8 @@ export class ManagersService {
         });
       if (Object.keys(data).length)
         await tx.dashboardUser.update({ where: { id: userId }, data });
+      if (dto.donor_ids !== undefined)
+        await this.setDonors(userId, dto.donor_ids, tx);
       if (dto.role !== undefined && dto.role !== Role.MANAGER)
         await tx.managerAccount.deleteMany({ where: { userId } });
       if (dto.account_ids !== undefined) {

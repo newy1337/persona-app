@@ -39,3 +39,6 @@
     flex: 1;
   }
 }
+
+:global(.ak-fresh) { margin: 12px 0; padding: 12px; border: 1px solid #2e7d5a; border-radius: 10px; background: #0d1a16; }
+:global(.ak-value) { font-size: 13px; padding: 6px 8px; background: #0d1220; border-radius: 6px; overflow-wrap: anywhere; }

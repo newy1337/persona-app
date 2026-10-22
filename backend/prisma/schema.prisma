@@ -8,15 +8,25 @@ datasource db {
 }
 
 model DashboardUser {
-  id                Int     @id @default(autoincrement())
-  username          String  @unique
-  passwordHash      String  @map("password_hash")
-  passwordEncrypted String? @map("password_encrypted")
-  regionCode        String? @map("region_code")
-  role              String  @default("manager")
-  lastLogin         Int?    @map("last_login")
-  createdAt         Int     @map("created_at")
-  canEditPhotoSets  Boolean @default(false) @map("can_edit_photo_sets")
+  id                Int      @id @default(autoincrement())
+  username          String   @unique
+  passwordHash      String   @map("password_hash")
+  passwordEncrypted String?  @map("password_encrypted")
+  regionCode        String?  @map("region_code")
+  role              String   @default("manager")
+  lastLogin         Int?     @map("last_login")
+  createdAt         Int      @map("created_at")
+  canEditPhotoSets  Boolean  @default(false) @map("can_edit_photo_sets")
+  /// распределение входящих лидов: берёт только тот, кто онлайн
+  online            Boolean  @default(false)
+  /// лимит входящих лидов в сутки (МСК); null — без лимита
+  leadQuota         Int?     @map("lead_quota")
+  /// источники, которые принимает; пусто — любые
+  leadSources       String[] @default([]) @map("lead_sources")
+  /// личности (slug), которые принимает; пусто — любые
+  leadPersonas      String[] @default([]) @map("lead_personas")
+  /// получает холодку (лиды из /api/post/cold), если её принимает регион
+  coldLeads         Boolean  @default(false) @map("cold_leads")
 
   voicerId            Int?            @map("voicer_id")
   voicer              DashboardUser?  @relation("ManagerVoicer", fields: [voicerId], references: [id], onDelete: SetNull)
@@ -32,6 +42,7 @@ model DashboardUser {
   accounts         ManagerAccount[]
   audit            DashboardAuditLog[]
   photoAssignments ManagerPhotoSet[]
+  donors           ManagerDonor[]
 
   @@index([leadId], map: "idx_dashboard_users_lead")
   @@map("dashboard_users")
@@ -361,17 +372,23 @@ model PhotoSet {
 
 /// Какой образ получают новые диалоги сотрудника. Хед назначает образ своего
 /// региона каждому сотруднику — отдельно по каждой личности его аккаунтов.
+/// Образы учётки: хед назначает сотруднику образы (сколько угодно), сотрудник
+/// привязывает каждый к одной из личностей своих аккаунтов. У личности один
+/// действующий образ: новый образ на ту же личность забирает новых
+/// собеседников, начатые диалоги остаются на прежнем (Contact.photoSetId).
 model ManagerPhotoSet {
-  userId      Int    @map("user_id")
-  personaSlug String @map("persona_slug")
-  setId       Int    @map("set_id")
-  updatedAt   Int    @map("updated_at")
-  updatedBy   Int?   @map("updated_by")
+  userId      Int     @map("user_id")
+  setId       Int     @map("set_id")
+  /// личность, к которой сотрудник привязал образ; null — образ в запасе
+  personaSlug String? @map("persona_slug")
+  updatedAt   Int     @map("updated_at")
+  updatedBy   Int?    @map("updated_by")
 
   user DashboardUser @relation(fields: [userId], references: [id], onDelete: Cascade)
   set  PhotoSet      @relation(fields: [setId], references: [id], onDelete: Cascade)
 
-  @@id([userId, personaSlug])
+  @@id([userId, setId])
+  @@unique([userId, personaSlug], map: "manager_photo_sets_user_persona_key")
   @@index([setId], map: "idx_manager_photo_sets_set")
   @@map("manager_photo_sets")
 }
@@ -477,12 +494,82 @@ model PhoneNumber {
   avoidAccountId     Int?    @map("avoid_account_id")
   personaId          String? @map("persona_id")
   ownerUserId        Int?    @map("owner_user_id")
+  /// входящий лид по API: донор и источник текстом, как прислали
+  donor              String?
+  /// аккаунт на стороне донора (текст)
+  accountLabel       String? @map("account_label")
+  /// id лида в системе отправителя
+  externalId         String? @map("external_id")
+  /// ссылка на профиль в соцсети
+  profileUrl         String? @map("profile_url")
+  /// история общения, которую прислал донор
+  lastMessages       String? @map("last_messages")
+  /// когда лид пришёл по API и был распределён (счётчик суточного лимита)
+  inboundAt          Int?    @map("inbound_at")
+  /// регион, который запросил отправитель; раздача только внутри него
+  requestedRegion    String? @map("requested_region")
+  /// личность, которую прислал отправитель (как есть, текстом)
+  requestedPersona   String? @map("requested_persona")
+  /// перезабив: отправитель пометил лид как повторный (reassigned в API)
+  reassigned         Boolean @default(false)
+  /// холодка: пришёл через /api/post/cold, раздан без региона и личности
+  cold               Boolean @default(false)
+  /// когда лид попал в буфер (только ник, без телефона); статус 'buffer'
+  bufferedAt         Int?    @map("buffered_at")
 
   @@index([telegramUserId], map: "idx_phone_telegram_user")
   @@index([ownerUserId], map: "idx_phone_owner")
   @@index([status, nextAttemptAt], map: "idx_phone_status_next")
   @@index([assignedAccountId, firstContactAt], map: "idx_phone_account_contact")
+  @@index([ownerUserId, inboundAt], map: "idx_phone_owner_inbound")
   @@map("phone_numbers")
+}
+
+/// Ключ для внешних систем (входящие лиды). Храним только хеш; сам ключ
+/// показывается один раз при создании. Отзыв — revoked_at.
+model ApiKey {
+  id          Int    @id @default(autoincrement())
+  name        String
+  keyHash     String @unique @map("key_hash")
+  /// первые символы ключа, чтобы узнать его в списке
+  prefix      String
+  createdAt   Int    @map("created_at")
+  createdById Int?   @map("created_by_id")
+  lastUsedAt  Int?   @map("last_used_at")
+  revokedAt   Int?   @map("revoked_at")
+
+  @@map("api_keys")
+}
+
+/// Справочник источников лидов: менеджер выбирает, какие принимает (по имени).
+model LeadSource {
+  id        Int    @id @default(autoincrement())
+  name      String @unique
+  createdAt Int    @map("created_at")
+
+  @@map("lead_source_catalog")
+}
+
+/// Донор — откуда приходят лиды, как кампания. Менеджер принимает лиды
+/// только своих доноров (пусто — любых).
+model Donor {
+  id        Int            @id @default(autoincrement())
+  name      String         @unique
+  createdAt Int            @map("created_at")
+  managers  ManagerDonor[]
+
+  @@map("donors")
+}
+
+model ManagerDonor {
+  userId  Int           @map("user_id")
+  donorId Int           @map("donor_id")
+  user    DashboardUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  donor   Donor         @relation(fields: [donorId], references: [id], onDelete: Cascade)
+
+  @@id([userId, donorId])
+  @@index([donorId], map: "idx_manager_donors_donor")
+  @@map("manager_donors")
 }
 
 model AppSettings {
@@ -695,4 +782,35 @@ model VoiceCallRecording {
 
   @@index([taskId, id])
   @@map("voice_call_recordings")
+}
+
+/// Отклонённые из буфера лиды: сам лид удаляется, а здесь остаётся слепок —
+/// чтобы было видно, что этого собеседника уже когда-то отклоняли.
+model DeclinedLead {
+  id           Int     @id @default(autoincrement())
+  phoneE164    String? @map("phone_e164")
+  usernameKey  String? @map("username_key")
+  regionCode   String? @map("region_code")
+  /// все поля лида на момент отклонения, JSON
+  snapshot     String
+  reason       String?
+  declinedAt   Int     @map("declined_at")
+  declinedById Int?    @map("declined_by_id")
+
+  @@index([usernameKey], map: "idx_declined_leads_username")
+  @@index([phoneE164], map: "idx_declined_leads_phone")
+  @@map("declined_leads")
+}
+
+/// Настройки региона для входящих лидов. Нет строки — всё выключено.
+model RegionSetting {
+  regionCode       String  @id @map("region_code")
+  /// принимать перезабив (reassigned=true); выключено — такие лиды отбиваются
+  acceptReassigned Boolean @default(false) @map("accept_reassigned")
+  /// принимать холодку: её получают сотрудники региона с включённой холодкой
+  acceptCold       Boolean @default(false) @map("accept_cold")
+  updatedAt        Int     @map("updated_at")
+  updatedById      Int?    @map("updated_by_id")
+
+  @@map("region_settings")
 }

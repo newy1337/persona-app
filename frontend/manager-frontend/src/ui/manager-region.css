@@ -302,3 +302,6 @@
 .mr-dialog-archived{display:inline-block;margin-top:5px;padding:1px 7px;border-radius:999px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#aebed5;border:1px solid #36445a}
 .mr-account-select{flex:none;width:16px;height:16px;margin:0 8px 0 0;accent-color:#4178f0;cursor:pointer;vertical-align:middle}
 .mr-account-bulk{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px;padding:10px 12px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:#0e1524;font-size:13px}
+
+.mr-lead-history{color:#b3c1d8}
+.mr-lead-history p{max-height:220px;overflow:auto}

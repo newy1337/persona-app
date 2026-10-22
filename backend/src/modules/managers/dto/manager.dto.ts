@@ -9,6 +9,8 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  Max,
+  Min,
   MinLength,
   Matches,
   ValidateIf,
@@ -31,6 +33,48 @@ export class CreateManagerDto {
   @MinLength(1)
   @MaxLength(64)
   username: string;
+  @ApiPropertyOptional({ description: 'принимает входящих лидов' })
+  @IsOptional()
+  @IsBoolean()
+  online?: boolean;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'входящих лидов в сутки; null — без лимита',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  lead_quota?: number | null;
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'источники, которые принимает; пусто — любые',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  lead_sources?: string[];
+  @ApiPropertyOptional({
+    type: [Number],
+    description: 'доноры, которых принимает; пусто — любые',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsInt({ each: true })
+  donor_ids?: number[];
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'личности (slug), которые принимает; пусто — любые',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  lead_personas?: string[];
 
   @ApiPropertyOptional({
     description: 'Если не задан, создаётся случайный пароль',
@@ -94,6 +138,54 @@ export class UpdateManagerDto {
   @IsArray()
   @IsInt({ each: true })
   account_ids?: number[];
+  @ApiPropertyOptional({ description: 'принимает входящих лидов' })
+  @IsOptional()
+  @IsBoolean()
+  online?: boolean;
+  @ApiPropertyOptional({
+    description: 'получает холодку (если её принимает регион)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  cold_leads?: boolean;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'входящих лидов в сутки; null — без лимита',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  lead_quota?: number | null;
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'источники, которые принимает; пусто — любые',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  lead_sources?: string[];
+  @ApiPropertyOptional({
+    type: [Number],
+    description: 'доноры, которых принимает; пусто — любые',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsInt({ each: true })
+  donor_ids?: number[];
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'личности (slug), которые принимает; пусто — любые',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  lead_personas?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()

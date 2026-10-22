@@ -251,6 +251,7 @@ export class ConversationsService {
     profile: {
       phoneE164: string | null;
       city: string | null;
+      gender?: string | null;
       usernameKey?: string | null;
       telegramUsername?: string | null;
     } | null = null,
@@ -278,6 +279,8 @@ export class ConversationsService {
       client_avatar: this.presence.avatarUrl(chatId),
       client_typing: this.presence.activityOf(chatId),
       client_city: profile?.city ?? null,
+      /** пол из карточки лида: m / f / unknown; null — не указан */
+      client_gender: profile?.gender ?? null,
       is_paused: isPaused,
       archived: Boolean(facts[HIDDEN_FROM_DASHBOARD_KEY]),
       messages: messages.map((m) => ({

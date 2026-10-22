@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { appConfig } from 'src/config/app.config';
 import { PrismaService } from 'src/prisma.service';
+import { allowedOwners } from 'src/domain/lead-owners';
 import { ClockService } from 'src/shared/clock.service';
 import { HistoryService } from 'src/shared/history.service';
 import { FunnelEventsService } from 'src/shared/funnel-events.service';
@@ -198,13 +199,18 @@ export class OutreachWorker implements OnModuleInit {
       }),
       this.prisma.dashboardUser.findMany({
         where: { role: { not: 'admin' } },
-        select: { id: true },
+        select: { id: true, leadId: true },
       }),
     ]);
-    const mine = accountManagers.map((m) => m.userId);
+    // Свои владельцы: менеджеры аккаунта и их руководители (лид тимлида или
+    // хеда пишет аккаунт кого-то из его команды).
+    const mine = allowedOwners(
+      accountManagers.map((m) => m.userId),
+      managers,
+    );
     const foreignManagers = managers
       .map((m) => m.id)
-      .filter((id) => !mine.includes(id));
+      .filter((id) => !mine.has(id));
     const candidate = await this.prisma.phoneNumber.findFirst({
       where: {
         status: 'queued',
@@ -254,13 +260,24 @@ export class OutreachWorker implements OnModuleInit {
 
     let openerStarted = false;
     try {
-      const resolved = candidate.phoneE164
-        ? await this.telegram.resolvePhone(
-            accountId,
-            candidate.phoneE164,
-            candidate.firstName ?? undefined,
-          )
-        : await this.telegram.resolveUsername(accountId, candidate.usernameKey);
+      // Ник в приоритете: по нему пишем без импорта контакта (лимит импорта
+      // и скрытый приватностью номер не мешают). Ника нет или он не нашёлся —
+      // пробуем номер.
+      const byPhone = () =>
+        this.telegram.resolvePhone(
+          accountId,
+          candidate.phoneE164!,
+          candidate.firstName ?? undefined,
+        );
+      let resolved = candidate.usernameKey
+        ? await this.telegram.resolveUsername(accountId, candidate.usernameKey)
+        : await byPhone();
+      if (
+        resolved.kind === 'not_found' &&
+        candidate.usernameKey &&
+        candidate.phoneE164
+      )
+        resolved = await byPhone();
       if (resolved.kind === 'retry') {
         const until = now + IMPORT_THROTTLE_BACKOFF_S;
         await this.limitAccount(accountId, until, 'лимит импорта контактов');
@@ -283,9 +300,11 @@ export class OutreachWorker implements OnModuleInit {
             lastError:
               resolved.kind === 'found'
                 ? 'аккаунт Telegram удалён'
-                : candidate.phoneE164
-                  ? 'номера нет в Telegram или он скрыт приватностью («кто видит мой номер»)'
-                  : 'такого @username нет (или это канал/группа)',
+                : candidate.phoneE164 && candidate.usernameKey
+                  ? 'ни номера, ни @username нет в Telegram (номер мог быть скрыт приватностью)'
+                  : candidate.phoneE164
+                    ? 'номера нет в Telegram или он скрыт приватностью («кто видит мой номер»)'
+                    : 'такого @username нет (или это канал/группа)',
             attempts: { increment: 1 },
           },
         });

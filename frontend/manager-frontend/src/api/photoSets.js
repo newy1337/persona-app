@@ -13,8 +13,19 @@ export function getStaffAssignments(regionCode) {
   return api.get(`/api/photo-sets/assignments${regionCode ? `?region=${encodeURIComponent(regionCode)}` : ''}`);
 }
 
-export function assignStaffPhotoSet(userId, personaSlug, setId) {
-  return api.put('/api/photo-sets/assignments', { user_id: userId, persona_slug: personaSlug, set_id: setId });
+/** Хед задаёт набор образов учётки сотрудника целиком; к личностям их привязывает сотрудник. */
+export function assignStaffPhotoSets(userId, setIds) {
+  return api.put('/api/photo-sets/assignments', { user_id: userId, set_ids: setIds });
+}
+
+/** Мои образы: что назначил хед, к каким личностям привязаны, личности моих аккаунтов. */
+export function getMyPhotoSets() {
+  return api.get('/api/photo-sets/mine');
+}
+
+/** Привязать свой образ к личности; пусто — убрать в запас. */
+export function bindMyPhotoSet(setId, personaSlug) {
+  return api.put('/api/photo-sets/mine', { set_id: setId, persona_slug: personaSlug || null });
 }
 
 /** Стоп региона — образы региона выключены. */

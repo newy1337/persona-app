@@ -29,3 +29,8 @@ describe('сводка ритма одной строкой', () => {
     expect(new Set(TIMEZONES.map((t) => t.id)).size).toBe(TIMEZONES.length);
   });
 });
+
+it('первые сообщения в сводке идут до разогрева', () => {
+  const doc = { reply_delay: { enabled: true, first_messages: 20, first_min_minutes: 0.5, first_max_minutes: 1, warmup_minutes: 90, warmup_min_minutes: 1, warmup_max_minutes: 2, min_minutes: 3, max_minutes: 20 }, after_silence: { enabled: false }, morning: { enabled: false }, goodnight: { enabled: false } };
+  expect(rhythmSummary(doc)).toBe('первые 20 сообщ. — 0.5–1 мин, затем разогрев 90 мин — 1–2 мин, потом 3–20 мин');
+});

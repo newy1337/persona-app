@@ -28,6 +28,7 @@ import { RegionGateService } from 'src/shared/region-gate.service';
 import {
   AccountAutoSendDto,
   AssignStaffPhotoSetDto,
+  ChoosePhotoPersonaDto,
   RegionStopDto,
   CreatePhotoSetDto,
   UpdatePhotoDto,
@@ -80,7 +81,7 @@ export class PhotoSetsController {
 
   @ApiOperation({
     summary:
-      'Назначить образ сотруднику по личности (хед); начатые диалоги остаются на прежнем',
+      'Задать образы учётки сотрудника (хед); к личностям их привязывает сам сотрудник, начатые диалоги остаются на прежнем',
   })
   @Put('assignments')
   @HttpCode(200)
@@ -96,13 +97,39 @@ export class PhotoSetsController {
         resource: `user:${dto.user_id}`,
         payload: dto,
       },
-      () =>
-        this.sets.assignStaff(
-          user,
-          dto.user_id,
-          dto.persona_slug,
-          dto.set_id ?? null,
-        ),
+      () => this.sets.assignStaff(user, dto.user_id, dto.set_ids),
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Мои образы, их личности и личности моих аккаунтов',
+  })
+  @Get('mine')
+  mine(@CurrentUser() user: DashboardUser) {
+    this.scope.requireManager(user);
+    return this.sets.mine(user);
+  }
+
+  @ApiOperation({
+    summary:
+      'Привязать свой образ к личности: новые собеседники моих аккаунтов этой личности получат его',
+  })
+  @Put('mine')
+  @HttpCode(200)
+  @UsePipes(ValidationPipe)
+  choosePersona(
+    @Body() dto: ChoosePhotoPersonaDto,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    this.scope.requireManager(user);
+    return this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'photo_set.choose_persona',
+        resource: `user:${user.id}`,
+        payload: dto,
+      },
+      () => this.sets.choosePersona(user, dto.set_id, dto.persona_slug ?? null),
     );
   }
 

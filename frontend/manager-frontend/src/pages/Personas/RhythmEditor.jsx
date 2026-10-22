@@ -208,9 +208,21 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
           </header>
           <p className={p.promptHint}>Сначала отвечает быстро, дальше — как занятой человек.</p>
           <Num
+            label="Задержка первых"
+            unit="сообщений"
+            max={500}
+            hint="с самого начала чата; 0 — выключено, разогрев сразу"
+            value={rd.first_messages}
+            onChange={(v) => set(['reply_delay', 'first_messages'], v)}
+          />
+          <div className={p.rhythmPair}>
+            <Num label="Первые от" unit="мин" step={0.5} value={rd.first_min_minutes} onChange={(v) => set(['reply_delay', 'first_min_minutes'], v)} />
+            <Num label="до" unit="мин" step={0.5} value={rd.first_max_minutes} onChange={(v) => set(['reply_delay', 'first_max_minutes'], v)} />
+          </div>
+          <Num
             label="Разогрев"
             unit="мин"
-            hint="от его первого сообщения"
+            hint={Number(rd.first_messages) > 0 ? 'от первого сообщения после них' : 'от его первого сообщения'}
             value={rd.warmup_minutes}
             onChange={(v) => set(['reply_delay', 'warmup_minutes'], v)}
           />

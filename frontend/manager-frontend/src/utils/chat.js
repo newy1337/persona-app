@@ -69,3 +69,10 @@ export function liveRows(rows) {
   const since = Math.floor(Date.now() / 1000) - ACTIVE_WINDOW_S;
   return (rows ?? []).filter((r) => (r.last_message_ts ?? 0) >= since);
 }
+
+/** Пол лида: m / f из карточки; unknown и пусто — ничего не показываем. */
+export function genderLabel(gender, short = false) {
+  if (gender === 'm') return short ? 'муж.' : 'Мужской';
+  if (gender === 'f') return short ? 'жен.' : 'Женский';
+  return null;
+}
