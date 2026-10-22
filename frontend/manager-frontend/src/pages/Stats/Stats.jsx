@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/Header/Header';
-import { getUsage, getManagerUsage, getBalance, getDealStages } from '../../api/usage';
+import { getUsage, getManagerUsage, getBalance, getDealStages, getColdLeads } from '../../api/usage';
 import DailyChart from './DailyChart';
 import DateRangePicker, { mskToday, addDays } from '../../components/DateRangePicker/DateRangePicker';
 import PricesEditor from './PricesEditor';
 import ManagersTable from './ManagersTable';
 import StagesTable from './StagesTable';
+import ColdTable from './ColdTable';
 import Balance from './Balance';
 import s from '../../styles/AdminPage.module.scss';
 import p from './Stats.module.scss';
@@ -73,6 +74,7 @@ export default function Stats() {
   const [managersLoading, setManagersLoading] = useState(false);
   const [balance, setBalance] = useState(null);
   const [stages, setStages] = useState(null);
+  const [cold, setCold] = useState(null);
 
   const load = useCallback(() => {
     getUsage({ from: range.from, to: range.to })
@@ -97,6 +99,24 @@ export default function Stats() {
     setStages(null);
     const pull = () => getDealStages({ from: range.from, to: range.to })
       .then((r) => alive && setStages(r))
+      .catch((e) => alive && setError(e.detail || e.message));
+    pull();
+    const onVisible = () => document.visibilityState === 'visible' && pull();
+    const timer = setInterval(onVisible, 30000);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [tab, range]);
+
+  useEffect(() => {
+    if (tab !== 'cold') return undefined;
+    let alive = true;
+    setCold(null);
+    const pull = () => getColdLeads({ from: range.from, to: range.to })
+      .then((r) => alive && setCold(r))
       .catch((e) => alive && setError(e.detail || e.message));
     pull();
     const onVisible = () => document.visibilityState === 'visible' && pull();
@@ -167,7 +187,7 @@ export default function Stats() {
           {showPrices && <PricesEditor onChanged={load} onError={setError} />}
 
           <div className={p.tabs} role="tablist">
-            {[['overview', 'Обзор'], ['managers', 'По менеджерам'], ['teams', 'По командам'], ['stages', 'Этапы']].map(([id, label]) => (
+            {[['overview', 'Обзор'], ['managers', 'По менеджерам'], ['teams', 'По командам'], ['stages', 'Этапы'], ['cold', 'Холодка']].map(([id, label]) => (
               <button
                 key={id}
                 role="tab"
@@ -181,7 +201,9 @@ export default function Stats() {
             ))}
           </div>
 
-          {tab === 'stages' ? (
+          {tab === 'cold' ? (
+            cold ? <ColdTable data={cold} /> : <p className={s.empty}>Считаю холодку…</p>
+          ) : tab === 'stages' ? (
             stages ? <StagesTable data={stages} /> : <p className={s.empty}>Считаю этапы…</p>
           ) : tab === 'managers' ? (
             managersLoading || !managers ? (
