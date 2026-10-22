@@ -205,6 +205,7 @@ export class InboundService {
             data: {
               phoneE164: phone,
               usernameKey: username,
+              firstName: dto.name?.trim() || null,
               city: dto.city?.trim() || null,
               age: dto.age ?? null,
               sourceType: source,

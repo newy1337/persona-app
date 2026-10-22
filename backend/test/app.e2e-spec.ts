@@ -1778,6 +1778,7 @@ describe('Manager panel API (e2e)', () => {
       // дефисы, пробелы и скобки в номере не мешают; источник beboo принимает только c1
       const first = await post({
         source: 'beboo',
+        name: '  Олег ',
         phone: '+7-901-555-12-34',
         city: 'Казань',
         age: 30,
@@ -1788,6 +1789,7 @@ describe('Manager panel API (e2e)', () => {
       });
       expect(row).toMatchObject({
         phoneE164: '+79015551234',
+        firstName: 'Олег',
         city: 'Казань',
         age: 30,
         sourceType: 'beboo',
@@ -1846,6 +1848,7 @@ describe('Manager panel API (e2e)', () => {
         cold: true,
         source_type: 'beboo',
         status: 'queued',
+        first_name: 'Олег',
       });
 
       await prisma.phoneNumber.deleteMany({

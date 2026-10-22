@@ -49,6 +49,15 @@ export class ColdLeadDto {
   @MaxLength(64)
   username?: string;
 
+  @ApiPropertyOptional({
+    example: 'Олег',
+    description: 'имя клиента: показывается в «Лидах» вместо номера',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  name?: string;
+
   @ApiPropertyOptional({ example: 'Москва' })
   @IsOptional()
   @IsString()
