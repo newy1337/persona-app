@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -11,6 +12,7 @@ import {
   MinLength,
   ValidateIf,
 } from 'class-validator';
+import { LEAD_GENDERS } from 'src/domain/leads';
 
 /** Холодка: источник, личность и контакт; региона и донора нет. */
 export class ColdLeadDto {
@@ -57,6 +59,14 @@ export class ColdLeadDto {
   @IsString()
   @MaxLength(64)
   name?: string;
+
+  @ApiPropertyOptional({
+    enum: LEAD_GENDERS,
+    description: 'пол: m — мужской, f — женский',
+  })
+  @IsOptional()
+  @IsIn(LEAD_GENDERS, { message: 'gender — m, f или unknown' })
+  gender?: string;
 
   @ApiPropertyOptional({ example: 'Москва' })
   @IsOptional()

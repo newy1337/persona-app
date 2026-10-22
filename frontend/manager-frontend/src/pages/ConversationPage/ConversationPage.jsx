@@ -42,6 +42,7 @@ import {
   withToken,
   saveReadCursor,
   liveRows,
+  genderLabel,
 } from '../../utils/chat';
 import {
   getConversationById,
@@ -778,6 +779,10 @@ function ConversationPage() {
                       value={pins.age ? String(pins.age) : ''}
                       onSave={async (v) => { await pinFact(id, 'age', v); load(); }}
                     />
+                  </span>
+                  <span className={styles.metaRow} data-testid="client-gender">
+                    <span className={styles.metaIcon}><AgeIcon />Пол</span>
+                    {genderLabel(data.client_gender) || '—'}
                   </span>
                   <span className={styles.metaRow}>
                     <span className={styles.metaIcon}><LocationIcon />Город</span>

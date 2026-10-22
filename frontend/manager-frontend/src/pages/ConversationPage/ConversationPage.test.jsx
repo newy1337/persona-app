@@ -770,6 +770,18 @@ describe('left block: lead card folded into the top card', () => {
     expect(card.textContent).toMatch(/Контакт\s*—/);
   });
 
+  it('пол: из карточки лида', async () => {
+    withPins({ name: 'Андрей' }, { client_gender: 'm' });
+    await renderPage();
+    expect(container.querySelector('[data-testid="client-gender"]').textContent).toBe('Пол' + 'Мужской');
+  });
+
+  it('пол не указан — прочерк', async () => {
+    withPins({ name: 'Андрей' }, { client_gender: 'unknown' });
+    await renderPage();
+    expect(container.querySelector('[data-testid="client-gender"]').textContent).toBe('Пол' + '—');
+  });
+
   it('город: из БД (phone_numbers), когда в пинах его нет (D-125)', async () => {
     withPins({ name: 'Андрей' }, { client_city: 'Ростов-на-Дону' });
     await renderPage();

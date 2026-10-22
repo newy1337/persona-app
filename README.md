@@ -173,11 +173,12 @@ LeadGet). Выключено — ответ `422` с `error: reassigned_not_acce
 ```bash
 curl -X POST https://shiftreject.com/api/post/cold \
   -H 'X-Api-Key: sk_...' -H 'Content-Type: application/json' \
-  -d '{"source":"beboo","persona":"nastya","name":"Олег","phone":"+7-900-123-45-67","username":"@durov","city":"Москва","age":34}'
+  -d '{"source":"beboo","persona":"nastya","name":"Олег","gender":"m","phone":"+7-900-123-45-67","username":"@durov","city":"Москва","age":34}'
 ```
 
 Обязательны `source`, `persona` и хотя бы одно из `phone` / `username`; `name`,
-`city` и `age` — по желанию (`name` показывается в «Лидах» вместо номера). `persona` — slug (или имя) личности: она привязывается к
+`gender` (`m` / `f`), `city` и `age` — по желанию (`name` показывается в «Лидах»
+вместо номера, пол — в строке лида и в карточке чата). `persona` — slug (или имя) личности: она привязывается к
 лиду; неизвестная или выключенная — `422`. В телефоне дефисы, пробелы и скобки убираются, `+` не обязателен.
 Холодку получают сотрудники регионов с кнопкой «Получать холодку», и только те,
 у кого холодка включена в их строке на «LeadGet»; среди них — кто онлайн, не

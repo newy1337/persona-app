@@ -1779,6 +1779,7 @@ describe('Manager panel API (e2e)', () => {
       const first = await post({
         source: 'beboo',
         name: '  Олег ',
+        gender: 'm',
         phone: '+7-901-555-12-34',
         city: 'Казань',
         age: 30,
@@ -1790,6 +1791,7 @@ describe('Manager panel API (e2e)', () => {
       expect(row).toMatchObject({
         phoneE164: '+79015551234',
         firstName: 'Олег',
+        gender: 'm',
         city: 'Казань',
         age: 30,
         sourceType: 'beboo',
@@ -1820,6 +1822,11 @@ describe('Manager panel API (e2e)', () => {
       await post({ source: 'vk', phone: '79015551234' }).expect(409);
       await post({ phone: '+79015551236' }).expect(400);
       await post({ source: 'vk', city: 'Тула' }).expect(400);
+      await post({
+        source: 'vk',
+        phone: '+79015551239',
+        gender: 'male',
+      }).expect(400);
       // личность обязательна и должна существовать: её привязываем к лиду
       await post({
         source: 'vk',

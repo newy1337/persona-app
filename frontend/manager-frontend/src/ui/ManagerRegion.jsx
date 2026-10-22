@@ -9,6 +9,7 @@ import { PhotoCell, RegionStopButton, usePhotoAssignments } from '../pages/Photo
 import { OwnRegionReassign } from './ReassignSwitch';
 import { DEAL_STAGES, dealStageLabel } from '../data/dealStages';
 import { LEAD_ROLE_FOR, ROLE_LABELS } from '../utils/roles';
+import { genderLabel } from '../utils/chat';
 import PickerModal from './PickerModal';
 import { httpHref } from '../utils/safeUrl';
 
@@ -162,7 +163,7 @@ export function LeadsTable({ ready = true, rows, query, status, selected, onTogg
           return h('tr', { key: row.id, className: `mr-lead-row ${selected.has(row.id) ? 'mr-lead-selected' : ''}`, 'data-lead-id': row.id, 'data-lead-status': row.status },
             h('td', { className: 'mr-lead-person' },
               h('label', { className: 'mr-lead-identity' }, h('input', { type: 'checkbox', checked: selected.has(row.id), 'aria-label': `Выбрать лид: ${name}`, onChange: () => onToggle(row.id) }), h('span', { className: 'mr-lead-name' }, name)),
-              h('div', { className: 'mr-dialog-muted' }, [row.age ? `${row.age} лет` : null, row.city].filter(Boolean).join(' · ') || 'Возраст и город не указаны'),
+              h('div', { className: 'mr-dialog-muted' }, [row.age ? `${row.age} лет` : null, genderLabel(row.gender, true), row.city].filter(Boolean).join(' · ') || 'Возраст и город не указаны'),
               h('div', { className: 'mr-dialog-contact' }, row.phone_e164 || null, row.username && telegramLink(row.username)),
               h('div', { className: 'mr-dialog-muted' }, `#${row.id}`, row.site ? ` · Сайт: ${row.site}` : ''),
               row.first_message && h('div', { className: 'mr-dialog-muted', title: row.first_message }, h('span', { className: 'mr-caption' }, row.first_contact_at ? 'Первое сообщение: ' : 'Напишем: '), row.first_message.length > 80 ? `${row.first_message.slice(0, 80)}…` : row.first_message),

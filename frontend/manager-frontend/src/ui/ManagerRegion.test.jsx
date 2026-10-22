@@ -146,3 +146,11 @@ test('менеджеру выбор «Чей лид» не показывает�
   await act(async () => host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
   expect(post.mock.calls[0][1].owner_user_id).toBeUndefined();
 });
+
+test('строка лида: имя вместо номера, пол рядом с возрастом и городом', async () => {
+  await render(<LeadsTable rows={[{ id: 89, status: 'pending', first_name: 'Олег', phone_e164: '+79261994454', age: 48, gender: 'm', city: 'Москва', inbound_at: 1, source_type: 'beboo', cold: true }]} selected={new Set()} personas={[]}
+    onToggle={() => {}} onSelectVisible={() => {}} onClearSelection={() => {}} onChat={() => {}} onQueue={() => {}} onUnqueue={() => {}} onReassign={() => {}} onDelete={() => {}} onPersonaChange={() => {}}
+    helpers={{ PersonaSelect: () => null, statusLabels: {}, statusClasses: {}, date: () => '' }} />);
+  expect(host.querySelector('.mr-lead-name').textContent).toBe('Олег');
+  expect(host.textContent).toContain('48 лет · муж. · Москва');
+});
