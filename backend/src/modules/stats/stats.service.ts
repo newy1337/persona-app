@@ -20,6 +20,7 @@ import {
   type Tokens,
 } from './prices';
 import { dayKey, resolveRange, type DayRange } from './range';
+import { ACTIVE_AFTER, coldFunnel, coldLeadRows } from './cold-funnel';
 import { normalizeModel } from './prices';
 import { DEAL_STAGES, DEAL_STAGE_LABELS } from 'src/domain/deal-stage';
 import {
@@ -282,6 +283,32 @@ export class StatsService {
    * назад ничего не снимает. Архив отдельно: по дням — сколько чатов
    * отправили в архив, «всего» — сколько чатов в архиве сейчас.
    */
+  /** Холодка за период: получено, написали, ответили, активные — всего и по менеджерам. */
+  async coldLeads(query: { from?: string; to?: string }) {
+    const range = resolveRange(query, this.clock.ts());
+    const rows = await coldLeadRows(this.prisma, range.start, range.end);
+    const ids = [
+      ...new Set(rows.map((r) => r.owner_user_id).filter((id) => id !== null)),
+    ];
+    const users = await this.prisma.dashboardUser.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, username: true, role: true, regionCode: true },
+    });
+    return {
+      range: { from: range.from, to: range.to },
+      active_after: ACTIVE_AFTER,
+      ...coldFunnel(
+        rows,
+        new Map(
+          users.map((u) => [
+            u.id,
+            { username: u.username, role: u.role, region_code: u.regionCode },
+          ]),
+        ),
+      ),
+    };
+  }
+
   async dealStages(query: { from?: string; to?: string }) {
     const range = resolveRange(query, this.clock.ts());
     const moves = await stageMovesInRange(this.prisma, range.start, range.end);
