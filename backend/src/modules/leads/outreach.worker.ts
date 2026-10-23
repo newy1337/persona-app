@@ -417,6 +417,23 @@ export class OutreachWorker implements OnModuleInit {
       }
       const attempts = candidate.attempts + 1;
       const dead = attempts >= MAX_OUTREACH_ATTEMPTS;
+      // Человек принимает сообщения только от Premium — повторы бесполезны.
+      if (/PRIVACY_PREMIUM_REQUIRED/.test(String(e?.message ?? ''))) {
+        await this.prisma.phoneNumber.update({
+          where: { id: candidate.id },
+          data: {
+            status: 'dead',
+            attempts,
+            nextAttemptAt: null,
+            lastError:
+              'принимает сообщения только от Telegram Premium — обычный аккаунт написать не может',
+          },
+        });
+        this.log.warn(
+          `outreach: lead #${candidate.id} accepts messages from Premium only — marked dead`,
+        );
+        return;
+      }
       if (/already has a transcript/.test(String(e?.message ?? ''))) {
         await this.prisma.phoneNumber.update({
           where: { id: candidate.id },

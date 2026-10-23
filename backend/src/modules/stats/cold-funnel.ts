@@ -7,12 +7,15 @@ export const ACTIVE_AFTER = 5;
 export interface ColdLeadRow {
   owner_user_id: number | null;
   written: boolean;
+  /** Написать невозможно: Telegram не нашёл человека или не даёт ему писать. */
+  invalid: boolean;
   user_msgs: number;
 }
 
 export interface ColdCounts {
   received: number;
   written: number;
+  invalid: number;
   replied: number;
   active: number;
 }
@@ -27,13 +30,17 @@ export interface ColdManager extends ColdCounts {
 const zero = (): ColdCounts => ({
   received: 0,
   written: 0,
+  invalid: 0,
   replied: 0,
   active: 0,
 });
 
 function add(into: ColdCounts, row: ColdLeadRow): void {
   into.received += 1;
-  if (!row.written) return;
+  if (!row.written) {
+    if (row.invalid) into.invalid += 1;
+    return;
+  }
   into.written += 1;
   if (row.user_msgs > 0) into.replied += 1;
   if (row.user_msgs > ACTIVE_AFTER) into.active += 1;
@@ -89,6 +96,7 @@ export function coldLeadRows(
   return prisma.$queryRaw<ColdLeadRow[]>(Prisma.sql`
     SELECT p.owner_user_id,
            (p.first_contact_at IS NOT NULL) AS written,
+           (p.first_contact_at IS NULL AND p.status = 'dead') AS invalid,
            COALESCE(m.n, 0)::int AS user_msgs
     FROM phone_numbers p
     LEFT JOIN LATERAL (

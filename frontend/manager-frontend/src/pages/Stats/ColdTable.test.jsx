@@ -18,15 +18,17 @@ describe('вкладка «Холодка»', () => {
   it('сначала итог с долями, потом строки менеджеров и «Всего»', async () => {
     const { container, done } = await mount({
       active_after: 5,
-      totals: { received: 10, written: 8, replied: 4, active: 1 },
+      totals: { received: 10, written: 8, invalid: 1, replied: 4, active: 1 },
       by_manager: [
-        { user_id: 1, username: 'anna', role: 'manager', region_code: '001', received: 6, written: 5, replied: 3, active: 1 },
+        { user_id: 1, username: 'anna', role: 'manager', region_code: '001', received: 6, written: 5, invalid: 1, replied: 3, active: 1 },
         { user_id: 2, username: 'boris', role: 'head', region_code: null, received: 4, written: 3, replied: 1, active: 0 },
       ],
     });
     const kpis = container.querySelector('[data-testid="cold-kpis"]').textContent;
     expect(kpis).toContain('Получено лидов10');
     expect(kpis).toContain('80% от полученных');
+    expect(kpis).toContain('Невалид1');
+    expect(kpis).toContain('10% — не найти в Telegram');
     expect(kpis).toContain('50% от написанных');
     expect(kpis).toContain('25% от ответивших');
     const rows = [...container.querySelectorAll('tbody tr')].map((r) => r.textContent);

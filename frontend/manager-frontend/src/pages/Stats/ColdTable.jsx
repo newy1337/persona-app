@@ -24,6 +24,9 @@ function Cells({ row }) {
         {num(row.written)} <span className={s.muted}>{share(row.written, row.received)}</span>
       </td>
       <td className={p.numCell}>
+        {num(row.invalid ?? 0)} <span className={s.muted}>{share(row.invalid ?? 0, row.received)}</span>
+      </td>
+      <td className={p.numCell}>
         {num(row.replied)} <span className={s.muted}>{share(row.replied, row.written)}</span>
       </td>
       <td className={p.numCell}>
@@ -40,12 +43,15 @@ export default function ColdTable({ data }) {
       <div className={p.kpis} data-testid="cold-kpis">
         <Kpi title="Получено лидов" value={num(t.received)} hint="холодка за период" />
         <Kpi title="Написали" value={num(t.written)} hint={`${share(t.written, t.received)} от полученных`} />
+        <Kpi title="Невалид" value={num(t.invalid ?? 0)} hint={`${share(t.invalid ?? 0, t.received)} — не найти в Telegram`} />
         <Kpi title="Ответили" value={num(t.replied)} hint={`${share(t.replied, t.written)} от написанных`} />
         <Kpi title="Активные диалоги" value={num(t.active)} hint={`${share(t.active, t.replied)} от ответивших`} />
       </div>
       <p className={s.hint}>
         Считаются холодные лиды, пришедшие за период, — что с ними стало к этому моменту. «Ответили» — лид
         написал хотя бы одно сообщение после нашего первого, «активные» — больше {after} его сообщений.
+        «Невалид» — написать невозможно: Telegram не нашёл человека по номеру и нику, аккаунт удалён или
+        он принимает сообщения только от Premium.
       </p>
       <div className={s.tableWrap}>
         <table className={s.table} aria-label="Холодка по менеджерам" data-testid="cold-table">
@@ -54,6 +60,7 @@ export default function ColdTable({ data }) {
               <th scope="col">Менеджер</th>
               <th scope="col" className={p.numCell}>Получено</th>
               <th scope="col" className={p.numCell}>Написали</th>
+              <th scope="col" className={p.numCell}>Невалид</th>
               <th scope="col" className={p.numCell}>Ответили</th>
               <th scope="col" className={p.numCell}>Активные</th>
             </tr>
@@ -61,7 +68,7 @@ export default function ColdTable({ data }) {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className={s.empty}>За период холодных лидов не было</td>
+                <td colSpan={6} className={s.empty}>За период холодных лидов не было</td>
               </tr>
             )}
             {rows.map((m) => (
