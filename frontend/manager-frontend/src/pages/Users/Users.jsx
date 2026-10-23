@@ -1,5 +1,5 @@
+import TableSkeleton from '../../components/TableSkeleton/TableSkeleton';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Header from '../../components/Header/Header';
 import DateRangePicker, { mskToday, human } from '../../components/DateRangePicker/DateRangePicker';
 import { PanelUX as ux } from '../../ui/PanelUX';
 import PickerModal from '../../ui/PickerModal';
@@ -204,10 +204,7 @@ export default function Users() {
   }, [sources, pickUser]);
 
   return (
-    <div className="app us-page">
-      <Header />
-      <main className="main">
-        <div className="container">
+    <div className="us-page">
           <div className={`${s.head} us-head`}>
             <div>
               <h2 className={s.title}>LeadGet</h2>
@@ -253,9 +250,8 @@ export default function Users() {
               </table>
             </div>
           )}
+          {loading && !groups.length && <TableSkeleton rows={6} label="Загружаем сотрудников…" />}
           {!loading && !groups.length && <p className={s.empty}>Ничего не найдено.</p>}
-        </div>
-      </main>
       {pickUser && picker.kind === 'donors' && (
         <PickerModal
           title={`Доноры: ${pickUser.username}`}

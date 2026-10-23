@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import Header from '../../components/Header/Header';
 import ApiKeys from './ApiKeys';
 import { getSettings, updateSettings } from '../../api/settings';
 import s from '../../styles/AdminPage.module.scss';
@@ -107,10 +106,7 @@ export default function Settings() {
   const triggers = settings?.handoff_triggers ?? [];
 
   return (
-    <div className="app">
-      <Header />
-      <main className="main">
-        <div className="container">
+    <>
         <div className={s.head}>
           <h2 className={s.title}>Настройки</h2>
         </div>
@@ -139,8 +135,6 @@ export default function Settings() {
         </section>
 
         <ApiKeys />
-        </div>
-      </main>
-    </div>
+    </>
   );
 }

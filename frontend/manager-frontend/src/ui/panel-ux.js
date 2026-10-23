@@ -26,6 +26,18 @@ export function createPanelUX({ React, api, styles: s }) {
     updateConfirmation();
     previous?.resolve(value);
   }
+  /** Вопрос с полем ввода вместо window.prompt: тот же стек и стиль, что у confirm. Отмена — null. */
+  function prompt(options) {
+    const config = typeof options === 'string' ? { title: options } : options;
+    return confirm({ ...config, input: { value: config.value ?? '', placeholder: config.placeholder ?? '' } }).then(value => (value === false ? null : value));
+  }
+  function PromptBody({ question }) {
+    const [value, setValue] = useState(question.input.value);
+    const submit = event => { event.preventDefault(); if (value.trim()) answer(value.trim()); };
+    return h('form', { id: 'ux-prompt-form', onSubmit: submit },
+      question.message ? h('p', { className: 'ux-confirm-text' }, question.message) : null,
+      h('input', { className: s.field, 'data-autofocus': true, value, placeholder: question.input.placeholder, maxLength: question.maxLength ?? 500, 'aria-label': question.title || question.message, onChange: event => setValue(event.target.value), style: { marginTop: question.message ? 12 : 0 } }));
+  }
   function Modal({ title, children, footer, onClose, busy = false, wide = false }) {
     const ref = useRef(null), closeRef = useRef(onClose), busyRef = useRef(busy), titleId = useId();
     closeRef.current = onClose; busyRef.current = busy;
@@ -66,9 +78,14 @@ export function createPanelUX({ React, api, styles: s }) {
         h('span', { className: 'ux-notice-icon', 'aria-hidden': true }, item.status === 'pending' ? '◌' : item.status === 'success' ? '✓' : '!'),
         h('span', null, item.text),
         item.status !== 'pending' && h('button', { type: 'button', 'aria-label': 'Закрыть уведомление', onClick: () => actions.dismiss(item.id) }, '×')))),
-      question && h(Modal, { title: question.title || 'Подтвердите действие', onClose: () => answer(false), footer: h(React.Fragment, null,
-        h('button', { type: 'button', className: s.btn, 'data-autofocus': true, onClick: () => answer(false) }, 'Отмена'),
-        h('button', { type: 'button', className: question.danger ? s.btnDanger : s.btnPrimary, onClick: () => answer(true) }, question.confirmLabel || 'Подтвердить')) }, question.message ? h('p', { className: 'ux-confirm-text' }, question.message) : null));
+      question && (question.input
+        ? h(Modal, { title: question.title || 'Введите значение', onClose: () => answer(false), footer: h(React.Fragment, null,
+            h('button', { type: 'button', className: s.btn, onClick: () => answer(false) }, 'Отмена'),
+            h('button', { type: 'submit', form: 'ux-prompt-form', className: question.danger ? s.btnDanger : s.btnPrimary }, question.confirmLabel || 'Сохранить')) },
+            h(PromptBody, { question }))
+        : h(Modal, { title: question.title || 'Подтвердите действие', onClose: () => answer(false), footer: h(React.Fragment, null,
+            h('button', { type: 'button', className: s.btn, 'data-autofocus': true, onClick: () => answer(false) }, 'Отмена'),
+            h('button', { type: 'button', className: question.danger ? s.btnDanger : s.btnPrimary, onClick: () => answer(true) }, question.confirmLabel || 'Подтвердить')) }, question.message ? h('p', { className: 'ux-confirm-text' }, question.message) : null)));
   }
   function DeleteLeadModal({ lead, onCancel, onConfirm }) {
     const [telegram, setTelegram] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -88,5 +105,5 @@ export function createPanelUX({ React, api, styles: s }) {
       telegram && h('p', { className: 'ux-inline-error' }, 'Сообщения исчезнут у обоих. Отменить это нельзя.'),
       error && h('p', { className: 'ux-inline-error', role: 'alert' }, error));
   }
-  return { Modal, FeedbackHost, DeleteLeadModal, confirm, useActions, readableError, ...actions };
+  return { Modal, FeedbackHost, DeleteLeadModal, confirm, prompt, useActions, readableError, ...actions };
 }

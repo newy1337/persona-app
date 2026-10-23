@@ -31,6 +31,7 @@ describe('насос очереди ответов', () => {
       locks: { run: (_id: number, body: () => Promise<boolean>) => body() },
       pumpAccounts: new Set(),
       pumpChats: new Set(),
+      pumpGenerating: new Set(),
       pumping: null,
       pumpAgain: false,
       recovering: false,
@@ -49,7 +50,15 @@ describe('насос очереди ответов', () => {
       // Дать отработать finally и следующему проходу насоса.
       for (let i = 0; i < 10; i += 1) await new Promise((r) => setImmediate(r));
     };
-    return { svc, started, finish };
+    const flush = async () => {
+      for (let i = 0; i < 10; i += 1) await new Promise((r) => setImmediate(r));
+    };
+    // Ответ сочинён, бот «печатает»: так respondCurrent зовёт freeLane перед отправкой.
+    const typing = async (chatId: number) => {
+      svc.freeLane(chatId);
+      await flush();
+    };
+    return { svc, started, finish, typing };
   }
 
   it('не ждёт ответов: возвращается сразу, сочинение идёт в фоне', async () => {
@@ -98,6 +107,62 @@ describe('насос очереди ответов', () => {
     expect(svc.pumpAccounts.size).toBe(3);
   });
 
+  it('пока бот печатает, его место в очереди занимает следующий чат', async () => {
+    const due = Array.from({ length: 5 }, (_, i) => ({
+      chatId: i + 1,
+      accountId: i + 1,
+    }));
+    const { svc, started, finish, typing } = brain(due, 2);
+    await svc.pumpDueReplies();
+    expect(started).toEqual([1, 2]);
+    // Чат 1 сочинён и печатается — сочиняющих 1 из 2, берём третий.
+    await typing(1);
+    expect(started).toEqual([1, 2, 3]);
+    await typing(2);
+    await typing(3);
+    expect(started).toEqual([1, 2, 3, 4, 5]);
+    // Печатают 1–3, сочиняют 4–5: места заняты, но аккаунты печатающих тоже заняты.
+    expect(svc.pumpGenerating.size).toBe(2);
+    expect(svc.pumpAccounts.size).toBe(5);
+    // Допечатал — аккаунт свободен, место не трогается: его уже отдали раньше.
+    await finish(1);
+    expect(svc.pumpAccounts.has(1)).toBe(false);
+    expect(svc.pumpGenerating.size).toBe(2);
+  });
+
+  it('пересочинение хвоста после сорванной печати снова занимает место, лишних чатов насос не берёт', async () => {
+    const due = [
+      { chatId: 1, accountId: 1 },
+      { chatId: 2, accountId: 2 },
+      { chatId: 3, accountId: 3 },
+    ];
+    const { svc, started, typing } = brain(due, 1);
+    await svc.pumpDueReplies();
+    await typing(1);
+    expect(started).toEqual([1, 2]);
+    // Чат 1 печатал, ответ устарел — хвост пересочиняется: мест 2 из 1, чат 3 ждёт.
+    svc.retakeLane(1);
+    await svc.pumpDueReplies();
+    expect(started).toEqual([1, 2]);
+    expect(svc.pumpGenerating.size).toBe(2);
+    // Чат, которого нет в работе, место не получает.
+    svc.retakeLane(99);
+    expect(svc.pumpGenerating.has(99)).toBe(false);
+  });
+
+  it('пока аккаунт печатает в одном чате, второй его чат ждёт', async () => {
+    const due = [
+      { chatId: 10, accountId: 1 },
+      { chatId: 11, accountId: 1 },
+    ];
+    const { svc, started, finish, typing } = brain(due, 2);
+    await svc.pumpDueReplies();
+    await typing(10);
+    expect(started).toEqual([10]);
+    await finish(10);
+    expect(started).toEqual([10, 11]);
+  });
+
   it('повторный проход не запускает чат, который уже в работе', async () => {
     const { svc, started } = brain([{ chatId: 10, accountId: 1 }]);
     await svc.pumpDueReplies();
@@ -117,6 +182,19 @@ describe('насос очереди ответов', () => {
     expect(svc.log.error).toHaveBeenCalled();
     expect(started).toEqual([-5, 6]);
     expect(svc.composing.size).toBe(1);
+  });
+
+  it('сбой фонового восстановления входящих не роняет процесс', async () => {
+    const { svc } = brain([]);
+    svc.history.unprocessedInbound = async () => {
+      throw new Error('Response from the Engine was empty');
+    };
+    await svc.pumpDueReplies();
+    for (let i = 0; i < 10; i += 1) await new Promise((r) => setImmediate(r));
+    expect(svc.log.warn).toHaveBeenCalledWith(
+      expect.stringContaining('inbound recovery failed'),
+    );
+    expect(svc.recovering).toBe(false);
   });
 
   it('о длинной очереди предупреждает, пустую не трогает', async () => {

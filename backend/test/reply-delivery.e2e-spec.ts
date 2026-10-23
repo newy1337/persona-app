@@ -252,6 +252,30 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
     );
   });
 
+  it('the reply-queue slot is freed once the reply is written: typing runs outside the lane limit', async () => {
+    let seen: { generating: boolean; accountBusy: boolean } | null = null;
+    let sent!: () => void;
+    const delivered = new Promise<void>((resolve) => (sent = resolve));
+    const original = transport.sendText.getMockImplementation();
+    transport.sendText.mockImplementationOnce(async (chat, parts, opts) => {
+      const pump = brain as any;
+      seen = {
+        generating: pump.pumpGenerating.has(chatId),
+        accountBusy: pump.pumpChats.has(chatId),
+      };
+      const ids = await original(chat, parts, opts);
+      sent();
+      return ids;
+    });
+    // Фоновое восстановление входящих тут не нужно: оно пережило бы тест.
+    (brain as any).recovering = true;
+    expect(await (brain as any).pumpDueReplies()).toBe(1);
+    await delivered;
+    // Печатает: место в очереди уже отдано, но чат и аккаунт ещё заняты.
+    expect(seen).toEqual({ generating: false, accountBusy: true });
+    expect((await assistantRows()).length).toBeGreaterThan(0);
+  });
+
   it('failed first send leaves no fictional memory/facts and retries the persisted draft', async () => {
     transport.sendText.mockRejectedValueOnce(new Error('network down'));
     expect(await brain.runDueReplies()).toBe(0);

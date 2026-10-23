@@ -135,7 +135,7 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
           {defined.size} переменн. · в текстах используется {[...used.keys()].length}
         </span>
         <div className={s.actions}>
-          <button className={s.btnSm} onClick={() => addRow()}>+ Переменная</button>
+          <button type="button" className={s.btnSm} onClick={() => addRow()}>Добавить переменную</button>
           <button className={s.btnSm} onClick={versions.toggle}>
             {versions.open ? 'Скрыть историю' : 'История версий'}
           </button>

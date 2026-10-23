@@ -27,7 +27,7 @@ const input = async (element, value) => act(async () => {
 });
 test('creates a manager with a leading-zero region and no manually entered password', async () => {
   const post = vi.spyOn(api,'post').mockResolvedValue({...users,created_user_id:3});
-  await render(<ManagersPage />); await click('+ Создать учётку');
+  await render(<ManagersPage />); await click('Создать учётку');
   const form=host.querySelector('form'); const fields=form.querySelectorAll('input');
   await input(fields[0],'new_manager'); await input(fields[1],'0123');
   await act(async()=>form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));

@@ -1,5 +1,6 @@
-import { useCallback, useState, useEffect, useRef } from 'react';
-import Header from '../components/Header/Header';
+import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
+import { usePublishHeaderTools } from '../components/AppLayout/headerTools';
+import { PanelUX } from '../ui/PanelUX';
 import NeedManagerAssist from '../components/NeedManagerAssist/NeedManagerAssist';
 import LiveConversations from '../components/LiveConversations/LiveConversations';
 import StatsBar from '../components/StatsBar/StatsBar';
@@ -88,12 +89,11 @@ function Dashboard() {
   }, [showHidden]);
 
   const changeDealStage = useCallback(
-    (chatId, stage, row) => {
+    async (chatId, stage, row) => {
       let note = '';
       if (stage === 'archive') {
-        note = window.prompt('Почему в архив?', row?.deal_note || '');
-        if (note == null || !note.trim()) return;
-        note = note.trim();
+        note = await PanelUX.prompt({ title: 'В архив', message: 'Почему диалог уходит в архив?', value: row?.deal_note || '', confirmLabel: 'В архив' });
+        if (!note) return;
       }
       setDealStage(chatId, stage, note)
         .then(load)
@@ -117,12 +117,12 @@ function Dashboard() {
   };
 
   const toggleHidden = useCallback(
-    (chatId, hidden) => {
+    async (chatId, hidden) => {
       let request;
       if (hidden) {
-        const note = window.prompt('Почему в архив?', '');
-        if (note == null || !note.trim()) return;
-        request = setDealStage(chatId, 'archive', note.trim());
+        const note = await PanelUX.prompt({ title: 'В архив', message: 'Почему диалог уходит в архив?', confirmLabel: 'В архив' });
+        if (!note) return;
+        request = setDealStage(chatId, 'archive', note);
       } else {
         request = setConversationHidden(chatId, false);
       }
@@ -162,18 +162,22 @@ function Dashboard() {
     };
   }, [load]);
 
+  const accounts = useMemo(
+    () => [...new Set(rows.map((r) => r.account_id).filter((a) => a != null))].sort(),
+    [rows],
+  );
+  usePublishHeaderTools({
+    liveCount: liveAgents.length,
+    query,
+    onQueryChange: setQuery,
+    filters: headFilters,
+    onFiltersChange: setHeadFilters,
+    accounts,
+    accountsKey: accounts.join(','),
+  });
+
   return (
-    <div className="app">
-      <Header
-        liveCount={liveAgents.length}
-        query={query}
-        onQueryChange={setQuery}
-        filters={headFilters}
-        onFiltersChange={setHeadFilters}
-        accounts={[...new Set(rows.map((r) => r.account_id).filter((a) => a != null))].sort()}
-      />
-      <main className="main">
-        <div className="container">
+    <>
           {error && <div className="loadError">Не удалось загрузить: {error}</div>}
           {reminder && (
             <div className="stageReminder" role="status" data-testid="stage-reminder">
@@ -195,9 +199,7 @@ function Dashboard() {
             onHide={toggleHidden}
             onDealStage={changeDealStage}
           />
-        </div>
-      </main>
-    </div>
+    </>
   );
 }
 

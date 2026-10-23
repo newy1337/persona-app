@@ -4,6 +4,7 @@ import React, { act } from 'react';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 import { createRoot } from 'react-dom/client';
+import { HeaderToolsContext } from '../../components/AppLayout/headerTools';
 
 const { navigateMock, getBeatsMock } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
@@ -69,6 +70,7 @@ vi.mock('../../api/client', () => ({
 }));
 
 import ConversationPage, { TOGGLE_COOLDOWN_MS } from './ConversationPage';
+import { PanelUX } from '../../ui/PanelUX';
 import { getConversationById, getInboundMedia, getPauseStatus, sendAlbum, sendAttachment, getMediaGallery, setConversationHidden, setDealStage } from '../../api/conversations';
 
 let container = null;
@@ -79,7 +81,11 @@ async function renderPage() {
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root.render(<ConversationPage />);
+    root.render(
+      <HeaderToolsContext.Provider value={{ tools: null, setTools: (t) => { published.tools = t; } }}>
+        <ConversationPage />
+      </HeaderToolsContext.Provider>,
+    );
   });
   await act(async () => {
     await vi.advanceTimersByTimeAsync(100);
@@ -93,7 +99,9 @@ function unmount() {
   root = null;
 }
 
-const liveCount = () => container.querySelector('[class*="liveCount"]')?.textContent;
+// Счётчик LIVE страница отдаёт общей шапке через контекст.
+const published = { tools: null };
+const liveCount = () => String(published.tools?.liveCount ?? '');
 const navButton = (name) => container.querySelector(`button[aria-label="${name}"]`);
 
 beforeEach(() => {
@@ -1025,7 +1033,8 @@ describe('несколько фото, «Медиа», архив и «вниз�
 
   it('«В архив» из чата спрашивает причину и ставит этап «Архив»', async () => {
     await renderPage();
-    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('  не отвечает ');
+    // Причину спрашивает окно панели, не window.prompt.
+    const prompt = vi.spyOn(PanelUX, 'prompt').mockResolvedValue('не отвечает');
     await act(async () => {
       container.querySelector('[data-testid="archive-toggle"]').click();
       await vi.advanceTimersByTimeAsync(10);
@@ -1040,7 +1049,7 @@ describe('несколько фото, «Медиа», архив и «вниз�
     vi.mocked(setDealStage).mockClear();
     vi.mocked(setConversationHidden).mockClear();
     await renderPage();
-    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('');
+    const prompt = vi.spyOn(PanelUX, 'prompt').mockResolvedValue(null);
     await act(async () => {
       container.querySelector('[data-testid="archive-toggle"]').click();
       await vi.advanceTimersByTimeAsync(10);

@@ -1,6 +1,5 @@
 import React from 'react';
 import { api } from '../api/client';
-import Nav from '../components/Header/Header';
 import s from '../styles/AdminPage.module.scss';
 import { getAccounts as loadAccounts } from '../api/accounts';
 import { PanelUX as ux } from './PanelUX';
@@ -492,8 +491,8 @@ export function ManagersPage() {
   const visible = data.items.filter(user => [user.username, user.region_code, roles[user.role]].some(value => String(value || '').toLowerCase().includes(query.trim().toLowerCase())));
   const admin = me?.role === 'admin';
   const photo = usePhotoAssignments(data.items.map(user => user.region_code));
-  return h('div', { className: 'app mr-managers' }, h(Nav), h('main', { className: 'main' }, h('div', { className: 'container' },
-    h('div', { className: s.head }, h('h2', { className: s.title }, admin ? 'Менеджеры' : `Моя команда · регион ${me?.region_code || ''}`), h('div', { className: s.actions }, !admin && h(OwnRegionReassign), !admin && h(RegionStopButton), admin && !creating && button('+ Создать учётку', () => { setCreating(true); setCredentials(null); }, { className: s.btnPrimary }))),
+  return h('div', { className: 'mr-managers' },
+    h('div', { className: s.head }, h('h2', { className: s.title }, admin ? 'Менеджеры' : `Моя команда · регион ${me?.region_code || ''}`), h('div', { className: s.actions }, !admin && h(OwnRegionReassign), !admin && h(RegionStopButton), admin && !creating && button('Создать учётку', () => { setCreating(true); setCredentials(null); }, { className: s.btnPrimary }))),
     creating && h(CreateForm, { availableRoles: data.roles, voicers: data.items.filter(u => u.role === 'voice'), users: data.items, donors, onCreate: create, onCancel: () => setCreating(false) }),
     (error || photo.error) && h('p', { className: s.error, role: 'alert' }, error || photo.error),
     credentials && h(Credentials, { value: credentials, onClose: () => setCredentials(null), onRegenerate: regenerate }),
@@ -517,5 +516,5 @@ export function ManagersPage() {
       }))),
     !loading && !visible.length && h('p', { className: s.empty }, 'Ничего не найдено. Измените поиск.'),
     editing && h(ManagerEditor, { key: editing.user_id, user: editing, me, availableRoles: data.roles, voicers: data.items.filter(u => u.role === 'voice'), users: data.items, leadOnly: !admin, onSave: save, onClose: () => setEditing(null) }),
-    assigning && h(AccountAssignment, { key: assigning.user_id, user: assigning, users: data.items, accounts, onSave: save, onClose: () => setAssigning(null) }))));
+    assigning && h(AccountAssignment, { key: assigning.user_id, user: assigning, users: data.items, accounts, onSave: save, onClose: () => setAssigning(null) }));
 }

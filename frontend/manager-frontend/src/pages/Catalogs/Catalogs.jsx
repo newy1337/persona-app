@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import Header from '../../components/Header/Header';
 import { PanelUX as ux } from '../../ui/PanelUX';
 import { createDonor, deleteDonor, getDonors } from '../../api/donors';
 import { createSource, deleteSource, getSources } from '../../api/sources';
@@ -59,10 +58,7 @@ export default function Catalogs() {
   }, []);
   useEffect(() => { load().catch((e) => setError(ux.readableError(e))); }, [load]);
   return (
-    <div className="app ct-page">
-      <Header />
-      <main className="main">
-        <div className="container">
+    <div className="ct-page">
           <div className={s.head}><h2 className={s.title}>Справочники</h2></div>
           {error && <p className={s.error} role="alert">{error}</p>}
           <CatalogPanel
@@ -83,8 +79,6 @@ export default function Catalogs() {
             onDelete={async (id) => { setSources((await deleteSource(id)).items ?? []); setError(''); }}
             deleteNote={(n) => `Он снимется у ${n} менедж.`}
           />
-        </div>
-      </main>
     </div>
   );
 }

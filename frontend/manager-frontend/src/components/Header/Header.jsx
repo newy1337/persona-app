@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, memo } from 'react';
 import { api, setTokens } from '../../api/client';
 import { getStats } from '../../api/stats';
 import { Link, NavLink } from 'react-router-dom';
 import styles from './Header.module.scss';
 import VoiceNotifications from './VoiceNotifications';
 import { isManagerRole } from '../../utils/roles';
+import { useMe } from '../AppLayout/me';
 import {
   LogoChatIcon,
   LiveUsersIcon,
@@ -80,6 +81,21 @@ function FiltersDropdown({ value, onChange, accounts }) {
 
 const navClass = ({ isActive }) => `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`;
 
+/* Часы тикают в своём компоненте: раньше секундный таймер перерисовывал всю шапку. */
+const Clock = memo(function Clock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className={styles.timeBlock}>
+      <span className={styles.timeValue}>{now.toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow' })} МСК</span>
+      <span className={styles.timeDate}>{now.toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+    </div>
+  );
+});
+
 function Header({
   liveCount,
   query = '',
@@ -89,21 +105,11 @@ function Header({
   accounts = [],
 }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [me, setMe] = useState(null);
+  const me = useMe();
   const [leaving, setLeaving] = useState(false);
-  const [now, setNow] = useState(() => new Date());
   const [ownLive, setOwnLive] = useState(null);
   const searchable = typeof onQueryChange === 'function';
   const filtersRef = useRef(null);
-
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    api.get('/auth/me').then(setMe).catch(() => setMe(null));
-  }, []);
 
   useEffect(() => {
     if (liveCount !== undefined || !me || me.role === 'voice') return undefined;
@@ -115,15 +121,20 @@ function Header({
   const live = liveCount ?? ownLive;
 
   useEffect(() => {
+    if (!filtersOpen) return undefined;
     function handleClickOutside(e) {
       if (filtersRef.current && !filtersRef.current.contains(e.target)) {
         setFiltersOpen(false);
       }
     }
-
+    const onKey = (e) => e.key === 'Escape' && setFiltersOpen(false);
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [filtersOpen]);
 
   return (
     <header className={styles.header}>
@@ -184,7 +195,10 @@ function Header({
 
             <div className={styles.filtersWrap} ref={filtersRef}>
               <button
+                type="button"
                 className={`${styles.filtersBtn} ${filtersOpen ? styles.filtersBtnActive : ''}`}
+                aria-expanded={filtersOpen}
+                aria-haspopup="dialog"
                 onClick={() => setFiltersOpen((v) => !v)}
               >
                 <FiltersIcon />
@@ -209,10 +223,7 @@ function Header({
 
         <div className={styles.right}>
           {me && ['manager', 'admin'].includes(me.role) && <VoiceNotifications key={me.id} userId={me.id} />}
-          <div className={styles.timeBlock}>
-            <span className={styles.timeValue}>{now.toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow' })} МСК</span>
-            <span className={styles.timeDate}>{now.toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
-          </div>
+          <Clock />
 
           <span className={styles.separator}></span>
 
@@ -226,8 +237,10 @@ function Header({
               <span className={styles.avatarStatus}></span>
             </div>
             <button
+              type="button"
               className={styles.logout}
               title="Выйти"
+              aria-label="Выйти"
               disabled={leaving}
               onClick={async () => {
                 setLeaving(true);

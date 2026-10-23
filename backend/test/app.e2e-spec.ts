@@ -771,6 +771,13 @@ describe('Manager panel API (e2e)', () => {
       afterEdit.body.items.every((u: any) => u.region_code === '0101'),
     ).toBe(true);
     expect((await byId(manager)).lead_id).toBe(head);
+    // хед региона годится и явно: панель шлёт его id, когда тимлида нет
+    await request(app.getHttpServer())
+      .put(`/api/managers/${manager}`)
+      .set(headAuth)
+      .send({ lead_id: head })
+      .expect(200);
+    expect((await byId(manager)).lead_id).toBe(head);
     await request(app.getHttpServer())
       .put(`/api/managers/${manager}`)
       .set(headAuth)

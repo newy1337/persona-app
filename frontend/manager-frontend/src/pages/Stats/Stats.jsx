@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Header from '../../components/Header/Header';
 import { getUsage, getManagerUsage, getBalance, getDealStages, getColdLeads } from '../../api/usage';
 import DailyChart from './DailyChart';
 import DateRangePicker, { mskToday, addDays } from '../../components/DateRangePicker/DateRangePicker';
@@ -8,6 +7,7 @@ import PricesEditor from './PricesEditor';
 import ManagersTable from './ManagersTable';
 import StagesTable from './StagesTable';
 import ColdTable from './ColdTable';
+import TableSkeleton from '../../components/TableSkeleton/TableSkeleton';
 import Balance from './Balance';
 import s from '../../styles/AdminPage.module.scss';
 import p from './Stats.module.scss';
@@ -151,10 +151,7 @@ export default function Stats() {
   const t = data?.totals;
 
   return (
-    <div className="app">
-      <Header />
-      <main className="main">
-        <div className="container">
+    <>
           <div className={s.head}>
             <h2 className={s.title}>Статистика</h2>
             <div className={s.actions}>
@@ -202,18 +199,18 @@ export default function Stats() {
           </div>
 
           {tab === 'cold' ? (
-            cold ? <ColdTable data={cold} /> : <p className={s.empty}>Считаю холодку…</p>
+            cold ? <ColdTable data={cold} /> : <TableSkeleton rows={5} label="Считаю холодку…" />
           ) : tab === 'stages' ? (
-            stages ? <StagesTable data={stages} /> : <p className={s.empty}>Считаю этапы…</p>
+            stages ? <StagesTable data={stages} /> : <TableSkeleton rows={5} label="Считаю этапы…" />
           ) : tab === 'managers' ? (
             managersLoading || !managers ? (
-              <p className={s.empty} data-testid="managers-loading">Считаю по менеджерам…</p>
+              <TableSkeleton rows={5} label="Считаю по менеджерам…" />
             ) : (
               <ManagersTable rows={managers} />
             )
           ) : tab === 'teams' ? (
             managersLoading || !teams ? (
-              <p className={s.empty} data-testid="teams-loading">Считаю по командам…</p>
+              <TableSkeleton rows={5} label="Считаю по командам…" />
             ) : (
               <ManagersTable
                 rows={teams}
@@ -224,7 +221,7 @@ export default function Stats() {
               />
             )
           ) : !data ? (
-            <p className={s.empty}>Загружаю…</p>
+            <TableSkeleton rows={6} label="Загружаем статистику…" />
           ) : (
             <>
               <div className={p.kpis}>
@@ -320,8 +317,6 @@ export default function Stats() {
               </section>
             </>
           )}
-        </div>
-      </main>
-    </div>
+    </>
   );
 }
