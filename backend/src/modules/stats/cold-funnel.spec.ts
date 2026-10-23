@@ -4,7 +4,8 @@ const lead = (
   owner: number | null,
   written: boolean,
   user_msgs = 0,
-): ColdLeadRow => ({ owner_user_id: owner, written, user_msgs });
+  invalid = false,
+): ColdLeadRow => ({ owner_user_id: owner, written, invalid, user_msgs });
 
 const users = new Map([
   [1, { username: 'anna', role: 'manager', region_code: '001' }],
@@ -26,6 +27,7 @@ describe('воронка холодки', () => {
     expect(r.totals).toEqual({
       received: 5,
       written: 4,
+      invalid: 0,
       replied: 3,
       active: 1,
     });
@@ -37,6 +39,7 @@ describe('воронка холодки', () => {
         region_code: '001',
         received: 4,
         written: 3,
+        invalid: 0,
         replied: 2,
         active: 1,
       },
@@ -47,6 +50,7 @@ describe('воронка холодки', () => {
         region_code: '002',
         received: 1,
         written: 1,
+        invalid: 0,
         replied: 1,
         active: 0,
       },
@@ -66,6 +70,7 @@ describe('воронка холодки', () => {
     expect(r.totals).toEqual({
       received: 1,
       written: 0,
+      invalid: 0,
       replied: 0,
       active: 0,
     });
@@ -78,8 +83,17 @@ describe('воронка холодки', () => {
 
   it('пустой период — нули и пустая таблица', () => {
     expect(coldFunnel([], users)).toEqual({
-      totals: { received: 0, written: 0, replied: 0, active: 0 },
+      totals: { received: 0, written: 0, invalid: 0, replied: 0, active: 0 },
       by_manager: [],
     });
+  });
+
+  it('невалид — не нашли в Telegram, считается только среди ненаписанных', () => {
+    const r = coldFunnel(
+      [lead(1, false, 0, true), lead(1, false), lead(1, true, 0, false)],
+      users,
+    );
+    expect(r.totals).toMatchObject({ received: 3, written: 1, invalid: 1 });
+    expect(r.by_manager[0]).toMatchObject({ invalid: 1 });
   });
 });

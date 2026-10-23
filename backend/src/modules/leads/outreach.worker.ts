@@ -22,6 +22,7 @@ import {
 } from 'src/domain/leads';
 import { toChatId } from 'src/utils/ids';
 import { isTelegramTimeout } from 'src/domain/timeout';
+import { classifyOutreachError } from 'src/domain/outreach-errors';
 
 const STALLED_ACCOUNT_PAUSE_S = 15 * 60;
 const TICK_STALE_S = 10 * 60;
@@ -114,6 +115,38 @@ export class OutreachWorker implements OnModuleInit {
           lead.preferredAccountId === null
             ? releasedLeadError(label, reason, untilTs)
             : `${label}: ${reason} — ждём выбранный аккаунт, другой аккаунт не используется`,
+      },
+    });
+  }
+
+  /**
+   * Отдать лид другому аккаунту той же личности: этот аккаунт для него
+   * запоминается как неподходящий. Закреплённый за аккаунтом лид ждёт его,
+   * если аккаунт оживёт сам (until); если не оживёт (permanent) — закрепление
+   * снимается, иначе лид висел бы вечно.
+   */
+  private async handOff(
+    lead: { id: number; preferredAccountId: number | null },
+    accountId: number,
+    reason: string,
+    opts: { permanent?: boolean; until?: number; attempts?: number } = {},
+  ): Promise<void> {
+    const pinned = lead.preferredAccountId === accountId && !opts.permanent;
+    await this.prisma.phoneNumber.update({
+      where: { id: lead.id },
+      data: {
+        status: 'queued',
+        assignedAccountId: null,
+        assignedAt: null,
+        avoidAccountId: pinned ? undefined : accountId,
+        ...(lead.preferredAccountId === accountId && opts.permanent
+          ? { preferredAccountId: null }
+          : {}),
+        nextAttemptAt: pinned ? (opts.until ?? null) : null,
+        ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
+        lastError: pinned
+          ? `${reason} — ждём выбранный аккаунт`
+          : `${reason} — лид отдан другому аккаунту`,
       },
     });
   }
@@ -433,17 +466,62 @@ export class OutreachWorker implements OnModuleInit {
         );
         return;
       }
+      const raw = String(e?.message ?? e).slice(0, 200);
+      const failure = classifyOutreachError(e);
+      if (failure.kind === 'recipient') {
+        await this.prisma.phoneNumber.update({
+          where: { id: candidate.id },
+          data: {
+            status: 'dead',
+            attempts,
+            nextAttemptAt: null,
+            lastError: failure.reason,
+          },
+        });
+        this.log.warn(
+          `outreach: lead #${candidate.id} cannot be written by anyone (${raw}) — marked dead`,
+        );
+        return;
+      }
+      if (failure.kind === 'account') {
+        // Беда аккаунта, не лида: попытку не тратим, лид — другому аккаунту.
+        const until = now + failure.pauseS;
+        await this.limitAccount(accountId, until, failure.reason);
+        await this.handOff(candidate, accountId, failure.reason, {
+          permanent: failure.permanent,
+          until,
+        });
+        this.log.warn(
+          `outreach: account ${accountId} ${failure.reason} (${raw}); lead #${candidate.id} handed to another account`,
+        );
+        return;
+      }
+      // Этот аккаунт не смог — пробуем другим. Если первое сообщение уже
+      // могло уйти (ошибка после начала отправки), меняя аккаунт, рискуем
+      // написать человеку дважды — тогда повторяем тем же, как раньше.
+      if (!dead && (failure.kind === 'switch' || !openerStarted)) {
+        await this.handOff(
+          candidate,
+          accountId,
+          failure.kind === 'switch' ? failure.reason : raw,
+          { attempts, until: now + RETRY_BACKOFF_S },
+        );
+        this.log.warn(
+          `outreach: lead #${candidate.id} attempt ${attempts} failed on account ${accountId}: ${raw} — handed to another account`,
+        );
+        return;
+      }
       await this.prisma.phoneNumber.update({
         where: { id: candidate.id },
         data: {
           status: dead ? 'dead' : 'queued',
           attempts,
           nextAttemptAt: dead ? null : now + RETRY_BACKOFF_S,
-          lastError: String(e?.message ?? e).slice(0, 256),
+          lastError: raw,
         },
       });
       this.log.warn(
-        `outreach: lead #${candidate.id} attempt ${attempts} failed: ${e?.message ?? e}`,
+        `outreach: lead #${candidate.id} attempt ${attempts} failed: ${raw}`,
       );
     }
   }
