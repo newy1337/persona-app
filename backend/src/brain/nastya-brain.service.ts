@@ -628,6 +628,15 @@ export class NastyaBrainService implements ReplyBrain {
       void this.pumpDueReplies().catch(() => undefined);
   }
 
+  /**
+   * Печать сорвалась, и хвост ответа нужно пересочинить: это снова работа
+   * модели, поэтому чат опять считается сочиняющим. Место не ждём (оно могло
+   * уйти другому), но новых чатов насос сверх лимита не возьмёт.
+   */
+  private retakeLane(chatId: number): void {
+    if (this.pumpChats.has(chatId)) this.pumpGenerating.add(chatId);
+  }
+
   private async recoverInbound(): Promise<void> {
     for (const turn of await this.history.unprocessedInbound()) {
       try {
@@ -1060,6 +1069,7 @@ export class NastyaBrainService implements ReplyBrain {
           await this.schedule.drop(chatId);
         } else if (draft?.sentCount && current) {
           try {
+            this.retakeLane(chatId);
             await this.refreshContinuation(current, draft, signal);
           } catch (error) {
             if (signal.aborted || error instanceof ReplySuperseded) {

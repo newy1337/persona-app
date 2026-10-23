@@ -130,6 +130,26 @@ describe('насос очереди ответов', () => {
     expect(svc.pumpGenerating.size).toBe(2);
   });
 
+  it('пересочинение хвоста после сорванной печати снова занимает место, лишних чатов насос не берёт', async () => {
+    const due = [
+      { chatId: 1, accountId: 1 },
+      { chatId: 2, accountId: 2 },
+      { chatId: 3, accountId: 3 },
+    ];
+    const { svc, started, typing } = brain(due, 1);
+    await svc.pumpDueReplies();
+    await typing(1);
+    expect(started).toEqual([1, 2]);
+    // Чат 1 печатал, ответ устарел — хвост пересочиняется: мест 2 из 1, чат 3 ждёт.
+    svc.retakeLane(1);
+    await svc.pumpDueReplies();
+    expect(started).toEqual([1, 2]);
+    expect(svc.pumpGenerating.size).toBe(2);
+    // Чат, которого нет в работе, место не получает.
+    svc.retakeLane(99);
+    expect(svc.pumpGenerating.has(99)).toBe(false);
+  });
+
   it('пока аккаунт печатает в одном чате, второй его чат ждёт', async () => {
     const due = [
       { chatId: 10, accountId: 1 },
