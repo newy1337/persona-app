@@ -160,6 +160,8 @@ import {
   staleness,
   type RitualKind,
 } from './nastya/dialogue/rhythm';
+import type { TimeWindow } from './nastya/config/rhythm';
+import { ModelResponseError } from './nastya/kernel/errors';
 import {
   ReplyScheduleService,
   type ScheduledReply,
@@ -2587,6 +2589,29 @@ export class NastyaBrainService implements ReplyBrain {
     });
   }
 
+  /**
+   * Утро промолчало — этот день закрыт, иначе ритуал каждую минуту заново
+   * зовёт модель и получает тот же отказ.
+   */
+  private async skipMorning(
+    chatId: number,
+    persona: { rhythm: { morning: TimeWindow; timezone: string } },
+  ): Promise<void> {
+    const latest = await this.state.load(chatId);
+    const slot = ritualSlot(
+      this.clock.now(),
+      persona.rhythm.morning,
+      persona.rhythm.timezone,
+      chatId,
+      'morning',
+    );
+    (latest.rhythm ??= {}).morning ??= {};
+    latest.rhythm.morning[slot.day] = 'skipped';
+    pruneRhythm(latest.rhythm, slot.day);
+    await this.state.save(chatId, latest);
+    this.log.log(`chat=${chatId}: morning message skipped (model declined)`);
+  }
+
   private async sendUnprompted(
     chatId: number,
     accountId: number,
@@ -2649,6 +2674,8 @@ export class NastyaBrainService implements ReplyBrain {
         stable: prompt.stable,
         volatile: `${prompt.volatile}\n\n${prompts.initiative_suffix}`,
       };
+      // Промпт велит промолчать (просили не писать) — модель отдаёт пустой
+      // ответ. Для инициативы это «не отправлять», а не ошибка.
       const draft = await generateDraft(
         {
           model,
@@ -2657,7 +2684,15 @@ export class NastyaBrainService implements ReplyBrain {
           userText: 'Напиши запланированное инициативное сообщение.',
         },
         this.llmDeps(scope, variables, signal),
-      );
+      ).catch((e) => {
+        if (e instanceof ModelResponseError && /empty reply/.test(e.message))
+          return '';
+        throw e;
+      });
+      if (!draft.trim()) {
+        if (opts.author === 'morning') await this.skipMorning(chatId, persona);
+        return false;
+      }
       checkCancelled(signal);
       const card = stripMetadata(config.persona);
       card['name'] = name;
@@ -2736,24 +2771,7 @@ export class NastyaBrainService implements ReplyBrain {
         return false;
       }
       if (!reply.trim()) {
-        // Утро промолчало — этот день закрыт, иначе ритуал каждую минуту
-        // заново зовёт модель и получает тот же отказ.
-        if (opts.author === 'morning') {
-          const slot = ritualSlot(
-            this.clock.now(),
-            persona.rhythm.morning,
-            persona.rhythm.timezone,
-            chatId,
-            'morning',
-          );
-          (latest.rhythm ??= {}).morning ??= {};
-          latest.rhythm.morning[slot.day] = 'skipped';
-          pruneRhythm(latest.rhythm, slot.day);
-          await this.state.save(chatId, latest);
-          this.log.log(
-            `chat=${chatId}: morning message skipped (model declined)`,
-          );
-        }
+        if (opts.author === 'morning') await this.skipMorning(chatId, persona);
         return false;
       }
 

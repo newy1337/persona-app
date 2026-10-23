@@ -1,10 +1,8 @@
 import { ModelResponseError } from '../kernel/errors';
 
 // Модель иногда пишет заглушку вместо ответа — собеседнику её отправлять нельзя.
-// Промпт «верни пустую строку» модель понимает буквально: «(пустая строка)»,
-// «[пусто]» — это тоже отказ писать, а не текст.
 const PLACEHOLDER_REPLY_RX =
-  /^[\s([<«"'*]*(пустой\s+ответ|пустая\s+строка|пустое\s+сообщение|пусто|ничего|нет\s+ответа|без\s+ответа|ответа\s+нет|empty(\s+(reply|response|string|line))?|no\s+(reply|response)|n\/a|-|—|\.\.\.|…)[\s)\]>»"'*.!…]*$/iu;
+  /^[\s([<«"'*]*(пустой\s+ответ|нет\s+ответа|без\s+ответа|ответа\s+нет|empty(\s+reply|\s+response)?|no\s+(reply|response)|n\/a)[\s)\]>»"'*.!…]*$/iu;
 
 export function isPlaceholderReply(text: string): boolean {
   return PLACEHOLDER_REPLY_RX.test(text.trim());

@@ -162,7 +162,7 @@ export class OutreachWorker implements OnModuleInit {
         status: 'dead',
         assignedAccountId: null,
         nextAttemptAt: null,
-        lastError: `это наш аккаунт${ownAccountId ? ` #${ownAccountId}` : ''} — себе не пишем`,
+        lastError: `собственный аккаунт${ownAccountId ? ` #${ownAccountId}` : ''}`,
       },
     });
     this.log.warn(

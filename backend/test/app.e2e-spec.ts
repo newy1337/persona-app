@@ -3060,7 +3060,7 @@ describe('Manager panel API (e2e)', () => {
         await prisma.phoneNumber.findUnique({ where: { id: own } }),
       ).toMatchObject({
         status: 'dead',
-        lastError: expect.stringMatching(/наш аккаунт/),
+        lastError: expect.stringMatching(/^собственный аккаунт/),
       });
 
       // Ник нашёлся, но это id нашего аккаунта — тоже не пишем.
