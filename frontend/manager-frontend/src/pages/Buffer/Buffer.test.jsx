@@ -7,12 +7,13 @@ import { PanelUX } from '../../ui/PanelUX';
 import Buffer from './Buffer';
 import { ReassignSwitch } from '../../ui/ReassignSwitch';
 
-vi.mock('../../components/Header/Header', () => ({ default: () => null }));
+import { MeContext } from '../../components/AppLayout/me';
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let host, root;
 beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); });
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); });
-const render = async (el) => act(async () => root.render(el));
+// Роль страница берёт из общего контекста (раньше — своим запросом /auth/me).
+const render = async (el, me = { role: 'head' }) => act(async () => root.render(<MeContext.Provider value={me}>{el}</MeContext.Provider>));
 const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 
 const items = [
@@ -36,7 +37,7 @@ test('буфер: строки, пометки «перезабив» и «уж�
 test('взять в работу и отклонить с причиной', async () => {
   vi.spyOn(api, 'get').mockImplementation(async (p) => (p.startsWith('/api/buffer') ? { items, total: 2 } : { role: 'admin' }));
   const post = vi.spyOn(api, 'post').mockImplementation(async (p) => ({ items: items.filter((x) => !p.includes(`/${x.id}/`)), total: 1 }));
-  await render(<Buffer />);
+  await render(<Buffer />, { role: 'admin' });
   await flush();
   expect(host.querySelector('[aria-label="Регион"]')).not.toBeNull();
   await act(async () => [...host.querySelectorAll('[data-buffer-id="1"] button')].find((b) => b.textContent === 'Взять в работу').click());

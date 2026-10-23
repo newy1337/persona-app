@@ -4,6 +4,7 @@ import React, { act } from 'react';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 import { createRoot } from 'react-dom/client';
+import { HeaderToolsContext } from '../components/AppLayout/headerTools';
 
 const DAY = 24 * 3600;
 const now = () => Math.floor(Date.now() / 1000);
@@ -22,6 +23,10 @@ vi.mock('../api/conversations', () => ({
   getStats: stats,
   setConversationHidden: vi.fn(),
 }));
+
+// Плитки живут в своём модуле: без этой заглушки загрузка падала целиком и
+// проверка живых диалогов проходила случайно, по цифре из другого места.
+vi.mock('../api/stats', () => ({ getStats: stats }));
 
 vi.mock('react-router-dom', async () => {
   const React = await import('react');
@@ -43,6 +48,11 @@ const row = (chatId, agoSeconds) => ({
 });
 
 let Dashboard;
+// Страница отдаёт счётчик LIVE общей шапке через контекст — ловим его здесь.
+const published = { tools: null };
+function Shell({ children }) {
+  return React.createElement(HeaderToolsContext.Provider, { value: { tools: published.tools, setTools: (t) => { published.tools = t; } } }, children);
+}
 
 beforeEach(async () => {
   conversations.mockResolvedValue([row(1, 60), row(2, 3 * 3600), row(3, DAY + 3600)]);
@@ -58,7 +68,7 @@ async function draw() {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
-  await act(async () => root.render(React.createElement(Dashboard)));
+  await act(async () => root.render(React.createElement(Shell, null, React.createElement(Dashboard))));
   return { host, root };
 }
 
@@ -70,9 +80,9 @@ describe('главная панель: один список вместо дву
   });
 
   it('живые берутся из того же списка: граница — сутки', async () => {
-    const { host, root } = await draw();
+    const { root } = await draw();
     // Третья строка старше суток, значит в живых остаются две.
-    expect(host.textContent).toContain('2');
+    expect(published.tools?.liveCount).toBe(2);
     await act(async () => root.unmount());
   });
 });

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import Header from '../../components/Header/Header';
+import { useMe } from '../../components/AppLayout/me';
 import { PanelUX as ux } from '../../ui/PanelUX';
-import { api } from '../../api/client';
+import TableSkeleton from '../../components/TableSkeleton/TableSkeleton';
 import { declineBuffered, getBuffer, takeBuffered } from '../../api/buffer';
 import { httpHref } from '../../utils/safeUrl';
 import s from '../../styles/AdminPage.module.scss';
@@ -81,11 +81,10 @@ export default function Buffer() {
   const [busy, setBusy] = useState(null);
   const [declining, setDeclining] = useState(null);
   const [region, setRegion] = useState('');
-  const [me, setMe] = useState(null);
+  const me = useMe();
 
   const load = useCallback(() => getBuffer(region).then(setData).catch((e) => setError(ux.readableError(e))).finally(() => setLoading(false)), [region]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { api.get('/auth/me').then(setMe).catch(() => setMe(null)); }, []);
 
   async function take(item) {
     setBusy(item.id); setError('');
@@ -95,10 +94,7 @@ export default function Buffer() {
   }
 
   return (
-    <div className="app">
-      <Header />
-      <main className="main">
-        <div className="container">
+    <>
           <div className={s.head}>
             <div>
               <h2 className={s.title}>Буфер</h2>
@@ -111,13 +107,11 @@ export default function Buffer() {
           </div>
           <p className={s.hint}>Входящие лиды только с ником, без телефона. Возьмите в работу — лид появится у вас в «Лидах», или отклоните.</p>
           {error && <p className={s.error} role="alert">{error}</p>}
-          {!loading && <BufferTable items={data.items} busy={busy} onTake={take} onDecline={setDeclining} />}
-        </div>
-      </main>
+          {loading ? <TableSkeleton rows={4} label="Загружаем буфер…" /> : <BufferTable items={data.items} busy={busy} onTake={take} onDecline={setDeclining} />}
       {declining && (
         <DeclineModal item={declining} onCancel={() => setDeclining(null)}
           onConfirm={async (reason) => { setData(await declineBuffered(declining.id, reason)); setDeclining(null); }} />
       )}
-    </div>
+    </>
   );
 }

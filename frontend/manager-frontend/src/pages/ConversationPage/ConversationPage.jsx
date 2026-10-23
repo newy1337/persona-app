@@ -3,7 +3,7 @@ import { Attribution } from '../../ui/ManagerRegion';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { stageColors } from '../../data/stages';
-import Header from '../../components/Header/Header';
+import { usePublishHeaderTools } from '../../components/AppLayout/headerTools';
 import ChatNote from './ChatNote';
 import styles from './ConversationPage.module.scss';
 import { AVATAR_BG } from '../../utils/avatar';
@@ -217,6 +217,7 @@ function ConversationPage() {
 
   const [chats, setChats] = useState(null);
   const [liveCount, setLiveCount] = useState(0);
+  usePublishHeaderTools({ liveCount });
   const [stickyDate, setStickyDate] = useState('');
   const [readUpTo, setReadUpTo] = useState(() => loadReadCursor(id));
   const [draft, setDraft] = useState('');
@@ -553,7 +554,7 @@ function ConversationPage() {
   }
 
   async function sendGifLink() {
-    const url = window.prompt('Ссылка на гифку (https://…gif или .mp4):');
+    const url = await PanelUX.prompt({ title: 'Отправить гифку', message: 'Ссылка на гифку (https://…gif или .mp4):', placeholder: 'https://', confirmLabel: 'Отправить' });
     if (!url || !/^https:\/\//i.test(url.trim())) return;
     setBusy(true);
     setError(null);
@@ -618,7 +619,6 @@ function ConversationPage() {
   if (error && !data) {
     return (
       <div className={styles.page}>
-        <Header />
         <div className={styles.container}><p className={styles.loadError}>{error}</p></div>
       </div>
     );
@@ -626,8 +626,7 @@ function ConversationPage() {
   if (!data) {
     return (
       <div className={styles.page}>
-        <Header />
-        <div className={styles.container}><p>Загрузка…</p></div>
+        <div className={styles.container}><p className={styles.loadError} role="status">Загружаем переписку…</p></div>
       </div>
     );
   }
@@ -660,7 +659,6 @@ function ConversationPage() {
 
   return (
     <div className={styles.page}>
-      <Header liveCount={liveCount} />
 
       <div className={styles.subHeader}>
         <div className={styles.container}>
@@ -749,8 +747,8 @@ function ConversationPage() {
                           if (!stage) return;
                           let note = '';
                           if (stage === 'archive') {
-                            note = window.prompt('Почему в архив?', pins.deal_note || '');
-                            if (note == null || !note.trim()) return;
+                            note = await PanelUX.prompt({ title: 'В архив', message: 'Почему диалог уходит в архив?', value: pins.deal_note || '', confirmLabel: 'В архив' });
+                            if (!note) return;
                           }
                           setBusy(true);
                           try {
@@ -1101,9 +1099,9 @@ function ConversationPage() {
                 try {
                   if (data.archived) await setConversationHidden(id, false);
                   else {
-                    const note = window.prompt('Почему в архив?', pins.deal_note || '');
-                    if (note == null || !note.trim()) return;
-                    await setDealStage(id, 'archive', note.trim());
+                    const note = await PanelUX.prompt({ title: 'В архив', message: 'Почему диалог уходит в архив?', value: pins.deal_note || '', confirmLabel: 'В архив' });
+                    if (!note) return;
+                    await setDealStage(id, 'archive', note);
                   }
                   load();
                 } catch (e) {

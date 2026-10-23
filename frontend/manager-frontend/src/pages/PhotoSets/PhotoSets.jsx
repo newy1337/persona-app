@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Header from '../../components/Header/Header';
 import { PanelUX } from '../../ui/PanelUX';
 import {
   bindMyPhotoSet,
@@ -296,10 +295,7 @@ export default function PhotoSets() {
   }
 
   return (
-    <div className="app">
-      <Header />
-      <main className="main">
-        <div className="container">
+    <>
           <div className={s.head}>
             <h2 className={s.title}>Образы</h2>
             {data.can_create && (
@@ -340,8 +336,6 @@ export default function PhotoSets() {
               <PhotoGrid photos={shown} onOpen={setOpen} />
             </section>
           )}
-        </div>
-      </main>
       {open && (
         <PhotoEditor
           photo={open}
@@ -352,6 +346,6 @@ export default function PhotoSets() {
           onCover={makeCover}
         />
       )}
-    </div>
+    </>
   );
 }

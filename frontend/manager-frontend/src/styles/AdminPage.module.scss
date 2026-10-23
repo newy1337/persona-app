@@ -123,15 +123,14 @@ textarea.field { @include textarea; }
   svg { width: 100%; height: auto; display: block; }
 }
 
+/* Вторичный текст: читаемый на тёмном фоне, но тише основного. */
+.label, .hint, .muted { color: $text-readable; }
+.table th { color: $text-readable; }
+.field::placeholder { color: $text-readable; opacity: 0.8; }
+.btnDanger, .btnSmDanger { color: #ff9fa8; }
+.head { min-width: 0; }
+.actions { min-width: 0; max-width: 100%; }
 
-/* Restored panel readability and responsive controls. */
-.btn, .btnPrimary, .btnDanger, .btnGhost, .btnSm, .btnSmDanger, .btnSmGhost { min-height:34px; height:auto; font-size:13px; line-height:1.4; padding-top:6px; padding-bottom:6px; }
-.label, .hint, .muted { color:#b3c1d8; font-size:13px; line-height:1.5; }
-.table th { color:#b3c1d8; font-size:12px; }
-.field::placeholder { color:#98a9c4; opacity:1; }
-.btnDanger, .btnSmDanger { color:#ff9fa8; }
-.head { min-width:0; flex-wrap:wrap; gap:12px; }
-.head > input { min-width:0!important; max-width:100%; }
-.actions { min-width:0; max-width:100%; flex-wrap:wrap; }
-.actions button { max-width:100%; white-space:normal; }
-@media(max-width:600px) { .btn, .btnPrimary, .btnDanger, .btnGhost, .btnSm, .btnSmDanger, .btnSmGhost { min-height:40px; } }
+@media (max-width: 600px) {
+  .btn, .btnPrimary, .btnDanger, .btnGhost, .btnSm, .btnSmDanger, .btnSmGhost { height: 40px; }
+}

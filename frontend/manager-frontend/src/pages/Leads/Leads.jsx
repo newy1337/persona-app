@@ -2,7 +2,6 @@ import { CreateLeadForm, LeadsTable } from '../../ui/ManagerRegion';
 import { PanelUX } from '../../ui/PanelUX';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import Header from '../../components/Header/Header';
 import {
   deleteLead,
   getLeadPersonas,
@@ -220,15 +219,12 @@ export default function Leads() {
   const stageCounts = data.stages ?? {};
 
   return (
-    <div className="app mr-leads">
-      <Header />
-      <main className="main">
-        <div className="container">
+    <div className="mr-leads">
           <div className={s.head}>
             <h2 className={s.title}>Лиды</h2>
             <div className={s.actions}>
-              <button className={s.btn} onClick={() => setImporting(true)}>Импорт списка</button>
-              {!adding && <button className={s.btn} onClick={() => setAdding(true)}>+ Добавить номер</button>}
+              <button type="button" className={s.btn} onClick={() => setImporting(true)}>Импорт списка</button>
+              {!adding && <button type="button" className={s.btn} onClick={() => setAdding(true)}>Добавить номер</button>}
               {ids.length > 0 ? (
                 <>
                   <button className={s.btnPrimary} onClick={() => run(() => startOutreach(ids))}>В очередь ({ids.length})</button>
@@ -297,8 +293,6 @@ export default function Leads() {
             onReassign={row => run(() => writeFromAnother(row.id))} onDelete={setDeleting}
             onPersonaChange={(id, persona_id) => run(() => updateLead(id, { persona_id }))}
             personas={personas} helpers={{ PersonaSelect, statusLabels: LABEL, statusClasses: BADGE, date: fmtTs, dealStage: dealStageLabel }} />
-        </div>
-      </main>
       {importing && <ImportDialog personas={personas} onClose={() => { setImporting(false); load(); }} />}
       {deleting && (
         <DeleteLeadDialog

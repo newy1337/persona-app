@@ -181,7 +181,7 @@ function ArrayEditor({ value, onChange }) {
           )}
         </div>
       ))}
-      <button className={s.btnSm} onClick={addItem}>+ Добавить</button>
+      <button type="button" className={s.btnSm} onClick={addItem}>Добавить</button>
     </div>
   );
 }

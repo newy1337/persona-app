@@ -1,6 +1,5 @@
 import { PanelUX } from '../../ui/PanelUX';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Header from '../../components/Header/Header';
 import {
   createPersona,
   deletePersona,
@@ -171,8 +170,8 @@ export default function Personas() {
   }
 
   async function rename() {
-    const name = window.prompt('Имя личности (оно же имя в разговоре):', persona.name);
-    if (name == null || !name.trim() || name === persona.name) return;
+    const name = await PanelUX.prompt({ title: 'Переименовать личность', message: 'Имя личности — оно же имя в разговоре.', value: persona.name, confirmLabel: 'Переименовать' });
+    if (!name || name === persona.name) return;
     setRenaming(true);
     try {
       await run(() => updatePersona(persona.id, { name: name.trim() }));
@@ -236,13 +235,10 @@ export default function Personas() {
   }
 
   return (
-    <div className="app">
-      <Header />
-      <main className="main">
-        <div className="container">
+    <>
           <div className={s.head}>
             <h2 className={s.title}>Личности</h2>
-            {!creating && <button className={s.btnPrimary} onClick={() => setCreating(true)}>+ Новая личность</button>}
+            {!creating && <button type="button" className={s.btnPrimary} onClick={() => setCreating(true)}>Новая личность</button>}
           </div>
           <p className={s.hint}>
             Кем говорит бот. Аккаунт ссылается на личность идентификатором (<span className={s.mono}>persona_id</span>),
@@ -384,8 +380,6 @@ export default function Personas() {
               )}
             </section>
           </div>
-        </div>
-      </main>
-    </div>
+    </>
   );
 }

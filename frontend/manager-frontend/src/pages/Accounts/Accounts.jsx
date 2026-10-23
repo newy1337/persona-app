@@ -1,7 +1,7 @@
+import TableSkeleton from '../../components/TableSkeleton/TableSkeleton';
 import { AccountsTable } from '../../ui/ManagerRegion';
 import { PanelUX } from '../../ui/PanelUX';
 import { useCallback, useEffect, useState } from 'react';
-import Header from '../../components/Header/Header';
 import {
   addAccount,
   deleteAccount,
@@ -116,6 +116,7 @@ function AddForm({ personas, onDone, onCancel }) {
 
 export default function Accounts() {
   const [items, setItems] = useState([]);
+  const [ready, setReady] = useState(false);
   const [online, setOnline] = useState({});
   const [error, setError] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -142,7 +143,8 @@ export default function Accounts() {
         for (const a of state?.tg_accounts ?? []) map[a.id] = Boolean(a.alive);
         setOnline(map);
       })
-      .catch((e) => setError(e.detail || e.message));
+      .catch((e) => setError(e.detail || e.message))
+      .finally(() => setReady(true));
   }, []);
 
   useEffect(() => {
@@ -167,26 +169,21 @@ export default function Accounts() {
   }
 
   return (
-    <div className="app mr-accounts">
-      <Header />
-      <main className="main">
-        <div className="container">
+    <div className="mr-accounts">
           <div className={s.head}>
             <h2 className={s.title}>Telegram-аккаунты</h2>
-            {!adding && <button className={s.btnPrimary} onClick={() => setAdding(true)}>+ Добавить аккаунт</button>}
+            {!adding && <button type="button" className={s.btnPrimary} onClick={() => setAdding(true)}>Добавить аккаунт</button>}
           </div>
           {adding && <AddForm personas={personas} onDone={() => { setAdding(false); load(); }} onCancel={() => setAdding(false)} />}
           {error && <p className={s.error}>{error}</p>}
           {flash && <p className={s.ok} style={{ margin: '0 0 12px', fontSize: 13 }}>{flash}</p>}
 
           <p className={s.hint}>Образ аккаунта задаёт хед региона на странице «Образы» — по личности аккаунта.</p>
-          <AccountsTable rows={items} alive={online} onEdit={setEditing} onLogin={setAuth}
+          {!ready && items.length === 0 ? <TableSkeleton rows={6} label="Загружаем аккаунты…" /> : <AccountsTable rows={items} alive={online} onEdit={setEditing} onLogin={setAuth}
             onPhotoAutoSend={(row, enabled) => run(() => setAccountPhotoAutoSend(row.id, enabled))}
             onProxy={setProxyFor} onStatus={(row, status) => run(() => setAccountStatus(row.id, status, 'operator:web'))}
             onClearFlood={row => run(() => clearAccountFlood(row.id))} onDelete={remove}
-            helpers={{ Avatar: ClientAvatar, statusLabel: accountStatusLabel, statusClasses: BADGE, date: fmtTs }} />
-        </div>
-      </main>
+            helpers={{ Avatar: ClientAvatar, statusLabel: accountStatusLabel, statusClasses: BADGE, date: fmtTs }} />}
 
       {auth && <AuthWizard account={auth} onClose={() => { setAuth(null); load(); }} />}
       {proxyFor && <ProxyDialog account={proxyFor} onClose={() => { setProxyFor(null); load(); }} />}

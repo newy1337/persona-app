@@ -1,22 +1,25 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { lazy, useCallback, useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import AppLayout from './components/AppLayout/AppLayout';
+import { MeContext } from './components/AppLayout/me';
 import Dashboard from './pages/Dashboard';
 import ConversationPage from './pages/ConversationPage/ConversationPage';
-const VoiceWork = lazy(() => import('./pages/VoiceWork/VoiceWork'));
 import Accounts from './pages/Accounts/Accounts';
-const PhotoSets = lazy(() => import('./pages/PhotoSets/PhotoSets'));
 import Managers from './pages/Managers/Managers';
 import Leads from './pages/Leads/Leads';
 import Personas from './pages/Personas/Personas';
 import Stats from './pages/Stats/Stats';
 import Settings from './pages/Settings/Settings';
+import Login from './pages/Login/Login';
+import { isManagerRole } from './utils/roles';
+import { api, getToken } from './api/client';
+import './App.scss';
+
+const VoiceWork = lazy(() => import('./pages/VoiceWork/VoiceWork'));
+const PhotoSets = lazy(() => import('./pages/PhotoSets/PhotoSets'));
 const Users = lazy(() => import('./pages/Users/Users'));
 const Catalogs = lazy(() => import('./pages/Catalogs/Catalogs'));
 const Buffer = lazy(() => import('./pages/Buffer/Buffer'));
-import { isManagerRole } from './utils/roles';
-import Login from './pages/Login/Login';
-import { api, getToken } from './api/client';
-import './App.scss';
 
 function App() {
   const [me, setMe] = useState(undefined);
@@ -35,26 +38,32 @@ function App() {
   if (!me) return <Login onDone={check} />;
 
   const admin = me.role === 'admin';
+  const voice = me.role === 'voice';
   const accountsAllowed = admin || isManagerRole(me.role);
-  const home = me.role === 'voice' ? '/voice' : '/';
+  const home = voice ? '/voice' : '/';
+  const only = (allowed, page) => (allowed ? page : <Navigate to={home} replace />);
 
   return (
-    <Routes>
-      <Route path="/" element={me.role === 'voice' ? <Navigate to="/voice" replace /> : <Dashboard />} />
-      <Route path="/conversation/:id" element={me.role === 'voice' ? <Navigate to={home} replace /> : <ConversationPage />} />
-      <Route path="/voice" element={<Suspense fallback={<p role="status">Загружаем…</p>}><VoiceWork /></Suspense>} />
-      <Route path="/leads" element={me.role === 'voice' ? <Navigate to={home} replace /> : <Leads />} />
-      <Route path="/accounts" element={accountsAllowed ? <Accounts /> : <Navigate to={home} replace />} />
-      <Route path="/photo-sets" element={accountsAllowed ? <Suspense fallback={<p role="status">Загружаем…</p>}><PhotoSets /></Suspense> : <Navigate to={home} replace />} />
-      <Route path="/buffer" element={['admin', 'head', 'teamlead'].includes(me.role) ? <Suspense fallback={<p role="status">Загружаем…</p>}><Buffer /></Suspense> : <Navigate to={home} replace />} />
-      <Route path="/managers" element={admin || me.role === 'head' ? <Managers /> : <Navigate to={home} replace />} />
-      <Route path="/personas" element={admin ? <Personas /> : <Navigate to={home} replace />} />
-      <Route path="/stats" element={admin ? <Stats /> : <Navigate to={home} replace />} />
-      <Route path="/settings" element={admin ? <Settings /> : <Navigate to={home} replace />} />
-      <Route path="/users" element={admin ? <Suspense fallback={<p role="status">Загружаем…</p>}><Users /></Suspense> : <Navigate to={home} replace />} />
-      <Route path="/catalogs" element={admin ? <Suspense fallback={<p role="status">Загружаем…</p>}><Catalogs /></Suspense> : <Navigate to={home} replace />} />
-      <Route path="*" element={<Navigate to={home} replace />} />
-    </Routes>
+    <MeContext.Provider value={me}>
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={only(!voice, <Dashboard />)} />
+          <Route path="/conversation/:id" element={only(!voice, <ConversationPage />)} />
+          <Route path="/voice" element={<VoiceWork />} />
+          <Route path="/leads" element={only(!voice, <Leads />)} />
+          <Route path="/accounts" element={only(accountsAllowed, <Accounts />)} />
+          <Route path="/photo-sets" element={only(accountsAllowed, <PhotoSets />)} />
+          <Route path="/buffer" element={only(['admin', 'head', 'teamlead'].includes(me.role), <Buffer />)} />
+          <Route path="/managers" element={only(admin || me.role === 'head', <Managers />)} />
+          <Route path="/personas" element={only(admin, <Personas />)} />
+          <Route path="/stats" element={only(admin, <Stats />)} />
+          <Route path="/settings" element={only(admin, <Settings />)} />
+          <Route path="/users" element={only(admin, <Users />)} />
+          <Route path="/catalogs" element={only(admin, <Catalogs />)} />
+          <Route path="*" element={<Navigate to={home} replace />} />
+        </Route>
+      </Routes>
+    </MeContext.Provider>
   );
 }
 

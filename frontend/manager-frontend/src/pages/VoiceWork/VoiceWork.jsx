@@ -1,9 +1,9 @@
+import TableSkeleton from '../../components/TableSkeleton/TableSkeleton';
 import { moscowInputTimestamp } from '../../utils/panelTime';
 import { CallPanel } from './CallPanel';
 import { CallBrief } from './CallBrief';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import Header from '../../components/Header/Header';
 import VoicePlayer from '../../components/VoicePlayer/VoicePlayer';
 import { api, authHeaders } from '../../api/client';
 import { SendVoice, DeliveryStatus } from './SendVoice';
@@ -231,14 +231,14 @@ export default function VoiceWork() {
     if (requestedTask) { const next = new URLSearchParams(context); next.delete('task'); next.delete('view'); setContext(next, { replace: true }); }
   }
   const changeTab = next => { setTab(next); setPage(1); setItems([]); setLoading(true); };
-  return <div className="app"><Header /><main className="main"><div className="container">
+  return <>
     <div className={s.head}><div><h2 className={s.title}>Войсер</h2><p className={v.meta}>Голосовые, звонки и готовые записи</p></div><div className={s.actions}>
       {context.get('chat') && options?.role !== 'voice' && <Link className={s.btn} to={`/conversation/${context.get('chat')}`}>Вернуться в диалог</Link>}
       {options && options.role !== 'voice' && <button className={s.btnPrimary} onClick={() => setCreating(true)}>Новое задание</button>}
     </div></div>
     {options?.role === 'voice' && <div className={v.notice}><span>{options.linked ? `Telegram подключён${options.telegram_username ? ': @' + options.telegram_username : ''}` : 'Подключите Telegram, чтобы получать задания и отправлять записи'}</span><VoiceBotLink userId={options.user_id} linked={options.linked} onChange={load} /></div>}
-    {options?.bot.error && <p className={v.warning} role="status">{options.bot.error}</p>}
-    {options && !options.bot.configured && <p className={v.warning}>Бот не настроен. Задания сохраняются, но уведомления пока не отправляются.</p>}
+    {options?.bot?.error && <p className={v.warning} role="status">{options.bot.error}</p>}
+    {options && !options.bot?.configured && <p className={v.warning}>Бот не настроен. Задания сохраняются, но уведомления пока не отправляются.</p>}
     <div className={v.toolbar} role="group" aria-label="Раздел озвучки">
       <button className={`${s.btn} ${tab === 'tasks' ? s.btnSelected : ''}`} aria-pressed={tab === 'tasks'} onClick={() => changeTab('tasks')}>Задания</button>
       <button className={`${s.btn} ${tab === 'library' ? s.btnSelected : ''}`} aria-pressed={tab === 'library'} onClick={() => changeTab('library')}>Библиотека</button>
@@ -247,7 +247,7 @@ export default function VoiceWork() {
     </div>
     {error && <div role="alert" className={s.error}>{error} <button className={s.btnSm} onClick={load}>Повторить</button></div>}
     {detailError && <p role="alert" className={s.error}>{detailError}</p>}
-    {loading ? <p role="status" className={v.meta}>Загружаем…</p> : !items.length ? <div className={v.empty}>{tab === 'library' ? 'Записей пока нет. Они появятся после выполнения заданий в Telegram.' : search || status !== 'active' ? 'По выбранным условиям заданий нет.' : 'Очередь пуста. Здесь появятся задания на голосовые и звонки.'}</div> : <>
+    {loading ? <TableSkeleton rows={4} label="Загружаем задания…" /> : !items.length ? <div className={v.empty}>{tab === 'library' ? 'Записей пока нет. Они появятся после выполнения заданий в Telegram.' : search || status !== 'active' ? 'По выбранным условиям заданий нет.' : 'Очередь пуста. Здесь появятся задания на голосовые и звонки.'}</div> : <>
       <p className={v.meta}>Найдено: {total}. {tab === 'tasks' && 'Порядок: приоритет, затем время создания.'}</p>
       <div className={v.grid}>{items.map(item => tab === 'library' ? <Recording key={item.id} item={item} role={options.role} context={context} onChange={load} onOpen={open} /> : <article key={item.id} className={v.card}>
         <div className={v.cardTop}><span className={v.tag}>#{item.id} · {modeLabel(item)}</span><span className={stateClass(item.status)}>{states[item.status]}</span></div>
@@ -266,5 +266,5 @@ export default function VoiceWork() {
     </>}
     {creating && options && options.role !== 'voice' && <CreateTask options={options} context={context} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); changeTab('tasks'); setStatus('active'); load(); }} />}
     {detail && <TaskDetail key={detail.id} task={detail} role={options.role} bot={options.bot} initialView={context.get('view')} onClose={closeDetail} onChange={load} />}
-  </div></main></div>;
+  </>;
 }
