@@ -1,3 +1,4 @@
+import ActionMenu from '../../components/ActionMenu/ActionMenu';
 import { PanelUX } from '../../ui/PanelUX';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -294,20 +295,18 @@ export default function Personas() {
                       </p>
                     </div>
                     <div className={s.actions}>
-                      <button className={s.btnSm} disabled={renaming} onClick={rename}>Переименовать</button>
-                      <button className={s.btnSm} title="Копия со всеми документами и промптами" onClick={duplicate}>
-                        Дублировать
-                      </button>
-                      <button className={s.btnSm} title="Скачать личность одним файлом: все секции сразу" onClick={exportFile}>
-                        Выгрузить всё
-                      </button>
-                      <button
-                        className={s.btnSm}
-                        title="Взять секции из файла — прежние уйдут в историю версий"
-                        onClick={() => filePicker.current?.click()}
-                      >
-                        Загрузить всё
-                      </button>
+                      <button type="button" className={s.btnSm} disabled={renaming} onClick={rename}>Переименовать</button>
+                      <ActionMenu
+                        ariaLabel={`Ещё: ${persona.name}`}
+                        items={[
+                          { label: 'Дублировать', title: 'Копия со всеми документами и промптами', onSelect: duplicate },
+                          { label: 'Выгрузить всё', title: 'Скачать личность одним файлом: все секции сразу', onSelect: exportFile },
+                          { label: 'Загрузить всё', title: 'Взять секции из файла — прежние уйдут в историю версий', onSelect: () => filePicker.current?.click() },
+                          !persona.is_default && { label: 'Сделать основной', onSelect: () => run(() => setDefaultPersona(persona.id)) },
+                          !persona.is_default && { label: persona.enabled ? 'Выключить' : 'Включить', onSelect: () => run(() => updatePersona(persona.id, { enabled: !persona.enabled })) },
+                          !persona.is_default && { label: 'Удалить', danger: true, onSelect: remove },
+                        ]}
+                      />
                       <input
                         ref={filePicker}
                         type="file"
@@ -319,15 +318,6 @@ export default function Personas() {
                           void importFile(file);
                         }}
                       />
-                      {!persona.is_default && (
-                        <button className={s.btnSm} onClick={() => run(() => setDefaultPersona(persona.id))}>Сделать основной</button>
-                      )}
-                      {!persona.is_default && (
-                        <button className={s.btnSm} onClick={() => run(() => updatePersona(persona.id, { enabled: !persona.enabled }))}>
-                          {persona.enabled ? 'Выключить' : 'Включить'}
-                        </button>
-                      )}
-                      {!persona.is_default && <button className={s.btnSmDanger} onClick={remove}>Удалить</button>}
                     </div>
                   </div>
 
