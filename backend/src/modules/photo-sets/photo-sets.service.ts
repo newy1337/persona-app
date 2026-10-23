@@ -18,6 +18,7 @@ import { ScopeService } from 'src/shared/scope.service';
 import { Role } from 'src/enums/roles.enum';
 import { appConfig } from 'src/config/app.config';
 import { toChatId } from 'src/utils/ids';
+import { autoPersonas } from 'src/domain/photo-set-persona';
 import {
   exifDate,
   formatTakenOn,
@@ -475,10 +476,12 @@ export class PhotoSetsService {
   }
 
   /**
-   * Хед задаёт набор образов учётки сотрудника целиком. Новые образы приходят
-   * без личности — привязывает их сам сотрудник; оставшиеся сохраняют свою
-   * личность. Снятый образ перестаёт получать новых собеседников, начатые
-   * диалоги остаются на нём.
+   * Хед задаёт набор образов учётки сотрудника целиком. Новый образ сразу
+   * встаёт на личность аккаунтов сотрудника, если она однозначна: личность у
+   * сотрудника одна или её имя стоит в начале имени образа, и у неё ещё нет
+   * образа (autoPersonas). Иначе образ в запасе — личность выберет сотрудник.
+   * Оставшиеся образы сохраняют свою личность. Снятый образ перестаёт
+   * получать новых собеседников, начатые диалоги остаются на нём.
    */
   async assignStaff(user: DashboardUser, userId: number, setIds: number[]) {
     const target = await this.prisma.dashboardUser.findUnique({
@@ -515,16 +518,38 @@ export class PhotoSetsService {
         ).map((r) => r.setId),
       );
       const fresh = wanted.filter((id) => !have.has(id));
-      if (fresh.length)
-        await tx.managerPhotoSet.createMany({
-          data: fresh.map((setId) => ({
-            userId,
-            setId,
-            personaSlug: null,
-            updatedAt: now,
-            updatedBy: user.id,
-          })),
-        });
+      if (!fresh.length) return;
+      const [accounts, kept, freshSets] = await Promise.all([
+        tx.managerAccount.findMany({
+          where: { userId },
+          select: { account: { select: { personaId: true } } },
+        }),
+        tx.managerPhotoSet.findMany({
+          where: { userId, personaSlug: { not: null } },
+          select: { personaSlug: true },
+        }),
+        tx.photoSet.findMany({
+          where: { id: { in: fresh } },
+          select: { id: true, name: true },
+          orderBy: { id: 'asc' },
+        }),
+      ]);
+      const names = await this.personaNames();
+      const personas = this.personaChoices(accounts, names);
+      const auto = autoPersonas(
+        freshSets,
+        personas,
+        kept.map((k) => k.personaSlug!),
+      );
+      await tx.managerPhotoSet.createMany({
+        data: fresh.map((setId) => ({
+          userId,
+          setId,
+          personaSlug: auto.get(setId) ?? null,
+          updatedAt: now,
+          updatedBy: user.id,
+        })),
+      });
     });
     return this.staffAssignments(user, region);
   }
