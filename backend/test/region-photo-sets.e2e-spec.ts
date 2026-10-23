@@ -164,7 +164,10 @@ describe('photo sets by region: the head runs them, chats keep the set they star
       sets.assignStaff(otherHead, manager.id, [foreign.id]),
     ).rejects.toThrow(/не найден/);
 
-    // Хед назначает три образа одной учётке: одна строка, образы без личности.
+    // Хед назначает три образа одной учётке: одна строка. Образы встают на
+    // личность по имени сами; вторая «Надя» — в запас, Надя уже занята.
+    await history.ensureContact(5001, 1);
+    expect(await photos.setForChat(5001)).toBeNull();
     const view = await sets.assignStaff(head, manager.id, [
       autumn.id,
       winter.id,
@@ -173,15 +176,13 @@ describe('photo sets by region: the head runs them, chats keep the set they star
     expect(view.rows.filter((r) => r.user_id === manager.id)).toHaveLength(1);
     const row = view.rows.find((r) => r.user_id === manager.id)!;
     expect(row.sets.map((x) => [x.set_id, x.persona_slug])).toEqual([
-      [autumn.id, null],
+      [autumn.id, 'nadya'],
       [winter.id, null],
-      [city.id, null],
+      [city.id, 'denis'],
     ]);
     expect(row.personas.map((x) => x.slug)).toEqual(['denis', 'nadya']);
-    await history.ensureContact(5001, 1);
-    expect(await photos.setForChat(5001)).toBeNull();
 
-    // Сотрудник привязывает «образ 1» к Наде и «город» к Денису.
+    // Сотрудник может привязать и сам (здесь — то же, что подставилось).
     await expect(
       sets.choosePersona(manager, autumn.id, 'nobody'),
     ).rejects.toThrow(/нет аккаунтов этой личности/);
