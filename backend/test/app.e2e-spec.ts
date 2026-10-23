@@ -2947,6 +2947,117 @@ describe('Manager panel API (e2e)', () => {
           .expect(200);
     });
 
+    it('аккаунт заморожен Telegram или просто не смог — лид уходит другому аккаунту; Premium-only — сразу невалид', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      const prisma = app.get(PrismaService);
+      const worker = app.get(OutreachWorker);
+      const telegram = app.get(TelegramService);
+      const now = Math.floor(Date.now() / 1000);
+      const mk = async (phone: string) =>
+        (
+          await request(app.getHttpServer())
+            .post('/api/tg-accounts')
+            .set(h)
+            .send({ phone_e164: phone, persona_id: 'nastya' })
+            .expect(200)
+        ).body.id as number;
+      const frozen = await mk('+79001110071');
+      const other = await mk('+79001110072');
+      await prisma.tgAccount.updateMany({
+        where: { id: { in: [frozen, other] } },
+        data: { status: 'active' },
+      });
+      const queue = async (phone: string, pin?: number) => {
+        const lead = await prisma.phoneNumber.create({
+          data: {
+            phoneE164: phone,
+            status: 'queued',
+            insertedAt: now,
+            ...(pin ? { preferredAccountId: pin } : {}),
+          },
+        });
+        await prisma.phoneNumber.updateMany({
+          where: { status: 'queued', id: { not: lead.id } },
+          data: { status: 'pending' },
+        });
+        return lead.id;
+      };
+
+      // Заморозка: аккаунт снят с рассылки надолго, лид свободен, этот аккаунт
+      // для лида отмечен неподходящим, попытка не потрачена. Закрепление снято.
+      const a = await queue('+79005557101', frozen);
+      const freeze = jest
+        .spyOn(telegram, 'resolvePhone')
+        .mockRejectedValueOnce(
+          new Error(
+            '420: FROZEN_METHOD_INVALID (caused by contacts.ImportContacts)',
+          ),
+        );
+      await (worker as any).processOne(frozen, now);
+      freeze.mockRestore();
+      expect(
+        await prisma.phoneNumber.findUnique({ where: { id: a } }),
+      ).toMatchObject({
+        status: 'queued',
+        assignedAccountId: null,
+        avoidAccountId: frozen,
+        preferredAccountId: null,
+        attempts: 0,
+        lastError: expect.stringMatching(
+          /заморожен Telegram.*другому аккаунту/,
+        ),
+      });
+      const acc = await prisma.tgAccount.findUnique({ where: { id: frozen } });
+      expect(acc!.floodUntil).toBeGreaterThanOrEqual(now + 7 * 86400);
+      expect(acc!.floodReason).toMatch(/заморожен/);
+
+      // Неизвестная ошибка до отправки: попытка засчитана, лид — другому аккаунту.
+      await prisma.tgAccount.update({
+        where: { id: frozen },
+        data: { floodUntil: null, floodReason: null },
+      });
+      const b = await queue('+79005557102');
+      const glitch = jest
+        .spyOn(telegram, 'resolvePhone')
+        .mockRejectedValueOnce(new Error('500: INTERNAL_SERVER_ERROR'));
+      await (worker as any).processOne(other, now);
+      glitch.mockRestore();
+      expect(
+        await prisma.phoneNumber.findUnique({ where: { id: b } }),
+      ).toMatchObject({
+        status: 'queued',
+        assignedAccountId: null,
+        avoidAccountId: other,
+        attempts: 1,
+        nextAttemptAt: null,
+      });
+
+      // Premium-only: написать не сможет никто — сразу невалид.
+      const c = await queue('+79005557103');
+      const premium = jest
+        .spyOn(telegram, 'resolvePhone')
+        .mockRejectedValueOnce(
+          new Error(
+            '403: PRIVACY_PREMIUM_REQUIRED (caused by messages.SendMessage)',
+          ),
+        );
+      await (worker as any).processOne(other, now);
+      premium.mockRestore();
+      expect(
+        await prisma.phoneNumber.findUnique({ where: { id: c } }),
+      ).toMatchObject({
+        status: 'dead',
+        lastError: expect.stringMatching(/Premium/),
+      });
+
+      await prisma.phoneNumber.deleteMany({ where: { id: { in: [a, b, c] } } });
+      for (const id of [frozen, other])
+        await request(app.getHttpServer())
+          .delete(`/api/tg-accounts/${id}`)
+          .set(h)
+          .expect(200);
+    });
+
     it('флуд на аккаунте: метка «флуд до …», лид сразу свободен другому; «написать с другого»; «снять флуд»', async () => {
       const h = { Authorization: `Bearer ${token}` };
       const prisma = app.get(PrismaService);
