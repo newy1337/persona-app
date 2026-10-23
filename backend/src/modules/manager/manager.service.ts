@@ -67,6 +67,7 @@ export interface ManagerChatRow extends ManagerAttribution {
   next_bot_action: NextBotAction | null;
   client_presence: ClientPresence | null;
   blocked_by_client_at: number | null;
+  likely_blocked_at: number | null;
   cleared_by_client_at: number | null;
   unread_count: number;
   account_lost: 'banned' | 'logged_out' | null;
@@ -102,6 +103,7 @@ interface RawRow {
   client_status?: string | null;
   client_status_at?: number | bigint | null;
   blocked_by_client_at?: number | bigint | null;
+  likely_blocked_at?: number | bigint | null;
   cleared_by_client_at?: number | bigint | null;
   unread_count?: number | bigint | null;
 }
@@ -248,6 +250,7 @@ export class ManagerService {
           clientStatusAt: n(r.client_status_at),
           blockedByClientAt: n(r.blocked_by_client_at),
           clearedByClientAt: n(r.cleared_by_client_at),
+          likelyBlockedAt: n(r.likely_blocked_at),
         },
         this.clock.ts(),
       ),
@@ -289,7 +292,7 @@ export class ManagerService {
       : Prisma.sql`${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL}`;
     const rows = await this.prisma.$queryRaw<RawRow[]>`
       SELECT c.chat_id, c.account_id, c.pause_state, a.username AS account_username, a.status AS account_status, a.banned_at AS account_lost_at,
-             c.client_status, c.client_status_at, c.blocked_by_client_at, c.cleared_by_client_at,
+             c.client_status, c.client_status_at, c.blocked_by_client_at, c.cleared_by_client_at, c.likely_blocked_at,
              (SELECT COUNT(*) FROM messages mu
                WHERE mu.chat_id = c.chat_id AND mu.role = 'user' AND mu.deleted_at IS NULL
                  AND mu.ts > COALESCE(c.manager_seen_ts, 0)
@@ -351,7 +354,7 @@ export class ManagerService {
   ): Promise<ManagerChatRow[]> {
     const rows = await this.prisma.$queryRaw<RawRow[]>`
       SELECT c.chat_id, c.account_id, c.pause_state, c.pause_reason, c.paused_ts, a.username AS account_username, a.status AS account_status, a.banned_at AS account_lost_at,
-             c.client_status, c.client_status_at, c.blocked_by_client_at, c.cleared_by_client_at,
+             c.client_status, c.client_status_at, c.blocked_by_client_at, c.cleared_by_client_at, c.likely_blocked_at,
              (SELECT COUNT(*) FROM messages mu
                WHERE mu.chat_id = c.chat_id AND mu.role = 'user' AND mu.deleted_at IS NULL
                  AND mu.ts > COALESCE(c.manager_seen_ts, 0)

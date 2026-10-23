@@ -49,6 +49,7 @@ import {
 } from 'src/shared/presence.service';
 import { VoiceEncoderService } from 'src/modules/media/voice-encoder.service';
 import { closeClient } from './close-client';
+import { offlineReason, offlineReasonOf } from 'src/domain/offline-reason';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const TG_CALL_TIMEOUT_MS = 60_000;
@@ -348,10 +349,53 @@ export class TelegramService
     this.held.delete(accountId);
     try {
       await this.connectNow(accountId);
+      this.failures.delete(accountId);
+    } catch (e) {
+      // Причину видно в панели: «Не в сети: прокси не отвечает» и т. п.
+      this.failures.set(accountId, {
+        reason: offlineReasonOf(e),
+        at: this.clock.ts(),
+      });
+      throw e;
     } finally {
       if (this.connecting.get(accountId)?.seq === attempt.seq)
         this.connecting.delete(accountId);
     }
+  }
+
+  private readonly failures = new Map<number, { reason: string; at: number }>();
+
+  /** Почему аккаунт не в сети; null — в сети. */
+  offlineReason(accountId: number): string | null {
+    return offlineReason({
+      configured: this.configured,
+      live: this.live.has(accountId),
+      held: this.held.has(accountId),
+      connecting: this.connecting.has(accountId),
+      failure: this.failures.get(accountId) ?? null,
+    });
+  }
+
+  private ownIds = new Set<number>();
+  private ownIdsAt = 0;
+
+  /**
+   * Telegram-id всех наших аккаунтов. Сообщения от них бот не обрабатывает и
+   * сам им первым не пишет: иначе наши аккаунты переписываются друг с другом.
+   */
+  async ownUserIds(): Promise<Set<number>> {
+    const now = this.clock.ts();
+    if (now - this.ownIdsAt > 60) {
+      const rows = await this.prisma.tgAccount.findMany({
+        where: { telegramUserId: { not: null } },
+        select: { telegramUserId: true },
+      });
+      this.ownIds = new Set(rows.map((r) => Number(r.telegramUserId)));
+      this.ownIdsAt = now;
+    }
+    for (const entry of this.live.values())
+      if (entry.telegramUserId) this.ownIds.add(entry.telegramUserId);
+    return this.ownIds;
   }
 
   private async connectNow(accountId: number): Promise<void> {
@@ -724,6 +768,12 @@ export class TelegramService
     const sender = await message.getSender().catch(() => null);
     if (!isConversableUser(sender instanceof Api.User ? sender : null, chatId))
       return;
+    if ((await this.ownUserIds()).has(chatId)) {
+      this.log.warn(
+        `chat ${chatId} is one of our own accounts; message ${message.id} to account ${account.id} is not passed to the bot`,
+      );
+      return;
+    }
     const owner = await this.ownedByOther(chatId, account.id);
     if (owner !== null) {
       this.log.warn(
@@ -748,6 +798,7 @@ export class TelegramService
         .setBlockedByClient(chatId, null)
         .catch(() => undefined);
       await this.history.clearClearedByClient(chatId).catch(() => undefined);
+      await this.history.clearLikelyBlocked(chatId).catch(() => undefined);
       await this.rememberPeer(
         chatId,
         sender instanceof Api.User ? sender : null,
@@ -1146,6 +1197,7 @@ export class TelegramService
       const chatId = Number(user.id);
       if (
         !isConversableUser(user, chatId) ||
+        (await this.ownUserIds()).has(chatId) ||
         (await this.ownedByOther(chatId, account.id))
       )
         continue;

@@ -3050,7 +3050,41 @@ describe('Manager panel API (e2e)', () => {
         lastError: expect.stringMatching(/Premium/),
       });
 
-      await prisma.phoneNumber.deleteMany({ where: { id: { in: [a, b, c] } } });
+      // Лид — номер одного из наших аккаунтов: себе не пишем, Telegram не трогаем.
+      const own = await queue('+79001110072');
+      const lookup = jest.spyOn(telegram, 'resolvePhone');
+      await (worker as any).processOne(frozen, now);
+      expect(lookup).not.toHaveBeenCalled();
+      lookup.mockRestore();
+      expect(
+        await prisma.phoneNumber.findUnique({ where: { id: own } }),
+      ).toMatchObject({
+        status: 'dead',
+        lastError: expect.stringMatching(/наш аккаунт/),
+      });
+
+      // Ник нашёлся, но это id нашего аккаунта — тоже не пишем.
+      const ownTg = await queue('+79005557104');
+      await prisma.tgAccount.update({
+        where: { id: other },
+        data: { telegramUserId: BigInt(555000111) },
+      });
+      (telegram as any).ownIdsAt = 0;
+      const found = jest.spyOn(telegram, 'resolvePhone').mockResolvedValueOnce({
+        kind: 'found',
+        userId: 555000111,
+        username: null,
+        deleted: false,
+      } as any);
+      await (worker as any).processOne(frozen, now);
+      found.mockRestore();
+      expect(
+        await prisma.phoneNumber.findUnique({ where: { id: ownTg } }),
+      ).toMatchObject({ status: 'dead', telegramUserId: null });
+
+      await prisma.phoneNumber.deleteMany({
+        where: { id: { in: [a, b, c, own, ownTg] } },
+      });
       for (const id of [frozen, other])
         await request(app.getHttpServer())
           .delete(`/api/tg-accounts/${id}`)

@@ -105,6 +105,8 @@ const liveCount = () => String(published.tools?.liveCount ?? '');
 const navButton = (name) => container.querySelector(`button[aria-label="${name}"]`);
 
 beforeEach(() => {
+  // Остальные проверки — с включённым блоком «Сценарий».
+  vi.stubEnv('VITE_SHOW_SCENARIO', '1');
   vi.useFakeTimers();
   navigateMock.mockClear();
   window.localStorage.clear();
@@ -140,6 +142,16 @@ describe('ConversationPage: шапка и навигация по чатам', (
     await renderPage();
     navButton('Следующий чат').click();
     expect(navigateMock).toHaveBeenCalledWith('/conversation/222');
+  });
+});
+
+describe('ConversationPage: блок «Сценарий» скрыт по умолчанию', () => {
+  it('без VITE_SHOW_SCENARIO блока нет и биты не запрашиваются', async () => {
+    vi.unstubAllEnvs();
+    await renderPage();
+    expect(container.textContent).not.toContain('Сценарий');
+    expect(getBeatsMock).not.toHaveBeenCalled();
+    vi.stubEnv('VITE_SHOW_SCENARIO', '1');
   });
 });
 

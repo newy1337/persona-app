@@ -67,3 +67,19 @@ describe('статусы Telegram', () => {
     expect(blockedByClient(new Error('fetch failed'))).toBe(false);
   });
 });
+
+describe('вероятный ЧС по статусу собеседника', () => {
+  const { likelyBlockedChange } = jest.requireActual('./tg-status');
+  it('был виден и вдруг скрыт — вероятно, ЧС', () => {
+    expect(likelyBlockedChange('recently', 'hidden', 100)).toBe(100);
+    expect(likelyBlockedChange('online', 'hidden', 100)).toBe(100);
+  });
+  it('скрыт с самого начала — не знаем, ничего не ставим', () => {
+    expect(likelyBlockedChange(null, 'hidden', 100)).toBeUndefined();
+    expect(likelyBlockedChange('hidden', 'hidden', 100)).toBeUndefined();
+  });
+  it('снова виден — отметка снимается', () => {
+    expect(likelyBlockedChange('hidden', 'online', 100)).toBeNull();
+    expect(likelyBlockedChange('hidden', 'last_week', 100)).toBeUndefined();
+  });
+});

@@ -99,6 +99,10 @@ import {
 } from '../../assets/icons';
 import { DEAL_STAGES } from '../../data/dealStages';
 
+// Блок «Сценарий» в карточке диалога скрыт: сценариев у личностей сейчас нет.
+// Вернуть — собрать панель с VITE_SHOW_SCENARIO=1 (данные и код блока на месте).
+export const showScenario = () => import.meta.env.VITE_SHOW_SCENARIO === '1';
+
 export const TOGGLE_COOLDOWN_MS = 2000;
 const JUMP_SHOW_PX = 400;
 const MAX_ALBUM = 10;
@@ -264,7 +268,7 @@ function ConversationPage() {
           .catch(() => setPauseStatus(null));
       })
       .catch((e) => setError(e.detail || e.message));
-    getBeats(id).then(setBeats).catch(() => setBeats(null));
+    if (showScenario()) getBeats(id).then(setBeats).catch(() => setBeats(null));
     getInboundMedia(id).then(setInboundMedia).catch(() => setInboundMedia([]));
   }, [id]);
 
@@ -710,7 +714,9 @@ function ConversationPage() {
                   <span className={styles.agentName}>{name}</span>
                   <Attribution value={data} compact />
                   {data.blocked_by_client_at ? (
-                    <span className={styles.presenceBlocked} data-testid="client-blocked">заблокировал(а) нас</span>
+                    <span className={styles.presenceBlocked} data-testid="client-blocked">ЧС: заблокировал(а) нас</span>
+                  ) : data.likely_blocked_at ? (
+                    <span className={styles.presenceBlocked} data-testid="client-likely-blocked" title="Статус собеседника вдруг скрылся — так бывает, когда кидают в ЧС (или скрыли статус приватностью)">вероятно, ЧС · {whenLabel(data.likely_blocked_at)}</span>
                   ) : data.cleared_by_client_at ? (
                     <span className={styles.presenceBlocked} data-testid="client-cleared">почистил(а) диалог · {whenLabel(data.cleared_by_client_at)}</span>
                   ) : (
@@ -883,7 +889,7 @@ function ConversationPage() {
               </div>
             </div>
 
-            {beats && (
+            {showScenario() && beats && (
               <div className={styles.summarySection}>
                 <div className={styles.summaryHeader}>
                   <span className={styles.summaryTitle}>
@@ -1153,6 +1159,11 @@ function ConversationPage() {
             {!data.account_lost && !data.blocked_by_client_at && data.cleared_by_client_at && (
               <div className={styles.lostBanner} role="status" data-testid="cleared-banner">
                 Собеседник почистил диалог — {whenLabel(data.cleared_by_client_at)} удалил переписку в Telegram. В панели она сохранена (зачёркнута). Отметка снимется, когда он снова напишет.
+              </div>
+            )}
+            {!data.account_lost && !data.blocked_by_client_at && data.likely_blocked_at && (
+              <div className={styles.lostBanner} role="status" data-testid="likely-blocked-banner">
+                Вероятно, собеседник кинул в ЧС: {whenLabel(data.likely_blocked_at)} его статус в Telegram вдруг скрылся. Telegram о блокировке не сообщает, поэтому это не факт — так же бывает, если он скрыл статус приватностью. Отметка снимется, когда он напишет или статус снова станет виден.
               </div>
             )}
             {!data.account_lost && data.blocked_by_client_at && (

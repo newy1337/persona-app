@@ -43,6 +43,7 @@ function fixture(count = 1, perChat = 2) {
     log: { error: jest.fn() },
     call: async (_a, _n, fn) => fn(),
     ownedByOther: async () => null,
+    ownUserIds: async () => new Set<number>(),
     rememberPeer: async () => {},
     history: {
       latestSourceMessageId: async () => 0,

@@ -55,6 +55,8 @@ export interface TgAccountSummary {
   lost_reason: string | null;
   online: boolean;
   has_session: boolean;
+  /** Почему не в сети; null — в сети. */
+  offline_reason?: string | null;
 }
 
 @Injectable()
@@ -126,6 +128,7 @@ export class TgAccountsService {
           ? a.banReason
           : null,
       online: this.telegram.isOnline(a.id),
+      offline_reason: this.telegram.offlineReason(a.id),
       has_session: Boolean(a.sessionEncrypted),
     };
   }
@@ -486,6 +489,7 @@ export class TgAccountsService {
           this.telegram.isOnline(a.id) ||
           (a.lastHeartbeatAt !== null &&
             now - a.lastHeartbeatAt <= HEARTBEAT_ALIVE_S),
+        offline_reason: this.telegram.offlineReason(a.id),
         purpose: a.purpose,
       })),
       active_conversations: Number(active[0]?.n ?? 0),

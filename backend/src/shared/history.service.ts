@@ -7,7 +7,11 @@ import { PhotoLibraryService } from './photo-library.service';
 import { BOT_ACTIVE_REASON, PauseState } from '../domain/pause';
 import { LeadFacts, parseLeadFacts } from '../domain/lead-facts';
 import { toChatId } from '../utils/ids';
-import { ClientPresence, clientTelegramView } from '../domain/tg-status';
+import {
+  ClientPresence,
+  clientTelegramView,
+  likelyBlockedChange,
+} from '../domain/tg-status';
 
 export interface StoredMessage {
   id: number;
@@ -185,13 +189,34 @@ export class HistoryService {
     presence: ClientPresence,
     seenAt: number,
   ): Promise<void> {
+    const previous = await this.prisma.contact.findUnique({
+      where: { chatId: toChatId(chatId) },
+      select: { clientStatus: true, likelyBlockedAt: true },
+    });
+    const likely = likelyBlockedChange(
+      previous?.clientStatus,
+      presence.kind,
+      seenAt,
+    );
     await this.prisma.contact.updateMany({
       where: { chatId: toChatId(chatId) },
       data: {
         clientStatus: presence.kind,
         clientStatusAt: presence.at,
         clientStatusSeenAt: seenAt,
+        ...(likely === undefined ||
+        (likely !== null && previous?.likelyBlockedAt)
+          ? {}
+          : { likelyBlockedAt: likely }),
       },
+    });
+  }
+
+  /** Собеседник написал — значит, не в ЧС. */
+  async clearLikelyBlocked(chatId: number): Promise<void> {
+    await this.prisma.contact.updateMany({
+      where: { chatId: toChatId(chatId), likelyBlockedAt: { not: null } },
+      data: { likelyBlockedAt: null },
     });
   }
 
@@ -257,6 +282,7 @@ export class HistoryService {
     client_presence: ClientPresence | null;
     blocked_by_client_at: number | null;
     cleared_by_client_at: number | null;
+    likely_blocked_at: number | null;
   }> {
     const c = await this.prisma.contact.findUnique({
       where: { chatId: toChatId(chatId) },
@@ -265,6 +291,7 @@ export class HistoryService {
         clientStatusAt: true,
         blockedByClientAt: true,
         clearedByClientAt: true,
+        likelyBlockedAt: true,
       },
     });
     return clientTelegramView(c, nowTs);

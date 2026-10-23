@@ -122,7 +122,7 @@ export interface ConversationState {
 }
 
 export interface RhythmState {
-  morning?: Record<string, 'sent' | 'user'>;
+  morning?: Record<string, 'sent' | 'user' | 'skipped'>;
   goodnight?: Record<string, 'sent' | 'user' | 'skipped'>;
   last_goodnight_ts?: number;
 }

@@ -97,6 +97,7 @@ import { buildCharacterPrompt } from './nastya/character/prompt';
 import {
   dropRepeatedGreeting,
   enforceReplyRules,
+  isPlaceholderReply,
   normalizeReply,
 } from './nastya/character/reply';
 import { judgeDialogue } from './nastya/judge/plan';
@@ -2677,11 +2678,17 @@ export class NastyaBrainService implements ReplyBrain {
         },
         this.judgeDeps(scope, variables, signal, persona),
       );
+      // Отказ писать — пустой текст, заглушка «(пусто)» или should_send:false
+      // от проверки — значит промолчать, а не отправить заглушку собеседнику.
+      const declined =
+        ['goodnight', 'morning', 'initiative', 'after_call'].includes(
+          opts.author,
+        ) && review.should_send === false;
+      const raw = declined ? '' : review.final_text;
       const reply =
-        ['goodnight', 'initiative', 'after_call'].includes(opts.author) &&
-        review.should_send === false
+        !raw.trim() || isPlaceholderReply(raw)
           ? ''
-          : enforceReplyRules(normalizeReply(review.final_text));
+          : enforceReplyRules(normalizeReply(raw));
 
       checkCancelled(signal);
       const latest = await this.state.load(chatId);
@@ -2728,7 +2735,27 @@ export class NastyaBrainService implements ReplyBrain {
         await this.state.save(chatId, latest);
         return false;
       }
-      if (!reply.trim()) return false;
+      if (!reply.trim()) {
+        // Утро промолчало — этот день закрыт, иначе ритуал каждую минуту
+        // заново зовёт модель и получает тот же отказ.
+        if (opts.author === 'morning') {
+          const slot = ritualSlot(
+            this.clock.now(),
+            persona.rhythm.morning,
+            persona.rhythm.timezone,
+            chatId,
+            'morning',
+          );
+          (latest.rhythm ??= {}).morning ??= {};
+          latest.rhythm.morning[slot.day] = 'skipped';
+          pruneRhythm(latest.rhythm, slot.day);
+          await this.state.save(chatId, latest);
+          this.log.log(
+            `chat=${chatId}: morning message skipped (model declined)`,
+          );
+        }
+        return false;
+      }
 
       const timestamp = this.clock.ts();
       const parts = splitReplyMessages(reply, opts.maxBubbles ?? 2)

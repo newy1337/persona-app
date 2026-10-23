@@ -151,6 +151,25 @@ export class OutreachWorker implements OnModuleInit {
     });
   }
 
+  /** Лид оказался нашим же аккаунтом — невалид, первое сообщение не пишем. */
+  private async markOwnAccount(
+    leadId: number,
+    ownAccountId: number | null,
+  ): Promise<void> {
+    await this.prisma.phoneNumber.update({
+      where: { id: leadId },
+      data: {
+        status: 'dead',
+        assignedAccountId: null,
+        nextAttemptAt: null,
+        lastError: `это наш аккаунт${ownAccountId ? ` #${ownAccountId}` : ''} — себе не пишем`,
+      },
+    });
+    this.log.warn(
+      `outreach: lead #${leadId} is our own account${ownAccountId ? ` #${ownAccountId}` : ''} — marked dead`,
+    );
+  }
+
   @Cron(CronExpression.EVERY_MINUTE)
   async tick(): Promise<void> {
     if (!this.telegram.configured || this.gate.stopped) return;
@@ -302,6 +321,31 @@ export class OutreachWorker implements OnModuleInit {
           candidate.phoneE164!,
           candidate.firstName ?? undefined,
         );
+      // Номер или ник — одного из наших аккаунтов: писать самим себе не нужно.
+      const ownAccount = await this.prisma.tgAccount.findFirst({
+        where: {
+          OR: [
+            ...(candidate.phoneE164
+              ? [{ phoneE164: candidate.phoneE164 }]
+              : []),
+            ...(candidate.usernameKey
+              ? [
+                  {
+                    username: {
+                      equals: candidate.usernameKey,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                ]
+              : []),
+          ],
+        },
+        select: { id: true },
+      });
+      if (ownAccount) {
+        await this.markOwnAccount(candidate.id, ownAccount.id);
+        return;
+      }
       let resolved = candidate.usernameKey
         ? await this.telegram.resolveUsername(accountId, candidate.usernameKey)
         : await byPhone();
@@ -344,6 +388,10 @@ export class OutreachWorker implements OnModuleInit {
         return;
       }
       const chatId = resolved.userId;
+      if ((await this.telegram.ownUserIds()).has(chatId)) {
+        await this.markOwnAccount(candidate.id, null);
+        return;
+      }
       if (await this.leads.isLeftoverOfDeletedLead(chatId, candidate.id)) {
         const wiped = await this.leads.wipeChatWithFiles(chatId);
         this.log.log(

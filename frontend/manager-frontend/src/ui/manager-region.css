@@ -164,6 +164,7 @@
 .mr-account-connection{display:flex;align-items:center;gap:5px;margin-top:5px;color:#aebed5;font-size:11px}
 .mr-account-connection i{width:5px;height:5px;border-radius:50%;background:#738099;flex-shrink:0}
 .mr-account-online i{background:#60d7af}
+.mr-account-offline-reason{display:block;margin-top:3px;color:#ffcf99;font-size:11px;line-height:1.4;overflow-wrap:anywhere;max-width:220px}
 .mr-account-warning{display:block;color:#ffb7b7;font-size:11px;line-height:1.5;overflow-wrap:anywhere;margin:6px 0 0}
 .mr-account-buttons{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:6px}
 .mr-account-buttons button,.mr-account-extra-actions button{min-height:32px;height:auto;white-space:nowrap}

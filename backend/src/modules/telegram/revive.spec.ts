@@ -14,6 +14,7 @@ describe('сторож офлайн-аккаунтов', () => {
       held: new Set(),
       connecting: new Map(),
       connectSeq: 0,
+      failures: new Map(),
     });
     return svc;
   }

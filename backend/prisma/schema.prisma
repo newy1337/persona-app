@@ -165,6 +165,8 @@ model Contact {
   clientStatusAt     Int?    @map("client_status_at")
   clientStatusSeenAt Int?    @map("client_status_seen_at")
   blockedByClientAt  Int?    @map("blocked_by_client_at")
+  /// вероятно, кинул в ЧС: был виден «в сети/был недавно», и вдруг статус скрыт
+  likelyBlockedAt    Int?    @map("likely_blocked_at")
   managerSeenTs      Int?    @map("manager_seen_ts")
   clearedByClientAt  Int?    @map("cleared_by_client_at")
   note               String? @map("note")
