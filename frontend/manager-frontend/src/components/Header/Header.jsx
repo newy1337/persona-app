@@ -222,7 +222,8 @@ function Header({
         )}
 
         <div className={styles.right}>
-          {me && ['manager', 'admin'].includes(me.role) && <VoiceNotifications key={me.id} userId={me.id} />}
+          {/* Колокольчик уведомлений — только менеджерам: админу они не нужны. */}
+          {me?.role === 'manager' && <VoiceNotifications key={me.id} userId={me.id} />}
           <Clock />
 
           <span className={styles.separator}></span>
