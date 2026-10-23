@@ -546,9 +546,12 @@ export class NastyaBrainService implements ReplyBrain {
   }
 
   private readonly composing = new Set<number>();
-  // Насос ответов: какие аккаунты сейчас сочиняют и какие чаты уже в работе.
+  // Насос ответов: какие аккаунты сейчас заняты (сочиняют или печатают) и
+  // какие чаты уже в работе. Место в очереди (replyLanes) держат только чаты,
+  // которые ещё сочиняются: печать и отправка идут уже вне очереди.
   private readonly pumpAccounts = new Set<number>();
   private readonly pumpChats = new Set<number>();
+  private readonly pumpGenerating = new Set<number>();
   private pumping: Promise<number> | null = null;
   private pumpAgain = false;
   private recovering = false;
@@ -582,34 +585,47 @@ export class NastyaBrainService implements ReplyBrain {
   private async pumpOnce(): Promise<number> {
     if (!this.recovering) {
       this.recovering = true;
-      void this.recoverInbound().finally(() => {
-        this.recovering = false;
-      });
+      // Без catch сбой базы здесь — необработанный reject, и Node роняет процесс.
+      void this.recoverInbound()
+        .catch((e) =>
+          this.log.warn(`inbound recovery failed: ${e?.message ?? e}`),
+        )
+        .finally(() => {
+          this.recovering = false;
+        });
     }
     const lanes = appConfig.replyLanes;
-    if (this.pumpAccounts.size >= lanes) return 0;
+    if (this.pumpGenerating.size >= lanes) return 0;
     const due = await this.schedule.dueRows(this.clock.ts(), DUE_SCAN_LIMIT);
     if (due.length >= QUEUE_ALERT) {
       this.log.warn(
-        `очередь ответов: ${due.length} чатов, в работе ${this.pumpAccounts.size} из ${lanes} аккаунтов`,
+        `очередь ответов: ${due.length} чатов, сочиняют ${this.pumpGenerating.size} из ${lanes}, печатают ${this.pumpAccounts.size - this.pumpGenerating.size}`,
       );
     }
     let started = 0;
     for (const { chatId, accountId } of due) {
-      if (this.pumpAccounts.size >= lanes) break;
+      if (this.pumpGenerating.size >= lanes) break;
       if (this.pumpAccounts.has(accountId) || this.pumpChats.has(chatId))
         continue;
       this.pumpAccounts.add(accountId);
       this.pumpChats.add(chatId);
+      this.pumpGenerating.add(chatId);
       started += 1;
       void this.respondScheduled(chatId).finally(() => {
         this.pumpAccounts.delete(accountId);
         this.pumpChats.delete(chatId);
+        this.pumpGenerating.delete(chatId);
         // Аккаунт освободился — сразу берём следующий чат, не ждём крона.
         void this.pumpDueReplies().catch(() => undefined);
       });
     }
     return started;
+  }
+
+  /** Чат дописан и уходит в печать: его место в очереди сразу берёт следующий. */
+  private freeLane(chatId: number): void {
+    if (this.pumpGenerating.delete(chatId))
+      void this.pumpDueReplies().catch(() => undefined);
   }
 
   private async recoverInbound(): Promise<void> {
@@ -875,6 +891,10 @@ export class NastyaBrainService implements ReplyBrain {
         delete delivery.voice;
         if (!(await this.schedule.prepare(chatId, delivery))) return false;
       }
+      // Ответ готов: дальше только печать и отправка. Место в очереди отдаём
+      // следующему чату — иначе десятки секунд «набора» держали его занятым,
+      // и при сотнях чатов очередь вставала.
+      this.freeLane(chatId);
       const offset = delivery.sentCount;
       const remaining = delivery.parts.slice(offset);
       let confirmed = 0;
