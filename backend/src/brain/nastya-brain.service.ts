@@ -59,6 +59,8 @@ import {
   dropFreshClaims,
   hasFalseFreshClaim,
   splitPhotoCaption,
+  stripPhotoMarks,
+  CAPTION_MARK,
   withPhotoNote,
 } from 'src/domain/photo-library';
 import { PhotoLibraryService } from 'src/shared/photo-library.service';
@@ -1124,9 +1126,16 @@ export class NastyaBrainService implements ReplyBrain {
     const state = structuredClone(base);
     const today = characterDate(this.clock.now(), persona.rhythm.timezone);
     const sent = draft.parts.slice(0, draft.sentCount);
+    // Фото ещё не ушло — его подпись идёт на перепроверку с меткой [ФОТО],
+    // чтобы после неё снимок встал на то же место, а не потерялся.
+    const photoPending = Boolean(
+      draft.photo && draft.parts.slice(draft.sentCount).some((p) => p.photo),
+    );
     const remaining = draft.parts
       .slice(draft.sentCount)
-      .map((p) => p.text)
+      .map((p) =>
+        p.photo && photoPending ? `${CAPTION_MARK} ${p.text}`.trim() : p.text,
+      )
       .join('\n');
     const userText = pending.turns.map((t) => t.text).join('\n');
     const runtime = buildRuntimeSnapshot(
@@ -1144,8 +1153,9 @@ export class NastyaBrainService implements ReplyBrain {
     runtime.time_context = await this.timeContext(persona, state);
     runtime.delivery_context = {
       kind: 'continuation',
-      reason:
-        'Продолжение уже начатого ответа после изменения времени или контекста.',
+      reason: photoPending
+        ? 'Продолжение уже начатого ответа после изменения времени или контекста. В остатке строка с меткой [ФОТО] — подпись к снимку, который уйдёт вместе с ней: сохрани метку в начале этой строки.'
+        : 'Продолжение уже начатого ответа после изменения времени или контекста.',
       sent_parts: sent.map((p) => p.text),
     };
     const review = await reviewReply(
@@ -1180,13 +1190,39 @@ export class NastyaBrainService implements ReplyBrain {
       judgment,
       review.unanswered_question_ids,
     );
-    const reply = enforceReplyRules(normalizeReply(review.final_text));
-    const parts = splitReplyMessages(reply)
-      .flatMap((m) => splitDisplayMessages(m))
-      .flatMap((d) => splitMessage(d));
+    const bubbles = (text: string) =>
+      text.trim()
+        ? splitReplyMessages(text)
+            .flatMap((m) => splitDisplayMessages(m))
+            .flatMap((d) => splitMessage(d))
+        : [];
+    let reply = enforceReplyRules(normalizeReply(review.final_text));
+    let parts: string[];
+    let lead = 0;
+    let photo: ReplyDelivery['photo'];
+    if (photoPending && draft.photo) {
+      // Если метку потеряли, splitPhotoCaption найдёт строку о снимке или
+      // поставит фото последним — но не выбросит его.
+      const split = splitPhotoCaption(reply);
+      const before = bubbles(split.before);
+      parts = [
+        ...before,
+        ...(split.caption ? [split.caption] : []),
+        ...bubbles(split.after),
+      ];
+      lead = before.length;
+      photo = { ...draft.photo, ...split };
+      reply = [split.before, split.caption, split.after]
+        .filter(Boolean)
+        .join('\n');
+    } else {
+      reply = stripPhotoMarks(reply);
+      parts = bubbles(reply);
+    }
     const refreshed = prepareDelivery(
       {
         reply: [...sent.map((p) => p.text), reply].join('\n'),
+        ...(photo ? { photo } : {}),
         state,
         judgment,
         date: today,
@@ -1197,6 +1233,7 @@ export class NastyaBrainService implements ReplyBrain {
       },
       parts,
       this.clock.ts(),
+      lead,
     );
     refreshed.parts = [...sent, ...refreshed.parts];
     refreshed.sentCount = sent.length;
@@ -1948,6 +1985,11 @@ export class NastyaBrainService implements ReplyBrain {
       reply = [photoText.before, photoText.caption, photoText.after]
         .filter(Boolean)
         .join('\n');
+    else if (stripPhotoMarks(reply) !== reply.trim()) {
+      // Модель пометила подпись, а снимок не уходит: метку текстом не шлём.
+      reply = stripPhotoMarks(reply);
+      this.log.warn(`chat=${chatId}: [ФОТО] mark without a photo removed`);
+    }
     state.history = structuredClone(baseState.history);
     if (attachmentContext) {
       const latest = [...state.history]
