@@ -70,11 +70,12 @@ export function createPanelUX({ React, api, styles: s }) {
         children ? h('div', { className: 'ux-modal-body' }, children) : null,
         footer && h('footer', { className: 'ux-modal-footer' }, footer)));
   }
-  function FeedbackHost() {
+  /** notices=false — без всплывашек справа (админу они не нужны); окна подтверждения остаются. */
+  function FeedbackHost({ notices = true } = {}) {
     const state = useActions();
     const question = useSyncExternalStore(subscribeConfirmation, () => confirmation);
     return h(React.Fragment, null,
-      h('div', { className: 'ux-notices', 'aria-label': 'Результаты действий' }, state.notices.map(item => h('div', { key: item.id, className: `ux-notice ux-notice-${item.status}`, role: item.status === 'error' ? 'alert' : 'status', 'aria-live': item.status === 'error' ? 'assertive' : 'polite' },
+      notices && h('div', { className: 'ux-notices', 'aria-label': 'Результаты действий' }, state.notices.map(item => h('div', { key: item.id, className: `ux-notice ux-notice-${item.status}`, role: item.status === 'error' ? 'alert' : 'status', 'aria-live': item.status === 'error' ? 'assertive' : 'polite' },
         h('span', { className: 'ux-notice-icon', 'aria-hidden': true }, item.status === 'pending' ? '◌' : item.status === 'success' ? '✓' : '!'),
         h('span', null, item.text),
         item.status !== 'pending' && h('button', { type: 'button', 'aria-label': 'Закрыть уведомление', onClick: () => actions.dismiss(item.id) }, '×')))),

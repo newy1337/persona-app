@@ -12,6 +12,7 @@ import Stats from './pages/Stats/Stats';
 import Settings from './pages/Settings/Settings';
 import Login from './pages/Login/Login';
 import { isManagerRole } from './utils/roles';
+import { PanelUX } from './ui/PanelUX';
 import { api, getToken } from './api/client';
 import './App.scss';
 
@@ -35,7 +36,13 @@ function App() {
   useEffect(check, [check]);
 
   if (me === undefined) return null;
-  if (!me) return <Login onDone={check} />;
+  if (!me)
+    return (
+      <>
+        <Login onDone={check} />
+        <PanelUX.FeedbackHost />
+      </>
+    );
 
   const admin = me.role === 'admin';
   const voice = me.role === 'voice';
@@ -45,6 +52,8 @@ function App() {
 
   return (
     <MeContext.Provider value={me}>
+      {/* Всплывашки результатов действий справа — не для админа. */}
+      <PanelUX.FeedbackHost notices={!admin} />
       <Routes>
         <Route element={<AppLayout />}>
           <Route path="/" element={only(!voice, <Dashboard />)} />
