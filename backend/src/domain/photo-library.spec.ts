@@ -197,3 +197,18 @@ describe('photo library', () => {
     expect(splitPhotoCaption('[фото]: Мой Барсик').caption).toBe('Мой Барсик');
   });
 });
+
+describe('метка [ФОТО] без снимка', () => {
+  it('снимается с начала строк, остальное не трогается', () => {
+    const { stripPhotoMarks } = jest.requireActual('./photo-library');
+    expect(stripPhotoMarks('[ФОТО] вот я, обычное домашнее фото')).toBe(
+      'вот я, обычное домашнее фото',
+    );
+    expect(stripPhotoMarks('привет\n [фото]: смотри\nпока')).toBe(
+      'привет\nсмотри\nпока',
+    );
+    expect(stripPhotoMarks('просто текст [ФОТО] в середине')).toBe(
+      'просто текст [ФОТО] в середине',
+    );
+  });
+});

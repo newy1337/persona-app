@@ -21,6 +21,7 @@ import { judgeDialogue } from '../src/brain/nastya/judge/plan';
 import { generateDraft } from '../src/brain/nastya/llm/generate';
 import { reviewReply } from '../src/brain/nastya/judge/review';
 import { checkCancelled } from '../src/shared/cancellation';
+import { prepareDelivery } from '../src/brain/reply-delivery';
 jest.mock('../src/brain/nastya/judge/plan', () => ({
   judgeDialogue: jest.fn(),
 }));
@@ -930,6 +931,77 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
       'Вчера погуляла у моря',
     ]);
     expect((await memory.load(chatId)).character.turns).toBe(1);
+  });
+
+  it('photo after the first bubble survives the continuation review: the caption goes out with the photo, not as «[ФОТО] …» text', async () => {
+    // Настоящий черновик готовится перед самой полуночью; первая попытка
+    // отправки падает до Telegram — черновик остаётся в расписании.
+    now = Date.parse('2026-09-24T16:59:30Z') / 1000;
+    await forceDue();
+    transport.sendText.mockRejectedValueOnce(new Error('network down'));
+    expect(await brain.runDueReplies()).toBe(0);
+    const pending = await schedule.get(chatId);
+    // В него добавляем фото после первой части — как готовит его generateReply.
+    const withPhoto = prepareDelivery(
+      {
+        ...pending.delivery,
+        reply: ['День прошёл спокойно', 'вот я дома'].join('\n'),
+        photo: {
+          photo_id: 1,
+          file_path: '/tmp/me.jpg',
+          note: '',
+          account_id: 1,
+          before: 'День прошёл спокойно',
+          caption: 'вот я дома',
+          after: '',
+        },
+      },
+      ['День прошёл спокойно', 'вот я дома'],
+      now,
+      1,
+    );
+    expect(await schedule.prepare(chatId, withPhoto)).toBeTruthy();
+    transport.sendPhoto = jest.fn(async (_chat: number, opts: any) => {
+      await opts.onDispatch?.();
+      return 900;
+    });
+    now = Date.parse('2026-09-24T16:59:45Z') / 1000;
+    await forceDue();
+    // Первая часть ушла, перед фото наступила полночь — остаток на перепроверку.
+    transport.sendText.mockImplementationOnce(async (_chat, _parts, opts) => {
+      await opts.beforePart();
+      await opts.onDispatch(0);
+      await opts.onPart(0, 700);
+      now += 20;
+      return [700];
+    });
+    const seen: string[] = [];
+    (reviewReply as jest.Mock).mockImplementation(async (x) => {
+      if (x.runtime.delivery_context?.kind === 'continuation')
+        seen.push(x.draft);
+      return {
+        approved: true,
+        should_send: true,
+        issues: [],
+        final_text: x.draft,
+      };
+    });
+    expect(await brain.runDueReplies()).toBe(0);
+    expect(transport.sendPhoto).not.toHaveBeenCalled();
+    expect(seen).toEqual(['[ФОТО] вот я дома']);
+    const after = await schedule.get(chatId);
+    expect(after.delivery.photo?.photo_id).toBe(1);
+    expect(after.delivery.parts.slice(after.delivery.sentCount)).toEqual([
+      expect.objectContaining({ text: 'вот я дома', photo: true }),
+    ]);
+    // Следующий проход отправляет именно фото с подписью, без метки текстом.
+    // (Сохранить отправку фото тестовая база не даст: снимка #1 в ней нет —
+    // поэтому проверяем сам вызов Telegram.)
+    await brain.runDueReplies().catch(() => 0);
+    expect(transport.sendPhoto).toHaveBeenCalledTimes(1);
+    expect(transport.sendPhoto.mock.calls[0][1].caption).toBe('вот я дома');
+    const texts = (await assistantRows()).map((m) => m.text);
+    expect(texts.some((t) => t.includes('[ФОТО]'))).toBe(false);
   });
 
   it('recovers a received but unfinished input on ordinary redelivery without a duplicate row', async () => {

@@ -324,6 +324,19 @@ const MARK_RX = /^\s*\[\s*фото\s*\]\s*:?\s*/iu;
 const PHOTO_LINE_RX =
   /(?:^|[\s,.!?«"(])(?:вот|смотри|глянь|зацени|это\s+(?:я|мой|моя|мои|мы)|на\s+фото|фот\S*|сним\S*|кадр\S*|селфи)(?=$|[\s,.!?»")])/iu;
 
+/**
+ * Ответ уходит без фото — метка [ФОТО] не должна попасть собеседнику текстом.
+ * Убирает её из начала строк; остальной текст не трогает.
+ */
+export function stripPhotoMarks(reply: string): string {
+  return String(reply ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(MARK_RX, ''))
+    .join('\n')
+    .trim();
+}
+
 export interface PhotoCaptionSplit {
   before: string;
   caption: string;
