@@ -37,6 +37,7 @@ import { NotFoundException } from '@nestjs/common';
 import {
   AddTelegramAccountDto,
   AddVkAccountDto,
+  SetVkSessionDto,
   TelegramPrivacyDto,
   SetProxyDto,
   SetStatusDto,
@@ -151,6 +152,25 @@ export class AccountsController {
         resource: `vk_account:${dto.login}`,
       },
       () => this.accounts.addVk(dto, owner),
+    );
+  }
+
+  @ApiOperation({ summary: 'Новые куки VK-аккаунта (вход сделан заново)' })
+  @Put('tg-accounts/:id/vk-session')
+  @UsePipes(ValidationPipe)
+  async setVkSession(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetVkSessionDto,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    await this.own(user, id);
+    return this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'tg_account.auth',
+        resource: `tg_account:${id}`,
+      },
+      () => this.accounts.setVkSession(id, dto),
     );
   }
 

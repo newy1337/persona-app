@@ -279,7 +279,7 @@ export class HistoryService {
       : null;
   }
 
-  async clientTelegramState(
+  async clientState(
     chatId: number,
     nowTs: number,
   ): Promise<{

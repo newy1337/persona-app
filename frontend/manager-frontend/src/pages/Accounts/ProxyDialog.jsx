@@ -4,6 +4,14 @@ import { parseProxyLine } from '../../utils/proxyLine';
 import s from '../../styles/AdminPage.module.scss';
 
 export const EMPTY_PROXY = { type: 'socks5', host: '', port: '', username: '', password: '', secret: '' };
+export const EMPTY_VK_PROXY = { ...EMPTY_PROXY, type: 'http' };
+
+/** Типы прокси по каналу аккаунта: Telegram и VK принимают разные. */
+export const PROXY_TYPES = {
+  telegram: [['socks5', 'SOCKS5'], ['mtproto', 'MTProto'], ['socks4', 'SOCKS4']],
+  vk: [['http', 'HTTP'], ['https', 'HTTPS'], ['socks5', 'SOCKS5']],
+};
+const typesFor = (channel) => PROXY_TYPES[channel === 'vk' ? 'vk' : 'telegram'];
 
 export function proxyPayload(p) {
   return {
@@ -16,7 +24,7 @@ export function proxyPayload(p) {
   };
 }
 
-export function ProxyFields({ value, onChange }) {
+export function ProxyFields({ value, onChange, channel = 'telegram' }) {
   const set = (patch) => onChange({ ...value, ...patch });
   const [line, setLine] = useState('');
   const [parsed, setParsed] = useState(null);
@@ -27,7 +35,7 @@ export function ProxyFields({ value, onChange }) {
       setParsed(null);
       return;
     }
-    const r = parseProxyLine(text);
+    const r = parseProxyLine(text, { channel });
     setParsed(r);
     if (r.ok) onChange({ ...EMPTY_PROXY, ...r.proxy });
   };
@@ -40,7 +48,7 @@ export function ProxyFields({ value, onChange }) {
           className={`${s.field} ${s.mono}`}
           value={line}
           onChange={(e) => applyLine(e.target.value)}
-          placeholder="1.2.3.4:1080:логин:пароль или socks5://логин:пароль@хост:порт"
+          placeholder={channel === 'vk' ? 'хост:порт:логин:пароль или http://логин:пароль@хост:порт' : '1.2.3.4:1080:логин:пароль или socks5://логин:пароль@хост:порт'}
           autoFocus
         />
       </label>
@@ -54,9 +62,7 @@ export function ProxyFields({ value, onChange }) {
       <label className={s.label}>
         Тип
         <select className={s.select} value={value.type} onChange={(e) => set({ type: e.target.value })}>
-          <option value="socks5">SOCKS5</option>
-          <option value="mtproto">MTProto</option>
-          <option value="socks4">SOCKS4</option>
+          {typesFor(channel).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select>
       </label>
       <label className={s.label}>
@@ -88,10 +94,10 @@ export function ProxyFields({ value, onChange }) {
   );
 }
 
-export function proxyValid(p) {
+export function proxyValid(p, channel = 'telegram') {
   const port = Number(p.port);
   return (
-    ['socks5', 'socks4', 'mtproto'].includes(p.type)
+    typesFor(channel).some(([key]) => key === p.type)
     && p.host.trim()
     && Number.isInteger(port) && port > 0 && port < 65536
     && (p.type !== 'mtproto' || p.secret)
@@ -99,13 +105,14 @@ export function proxyValid(p) {
 }
 
 export default function ProxyDialog({ account, onClose }) {
-  const [proxy, setProxy] = useState(EMPTY_PROXY);
+  const channel = account.channel === 'vk' ? 'vk' : 'telegram';
+  const [proxy, setProxy] = useState(channel === 'vk' ? EMPTY_VK_PROXY : EMPTY_PROXY);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
-    if (busy || !proxyValid(proxy)) return;
+    if (busy || !proxyValid(proxy, channel)) return;
     setBusy(true);
     setError(null);
     try {
@@ -125,18 +132,18 @@ export default function ProxyDialog({ account, onClose }) {
   return (
     <div className={s.overlay} onMouseDown={(e) => e.target === e.currentTarget && onClose(false)}>
       <form className={s.modal} onSubmit={submit}>
-        <h3 className={s.modalTitle}>Прокси: {account.phone_e164}</h3>
+        <h3 className={s.modalTitle}>Прокси: {account.login || account.phone_e164}</h3>
         {account.proxy_label && (
           <p className={s.modalText}>Сейчас: <span className={s.mono}>{account.proxy_label}</span> — новый заменит его.</p>
         )}
         <p className={s.modalText}>
           После сохранения аккаунт переподключится через этот прокси. Не подключится — будет видно по статусу «онлайн».
         </p>
-        <ProxyFields value={proxy} onChange={setProxy} />
+        <ProxyFields value={proxy} onChange={setProxy} channel={channel} />
         {error && <p className={s.error}>{error}</p>}
         <div className={s.modalActions}>
           <button type="button" className={s.btn} onClick={() => onClose(false)}>Отмена</button>
-          <button type="submit" className={s.btnPrimary} disabled={busy || !proxyValid(proxy)}>
+          <button type="submit" className={s.btnPrimary} disabled={busy || !proxyValid(proxy, channel)}>
             {busy ? 'Сохранение…' : 'Сохранить'}
           </button>
         </div>

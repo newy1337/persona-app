@@ -63,3 +63,13 @@ export async function uploadAccountAvatar(id, file) {
   if (!res.ok) throw Object.assign(new Error(data.message || `HTTP ${res.status}`), { detail: data.message });
   return data;
 }
+
+/** VK-аккаунт по кукам браузера и прокси — сразу подключается. */
+export function addVkAccount(body) {
+  return api.post('/api/tg-accounts/vk', body);
+}
+
+/** Новые куки VK-аккаунта (сессия умерла или вход сделан заново). */
+export function setVkSession(id, cookies, userAgent) {
+  return api.put(`/api/tg-accounts/${id}/vk-session`, { cookies, user_agent: userAgent || undefined });
+}

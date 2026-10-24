@@ -94,3 +94,22 @@ export function setCookies(headers: Headers): string[] {
   const raw = headers.get('set-cookie');
   return raw ? raw.split(/,(?=\s*[A-Za-z0-9_-]+=)/) : [];
 }
+
+/**
+ * Почему аккаунт VK не на связи — словами для панели. Сетевые ошибки клиента
+ * приходят текстом из Rust (hyper), менеджеру он ничего не скажет.
+ */
+export function vkOfflineReason(e: unknown): string | null {
+  const name = (e as Error)?.constructor?.name ?? '';
+  const text = String((e as Error)?.message ?? e ?? '');
+  if (/Proxy/.test(name) || /proxy/i.test(text))
+    return 'прокси не пускает — проверьте адрес, логин и пароль прокси';
+  if (/Timeout/.test(name) || /timeout|timed out/i.test(text))
+    return 'прокси или VK не ответили вовремя';
+  if (
+    e instanceof TransportError ||
+    /Failed to connect|ConnectionRefused/i.test(text)
+  )
+    return 'нет соединения через прокси — прокси не отвечает';
+  return null;
+}

@@ -22,6 +22,7 @@ import { TelegramService } from '../../channels/telegram/telegram.service';
 import {
   AddTelegramAccountDto,
   AddVkAccountDto,
+  SetVkSessionDto,
   ProxyConfigDto,
   UpdateAccountDto,
   UpdateTelegramProfileDto,
@@ -428,6 +429,44 @@ export class AccountsService {
       ...this.summary(await this.get(created.id)),
       connect_error: connectError,
     };
+  }
+
+  /** Новые куки VK: аккаунт снова активен и переподключается. */
+  async setVkSession(id: number, dto: SetVkSessionDto) {
+    const account = await this.get(id);
+    if (account.channel !== 'vk')
+      throw new BadRequestException('куки задаются только VK-аккаунту');
+    const cookies = pickCookies(dto.cookies ?? []);
+    if (!hasSession(cookies))
+      throw new BadRequestException(
+        'в куках нет сессии VK (remixsid) — выгрузите куки vk.ru после входа',
+      );
+    const old = account.sessionEncrypted
+      ? (JSON.parse(
+          this.crypto.decrypt(account.sessionEncrypted),
+        ) as VkSessionData)
+      : null;
+    const session: VkSessionData = {
+      cookies,
+      userAgent: dto.user_agent?.trim() || old?.userAgent || null,
+      savedAt: this.clock.ts(),
+    };
+    await this.prisma.channelAccount.update({
+      where: { id },
+      data: {
+        sessionEncrypted: this.crypto.encrypt(JSON.stringify(session)),
+        status: 'active',
+        bannedAt: null,
+        banReason: null,
+      },
+    });
+    let connectError: string | null = null;
+    try {
+      await (await this.channels.forAccount(id)).reconnect(id);
+    } catch (e) {
+      connectError = e?.message ?? String(e);
+    }
+    return { ...this.summary(await this.get(id)), connect_error: connectError };
   }
 
   async setProxy(id: number, proxy: ProxyConfigDto) {

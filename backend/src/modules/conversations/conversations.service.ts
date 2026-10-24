@@ -5,6 +5,11 @@ import {
   forwardRef,
   NotFoundException,
 } from '@nestjs/common';
+import {
+  accountContact,
+  chatChannel,
+  clientContact,
+} from 'src/channels/contact';
 import { REPLY_BRAIN, ReplyBrain } from 'src/brain/reply-brain.port';
 import { fillVariables } from 'src/brain/config/variables';
 import { PresenceService } from 'src/shared/presence.service';
@@ -166,7 +171,7 @@ export class ConversationsService {
     const read = await this.history.readMarks(chatId);
     const nowTs = this.clock.ts();
     const [clientState, account, managers, contact] = await Promise.all([
-      this.history.clientTelegramState(chatId, nowTs),
+      this.history.clientState(chatId, nowTs),
       owner === null
         ? null
         : this.prisma.channelAccount.findUnique({
@@ -177,6 +182,8 @@ export class ConversationsService {
               displayName: true,
               phoneE164: true,
               personaId: true,
+              channel: true,
+              peerId: true,
               status: true,
               bannedAt: true,
               banReason: true,
@@ -205,10 +212,17 @@ export class ConversationsService {
       ),
       ...managers.forAccount(owner),
       persona_name: persona.name,
-      // с какого Telegram-аккаунта личность пишет этому клиенту
+      channel: chatChannel(chatId),
+      // с какого аккаунта личность пишет этому клиенту
       account: account
         ? {
             id: account.id,
+            channel: account.channel,
+            contact: accountContact(
+              account.channel,
+              account.username,
+              account.peerId,
+            ),
             username: account.username ?? null,
             display_name: account.displayName ?? null,
             phone: account.phoneE164,
@@ -278,6 +292,14 @@ export class ConversationsService {
         profile?.telegramUsername ||
         profile?.usernameKey ||
         null,
+      client_contact: clientContact(
+        chatId,
+        (facts['tg_username'] as string) ||
+          (facts['vk_username'] as string) ||
+          profile?.telegramUsername ||
+          profile?.usernameKey ||
+          null,
+      ),
       client_avatar: this.presence.avatarUrl(chatId),
       client_typing: this.presence.activityOf(chatId),
       client_city: profile?.city ?? null,

@@ -18,7 +18,7 @@ import {
   VkSessionExpired,
   isTerminal,
 } from 'src/channels/vk/errors';
-import { browserHttp } from 'src/channels/vk/http';
+import { browserHttp, vkOfflineReason } from 'src/channels/vk/http';
 import {
   decodeEvent,
   fromDto,
@@ -202,11 +202,12 @@ export class VkService
       })
       .catch(async (e) => {
         this.failures.set(accountId, {
-          reason: offlineReasonOf(e),
+          reason: vkOfflineReason(e) ?? offlineReasonOf(e),
           at: this.clock.ts(),
         });
         await this.onAccountError(accountId, e);
-        throw e;
+        const readable = vkOfflineReason(e);
+        throw readable ? new Error(readable) : e;
       })
       .finally(() => this.connecting.delete(accountId));
     this.connecting.set(accountId, work);
@@ -373,7 +374,7 @@ export class VkService
       }
     } catch (e) {
       this.failures.set(entry.id, {
-        reason: offlineReasonOf(e),
+        reason: vkOfflineReason(e) ?? offlineReasonOf(e),
         at: this.clock.ts(),
       });
       this.log.error(

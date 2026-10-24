@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import styles from './AgentCard.module.scss';
 import { StatusIcon, LightningIcon, ClockIcon } from '../../assets/icons';
 import { priorityColor } from '../../data/stages';
+import { accountContact, channelBadge } from '../../utils/channel';
 
 function waitingFor(ts) {
   if (!ts) return '—';
@@ -50,6 +51,9 @@ function AgentCard({ agent, showAlert = false }) {
       <div className={styles.top}>
         <div className={styles.info}>
           <span className={styles.name}>{name || `Чат ${chatId}`}</span>
+          {channelBadge(agent.channel).other && (
+            <span className="mr-channel-badge" data-channel={channelBadge(agent.channel).key} data-testid="channel-badge" title={channelBadge(agent.channel).title}>{channelBadge(agent.channel).label}</span>
+          )}
           <div className={styles.sub}>
             {[age ? `${age} лет` : null, city || null].filter(Boolean).length ? (
               <>
@@ -59,7 +63,7 @@ function AgentCard({ agent, showAlert = false }) {
               </>
             ) : (
               <span className={styles.subAge}>
-                {accountId == null ? 'аккаунт удалён' : accountUsername ? `@${accountUsername}` : 'возраст и город неизвестны'}
+                {accountId == null ? 'аккаунт удалён' : accountUsername ? accountContact(agent)?.display ?? `@${accountUsername}` : 'возраст и город неизвестны'}
               </span>
             )}
           </div>

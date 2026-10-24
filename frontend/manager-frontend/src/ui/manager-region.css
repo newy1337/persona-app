@@ -306,3 +306,10 @@
 
 .mr-lead-history{color:#b3c1d8}
 .mr-lead-history p{max-height:220px;overflow:auto}
+/* Канал чата и аккаунта: помечаем только не-Telegram, как в Chutter. */
+.mr-channel-badge{display:inline-block;align-self:flex-start;width:fit-content;flex:none;margin-left:6px;border:1px solid #4c75a355;background:#4c75a322;color:#9cbde6;border-radius:6px;padding:0 5px;font-size:10px;font-weight:600;letter-spacing:.02em;vertical-align:middle}
+/* Переключатель канала: фильтр аккаунтов и выбор мессенджера в форме. */
+.mr-channel-switch{display:inline-flex;gap:2px;padding:2px;border:1px solid #ffffff1f;border-radius:8px;background:#ffffff08}
+.mr-channel-option{border:0;background:transparent;color:inherit;opacity:.7;padding:4px 10px;border-radius:6px;font:inherit;font-size:12px;cursor:pointer}
+.mr-channel-option:hover{opacity:1}
+.mr-channel-option-on{opacity:1;background:#ffffff1a;font-weight:600}

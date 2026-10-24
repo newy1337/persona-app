@@ -132,6 +132,26 @@ export class AddVkAccountDto {
   purpose?: 'prod' | 'test' = 'prod';
 }
 
+/** Новые куки VK-аккаунта: сессия умерла или вход сделан заново. */
+export class SetVkSessionDto {
+  @ApiProperty({
+    description: 'куки vk.ru из браузера: [{name, value, domain, path}]',
+  })
+  @IsArray()
+  cookies: Array<{
+    name: string;
+    value: string;
+    domain: string;
+    path?: string;
+  }>;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  user_agent?: string;
+}
+
 export class UpdateTelegramProfileDto {
   @ApiPropertyOptional({ example: 'Настя' })
   @IsOptional()

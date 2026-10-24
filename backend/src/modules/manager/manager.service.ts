@@ -1,3 +1,10 @@
+import type { Channel } from 'src/channels/ids';
+import {
+  accountContact,
+  chatChannel,
+  clientContact,
+  type ContactLink,
+} from 'src/channels/contact';
 import { Inject, Injectable } from '@nestjs/common';
 import { REPLY_BRAIN, type ReplyBrain } from 'src/brain/reply-brain.port';
 import type { NextBotAction } from 'src/brain/dialogue/forecast';
@@ -52,8 +59,14 @@ export interface StageView {
 
 export interface ManagerChatRow extends ManagerAttribution {
   chat_id: number;
+  /** канал чата: telegram или vk */
+  channel: Channel;
   account_id: number | null;
   account_username: string | null;
+  /** аккаунт ссылкой в его мессенджере */
+  account_contact: ContactLink | null;
+  /** собеседник ссылкой в его мессенджере */
+  contact: ContactLink | null;
   name: string | null;
   /** этап сделки, выставленный менеджером; null — не задан */
   deal_stage: string | null;
@@ -87,6 +100,8 @@ interface RawRow {
   chat_id: bigint | number;
   account_id: number | null;
   account_username?: string | null;
+  account_channel?: string | null;
+  account_peer_id?: bigint | number | null;
   pause_state: string | null;
   pause_reason?: string | null;
   paused_ts?: number | null;
@@ -227,8 +242,21 @@ export class ManagerService {
     return {
       ...UNASSIGNED_MANAGER,
       chat_id: Number(r.chat_id),
+      channel: chatChannel(r.chat_id),
       account_id: r.account_id === null ? null : Number(r.account_id),
       account_username: r.account_username || null,
+      account_contact: accountContact(
+        r.account_channel,
+        r.account_username,
+        r.account_peer_id,
+      ),
+      contact: clientContact(
+        r.chat_id,
+        (facts['tg_username'] as string) ||
+          (facts['vk_username'] as string) ||
+          r.profile_username ||
+          null,
+      ),
       name: (facts['name'] as string) ?? null,
       deal_stage: (facts['deal_stage'] as string) ?? null,
       deal_note: (facts['deal_note'] as string) ?? null,
@@ -291,7 +319,7 @@ export class ManagerService {
       ? HAS_CLIENT_SQL
       : Prisma.sql`${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL}`;
     const rows = await this.prisma.$queryRaw<RawRow[]>`
-      SELECT c.chat_id, c.account_id, c.pause_state, a.username AS account_username, a.status AS account_status, a.banned_at AS account_lost_at,
+      SELECT c.chat_id, c.account_id, c.pause_state, a.username AS account_username, a.channel AS account_channel, a.peer_id AS account_peer_id, a.status AS account_status, a.banned_at AS account_lost_at,
              c.client_status, c.client_status_at, c.blocked_by_client_at, c.cleared_by_client_at, c.likely_blocked_at,
              (SELECT COUNT(*) FROM messages mu
                WHERE mu.chat_id = c.chat_id AND mu.role = 'user' AND mu.deleted_at IS NULL
@@ -353,7 +381,7 @@ export class ManagerService {
     accounts: number[] | null,
   ): Promise<ManagerChatRow[]> {
     const rows = await this.prisma.$queryRaw<RawRow[]>`
-      SELECT c.chat_id, c.account_id, c.pause_state, c.pause_reason, c.paused_ts, a.username AS account_username, a.status AS account_status, a.banned_at AS account_lost_at,
+      SELECT c.chat_id, c.account_id, c.pause_state, c.pause_reason, c.paused_ts, a.username AS account_username, a.channel AS account_channel, a.peer_id AS account_peer_id, a.status AS account_status, a.banned_at AS account_lost_at,
              c.client_status, c.client_status_at, c.blocked_by_client_at, c.cleared_by_client_at, c.likely_blocked_at,
              (SELECT COUNT(*) FROM messages mu
                WHERE mu.chat_id = c.chat_id AND mu.role = 'user' AND mu.deleted_at IS NULL

@@ -43,7 +43,13 @@ function splitHostPort(text) {
   return i < 0 ? [t, ''] : [t.slice(0, i), t.slice(i + 1)];
 }
 
-export function parseProxyLine(raw) {
+/**
+ * Строка прокси от провайдера → поля формы. `channel` — канал аккаунта:
+ * Telegram ходит через SOCKS5/SOCKS4/MTProto, VK — через HTTP/HTTPS/SOCKS5
+ * (строка без схемы для VK — HTTP, как её отдают провайдеры).
+ */
+export function parseProxyLine(raw, { channel = 'telegram' } = {}) {
+  const vk = channel === 'vk';
   const text = String(raw ?? '').trim();
   if (!text) return fail('пустая строка');
 
@@ -52,6 +58,7 @@ export function parseProxyLine(raw) {
     const server = q.get('server');
     const port = q.get('port');
     const secret = q.get('secret');
+    if (vk) return fail('MTProto — прокси только для Telegram, VK нужен HTTP, HTTPS или SOCKS5');
     if (!server || !isPort(port) || !secret) return fail('в ссылке MTProto нужны server, port и secret');
     return result('mtproto', server, port, '', '', secret);
   }
@@ -59,11 +66,13 @@ export function parseProxyLine(raw) {
   const scheme = /^([a-z0-9]+):\/\/(.*)$/i.exec(text);
   if (scheme) {
     const name = scheme[1].toLowerCase();
-    if (name.startsWith('http')) return fail('HTTP-прокси Telegram не поддерживает — нужен SOCKS5, SOCKS4 или MTProto');
-    const type = name.startsWith('socks4') ? 'socks4' : name.startsWith('socks') ? 'socks5' : null;
+    if (name.startsWith('http') && !vk) return fail('HTTP-прокси Telegram не поддерживает — нужен SOCKS5, SOCKS4 или MTProto');
+    if (name.startsWith('socks4') && vk) return fail('SOCKS4 VK не поддерживает — нужен HTTP, HTTPS или SOCKS5');
+    const type = name === 'https' ? 'https' : name.startsWith('http') ? 'http'
+      : name.startsWith('socks4') ? 'socks4' : name.startsWith('socks') ? 'socks5' : null;
     if (!type) return fail(`схема «${name}» не поддерживается`);
     return parseBare(scheme[2].replace(/\/+$/, ''), type);
   }
 
-  return parseBare(text, 'socks5');
+  return parseBare(text, vk ? 'http' : 'socks5');
 }

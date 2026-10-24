@@ -98,6 +98,7 @@ import {
   StatusIcon,
 } from '../../assets/icons';
 import { DEAL_STAGES } from '../../data/dealStages';
+import { accountContact, channelBadge, clientContact } from '../../utils/channel';
 
 // Блок «Сценарий» в карточке диалога скрыт: сценариев у личностей сейчас нет.
 // Вернуть — собрать панель с VITE_SHOW_SCENARIO=1 (данные и код блока на месте).
@@ -806,19 +807,22 @@ function ConversationPage() {
                   </span>
                   <span className={styles.metaRow}>
                     <span className={styles.metaIcon}><PhoneIcon />Контакт</span>
-                    {phoneLabel(pins, dbPhone) || (data.client_username ? (
-                      <a href={`https://t.me/${data.client_username}`} target="_blank" rel="noreferrer" title="Номер скрыт в Telegram — ник собеседника">
-                        @{data.client_username}
+                    {phoneLabel(pins, dbPhone) || (clientContact(data) ? (
+                      <a href={clientContact(data).url} target="_blank" rel="noreferrer" title={`Номер скрыт — профиль собеседника в ${channelBadge(data.channel).title}`}>
+                        {clientContact(data).display}
                       </a>
                     ) : '—')}
                   </span>
                   <span className={styles.metaRow} data-testid="writing-account">
                     <span className={styles.metaIcon}><AccountIcon />Аккаунт</span>
                     {data.account ? (
-                      <span title={`Аккаунт Telegram, с которого ${data.persona_name || data.account.persona_id || 'личность'} ведёт этот чат`}>
+                      <span title={`Аккаунт ${channelBadge(data.account.channel).title}, с которого ${data.persona_name || data.account.persona_id || 'личность'} ведёт этот чат`}>
                         {data.account.display_name || data.persona_name || data.account.persona_id}
-                        {data.account.username ? (
-                          <> · <a href={`https://t.me/${data.account.username}`} target="_blank" rel="noreferrer">@{data.account.username}</a></>
+                        {channelBadge(data.account.channel).other && (
+                          <span className="mr-channel-badge" data-channel="vk">{channelBadge(data.account.channel).label}</span>
+                        )}
+                        {accountContact(data.account) ? (
+                          <> · <a href={accountContact(data.account).url} target="_blank" rel="noreferrer">{accountContact(data.account).display}</a></>
                         ) : data.account.phone ? ` · ${data.account.phone}` : ''}
                       </span>
                     ) : '—'}

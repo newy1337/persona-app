@@ -6,6 +6,7 @@ import styles from './ConversationsTable.module.scss';
 import { stageColors, stageFilters } from '../../data/stages';
 import { DEAL_STAGE_COLORS, DEAL_STAGE_FILTERS, matchesDealStage } from '../../data/dealStages';
 import { matchesQuery, matchesHeadFilters, matchesDateFilter } from '../../utils/search';
+import { CHANNEL_FILTERS, channelKey, matchesChannel } from '../../utils/channel';
 
 function fmtTime(ts) {
   return ts ? new Date(ts * 1000).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -62,6 +63,10 @@ function ConversationsTable({
   const [activeFilter, setActiveFilter] = useState(null);
   const [dealStage, setDealStage] = useState(null);
   const [onlyNew, setOnlyNew] = useState(false);
+  const [channel, setChannel] = useState('all');
+  // Фильтр канала — когда в списке больше одного мессенджера (или он уже выбран).
+  const channelCounts = CHANNEL_FILTERS.map(([key, label]) => [key, label, key === 'all' ? rows.length : rows.filter((c) => channelKey(c.channel) === key).length]);
+  const multiChannel = channelCounts.filter(([key, , n]) => key !== 'all' && n > 0).length > 1 || channel !== 'all';
   const [page, setPage] = useState(1);
   const newCount = rows.filter(waitsForManager).length;
   const [sort, setSort] = useState({ col: null, dir: 'asc' });
@@ -77,6 +82,7 @@ function ConversationsTable({
 
   const filtered = rows.filter(
     (c) =>
+      matchesChannel(c, channel) &&
       (!activeFilter || c.stage?.id === activeFilter) &&
       matchesDealStage(c, dealStage) &&
       (!onlyNew || waitsForManager(c)) &&
@@ -112,7 +118,7 @@ function ConversationsTable({
     setPage(1);
     // Зависимости — только значения: объект фильтров пересоздаётся на каждой
     // отрисовке, и по нему страница сбрасывалась бы сразу после переключения.
-  }, [query, headFilters.lead, headFilters.account, dateFilter, activeFilter, dealStage, onlyNew, showHidden]);
+  }, [query, headFilters.lead, headFilters.account, dateFilter, activeFilter, dealStage, onlyNew, showHidden, channel]);
   const current = Math.min(page, pages);
   const visible = useMemo(
     () => sorted.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE),
@@ -171,6 +177,26 @@ function ConversationsTable({
             </button>
           ))}
         </div>
+        {multiChannel && (
+          <div className={styles.filters} data-testid="channel-filters" role="radiogroup" aria-label="Канал">
+            <span className={styles.filtersLabel}>Канал:</span>
+            {channelCounts.map(([key, label, n]) => (
+              <button
+                key={key}
+                type="button"
+                role="radio"
+                aria-checked={channel === key}
+                data-channel={key === 'all' ? undefined : key}
+                className={`${styles.filterPill} ${channel === key ? styles.filterPillActive : ''}`}
+                style={{ '--pill-color': key === 'vk' ? '#4c75a3' : key === 'tg' ? '#29a9eb' : '#6B7A99' }}
+                onClick={() => setChannel(key)}
+              >
+                <span className={styles.filterDot}></span>
+                {label} · {n}
+              </button>
+            ))}
+          </div>
+        )}
         <div className={styles.filters} data-testid="deal-stage-filters" aria-label="Этап сделки">
           <span className={styles.filtersLabel}>Этап:</span>
           {DEAL_STAGE_FILTERS.map((st) => {

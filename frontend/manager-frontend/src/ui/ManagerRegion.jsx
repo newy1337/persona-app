@@ -11,6 +11,7 @@ import { LEAD_ROLE_FOR, ROLE_LABELS } from '../utils/roles';
 import { genderLabel } from '../utils/chat';
 import PickerModal from './PickerModal';
 import { httpHref } from '../utils/safeUrl';
+import { accountContact, channelBadge, clientContact } from '../utils/channel';
 
 const h = React.createElement;
 const { useState, useEffect, useCallback } = React;
@@ -38,7 +39,8 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, 
   const heading = (label, col) => h('button', { type: 'button', className: 'mr-dialog-sort', onClick: () => onSort(col) },
     label, h('span', { 'aria-hidden': true }, sort.col === col ? sort.dir === 'asc' ? ' ↑' : ' ↓' : ' ↕'));
   const header = (label, col, width) => h('th', { scope: 'col', style: { width }, ...(col ? { 'aria-sort': sort.col === col ? sort.dir === 'asc' ? 'ascending' : 'descending' : 'none' } : {}) }, col ? heading(label, col) : label);
-  const link = (username, label) => h('a', { href: `https://t.me/${username}`, target: '_blank', rel: 'noreferrer', onClick: e => e.stopPropagation() }, label || `@${username}`);
+  const link = contact => h('a', { href: contact.url, target: '_blank', rel: 'noreferrer', onClick: e => e.stopPropagation() }, contact.display);
+  const channelMark = channel => { const c = channelBadge(channel); return c.other && h('span', { className: 'mr-channel-badge', 'data-channel': c.key, 'data-testid': 'channel-badge', title: c.title }, c.label); };
   return h('div', { className: 'mr-dialogs', 'data-testid': 'dialogs-list' },
     h('label', { className: 'mr-dialog-mobile-sort' }, 'Сортировка',
       h('select', { 'aria-label': 'Сортировка диалогов', value: sort.col ? `${sort.col}:${sort.dir}` : '', onChange: e => {
@@ -48,6 +50,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, 
       h('thead', null, h('tr', null, header('Собеседник', 'name', '27%'), header('Менеджер / регион', null, '22%'), header('Стадия и режим', 'status', '22%'), header('Последнее', 'time', '15%'), header('Действия', null, '14%'))),
       h('tbody', null, rows.map(row => {
         const fresh = isNew(row), online = presence(row.client_presence, undefined, { short: true });
+        const contact = clientContact(row), account = accountContact(row);
         const next = nextAction(row.next_bot_action, undefined, { short: true });
         return h('tr', { key: row.chat_id, className: `mr-dialog-row ${fresh ? 'mr-dialog-new' : ''}`, 'data-chat-id': row.chat_id, onClick: () => onOpen(row.chat_id) },
           h('td', { className: 'mr-dialog-person' },
@@ -55,13 +58,14 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, 
               h(Avatar, { className: 'mr-dialog-avatar', style: { '--av-bg': '#234779' }, src: row.avatar_url, name: row.name || '—' }),
               h('div', { className: 'mr-dialog-person-text' },
                 h('button', { type: 'button', className: 'mr-dialog-name', onClick: e => { e.stopPropagation(); onOpen(row.chat_id); } }, row.name || `Чат ${row.chat_id}`),
+                channelMark(row.channel),
                 fresh && h('span', { className: 'mr-dialog-new-badge', 'data-testid': 'new-badge', title: 'Клиент написал — ждёт ответа менеджера' }, unreadLabel(row.unread_count)),
                 h('div', { className: 'mr-dialog-muted' }, row.typing ? `${typingLabels[row.typing] || 'печатает'}…` : [row.age ? `${row.age} лет` : null, row.city].filter(Boolean).join(' · ') || 'Возраст и город не указаны'))),
-            h('div', { className: 'mr-dialog-contact' }, row.phone || null, row.client_username && link(row.client_username), !row.phone && !row.client_username && h('span', { className: 'mr-dialog-muted' }, 'Контакт не указан')),
+            h('div', { className: 'mr-dialog-contact' }, row.phone || null, contact && link(contact), !row.phone && !contact && h('span', { className: 'mr-dialog-muted' }, 'Контакт не указан')),
             h('div', { className: 'mr-dialog-muted mr-dialog-id' }, `ID ${row.chat_id}`),
             row.blocked_by_client_at || row.cleared_by_client_at || row.likely_blocked_at ? h('div', { className: 'mr-dialog-warning', 'data-testid': 'blocked-mark', title: row.likely_blocked_at && !row.blocked_by_client_at ? 'Статус собеседника вдруг скрылся — так бывает, когда кидают в ЧС (или скрыли статус приватностью)' : undefined }, row.blocked_by_client_at ? 'ЧС: заблокировал(а) нас' : row.cleared_by_client_at ? 'Почистил(а) диалог' : 'Вероятно, ЧС') : online && h('div', { className: `mr-dialog-muted ${online.tone === 'online' ? 'mr-dialog-online' : ''}` }, online.text)),
           h('td', { className: 'mr-dialog-owner' }, h(Attribution, { value: row }),
-            h('div', { className: 'mr-dialog-account' }, h('span', { className: 'mr-caption' }, 'Аккаунт: '), row.account_username ? link(row.account_username) : row.account_id ? `#${row.account_id}` : 'удалён'),
+            h('div', { className: 'mr-dialog-account' }, h('span', { className: 'mr-caption' }, 'Аккаунт: '), account ? link(account) : row.account_id ? `#${row.account_id}` : 'удалён'),
             row.account_lost && h('div', { className: 'mr-dialog-warning' }, accountLost(row.account_lost, { short: true }))),
           h('td', { className: 'mr-dialog-status', 'data-label': 'Стадия и режим' },
             h(Stage, { stage: row.stage }),
@@ -194,15 +198,17 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
   const [expanded, setExpanded] = useState(null);
   const { Avatar, statusLabel, statusClasses, date } = helpers;
   const chevron = open => h('svg', { width: 12, height: 12, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true, style: { transform: open ? 'rotate(180deg)' : undefined } }, h('path', { d: 'm4 6 4 4 4-4', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' }));
-  if (!rows.length) return h('p', { className: s.empty }, 'Аккаунтов нет. Добавьте номер, затем войдите — код придёт в Telegram.');
-  return h('table', { className: 'mr-account-table', 'aria-label': 'Telegram-аккаунты' },
+  if (!rows.length) return h('p', { className: s.empty }, 'Аккаунтов нет. Telegram: добавьте номер и войдите — код придёт в Telegram. ВКонтакте: добавьте логин, куки и прокси.');
+  return h('table', { className: 'mr-account-table', 'aria-label': 'Аккаунты' },
     h('thead', null, h('tr', null, ['Аккаунт', 'Личность / менеджер', 'Состояние', 'Действия'].map((label, index) => h('th', { key: label, scope: 'col', style: { width: ['30%', '28%', '17%', '25%'][index] } },
       index === 0 && selection && h('input', { type: 'checkbox', className: 'mr-account-select', 'aria-label': 'Выбрать все аккаунты', checked: rows.length > 0 && rows.every(r => selection.selected.has(r.id)), onChange: () => selection.toggleAll(rows.map(r => r.id)) }),
       label)))),
     h('tbody', null, rows.map(row => {
       const busy = pending.some(key => key.split(':').slice(1).join(':') === `/api/tg-accounts/${row.id}` || key.includes(`/api/tg-accounts/${row.id}/`));
       const accountButton = (text, onClick, props = {}) => button(text, onClick, { disabled: busy, ...props });
-      const name = row.display_name || (row.username ? `@${row.username}` : row.phone_e164 || `Аккаунт #${row.id}`);
+      const badge = channelBadge(row.channel), profile = accountContact(row);
+      const network = badge.title;
+      const name = row.display_name || profile?.display || row.login || row.phone_e164 || `Аккаунт #${row.id}`;
       const online = alive[row.id] ?? row.online;
       const open = expanded === row.id;
       const loginNeeded = row.status === 'unauthorized' || row.status === 'banned';
@@ -223,10 +229,11 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
               selection && h('input', { type: 'checkbox', className: 'mr-account-select', 'aria-label': `Выбрать ${name}`, checked: selection.selected.has(row.id), onChange: () => selection.toggle(row.id) }),
               h(Avatar, { className: 'mr-account-avatar', style: { '--av-bg': '#49375f' }, src: row.avatar_url, name }),
               h('div', { className: 'mr-account-name-wrap' },
-                h('div', { className: 'mr-account-name' }, name),
+                h('div', { className: 'mr-account-name' }, name,
+                  badge.other && h('span', { className: 'mr-channel-badge', 'data-channel': badge.key, 'data-testid': 'channel-badge', title: badge.title }, badge.label)),
                 h('div', { className: 'mr-account-contact' },
-                  row.username && row.display_name && h('a', { href: `https://t.me/${row.username}`, target: '_blank', rel: 'noreferrer' }, `@${row.username}`),
-                  row.username && !row.display_name && h('a', { href: `https://t.me/${row.username}`, target: '_blank', rel: 'noreferrer', 'aria-label': `Профиль ${row.username}` }, 'Telegram'),
+                  profile && row.display_name && h('a', { href: profile.url, target: '_blank', rel: 'noreferrer' }, profile.display),
+                  profile && !row.display_name && h('a', { href: profile.url, target: '_blank', rel: 'noreferrer', 'aria-label': `Профиль ${profile.display}` }, network),
                   row.phone_e164 && row.phone_e164 !== name && h('span', null, row.phone_e164))))),
           h('td', { className: 'mr-account-assignment' },
             h('div', { className: 'mr-account-persona' }, row.persona_name || row.persona_id || 'Без личности', row.purpose === 'test' && h('span', { className: 'mr-account-test' }, 'Тест')),
@@ -241,7 +248,7 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
             h('span', { className: row.status === 'unauthorized' && row.lost_at ? s.badgeBanned : statusClasses[row.status] || s.badge, title: row.lost_reason || undefined }, statusLabel(row)),
             h('span', { className: `mr-account-connection ${online ? 'mr-account-online' : ''}` }, h('i', { 'aria-hidden': true }), online ? 'В сети' : 'Не в сети'),
             !online && row.offline_reason && h('span', { className: 'mr-account-offline-reason', 'data-testid': 'offline-reason', title: row.offline_reason }, row.offline_reason),
-            row.flood_until && h('span', { className: 'mr-account-warning', title: `Ограничение Telegram до ${date(row.flood_until)}` }, 'Ограничен')),
+            row.flood_until && h('span', { className: 'mr-account-warning', title: `Ограничение ${network} до ${date(row.flood_until)}` }, 'Ограничен')),
           h('td', { className: 'mr-account-actions' }, h('div', { className: 'mr-account-buttons' },
             accountButton('Изменить', () => onEdit(row)),
             loginNeeded ? accountButton('Войти', () => onLogin(row)) : row.status === 'active' ? accountButton('Пауза', () => onStatus(row, 'paused')) : row.status === 'paused' ? accountButton('Включить', () => onStatus(row, 'active')) : null,
@@ -250,11 +257,11 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
           h('div', { id: detailsId, className: 'mr-account-details', role: 'region', 'aria-label': `Подробности: ${name}` },
             h('dl', null, facts.map(([label, value]) => h('div', { key: label }, h('dt', null, label), h('dd', null, value)))),
             row.lost_at && h('p', { className: 'mr-account-warning' }, `${row.lost_reason || 'Аккаунт потерян'} · ${date(row.lost_at)}`),
-            row.flood_until && h('p', { className: 'mr-account-warning' }, `${row.flood_reason || 'Ограничение Telegram'} · до ${date(row.flood_until)}`),
+            row.flood_until && h('p', { className: 'mr-account-warning' }, `${row.flood_reason || `Ограничение ${network}`} · до ${date(row.flood_until)}`),
             h('div', { className: 'mr-account-extra-actions' },
               accountButton('Прокси', () => onProxy(row)),
               onPhotoAutoSend && accountButton(row.photo_auto_send ? 'Выключить автофото' : 'Включить автофото', () => onPhotoAutoSend(row, !row.photo_auto_send)),
-              !loginNeeded && row.status !== 'retired' && accountButton('Перелогин', () => onLogin(row)),
+              !loginNeeded && row.status !== 'retired' && accountButton(badge.key === 'vk' ? 'Новые куки' : 'Перелогин', () => onLogin(row)),
               row.flood_until && accountButton('Снять флуд', () => onClearFlood(row), { title: 'Аккаунт снова будет брать новых лидов' }),
               row.status !== 'retired' && row.status !== 'banned' && accountButton('Вывести', () => onStatus(row, 'retired')),
               accountButton('Удалить', () => onDelete(row), { className: s.btnSmDanger }))))));

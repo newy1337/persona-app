@@ -12,6 +12,8 @@ export function splitName(displayName) {
 }
 
 export default function EditAccountDialog({ account, personas, onClose }) {
+  // Профиль и приватность правятся через Telegram; у VK-аккаунта этого блока пока нет.
+  const telegram = account.channel !== 'vk';
   const initialName = splitName(account.display_name);
   const [profile, setProfile] = useState({ first: initialName.first, last: initialName.last, username: account.username || '' });
   const [avatarUrl, setAvatarUrl] = useState(account.avatar_url);
@@ -23,11 +25,11 @@ export default function EditAccountDialog({ account, personas, onClose }) {
     profile.username.trim().replace(/^@+/, '') !== (account.username || '');
   const [lastSeen, setLastSeen] = useState({ hidden: null, busy: false, error: null });
   useEffect(() => {
-    if (!account.online) return;
+    if (!account.online || !telegram) return;
     getAccountPrivacy(account.id)
       .then((r) => setLastSeen({ hidden: r.hide_last_seen, busy: false, error: null }))
       .catch((e) => setLastSeen({ hidden: null, busy: false, error: e.detail || e.message }));
-  }, [account.id, account.online]);
+  }, [account.id, account.online, telegram]);
   const toggleLastSeen = async (hide) => {
     setLastSeen((v) => ({ ...v, busy: true, error: null }));
     try {
@@ -79,9 +81,9 @@ export default function EditAccountDialog({ account, personas, onClose }) {
   return (
     <div className={s.overlay} onMouseDown={(e) => e.target === e.currentTarget && onClose(avatarUrl !== account.avatar_url)}>
       <form className={s.modal} onSubmit={submit}>
-        <h3 className={s.modalTitle}>Аккаунт {account.username ? `@${account.username}` : account.phone_e164}</h3>
+        <h3 className={s.modalTitle}>Аккаунт {account.username ? (telegram ? `@${account.username}` : account.username) : account.login || account.phone_e164}</h3>
 
-        <fieldset className={acc.profileBox} disabled={!account.online || busy}>
+        {telegram && <fieldset className={acc.profileBox} disabled={!account.online || busy}>
           <legend className={acc.profileLegend}>Профиль в Telegram{account.online ? '' : ' — аккаунт не в сети'}</legend>
           <div className={acc.profilePhotoRow}>
             <ClientAvatar
@@ -146,7 +148,7 @@ export default function EditAccountDialog({ account, personas, onClose }) {
             Скрывать «был в сети»{lastSeen.busy ? ' — сохраняю…' : lastSeen.hidden === null && account.online && !lastSeen.error ? ' — загрузка…' : ''}
           </label>
           {lastSeen.error && <p className={s.error} style={{ margin: 0 }}>{lastSeen.error}</p>}
-        </fieldset>
+        </fieldset>}
         <label className={s.label}>
           Личность
           <select className={s.select} value={f.persona_id} onChange={(e) => set({ persona_id: e.target.value })}>
