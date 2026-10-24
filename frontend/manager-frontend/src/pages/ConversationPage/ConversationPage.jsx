@@ -661,6 +661,13 @@ function ConversationPage() {
   const goNext = () => {
     if (idx !== -1 && idx < chatIds.length - 1) navigate(`/conversation/${chatIds[idx + 1]}`);
   };
+  // Кнопки войсера: у поля ввода, когда чат у менеджера; в верхней панели — пока ведёт бот.
+  const voicerButtons = (className) => (
+    <>
+      <button type="button" className={className} onClick={() => navigate('/voice?' + new URLSearchParams({ compose: '1', chat: id, contact: name, manager: String(data.manager_id || ''), persona: data.persona_id || '', ref: data.client_username ? '@' + data.client_username : '' }))}>Задание войсеру</button>
+      <button type="button" className={className} onClick={() => navigate('/voice?' + new URLSearchParams({ tab: 'library', chat: id, persona: data.persona_id || '' }))}>Голосовые</button>
+    </>
+  );
 
   return (
     <div className={styles.page}>
@@ -1126,8 +1133,8 @@ function ConversationPage() {
               </svg>
               <span className={styles.exportLabel}>{data.archived ? 'Из архива' : 'В архив'}</span>
             </button>
-            <button type="button" className={styles.exportBtn} onClick={() => navigate('/voice?' + new URLSearchParams({ compose: '1', chat: id, contact: name, manager: String(data.manager_id || ''), persona: data.persona_id || '', ref: data.client_username ? '@' + data.client_username : '' }))}>Задание войсеру</button>
-            <button type="button" className={styles.exportBtn} onClick={() => navigate('/voice?' + new URLSearchParams({ tab: 'library', chat: id, persona: data.persona_id || '' }))}>Голосовые</button>
+            {/* Пока ведёт бот, строки ввода нет — кнопки войсера остаются здесь; у менеджера они внизу, у поля ввода. */}
+            {aiActive && voicerButtons(styles.exportBtn)}
             <button
               type="button"
               className={styles.exportBtn}
@@ -1560,6 +1567,7 @@ function ConversationPage() {
                       )}
                     </div>
                     <div className={styles.inputActionsRight}>
+                      {voicerButtons(styles.sendVoiceBtn)}
                       <input
                         type="file"
                         ref={voiceInput}
