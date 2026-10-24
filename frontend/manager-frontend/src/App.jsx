@@ -2,7 +2,8 @@ import { lazy, useCallback, useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import AppLayout from './components/AppLayout/AppLayout';
 import Login from './pages/Login/Login';
-import { isManagerRole } from './utils/roles';
+import SettingsLayout from './components/SettingsLayout/SettingsLayout';
+import { hasSetting, hasTop, menuFor, settingsPath } from './navigation';
 import { api, getToken } from './api/client';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -90,29 +91,49 @@ function App() {
   if (me === undefined) return <Shell />;
   if (!me) return <Login onDone={check} />;
 
-  const admin = role === 'admin';
   const voice = role === 'voice';
-  const accountsAllowed = admin || isManagerRole(role);
   const home = voice ? '/voice' : '/';
-  const only = (allowed, page) => (allowed ? page : <Navigate to={home} replace />);
+  const away = <Navigate to={home} replace />;
+  // Страница из верхнего меню или из подвкладки «Настроек»; иначе — домой.
+  const top = (key, page) => (hasTop(role, key) ? page : away);
+  const setting = (key, page) => (hasSetting(role, key) ? page : away);
+  // Старый адрес страницы: открываем её сверху, если она там у роли, иначе ведём в «Настройки».
+  const moved = (topKey, settingKey, page) =>
+    topKey && hasTop(role, topKey)
+      ? page
+      : hasSetting(role, settingKey)
+        ? <Navigate to={settingsPath(settingKey)} replace />
+        : away;
+  const firstSetting = menuFor(role).settings[0]?.to;
 
   return (
     <Routes>
       <Route element={<AppLayout me={me} />}>
-        <Route path="/" element={only(!voice, <Dashboard />)} />
-        <Route path="/conversation/:id" element={only(!voice, <ConversationPage />)} />
-        <Route path="/voice" element={<VoiceWork />} />
-        <Route path="/leads" element={only(!voice, <Leads />)} />
-        <Route path="/accounts" element={only(accountsAllowed, <Accounts />)} />
-        <Route path="/photo-sets" element={only(accountsAllowed, <PhotoSets />)} />
-        <Route path="/buffer" element={only(['admin', 'head', 'teamlead'].includes(role), <Buffer />)} />
-        <Route path="/managers" element={only(admin || role === 'head', <Managers />)} />
-        <Route path="/personas" element={only(admin, <Personas />)} />
-        <Route path="/stats" element={only(admin, <Stats />)} />
-        <Route path="/settings" element={only(admin, <Settings />)} />
-        <Route path="/users" element={only(admin, <Users />)} />
-        <Route path="/catalogs" element={only(admin, <Catalogs />)} />
-        <Route path="*" element={<Navigate to={home} replace />} />
+        <Route path="/" element={top('dialogs', <Dashboard />)} />
+        <Route path="/conversation/:id" element={top('dialogs', <ConversationPage />)} />
+        <Route path="/voice" element={top('voice', <VoiceWork />)} />
+        <Route path="/leads" element={top('leads', <Leads />)} />
+        <Route path="/stats" element={top('stats', <Stats />)} />
+        <Route path="/accounts" element={moved('accounts', 'accounts', <Accounts />)} />
+        <Route path="/photo-sets" element={moved('photoSets', 'photoSets', <PhotoSets />)} />
+        <Route path="/managers" element={moved('managers', 'team', <Managers />)} />
+        <Route path="/personas" element={moved(null, 'personas', null)} />
+        <Route path="/users" element={moved(null, 'leadget', null)} />
+        <Route path="/catalogs" element={moved(null, 'catalogs', null)} />
+        <Route path="/buffer" element={moved(null, 'buffer', null)} />
+        <Route path="/settings" element={hasTop(role, 'settings') ? <SettingsLayout /> : away}>
+          <Route index element={firstSetting ? <Navigate to={firstSetting} replace /> : away} />
+          <Route path="accounts" element={setting('accounts', <Accounts />)} />
+          <Route path="personas" element={setting('personas', <Personas />)} />
+          <Route path="photo-sets" element={setting('photoSets', <PhotoSets />)} />
+          <Route path="leadget" element={setting('leadget', <Users />)} />
+          <Route path="catalogs" element={setting('catalogs', <Catalogs />)} />
+          <Route path="buffer" element={setting('buffer', <Buffer />)} />
+          <Route path="team" element={setting('team', <Managers />)} />
+          <Route path="general" element={setting('general', <Settings />)} />
+          <Route path="*" element={away} />
+        </Route>
+        <Route path="*" element={away} />
       </Route>
     </Routes>
   );

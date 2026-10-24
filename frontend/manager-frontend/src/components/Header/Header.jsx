@@ -9,6 +9,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import VoiceNotifications from './VoiceNotifications';
 import { isManagerRole } from '../../utils/roles';
+import { menuFor } from '../../navigation';
 import { useMe } from '../AppLayout/me';
 
 const LIVE_POLL_MS = 30000;
@@ -68,23 +69,7 @@ const navClass = ({ isActive }) =>
     isActive && 'bg-accent text-foreground',
   );
 
-const STAFF = ['admin', 'manager', 'teamlead', 'head'];
 
-/** Пункты меню и кому они видны — как в рабочей панели (dev). */
-const NAV = [
-  { to: '/', end: true, label: 'Диалоги', roles: STAFF },
-  { to: '/leads', label: 'Лиды', roles: STAFF },
-  { to: '/voice', label: 'Войсер' },
-  { to: '/personas', label: 'Личности', roles: ['admin'] },
-  { to: '/accounts', label: 'Аккаунты', roles: STAFF },
-  { to: '/photo-sets', label: 'Образы', roles: STAFF },
-  { to: '/buffer', label: 'Буфер', roles: ['admin', 'head', 'teamlead'] },
-  { to: '/managers', label: (role) => (role === 'admin' ? 'Менеджеры' : 'Команда'), roles: ['admin', 'head'] },
-  { to: '/users', label: 'LeadGet', roles: ['admin'] },
-  { to: '/catalogs', label: 'Справочники', roles: ['admin'] },
-  { to: '/stats', label: 'Статистика', roles: ['admin'] },
-  { to: '/settings', label: 'Настройки', roles: ['admin'] },
-];
 
 /**
  * Шапка панели. Монтируется один раз в каркасе (AppLayout) и получает уже
@@ -115,9 +100,9 @@ function Header({ me: meProp, busy = false }) {
         </div>
 
         <nav className="flex min-h-9 min-w-0 items-center gap-0.5 overflow-x-auto py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-[1180px]:order-10 max-[1180px]:-mx-1 max-[1180px]:basis-full">
-          {NAV.filter((item) => !item.roles || item.roles.includes(role)).map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end} className={navClass}>
-              {typeof item.label === 'function' ? item.label(role) : item.label}
+          {menuFor(role).top.map((item) => (
+            <NavLink key={item.key} to={item.to} end={item.end} className={navClass}>
+              {item.label}
             </NavLink>
           ))}
         </nav>
