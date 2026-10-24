@@ -13,23 +13,23 @@ import { PrismaService } from '../src/prisma.service';
 import { HistoryService } from '../src/shared/history.service';
 import { BrainStateService } from '../src/brain/brain-state.service';
 import { ReplyScheduleService } from '../src/brain/reply-schedule.service';
-import { NastyaBrainService } from '../src/brain/nastya-brain.service';
+import { PersonaBrainService } from '../src/brain/persona-brain.service';
 import { PhotoLibraryService } from '../src/shared/photo-library.service';
 import { PhotoSetsService } from '../src/modules/photo-sets/photo-sets.service';
-import { DEFAULT_RHYTHM } from '../src/brain/nastya/config/rhythm';
-import { mergePrompts } from '../src/brain/nastya/config/prompts';
-import { cityPlace } from '../src/brain/nastya/kernel/location';
-import { judgeDialogue } from '../src/brain/nastya/judge/plan';
-import { generateDraft } from '../src/brain/nastya/llm/generate';
-import { reviewReply } from '../src/brain/nastya/judge/review';
+import { DEFAULT_RHYTHM } from '../src/brain/config/rhythm';
+import { mergePrompts } from '../src/brain/config/prompts';
+import { cityPlace } from '../src/brain/kernel/location';
+import { judgeDialogue } from '../src/brain/judge/plan';
+import { generateDraft } from '../src/brain/llm/generate';
+import { reviewReply } from '../src/brain/judge/review';
 import { checkCancelled } from '../src/shared/cancellation';
-jest.mock('../src/brain/nastya/judge/plan', () => ({
+jest.mock('../src/brain/judge/plan', () => ({
   judgeDialogue: jest.fn(),
 }));
-jest.mock('../src/brain/nastya/llm/generate', () => ({
+jest.mock('../src/brain/llm/generate', () => ({
   generateDraft: jest.fn(),
 }));
-jest.mock('../src/brain/nastya/judge/review', () => ({
+jest.mock('../src/brain/judge/review', () => ({
   reviewReply: jest.fn(),
 }));
 
@@ -39,7 +39,7 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
     memory: BrainStateService,
     schedule: ReplyScheduleService,
     photos: PhotoLibraryService;
-  let now: number, brain: NastyaBrainService, transport: any, pause: any;
+  let now: number, brain: PersonaBrainService, transport: any, pause: any;
   let setId: number, catId: number, cafeId: number;
   const chatId = 99001;
   const clock = { now: () => new Date(now * 1000), ts: () => now };
@@ -226,7 +226,7 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
       issues: [],
       final_text: x.draft,
     }));
-    brain = new NastyaBrainService(
+    brain = new PersonaBrainService(
       history,
       pause,
       clock as any,

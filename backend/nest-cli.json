@@ -4,6 +4,6 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "deleteOutDir": true,
-    "assets": [{ "include": "brain/nastya/kernel/*.gz" }, { "include": "../prisma/schema.prisma", "outDir": "dist/prisma" }]
+    "assets": [{ "include": "brain/kernel/*.gz" }, { "include": "../prisma/schema.prisma", "outDir": "dist/prisma" }]
   }
 }

@@ -4,7 +4,7 @@ import {
   openerText,
   SITE_FALLBACK,
 } from './outreach-opener';
-import { DEFAULT_PROMPTS } from '../brain/nastya/config/prompts';
+import { DEFAULT_PROMPTS } from '../brain/config/prompts';
 
 describe('outreach opener', () => {
   it('the default first line names the persona, not a fixed one', () => {

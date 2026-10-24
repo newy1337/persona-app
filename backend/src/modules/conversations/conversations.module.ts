@@ -11,7 +11,7 @@ import { ConversationsController } from './conversations.controller';
 import { SettingsModule } from '../settings/settings.module';
 import { BrainModule } from 'src/brain/brain.module';
 import { MediaModule } from '../media/media.module';
-import { TelegramModule } from '../telegram/telegram.module';
+import { TelegramModule } from '../../channels/telegram/telegram.module';
 import { PhotoSetsModule } from '../photo-sets/photo-sets.module';
 
 @Module({

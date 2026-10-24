@@ -27,7 +27,7 @@ import {
 } from 'src/domain/photo-library';
 import { PersonaService } from 'src/brain/persona.service';
 import { UsageRecorderService } from 'src/brain/usage-recorder.service';
-import { suggestPhotoCard } from 'src/brain/nastya/media/library-photo';
+import { suggestPhotoCard } from 'src/brain/media/library-photo';
 import type { UpdatePhotoDto, UpdatePhotoSetDto } from './photo-sets.dto';
 
 export const PHOTO_SETS_DIR = resolve(join(appConfig.dataDir, 'photo-sets'));

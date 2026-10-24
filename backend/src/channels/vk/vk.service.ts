@@ -586,8 +586,7 @@ export class VkService
     const chatId = this.chatOf(entry, e.peer);
     const owner = await this.history.chatOwnerAccount(chatId);
     if (owner !== null && owner !== entry.id) return;
-    if (e.kind === 'read')
-      return this.history.markTelegramRead(chatId, e.side, e.cmid);
+    if (e.kind === 'read') return this.history.markRead(chatId, e.side, e.cmid);
     if (e.kind === 'typing') {
       if (e.ts >= this.clock.ts() - TYPING_FRESH_S)
         this.presence.setActivity(chatId, e.activity);
@@ -745,10 +744,10 @@ export class VkService
   async markRead(chatId: number, accountId?: number | null): Promise<void> {
     const { entry, peer } = await this.accountFor(chatId, accountId);
     await entry.messages.markRead(peer);
-    await this.history.markTelegramRead(
+    await this.history.markRead(
       chatId,
       'inbox',
-      await this.history.latestClientTgId(chatId),
+      await this.history.latestClientMsgId(chatId),
     );
   }
 

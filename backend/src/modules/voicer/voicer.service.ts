@@ -22,10 +22,7 @@ import { ClockService } from 'src/shared/clock.service';
 import { ScopeService } from 'src/shared/scope.service';
 import { appConfig } from 'src/config/app.config';
 import { VoiceEncoderService } from '../media/voice-encoder.service';
-import {
-  fillVariables,
-  variableValues,
-} from 'src/brain/nastya/config/variables';
+import { fillVariables, variableValues } from 'src/brain/config/variables';
 import { CreateVoiceTaskDto, VoiceTaskActionDto } from './voicer.dto';
 import { VoicerAutomationService } from './voicer-automation.service';
 import { voiceNotice } from './voicer-notice';

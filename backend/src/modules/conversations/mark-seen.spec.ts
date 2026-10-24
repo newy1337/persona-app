@@ -17,8 +17,8 @@ describe('отметку о прочтении ставит менеджер, и
         },
       },
       history: {
-        telegramReadMarks: async () => ({ inbox, outbox: null }),
-        latestClientTgId: async () => latest,
+        readMarks: async () => ({ inbox, outbox: null }),
+        latestClientMsgId: async () => latest,
         markManagerSeen: async (chatId: number, ts: number) => {
           seen.push([chatId, ts]);
         },

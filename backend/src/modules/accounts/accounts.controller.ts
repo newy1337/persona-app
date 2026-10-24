@@ -20,7 +20,7 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { TgAccountsService } from './tg-accounts.service';
+import { AccountsService } from './accounts.service';
 import { Auth } from 'src/decorators/auth.decorator';
 import { Roles } from 'src/decorators/roles.decorator';
 import { Role } from 'src/enums/roles.enum';
@@ -29,32 +29,32 @@ import { AuditService } from 'src/shared/audit.service';
 import { PresenceService } from 'src/shared/presence.service';
 import type { Response } from 'express';
 import { existsSync } from 'fs';
-import { LoginService } from '../telegram/login.service';
+import { LoginService } from '../../channels/telegram/login.service';
 import { ScopeService } from 'src/shared/scope.service';
 import { ManagerAttributionService } from 'src/shared/manager-attribution.service';
 import { DashboardUser } from '@prisma/client';
 import { NotFoundException } from '@nestjs/common';
 import {
-  AddTgAccountDto,
+  AddTelegramAccountDto,
   AddVkAccountDto,
-  TgPrivacyDto,
+  TelegramPrivacyDto,
   SetProxyDto,
   SetStatusDto,
   SmsCodeDto,
   StartAuthDto,
   TwoFaDto,
-  UpdateTgAccountDto,
-  UpdateTgProfileDto,
-} from './dto/tg-account.dto';
+  UpdateAccountDto,
+  UpdateTelegramProfileDto,
+} from './dto/account.dto';
 
 @ApiTags('Telegram accounts')
 @ApiBearerAuth()
 @Auth()
 @Roles(Role.MANAGER)
 @Controller('api')
-export class TgAccountsController {
+export class AccountsController {
   constructor(
-    private readonly accounts: TgAccountsService,
+    private readonly accounts: AccountsService,
     private readonly login: LoginService,
     private readonly audit: AuditService,
     private readonly presence: PresenceService,
@@ -125,7 +125,7 @@ export class TgAccountsController {
   @Post('tg-accounts')
   @HttpCode(200)
   @UsePipes(ValidationPipe)
-  add(@Body() dto: AddTgAccountDto, @CurrentUser() user: DashboardUser) {
+  add(@Body() dto: AddTelegramAccountDto, @CurrentUser() user: DashboardUser) {
     // Аккаунт закрепляется только за менеджером; тимлид и хед добавляют свободный.
     const owner = user.role === Role.MANAGER ? user.id : null;
     return this.audit.wrap(
@@ -160,7 +160,7 @@ export class TgAccountsController {
   @UsePipes(ValidationPipe)
   async updateProfile(
     @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateTgProfileDto,
+    @Body() dto: UpdateTelegramProfileDto,
     @CurrentUser() user: DashboardUser,
   ) {
     await this.own(user, id);
@@ -195,7 +195,7 @@ export class TgAccountsController {
   @UsePipes(ValidationPipe)
   async setPrivacy(
     @Param('id', ParseIntPipe) id: number,
-    @Body() dto: TgPrivacyDto,
+    @Body() dto: TelegramPrivacyDto,
     @CurrentUser() user: DashboardUser,
   ) {
     await this.own(user, id);
@@ -234,7 +234,7 @@ export class TgAccountsController {
   @UsePipes(ValidationPipe)
   async update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateTgAccountDto,
+    @Body() dto: UpdateAccountDto,
     @CurrentUser() user: DashboardUser,
   ) {
     await this.own(user, id);

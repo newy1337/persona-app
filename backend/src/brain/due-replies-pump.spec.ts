@@ -1,5 +1,5 @@
 import { appConfig } from 'src/config/app.config';
-import { NastyaBrainService } from './nastya-brain.service';
+import { PersonaBrainService } from './persona-brain.service';
 
 type Due = { chatId: number; accountId: number };
 
@@ -16,7 +16,7 @@ describe('насос очереди ответов', () => {
 
   function brain(due: Due[], lanes = 12) {
     (appConfig as { replyLanes: number }).replyLanes = lanes;
-    const svc: any = Object.create(NastyaBrainService.prototype);
+    const svc: any = Object.create(PersonaBrainService.prototype);
     const done = new Set<number>();
     const started: number[] = [];
     const gates = new Map<number, () => void>();

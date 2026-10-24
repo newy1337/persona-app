@@ -8,7 +8,7 @@ process.env.TG_API_HASH = '';
 useTestDatabase('manual_delivery');
 import { PrismaService } from '../src/prisma.service';
 import { HistoryService } from '../src/shared/history.service';
-import { RelayWorker } from '../src/modules/telegram/relay.worker';
+import { RelayWorker } from '../src/channels/telegram/relay.worker';
 import { ReplyScheduleService } from '../src/brain/reply-schedule.service';
 import { PauseService } from '../src/shared/pause.service';
 

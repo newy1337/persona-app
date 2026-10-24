@@ -1,8 +1,8 @@
-import { NastyaBrainService } from './nastya-brain.service';
+import { PersonaBrainService } from './persona-brain.service';
 
 describe('разбор очереди ответов', () => {
   function brain(due: Array<{ chatId: number; accountId: number }>) {
-    const svc: any = Object.create(NastyaBrainService.prototype);
+    const svc: any = Object.create(PersonaBrainService.prototype);
     const started: number[] = [];
     const finished: number[] = [];
     let alive = 0;

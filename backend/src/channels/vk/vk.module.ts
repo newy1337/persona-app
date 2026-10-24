@@ -1,6 +1,6 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { BrainModule } from 'src/brain/brain.module';
-import { TelegramModule } from 'src/modules/telegram/telegram.module';
+import { TelegramModule } from 'src/channels/telegram/telegram.module';
 import { VkService } from './vk.service';
 
 /** Канал VK: подключается к реестру каналов из модуля Telegram. */

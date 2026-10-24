@@ -11,21 +11,21 @@ import {
   cleanUsername,
   profileErrorText,
   usernameError,
-} from 'src/domain/tg-profile';
+} from 'src/channels/telegram/profile';
 import { ChannelAccount } from '@prisma/client';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import { CryptoService } from 'src/shared/crypto.service';
 import { HistoryService } from 'src/shared/history.service';
 import { appConfig } from 'src/config/app.config';
-import { TelegramService } from '../telegram/telegram.service';
+import { TelegramService } from '../../channels/telegram/telegram.service';
 import {
-  AddTgAccountDto,
+  AddTelegramAccountDto,
   AddVkAccountDto,
   ProxyConfigDto,
-  UpdateTgAccountDto,
-  UpdateTgProfileDto,
-} from './dto/tg-account.dto';
+  UpdateAccountDto,
+  UpdateTelegramProfileDto,
+} from './dto/account.dto';
 import { proxyLabel, proxyTypeError } from 'src/domain/proxy';
 import { ChannelRegistry } from 'src/channels/registry';
 import {
@@ -36,7 +36,7 @@ import {
 
 const HEARTBEAT_ALIVE_S = 120;
 
-export interface TgAccountSummary {
+export interface AccountSummary {
   id: number;
   photo_set_id: number | null;
   photo_set_name: string | null;
@@ -71,7 +71,7 @@ export interface TgAccountSummary {
 }
 
 @Injectable()
-export class TgAccountsService {
+export class AccountsService {
   constructor(
     private prisma: PrismaService,
     private clock: ClockService,
@@ -90,7 +90,7 @@ export class TgAccountsService {
       photoSetId?: number | null;
       photoSetName?: string | null;
     } = {},
-  ): TgAccountSummary {
+  ): AccountSummary {
     let geo: string | null = null;
     try {
       const meta = a.metaJson ? JSON.parse(a.metaJson) : {};
@@ -207,7 +207,7 @@ export class TgAccountsService {
       throw new UnprocessableEntityException(`личность «${slug}» выключена`);
   }
 
-  async updateProfile(id: number, dto: UpdateTgProfileDto) {
+  async updateProfile(id: number, dto: UpdateTelegramProfileDto) {
     await this.get(id);
     const username =
       dto.username === undefined ? undefined : cleanUsername(dto.username);
@@ -261,7 +261,7 @@ export class TgAccountsService {
     return this.summary(await this.get(id));
   }
 
-  async update(id: number, dto: UpdateTgAccountDto) {
+  async update(id: number, dto: UpdateAccountDto) {
     const before = await this.get(id);
     const data: Record<string, unknown> = {};
     let releasedLeads = 0;
@@ -327,7 +327,7 @@ export class TgAccountsService {
     return a;
   }
 
-  async add(dto: AddTgAccountDto, ownerUserId: number | null = null) {
+  async add(dto: AddTelegramAccountDto, ownerUserId: number | null = null) {
     const phone = dto.phone_e164.startsWith('+')
       ? dto.phone_e164
       : `+${dto.phone_e164}`;

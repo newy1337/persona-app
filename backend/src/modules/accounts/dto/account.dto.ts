@@ -17,7 +17,7 @@ import {
 
 import { PROXY_TYPES, type ProxyType } from 'src/domain/proxy';
 
-export const TG_ACCOUNT_STATUSES = [
+export const ACCOUNT_STATUSES = [
   'unauthorized',
   'active',
   'paused',
@@ -43,7 +43,7 @@ export class ProxyConfigDto {
     string | null;
 }
 
-export class AddTgAccountDto {
+export class AddTelegramAccountDto {
   @ApiProperty({ example: '+79001234567' })
   @Matches(/^\+?\d{10,15}$/, { message: 'phone_e164 must be E.164' })
   phone_e164: string;
@@ -132,7 +132,7 @@ export class AddVkAccountDto {
   purpose?: 'prod' | 'test' = 'prod';
 }
 
-export class UpdateTgProfileDto {
+export class UpdateTelegramProfileDto {
   @ApiPropertyOptional({ example: 'Настя' })
   @IsOptional()
   @IsString()
@@ -153,7 +153,7 @@ export class UpdateTgProfileDto {
   username?: string;
 }
 
-export class UpdateTgAccountDto {
+export class UpdateAccountDto {
   @ApiPropertyOptional({ example: 'nastya' })
   @IsOptional()
   @IsString()
@@ -182,9 +182,9 @@ export class SetProxyDto {
 }
 
 export class SetStatusDto {
-  @ApiProperty({ enum: TG_ACCOUNT_STATUSES })
-  @IsIn(TG_ACCOUNT_STATUSES)
-  status: (typeof TG_ACCOUNT_STATUSES)[number];
+  @ApiProperty({ enum: ACCOUNT_STATUSES })
+  @IsIn(ACCOUNT_STATUSES)
+  status: (typeof ACCOUNT_STATUSES)[number];
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -208,7 +208,7 @@ export class TwoFaDto {
   @ApiProperty() @IsString() @MinLength(1) @MaxLength(256) password: string;
 }
 
-export class TgPrivacyDto {
+export class TelegramPrivacyDto {
   @ApiProperty()
   @IsBoolean()
   hide_last_seen: boolean;

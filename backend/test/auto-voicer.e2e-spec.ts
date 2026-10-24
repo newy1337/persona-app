@@ -15,26 +15,26 @@ import {
 import { VoicerDeliveryService } from '../src/modules/voicer/voicer-delivery.service';
 import { VoicerService } from '../src/modules/voicer/voicer.service';
 import { ScopeService } from '../src/shared/scope.service';
-import { RelayWorker } from '../src/modules/telegram/relay.worker';
+import { RelayWorker } from '../src/channels/telegram/relay.worker';
 import { PrismaService } from '../src/prisma.service';
 import { HistoryService } from '../src/shared/history.service';
 import { BrainStateService } from '../src/brain/brain-state.service';
 import { ReplyScheduleService } from '../src/brain/reply-schedule.service';
-import { NastyaBrainService } from '../src/brain/nastya-brain.service';
-import { DEFAULT_RHYTHM } from '../src/brain/nastya/config/rhythm';
-import { mergePrompts } from '../src/brain/nastya/config/prompts';
-import { cityPlace } from '../src/brain/nastya/kernel/location';
-import { judgeDialogue } from '../src/brain/nastya/judge/plan';
-import { generateDraft } from '../src/brain/nastya/llm/generate';
-import { reviewReply } from '../src/brain/nastya/judge/review';
+import { PersonaBrainService } from '../src/brain/persona-brain.service';
+import { DEFAULT_RHYTHM } from '../src/brain/config/rhythm';
+import { mergePrompts } from '../src/brain/config/prompts';
+import { cityPlace } from '../src/brain/kernel/location';
+import { judgeDialogue } from '../src/brain/judge/plan';
+import { generateDraft } from '../src/brain/llm/generate';
+import { reviewReply } from '../src/brain/judge/review';
 import { checkCancelled } from '../src/shared/cancellation';
-jest.mock('../src/brain/nastya/judge/plan', () => ({
+jest.mock('../src/brain/judge/plan', () => ({
   judgeDialogue: jest.fn(),
 }));
-jest.mock('../src/brain/nastya/llm/generate', () => ({
+jest.mock('../src/brain/llm/generate', () => ({
   generateDraft: jest.fn(),
 }));
-jest.mock('../src/brain/nastya/judge/review', () => ({
+jest.mock('../src/brain/judge/review', () => ({
   reviewReply: jest.fn(),
 }));
 describe('automatic voicer: real brain, outbox and a migrated database; offline transports', () => {
@@ -43,7 +43,7 @@ describe('automatic voicer: real brain, outbox and a migrated database; offline 
     memory: BrainStateService,
     schedule: ReplyScheduleService;
   let now: number,
-    brain: NastyaBrainService,
+    brain: PersonaBrainService,
     persona: any,
     transport: any,
     pause: any;
@@ -72,7 +72,7 @@ describe('automatic voicer: real brain, outbox and a migrated database; offline 
     ts: now - 60 + id,
   });
   const createBrain = () =>
-    new NastyaBrainService(
+    new PersonaBrainService(
       history,
       pause,
       clock,

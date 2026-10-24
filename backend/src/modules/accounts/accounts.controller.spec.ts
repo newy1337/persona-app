@@ -1,9 +1,9 @@
-import { TgAccountsController } from './tg-accounts.controller';
+import { AccountsController } from './accounts.controller';
 import { ScopeService } from 'src/shared/scope.service';
 import { ManagerAttributionService } from 'src/shared/manager-attribution.service';
 
 describe('Telegram account ownership in the panel', () => {
-  let controller: TgAccountsController;
+  let controller: AccountsController;
   let users: any[];
   const admin = { id: 1, role: 'admin' } as any;
   const manager = { id: 2, role: 'manager' } as any;
@@ -45,7 +45,7 @@ describe('Telegram account ownership in the panel', () => {
     const accounts = {
       list: jest.fn(async () => [{ id: 10 }, { id: 20 }, { id: 30 }]),
     } as any;
-    controller = new TgAccountsController(
+    controller = new AccountsController(
       accounts,
       null,
       null,

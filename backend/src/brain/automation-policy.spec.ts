@@ -1,9 +1,9 @@
-import { NastyaBrainService } from './nastya-brain.service';
+import { PersonaBrainService } from './persona-brain.service';
 import { PersonaService } from './persona.service';
 import { REFUSAL_LOCK_KEY } from 'src/domain/lead-facts';
 
 function brain() {
-  const b: any = Object.create(NastyaBrainService.prototype);
+  const b: any = Object.create(PersonaBrainService.prototype);
   Object.assign(b, {
     gate: { stopped: false },
     pause: { status: async () => ({ status: 'active' }), pause: jest.fn() },

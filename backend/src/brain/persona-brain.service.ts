@@ -45,7 +45,7 @@ import {
   leadSlots,
   openerText,
 } from 'src/domain/outreach-opener';
-import { fillText } from './nastya/config/variables';
+import { fillText } from './config/variables';
 import type { TypingStyle } from 'src/domain/typing';
 import {
   HANDOFF_TRIGGER_KEY,
@@ -78,37 +78,33 @@ import {
   UsageRecorderService,
   type UsageScope,
 } from './usage-recorder.service';
-import { timeClaimIssues } from './nastya/kernel/turn-time';
-import { pruneUnsupportedEvents } from './nastya/memory/persona-events';
-import { turnTime, type TurnTime } from './nastya/kernel/turn-time';
-import { goodnightReason } from './nastya/dialogue/goodnight-policy';
-import { characterDate, shiftDate } from './nastya/kernel/clock';
-import type {
-  ConversationState,
-  Judgment,
-  RhythmState,
-} from './nastya/kernel/types';
-import { generatorModelFor, type PersonaModels } from './nastya/config/models';
-import { stripMetadata } from './nastya/character/config';
-import { prepareTurn } from './nastya/character/turn';
-import { applyJudgment } from './nastya/character/judgment';
-import { buildRuntimeSnapshot } from './nastya/character/snapshot';
-import { buildCharacterPrompt } from './nastya/character/prompt';
+import { timeClaimIssues } from './kernel/turn-time';
+import { pruneUnsupportedEvents } from './memory/persona-events';
+import { turnTime, type TurnTime } from './kernel/turn-time';
+import { goodnightReason } from './dialogue/goodnight-policy';
+import { characterDate, shiftDate } from './kernel/clock';
+import type { ConversationState, Judgment, RhythmState } from './kernel/types';
+import { generatorModelFor, type PersonaModels } from './config/models';
+import { stripMetadata } from './character/config';
+import { prepareTurn } from './character/turn';
+import { applyJudgment } from './character/judgment';
+import { buildRuntimeSnapshot } from './character/snapshot';
+import { buildCharacterPrompt } from './character/prompt';
 import {
   dropRepeatedGreeting,
   enforceReplyRules,
   isPlaceholderReply,
   normalizeReply,
-} from './nastya/character/reply';
-import { judgeDialogue } from './nastya/judge/plan';
+} from './character/reply';
+import { judgeDialogue } from './judge/plan';
 import {
   catchUpPersonaMemory,
   latestPersonaMessageId,
-} from './nastya/memory/persona-catchup';
-import type { JudgeDeps } from './nastya/judge/transport';
-import { unknownPlace } from './nastya/kernel/location';
-import { reviewReply } from './nastya/judge/review';
-import { generateDraft } from './nastya/llm/generate';
+} from './memory/persona-catchup';
+import type { JudgeDeps } from './judge/transport';
+import { unknownPlace } from './kernel/location';
+import { reviewReply } from './judge/review';
+import { generateDraft } from './llm/generate';
 import {
   conversational,
   hasUnansweredInbound,
@@ -116,40 +112,40 @@ import {
   stageQuestionReview,
   completeQuestionReview,
   validQuestionIds,
-} from './nastya/character/conversation';
-import { appendAssistantMessage } from './nastya/memory/history';
-import { markMemoryRecalled } from './nastya/memory/memories';
-import { withAttachmentContext } from './nastya/media/attachment';
-import { applyOperatorSlots } from './nastya/memory/profile';
-import { inspectImage } from './nastya/media/image';
-import { transcribeFile } from './nastya/media/transcribe';
-import { emojiReaction } from './nastya/media/reactions';
+} from './character/conversation';
+import { appendAssistantMessage } from './memory/history';
+import { markMemoryRecalled } from './memory/memories';
+import { withAttachmentContext } from './media/attachment';
+import { applyOperatorSlots } from './memory/profile';
+import { inspectImage } from './media/image';
+import { transcribeFile } from './media/transcribe';
+import { emojiReaction } from './media/reactions';
 import {
   splitReplyMessages,
   splitDisplayMessages,
   splitMessage,
-} from './nastya/dialogue/split';
+} from './dialogue/split';
 import {
   dropRepeatedFarewell,
   farewellNote,
   isClosingOnly,
   saidGoodnightRecently,
   saidMorningRecently,
-} from './nastya/dialogue/farewell';
+} from './dialogue/farewell';
 import {
   initiativeIsDue,
   checkInGuidance,
   unansweredUnprompted,
-} from './nastya/dialogue/initiative';
-import { personaGender, voiceOf } from './nastya/character/gender';
-import { judgeModelFor } from './nastya/config/models';
+} from './dialogue/initiative';
+import { personaGender, voiceOf } from './character/gender';
+import { judgeModelFor } from './config/models';
 import {
   ACTIVE_CHAT_DAYS,
   GOODNIGHT_QUIET_BEFORE_SECONDS,
   MORNING_QUIET_BEFORE_SECONDS,
   forecastNextAction,
   type NextBotAction,
-} from './nastya/dialogue/forecast';
+} from './dialogue/forecast';
 import {
   goodnightDay,
   isGoodnightText,
@@ -159,9 +155,9 @@ import {
   ritualSlot,
   staleness,
   type RitualKind,
-} from './nastya/dialogue/rhythm';
-import type { TimeWindow } from './nastya/config/rhythm';
-import { ModelResponseError } from './nastya/kernel/errors';
+} from './dialogue/rhythm';
+import type { TimeWindow } from './config/rhythm';
+import { ModelResponseError } from './kernel/errors';
 import {
   ReplyScheduleService,
   type ScheduledReply,
@@ -228,8 +224,8 @@ class ChatLocks {
 }
 
 @Injectable()
-export class NastyaBrainService implements ReplyBrain {
-  private readonly log = new Logger(NastyaBrainService.name);
+export class PersonaBrainService implements ReplyBrain {
+  private readonly log = new Logger(PersonaBrainService.name);
   private readonly locks = new ChatLocks();
   private readonly activity = new ChatActivity();
   private readonly logger = {

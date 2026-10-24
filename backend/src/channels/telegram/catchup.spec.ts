@@ -48,7 +48,7 @@ function fixture(count = 1, perChat = 2) {
     history: {
       latestSourceMessageId: async () => 0,
       lastStoredRole: async () => null,
-      markTelegramRead: async () => {},
+      markRead: async () => {},
     },
     downloadMedia: jest.fn(async (_a, m) =>
       m.media ? { kind: 'photo', path: '/synthetic/photo.jpg' } : null,

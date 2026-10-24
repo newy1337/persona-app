@@ -18,16 +18,13 @@ import {
   PROMPT_KEYS,
   PROMPT_LABELS,
   mergePrompts,
-} from 'src/brain/nastya/config/prompts';
+} from 'src/brain/config/prompts';
 import {
   DEFAULT_RHYTHM,
   mergeRhythm,
   rhythmErrors,
-} from 'src/brain/nastya/config/rhythm';
-import {
-  BUILTIN_VARIABLES,
-  variableErrors,
-} from 'src/brain/nastya/config/variables';
+} from 'src/brain/config/rhythm';
+import { BUILTIN_VARIABLES, variableErrors } from 'src/brain/config/variables';
 import {
   JUDGE_MODEL_OPTIONS,
   MODEL_OPTIONS,
@@ -35,7 +32,7 @@ import {
   isGeneratorModel,
   isJudgeModel,
   judgeModelFor,
-} from 'src/brain/nastya/config/models';
+} from 'src/brain/config/models';
 import { appConfig } from 'src/config/app.config';
 
 const COLUMN: Record<PersonaSection, keyof Persona> = {

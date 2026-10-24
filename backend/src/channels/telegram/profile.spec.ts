@@ -1,4 +1,4 @@
-import { cleanUsername, profileErrorText, usernameError } from './tg-profile';
+import { cleanUsername, profileErrorText, usernameError } from './profile';
 
 describe('профиль Telegram-аккаунта', () => {
   it('ник: «@» отрезается, формат проверяется до запроса в Telegram', () => {

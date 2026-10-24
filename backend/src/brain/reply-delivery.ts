@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import type { ConversationState, Judgment } from './nastya/kernel/types';
+import type { ConversationState, Judgment } from './kernel/types';
 import { CAPTION_LIMIT } from 'src/domain/photo-library';
 
 export interface VoiceReplyPlan {

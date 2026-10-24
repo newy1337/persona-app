@@ -7,7 +7,7 @@ import { ClockService } from 'src/shared/clock.service';
 import { HistoryService } from 'src/shared/history.service';
 import { FunnelEventsService } from 'src/shared/funnel-events.service';
 import { GlobalGateService } from 'src/shared/global-gate.service';
-import { TelegramService } from 'src/modules/telegram/telegram.service';
+import { TelegramService } from 'src/channels/telegram/telegram.service';
 import { LeadsService } from './leads.service';
 import { REPLY_BRAIN, ReplyBrain } from 'src/brain/reply-brain.port';
 import { FIRST_CONTACT_TS_KEY } from 'src/domain/lead-facts';

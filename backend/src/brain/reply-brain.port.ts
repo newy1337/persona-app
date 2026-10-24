@@ -46,7 +46,7 @@ export interface ReplyBrain {
   nextAction(
     chatId: number,
     maxAgeSeconds?: number,
-  ): Promise<import('./nastya/dialogue/forecast').NextBotAction>;
+  ): Promise<import('./dialogue/forecast').NextBotAction>;
   /**
    * Прогноз без ожидания: что есть в кеше (или null), пересчёт — в фоне.
    * Для списков, где ждать расчёта по каждому чату нельзя.
@@ -54,7 +54,7 @@ export interface ReplyBrain {
   peekNextAction?(
     chatId: number,
     maxAgeSeconds: number,
-  ): import('./nastya/dialogue/forecast').NextBotAction | null;
+  ): import('./dialogue/forecast').NextBotAction | null;
   answerAfterResume(chatId: number): Promise<boolean>;
   answerAfterCall?(callId: string): Promise<boolean>;
   runInitiative(): Promise<number>;

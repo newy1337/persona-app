@@ -79,7 +79,7 @@ export class ChatExportService {
 
     const [facts, read, inbound, shown, profile, persona] = await Promise.all([
       this.history.getLeadFacts(chatId),
-      this.history.telegramReadMarks(chatId),
+      this.history.readMarks(chatId),
       this.prisma.inboundMedia.findMany({ where: { chatId: id } }),
       this.prisma.mediaShown.findMany({ where: { chatId: id } }),
       this.prisma.lead.findFirst({ where: { chatId: id } }),

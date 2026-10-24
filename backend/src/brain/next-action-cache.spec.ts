@@ -1,8 +1,8 @@
-import { NastyaBrainService } from './nastya-brain.service';
+import { PersonaBrainService } from './persona-brain.service';
 
 describe('кеш прогнозов для списка диалогов', () => {
   function brain(now: () => number) {
-    const svc: any = Object.create(NastyaBrainService.prototype);
+    const svc: any = Object.create(PersonaBrainService.prototype);
     let computed = 0;
     Object.assign(svc, {
       clock: { ts: now },

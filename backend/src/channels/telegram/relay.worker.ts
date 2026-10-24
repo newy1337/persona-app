@@ -16,7 +16,7 @@ import { RELAY_ACTION } from 'src/modules/operator/operator.service';
 import { TelegramService } from './telegram.service';
 import { deliveryRandomId } from 'src/brain/reply-delivery';
 import { TakeoverReason } from 'src/domain/pause';
-import { VoicerDeliveryService } from '../voicer/voicer-delivery.service';
+import { VoicerDeliveryService } from '../../modules/voicer/voicer-delivery.service';
 import { KIND_LABEL, kindForFile } from 'src/domain/attachments';
 import { PhotoLibraryService } from 'src/shared/photo-library.service';
 

@@ -3,7 +3,7 @@ import type { Prisma, PhotoSet, PhotoSetPhoto } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { RegionGateService } from './region-gate.service';
 import { toChatId } from '../utils/ids';
-import { characterDate } from 'src/brain/nastya/kernel/clock';
+import { characterDate } from 'src/brain/kernel/clock';
 import {
   parseTags,
   photoAvailability,

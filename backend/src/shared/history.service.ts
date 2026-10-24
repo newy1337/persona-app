@@ -10,9 +10,9 @@ import { toChatId } from '../utils/ids';
 import { peerOf } from '../channels/ids';
 import {
   ClientPresence,
-  clientTelegramView,
+  clientStatusView,
   likelyBlockedChange,
-} from '../domain/tg-status';
+} from '../domain/client-status';
 
 export interface StoredMessage {
   id: number;
@@ -162,7 +162,7 @@ export class HistoryService {
     };
   }
 
-  async markTelegramRead(
+  async markRead(
     chatId: number,
     side: 'outbox' | 'inbox',
     maxId: number,
@@ -298,10 +298,10 @@ export class HistoryService {
         likelyBlockedAt: true,
       },
     });
-    return clientTelegramView(c, nowTs);
+    return clientStatusView(c, nowTs);
   }
 
-  async latestClientTgId(chatId: number): Promise<number> {
+  async latestClientMsgId(chatId: number): Promise<number> {
     const row = await this.prisma.message.findFirst({
       where: {
         chatId: toChatId(chatId),
@@ -314,7 +314,7 @@ export class HistoryService {
     return row?.peerMsgId ?? row?.sourceMessageId ?? 0;
   }
 
-  async telegramReadMarks(
+  async readMarks(
     chatId: number,
   ): Promise<{ outbox: number | null; inbox: number | null }> {
     const row = await this.prisma.contact.findUnique({

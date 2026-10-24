@@ -37,11 +37,7 @@ import {
 } from 'src/domain/typing';
 import { TelegramTimeoutError, withTimeout } from 'src/domain/timeout';
 import { ROUND_SIDE } from 'src/domain/round-video';
-import {
-  accountLoss,
-  blockedByClient,
-  clientPresence,
-} from 'src/domain/tg-status';
+import { accountLoss, blockedByClient, clientPresence } from './status';
 import {
   PresenceService,
   type ClientActivity,
@@ -865,7 +861,7 @@ export class TelegramService
     const side =
       update instanceof Api.UpdateReadHistoryOutbox ? 'outbox' : 'inbox';
     await this.history
-      .markTelegramRead(chatId, side, update.maxId)
+      .markRead(chatId, side, update.maxId)
       .catch((e) =>
         this.log.warn(`read mark failed chat=${chatId}: ${e?.message ?? e}`),
       );
@@ -1256,12 +1252,12 @@ export class TelegramService
           });
         }
         await this.brain.answerAfterResume(chatId);
-        await this.history.markTelegramRead(
+        await this.history.markRead(
           chatId,
           'outbox',
           dialog.dialog.readOutboxMaxId,
         );
-        await this.history.markTelegramRead(
+        await this.history.markRead(
           chatId,
           'inbox',
           dialog.dialog.readInboxMaxId,
@@ -2233,10 +2229,10 @@ export class TelegramService
       account.client.markAsRead(chatId),
     );
     // Своё прочтение Telegram этому же клиенту не присылает — отмечаем сами.
-    await this.history.markTelegramRead(
+    await this.history.markRead(
       chatId,
       'inbox',
-      await this.history.latestClientTgId(chatId),
+      await this.history.latestClientMsgId(chatId),
     );
   }
 

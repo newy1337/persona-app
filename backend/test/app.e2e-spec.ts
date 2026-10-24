@@ -24,8 +24,8 @@ useTestDatabase('app');
 import { AppModule } from './../src/app.module';
 import { PrismaService } from './../src/prisma.service';
 import { HistoryService } from './../src/shared/history.service';
-import { PROMPT_KEYS } from './../src/brain/nastya/config/prompts';
-import { DEFAULT_RHYTHM } from './../src/brain/nastya/config/rhythm';
+import { PROMPT_KEYS } from '../src/brain/config/prompts';
+import { DEFAULT_RHYTHM } from '../src/brain/config/rhythm';
 import {
   PERSONA_SECTIONS,
   PersonaService,
@@ -33,8 +33,8 @@ import {
 import { InboundService } from './../src/modules/inbound/inbound.service';
 import { OutreachWorker } from './../src/modules/leads/outreach.worker';
 import { REPLY_BRAIN as REPLY_BRAIN_TOKEN } from './../src/brain/reply-brain.port';
-import { TelegramService } from './../src/modules/telegram/telegram.service';
-import { RelayWorker } from './../src/modules/telegram/relay.worker';
+import { TelegramService } from '../src/channels/telegram/telegram.service';
+import { RelayWorker } from '../src/channels/telegram/relay.worker';
 import { TelegramTimeoutError } from './../src/domain/timeout';
 import { appConfig } from './../src/config/app.config';
 
@@ -5557,9 +5557,9 @@ describe('Manager panel API (e2e)', () => {
           },
         ],
       });
-      await history.markTelegramRead(chatId, 'outbox', 10);
-      await history.markTelegramRead(chatId, 'inbox', 11);
-      await history.markTelegramRead(chatId, 'outbox', 7); // старое значение из догона не откатывает
+      await history.markRead(chatId, 'outbox', 10);
+      await history.markRead(chatId, 'inbox', 11);
+      await history.markRead(chatId, 'outbox', 7); // старое значение из догона не откатывает
 
       const read = async () =>
         (
@@ -5569,11 +5569,11 @@ describe('Manager panel API (e2e)', () => {
             .expect(200)
         ).body.messages.map((m) => m.tg_read);
       expect(await read()).toEqual([true, true, false, false, null]);
-      await history.markTelegramRead(chatId, 'outbox', 12);
-      await history.markTelegramRead(
+      await history.markRead(chatId, 'outbox', 12);
+      await history.markRead(
         chatId,
         'inbox',
-        await history.latestClientTgId(chatId),
+        await history.latestClientMsgId(chatId),
       );
       expect(await read()).toEqual([true, true, true, true, null]);
 
@@ -5757,9 +5757,7 @@ describe('Manager panel API (e2e)', () => {
       expect(rows.map((r) => r.peerMsgId)).toEqual([500, 501, 502]);
       expect(rows[2].ts).toBeGreaterThan(rows[0].ts);
 
-      await app
-        .get(TelegramService)
-        ['history'].markTelegramRead(chatId, 'outbox', 501);
+      await app.get(TelegramService)['history'].markRead(chatId, 'outbox', 501);
       const detail = await request(app.getHttpServer())
         .get(`/api/conversations/${chatId}`)
         .set(h)
@@ -5832,9 +5830,7 @@ describe('Manager panel API (e2e)', () => {
           ptsCount: 1,
         }),
       );
-      expect(
-        (await telegram.history.telegramReadMarks(chatId)).outbox,
-      ).toBeNull();
+      expect((await telegram.history.readMarks(chatId)).outbox).toBeNull();
       await telegram.onReadHistory(
         { id: 14 },
         new Api.UpdateReadHistoryOutbox({
@@ -5844,9 +5840,7 @@ describe('Manager panel API (e2e)', () => {
           ptsCount: 1,
         }),
       );
-      expect((await telegram.history.telegramReadMarks(chatId)).outbox).toBe(
-        64,
-      );
+      expect((await telegram.history.readMarks(chatId)).outbox).toBe(64);
 
       jest.restoreAllMocks();
       await telegram.history.wipeChat(chatId);

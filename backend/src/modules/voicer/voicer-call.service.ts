@@ -23,7 +23,7 @@ import { GlobalGateService } from 'src/shared/global-gate.service';
 import { TakeoverReason } from 'src/domain/pause';
 import { VoicerChatService } from './voicer-chat.service';
 import { VoicerAutomationService } from './voicer-automation.service';
-import { TelegramService } from '../telegram/telegram.service';
+import { TelegramService } from '../../channels/telegram/telegram.service';
 import { CallMedia } from './voicer-call-media';
 import { credentialTag } from 'src/shared/session-claims';
 import { VoicerCallOutcomeService } from './voicer-call-outcome.service';

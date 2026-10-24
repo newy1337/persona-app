@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { REPLY_BRAIN, type ReplyBrain } from 'src/brain/reply-brain.port';
-import type { NextBotAction } from 'src/brain/nastya/dialogue/forecast';
+import type { NextBotAction } from 'src/brain/dialogue/forecast';
 import { Prisma } from '@prisma/client';
 import { resolveRange, type DayRange } from '../stats/range';
 import {
@@ -29,9 +29,9 @@ import {
 } from 'src/shared/presence.service';
 import {
   accountLostOf,
-  clientTelegramView,
+  clientStatusView,
   type ClientPresence,
-} from 'src/domain/tg-status';
+} from 'src/domain/client-status';
 import {
   ManagerAttributionService,
   ManagerAttribution,
@@ -244,7 +244,7 @@ export class ManagerService {
       avatar_url: this.presence.avatarUrl(Number(r.chat_id)),
       typing: this.presence.activityOf(Number(r.chat_id)),
       next_bot_action: null,
-      ...clientTelegramView(
+      ...clientStatusView(
         {
           clientStatus: r.client_status ?? null,
           clientStatusAt: n(r.client_status_at),

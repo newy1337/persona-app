@@ -1,9 +1,5 @@
-import {
-  accountLoss,
-  blockedByClient,
-  clientPresence,
-  presenceNow,
-} from './tg-status';
+import { presenceNow } from 'src/domain/client-status';
+import { accountLoss, blockedByClient, clientPresence } from './status';
 
 describe('статусы Telegram', () => {
   it('был в сети: точное время, «недавно», скрыто', () => {
@@ -69,7 +65,9 @@ describe('статусы Telegram', () => {
 });
 
 describe('вероятный ЧС по статусу собеседника', () => {
-  const { likelyBlockedChange } = jest.requireActual('./tg-status');
+  const { likelyBlockedChange } = jest.requireActual(
+    'src/domain/client-status',
+  );
   it('был виден и вдруг скрыт — вероятно, ЧС', () => {
     expect(likelyBlockedChange('recently', 'hidden', 100)).toBe(100);
     expect(likelyBlockedChange('online', 'hidden', 100)).toBe(100);

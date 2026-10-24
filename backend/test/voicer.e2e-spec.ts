@@ -24,7 +24,7 @@ import { VoicerService } from '../src/modules/voicer/voicer.service';
 import { VoicerBotService } from '../src/modules/voicer/voicer-bot.service';
 import { randomUUID } from 'crypto';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { RelayWorker } from '../src/modules/telegram/relay.worker';
+import { RelayWorker } from '../src/channels/telegram/relay.worker';
 import { HistoryService } from '../src/shared/history.service';
 import { ClockService } from '../src/shared/clock.service';
 import { VoicerDeliveryService } from '../src/modules/voicer/voicer-delivery.service';

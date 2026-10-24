@@ -6,14 +6,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { REPLY_BRAIN, ReplyBrain } from 'src/brain/reply-brain.port';
-import { fillVariables } from 'src/brain/nastya/config/variables';
+import { fillVariables } from 'src/brain/config/variables';
 import { PresenceService } from 'src/shared/presence.service';
 import { PrismaService } from 'src/prisma.service';
 import { HistoryService, StoredMessage } from 'src/shared/history.service';
 import { PauseService } from 'src/shared/pause.service';
 import { ClockService } from 'src/shared/clock.service';
 import { FunnelEventsService } from 'src/shared/funnel-events.service';
-import { TelegramService } from '../telegram/telegram.service';
+import { TelegramService } from '../../channels/telegram/telegram.service';
 import {
   DEFAULT_FUNNEL_STAGE,
   isFunnelStage,
@@ -35,7 +35,7 @@ import { toChatId } from 'src/utils/ids';
 import { PersonaService } from 'src/brain/persona.service';
 import { BrainStateService } from 'src/brain/brain-state.service';
 import { ReplyScheduleService } from 'src/brain/reply-schedule.service';
-import { goalProgress } from 'src/brain/nastya/character/progress';
+import { goalProgress } from 'src/brain/character/progress';
 import {
   isReactionEmoji,
   kindForFile,
@@ -43,7 +43,7 @@ import {
 } from 'src/domain/attachments';
 import { UploadsService } from '../media/uploads.service';
 import { SettingsService } from '../settings/settings.service';
-import { accountLostOf } from 'src/domain/tg-status';
+import { accountLostOf } from 'src/domain/client-status';
 import {
   DEAL_NOTE_KEY,
   DEAL_REACHED_EVENT,
@@ -112,7 +112,7 @@ export class ConversationsService {
 
   async revision(chatId: number) {
     const [marks, pause, scheduled, media, tail] = await Promise.all([
-      this.history.telegramReadMarks(chatId),
+      this.history.readMarks(chatId),
       this.history.getPause(chatId),
       this.replySchedule.get(chatId),
       this.prisma.inboundMedia.count({ where: { chatId: toChatId(chatId) } }),
@@ -163,7 +163,7 @@ export class ConversationsService {
       this.brainState.load(chatId),
     ]);
     const scheduled = await this.replySchedule.get(chatId);
-    const read = await this.history.telegramReadMarks(chatId);
+    const read = await this.history.readMarks(chatId);
     const nowTs = this.clock.ts();
     const [clientState, account, managers, contact] = await Promise.all([
       this.history.clientTelegramState(chatId, nowTs),
@@ -335,8 +335,8 @@ export class ConversationsService {
    */
   private async hasUnreadFromClient(chatId: number): Promise<boolean> {
     const [marks, latest] = await Promise.all([
-      this.history.telegramReadMarks(chatId),
-      this.history.latestClientTgId(chatId),
+      this.history.readMarks(chatId),
+      this.history.latestClientMsgId(chatId),
     ]);
     return latest > 0 && latest > (marks.inbox ?? 0);
   }

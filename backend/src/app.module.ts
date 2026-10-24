@@ -12,9 +12,9 @@ import { OperatorModule } from './modules/operator/operator.module';
 import { BeatsModule } from './modules/beats/beats.module';
 import { VoicerModule } from './modules/voicer/voicer.module';
 import { MediaModule } from './modules/media/media.module';
-import { TgAccountsModule } from './modules/tg-accounts/tg-accounts.module';
-import { TelegramModule } from './modules/telegram/telegram.module';
-import { VkModule } from './modules/vk/vk.module';
+import { AccountsModule } from './modules/accounts/accounts.module';
+import { TelegramModule } from './channels/telegram/telegram.module';
+import { VkModule } from './channels/vk/vk.module';
 import { BrainModule } from './brain/brain.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { LeadsModule } from './modules/leads/leads.module';
@@ -36,7 +36,7 @@ import { InboundModule } from './modules/inbound/inbound.module';
     BeatsModule,
     VoicerModule,
     MediaModule,
-    TgAccountsModule,
+    AccountsModule,
     TelegramModule,
     VkModule,
     BrainModule,

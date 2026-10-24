@@ -1,4 +1,4 @@
-import { TelegramModule } from '../telegram/telegram.module';
+import { TelegramModule } from '../../channels/telegram/telegram.module';
 import { VoicerCallService } from './voicer-call.service';
 import { Module } from '@nestjs/common';
 import { MediaModule } from '../media/media.module';

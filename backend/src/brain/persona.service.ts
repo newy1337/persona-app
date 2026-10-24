@@ -7,40 +7,33 @@ import {
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
 import Anthropic from '@anthropic-ai/sdk';
-import { createOpenRouterClient } from './nastya/llm/openrouter';
-import { gatewayBaseUrl, withGateway } from './nastya/llm/gateway';
+import { createOpenRouterClient } from './llm/openrouter';
+import { gatewayBaseUrl, withGateway } from './llm/gateway';
 import { appConfig } from 'src/config/app.config';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import { toChatId } from 'src/utils/ids';
-import type { CharacterConfig } from './nastya/kernel/types';
+import type { CharacterConfig } from './kernel/types';
 import {
   DEFAULT_PROMPTS,
   PROMPT_KEYS,
   mergePrompts,
   type PersonaPrompts,
-} from './nastya/config/prompts';
-import {
-  DEFAULT_RHYTHM,
-  mergeRhythm,
-  type Rhythm,
-} from './nastya/config/rhythm';
+} from './config/prompts';
+import { DEFAULT_RHYTHM, mergeRhythm, type Rhythm } from './config/rhythm';
 import {
   chatVariables,
   fillVariables,
   variableValues,
   withoutChatVariables,
-} from './nastya/config/variables';
+} from './config/variables';
 import { parseLeadFacts } from 'src/domain/lead-facts';
 import { UsageRecorderService } from './usage-recorder.service';
-import {
-  LocationResolver,
-  LOCATION_RULES,
-} from './nastya/kernel/location-resolver';
-import { type Place, unknownPlace } from './nastya/kernel/location';
-import { completeText } from './nastya/llm/anthropic';
-import { resolveModel } from './nastya/config/models';
-import { parseJsonObject } from './nastya/judge/transport';
+import { LocationResolver, LOCATION_RULES } from './kernel/location-resolver';
+import { type Place, unknownPlace } from './kernel/location';
+import { completeText } from './llm/anthropic';
+import { resolveModel } from './config/models';
+import { parseJsonObject } from './judge/transport';
 
 export const PERSONA_SECTIONS = [
   'persona',
