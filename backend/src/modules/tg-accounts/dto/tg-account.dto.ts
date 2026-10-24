@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsIn,
   IsInt,
@@ -28,7 +29,7 @@ export class ProxyConfigDto {
   @ApiProperty({ enum: PROXY_TYPES })
   @IsIn(PROXY_TYPES, {
     message:
-      'тип прокси: socks5, socks4 или mtproto — HTTP Telegram не поддерживает',
+      'тип прокси: socks5, socks4, mtproto (Telegram), http или https (VK)',
   })
   type: ProxyType;
 
@@ -58,6 +59,65 @@ export class AddTgAccountDto {
   @ValidateNested()
   @Type(() => ProxyConfigDto)
   proxy_config?: ProxyConfigDto | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  daily_msg_quota?: number | null;
+
+  @ApiPropertyOptional({ enum: ['prod', 'test'], default: 'prod' })
+  @IsOptional()
+  @IsIn(['prod', 'test'])
+  purpose?: 'prod' | 'test' = 'prod';
+}
+
+/**
+ * VK-аккаунт по кукам браузера, в котором выполнен вход: web_token
+ * выпускается по ним, пароль не нужен. Прокси обязателен — токен VK
+ * привязан к выходному IP.
+ */
+export class AddVkAccountDto {
+  @ApiProperty({
+    example: '+79001234567',
+    description: 'логин VK: номер или почта',
+  })
+  @IsString()
+  @MinLength(3)
+  @MaxLength(128)
+  login: string;
+
+  @ApiProperty({
+    description:
+      'куки vk.ru из браузера (экспорт Cookie-Editor и т. п.): [{name, value, domain, path}]',
+  })
+  @IsArray()
+  cookies: Array<{
+    name: string;
+    value: string;
+    domain: string;
+    path?: string;
+  }>;
+
+  @ApiPropertyOptional({
+    description: 'User-Agent браузера, в котором был вход',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  user_agent?: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  persona_id: string;
+
+  @ApiProperty({ type: ProxyConfigDto })
+  @ValidateNested()
+  @Type(() => ProxyConfigDto)
+  proxy_config: ProxyConfigDto;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()

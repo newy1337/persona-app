@@ -48,3 +48,38 @@ describe('ошибки первого сообщения', () => {
     });
   });
 });
+
+describe('ошибки VK при первом сообщении', () => {
+  const vkError = (code: number, sub?: number) =>
+    new Error(`[${code}${sub ? `/${sub}` : ''}] в messages.send x`);
+
+  it('по коду — аккаунт, другой аккаунт или мёртвый лид', () => {
+    expect(classifyOutreachError(vkError(14))).toMatchObject({
+      kind: 'account',
+      permanent: false,
+    });
+    expect(classifyOutreachError(vkError(37))).toMatchObject({
+      kind: 'account',
+      permanent: true,
+    });
+    expect(classifyOutreachError(vkError(984))).toMatchObject({
+      kind: 'account',
+    });
+    expect(classifyOutreachError(vkError(900))).toMatchObject({
+      kind: 'switch',
+    });
+    expect(classifyOutreachError(vkError(902))).toMatchObject({
+      kind: 'recipient',
+    });
+    expect(classifyOutreachError(vkError(18))).toMatchObject({
+      kind: 'recipient',
+    });
+    // Код внутри текста — не код VK.
+    expect(
+      classifyOutreachError(new Error('ответ [902] где-то в середине')),
+    ).toEqual({ kind: 'unknown' });
+    expect(classifyOutreachError(vkError(5, 1130))).toEqual({
+      kind: 'unknown',
+    });
+  });
+});

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -20,12 +21,18 @@ import { appConfig } from 'src/config/app.config';
 import { TelegramService } from '../telegram/telegram.service';
 import {
   AddTgAccountDto,
+  AddVkAccountDto,
   ProxyConfigDto,
   UpdateTgAccountDto,
   UpdateTgProfileDto,
 } from './dto/tg-account.dto';
-import { proxyLabel } from 'src/domain/proxy';
+import { proxyLabel, proxyTypeError } from 'src/domain/proxy';
 import { ChannelRegistry } from 'src/channels/registry';
+import {
+  hasSession,
+  pickCookies,
+  type VkSessionData,
+} from 'src/channels/vk/session';
 
 const HEARTBEAT_ALIVE_S = 120;
 
@@ -34,7 +41,10 @@ export interface TgAccountSummary {
   photo_set_id: number | null;
   photo_set_name: string | null;
   photo_auto_send: boolean;
+  /** Номер; у VK-аккаунта без номера — логин, чтобы панели было что показать. */
   phone_e164: string;
+  channel: string;
+  login: string;
   persona_id: string;
   status: string;
   needs_proxy_setup: boolean;
@@ -98,7 +108,9 @@ export class TgAccountsService {
     }
     return {
       id: a.id,
-      phone_e164: a.phoneE164,
+      phone_e164: a.phoneE164 ?? a.login,
+      channel: a.channel,
+      login: a.login,
       persona_id: a.personaId,
       status: a.status,
       needs_proxy_setup: Boolean(a.needsProxySetup),
@@ -320,6 +332,10 @@ export class TgAccountsService {
       ? dto.phone_e164
       : `+${dto.phone_e164}`;
     if (dto.persona_id) await this.assertPersona(dto.persona_id);
+    const wrong = dto.proxy_config
+      ? proxyTypeError('telegram', dto.proxy_config.type)
+      : null;
+    if (wrong) throw new BadRequestException(wrong);
     try {
       const created = await this.prisma.channelAccount.create({
         data: {
@@ -348,8 +364,76 @@ export class TgAccountsService {
     }
   }
 
+  /** VK-аккаунт по кукам браузера: сразу активен и подключается. */
+  async addVk(dto: AddVkAccountDto, ownerUserId: number | null = null) {
+    if (dto.persona_id) await this.assertPersona(dto.persona_id);
+    const wrong = proxyTypeError('vk', dto.proxy_config.type);
+    if (wrong) throw new BadRequestException(wrong);
+    const cookies = pickCookies(dto.cookies ?? []);
+    if (!hasSession(cookies))
+      throw new BadRequestException(
+        'в куках нет сессии VK (remixsid) — выгрузите куки vk.ru после входа',
+      );
+    const login = dto.login.trim();
+    const phone = /^\+?\d{10,15}$/.test(login)
+      ? `+${login.replace(/^\+/, '')}`
+      : null;
+    const session: VkSessionData = {
+      cookies,
+      userAgent: dto.user_agent?.trim() || null,
+      savedAt: this.clock.ts(),
+    };
+    let created: ChannelAccount;
+    try {
+      created = await this.prisma.channelAccount.create({
+        data: {
+          channel: 'vk',
+          login,
+          phoneE164: phone,
+          personaId: dto.persona_id || appConfig.personaId,
+          status: 'active',
+          addedAt: this.clock.ts(),
+          purpose: dto.purpose ?? 'prod',
+          sessionEncrypted: this.crypto.encrypt(JSON.stringify(session)),
+          proxyConfigEncrypted: this.crypto.encrypt(
+            JSON.stringify({
+              type: dto.proxy_config.type,
+              host: dto.proxy_config.host.trim(),
+              port: dto.proxy_config.port,
+              username: dto.proxy_config.username?.trim() || null,
+              password: dto.proxy_config.password || null,
+              secret: null,
+            }),
+          ),
+          needsProxySetup: 0,
+          dailyMsgQuota: dto.daily_msg_quota ?? null,
+        },
+      });
+    } catch (e) {
+      if (String(e?.code) === 'P2002')
+        throw new ConflictException(`VK-аккаунт ${login} уже есть`);
+      throw e;
+    }
+    if (ownerUserId !== null)
+      await this.prisma.managerAccount.create({
+        data: { userId: ownerUserId, accountId: created.id },
+      });
+    let connectError: string | null = null;
+    try {
+      await (await this.channels.forAccount(created.id)).connect(created.id);
+    } catch (e) {
+      connectError = e?.message ?? String(e);
+    }
+    return {
+      ...this.summary(await this.get(created.id)),
+      connect_error: connectError,
+    };
+  }
+
   async setProxy(id: number, proxy: ProxyConfigDto) {
-    await this.get(id);
+    const account = await this.get(id);
+    const wrong = proxyTypeError(account.channel, proxy.type);
+    if (wrong) throw new BadRequestException(wrong);
     const clean = {
       type: proxy.type,
       host: proxy.host.trim(),

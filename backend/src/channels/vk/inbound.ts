@@ -401,10 +401,7 @@ function linkUrls(m: VkMessage): string[] {
  * в текст (иначе менеджер видит пустоту); вложение без медиа и без текста —
  * ярлыком, как `[геопозиция]` у Telegram.
  */
-export function inboundText(
-  m: VkMessage,
-  media: VkInboundMedia | null,
-): string {
+export function inboundText(m: VkMessage, media: object | null): string {
   const own = (m.text ?? '').trim();
   const nested = (m.fwd_messages ?? [])
     .map((f) => (f.text ?? '').trim())

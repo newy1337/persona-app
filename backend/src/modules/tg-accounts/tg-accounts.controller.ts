@@ -36,6 +36,7 @@ import { DashboardUser } from '@prisma/client';
 import { NotFoundException } from '@nestjs/common';
 import {
   AddTgAccountDto,
+  AddVkAccountDto,
   TgPrivacyDto,
   SetProxyDto,
   SetStatusDto,
@@ -134,6 +135,22 @@ export class TgAccountsController {
         resource: `tg_account:${dto.phone_e164}`,
       },
       () => this.accounts.add(dto, owner),
+    );
+  }
+
+  @ApiOperation({ summary: 'Добавить VK-аккаунт по кукам браузера и прокси' })
+  @Post('tg-accounts/vk')
+  @HttpCode(200)
+  @UsePipes(ValidationPipe)
+  addVk(@Body() dto: AddVkAccountDto, @CurrentUser() user: DashboardUser) {
+    const owner = user.role === Role.MANAGER ? user.id : null;
+    return this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'tg_account.add',
+        resource: `vk_account:${dto.login}`,
+      },
+      () => this.accounts.addVk(dto, owner),
     );
   }
 

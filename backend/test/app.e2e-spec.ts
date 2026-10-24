@@ -3065,6 +3065,7 @@ describe('Manager panel API (e2e)', () => {
       (telegram as any).ownIdsAt = 0;
       const found = jest.spyOn(telegram, 'resolvePhone').mockResolvedValueOnce({
         kind: 'found',
+        chatId: 555000111,
         userId: 555000111,
         username: null,
         deleted: false,

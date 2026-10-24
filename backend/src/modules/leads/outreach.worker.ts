@@ -244,7 +244,7 @@ export class OutreachWorker implements OnModuleInit {
   private async processOne(accountId: number, now: number): Promise<void> {
     const account = await this.prisma.channelAccount.findUnique({
       where: { id: accountId },
-      select: { personaId: true },
+      select: { personaId: true, channel: true },
     });
     const [accountManagers, managers] = await Promise.all([
       this.prisma.managerAccount.findMany({
@@ -268,6 +268,8 @@ export class OutreachWorker implements OnModuleInit {
     const candidate = await this.prisma.lead.findFirst({
       where: {
         status: 'queued',
+        // Лид VK пишет аккаунт VK, лид Telegram — аккаунт Telegram.
+        channel: account?.channel ?? 'telegram',
         OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
         AND: [
           {
@@ -390,7 +392,7 @@ export class OutreachWorker implements OnModuleInit {
         });
         return;
       }
-      const chatId = resolved.userId;
+      const chatId = resolved.chatId;
       if ((await this.channels.ownChatIds()).has(chatId)) {
         await this.markOwnAccount(candidate.id, null);
         return;

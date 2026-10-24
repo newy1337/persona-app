@@ -208,7 +208,11 @@ export class TelegramService
 
   private async connectAll(): Promise<void> {
     const accounts = await this.prisma.channelAccount.findMany({
-      where: { status: 'active', sessionEncrypted: { not: null } },
+      where: {
+        channel: 'telegram',
+        status: 'active',
+        sessionEncrypted: { not: null },
+      },
     });
     this.log.log(`подключаю ${accounts.length} аккаунт(ов) в фоне`);
     for (const acc of accounts) {
@@ -333,7 +337,11 @@ export class TelegramService
   async reviveOffline(): Promise<void> {
     if (!this.configured || this.stopping) return;
     const accounts = await this.prisma.channelAccount.findMany({
-      where: { status: 'active', sessionEncrypted: { not: null } },
+      where: {
+        channel: 'telegram',
+        status: 'active',
+        sessionEncrypted: { not: null },
+      },
       select: { id: true },
     });
     for (const { id } of accounts) {
@@ -391,7 +399,7 @@ export class TelegramService
     const now = this.clock.ts();
     if (now - this.ownIdsAt > 60) {
       const rows = await this.prisma.channelAccount.findMany({
-        where: { peerId: { not: null } },
+        where: { channel: 'telegram', peerId: { not: null } },
         select: { peerId: true },
       });
       this.ownIds = new Set(rows.map((r) => Number(r.peerId)));
