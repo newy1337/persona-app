@@ -154,8 +154,8 @@ export class ConversationsService {
       this.history.getLeadFacts(chatId),
       this.funnel.forChat(chatId),
       this.history.chatOwnerAccount(chatId),
-      this.prisma.phoneNumber.findFirst({
-        where: { telegramUserId: toChatId(chatId) },
+      this.prisma.lead.findFirst({
+        where: { chatId: toChatId(chatId) },
       }),
       this.persona.forChat(chatId),
       this.brainState.load(chatId),
@@ -167,7 +167,7 @@ export class ConversationsService {
       this.history.clientTelegramState(chatId, nowTs),
       owner === null
         ? null
-        : this.prisma.tgAccount.findUnique({
+        : this.prisma.channelAccount.findUnique({
             where: { id: owner },
             select: {
               id: true,
@@ -358,7 +358,7 @@ export class ConversationsService {
              p.facts AS facts
       FROM contacts c LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
       ORDER BY last_ts DESC NULLS LAST LIMIT ${LIST_LIMIT}`;
-    const accounts = await this.prisma.tgAccount.findMany({
+    const accounts = await this.prisma.channelAccount.findMany({
       select: { id: true, personaId: true },
     });
     const personaByAccount = new Map(accounts.map((a) => [a.id, a.personaId]));

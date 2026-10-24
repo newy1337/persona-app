@@ -144,10 +144,11 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
       })
     ).id;
     cafeId = (await photo('капучино в кафе', { tags: '["кафе"]' })).id;
-    await prisma.tgAccount.create({
+    await prisma.channelAccount.create({
       data: {
         id: 1,
         phoneE164: '+10000000001',
+        login: '+10000000001',
         personaId: 'test',
         addedAt: 1,
       },
@@ -163,7 +164,7 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
       },
     });
     await prisma.managerAccount.create({
-      data: { userId: manager.id, tgAccountId: 1 },
+      data: { userId: manager.id, accountId: 1 },
     });
     await prisma.managerPhotoSet.create({
       data: { userId: manager.id, personaSlug: 'test', setId, updatedAt: 1 },
@@ -186,7 +187,7 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
       where: { id: setId },
       data: { sendMode: 'initiative', autoSend: true },
     });
-    await prisma.tgAccount.update({
+    await prisma.channelAccount.update({
       where: { id: 1 },
       data: { photoAutoSend: true },
     });
@@ -267,7 +268,7 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
     const [row] = await prisma.message.findMany({
       where: { chatId: BigInt(chatId), role: 'assistant', mediaKind: 'photo' },
     });
-    expect(row.tgMsgId).toBe(500);
+    expect(row.peerMsgId).toBe(500);
     expect(row.mediaNote).toContain('Барсик');
     const recorded = await sends();
     expect(recorded).toHaveLength(1);
@@ -369,7 +370,7 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
     expect(pause.pause).not.toHaveBeenCalled();
     expect(transport.sendText).toHaveBeenCalled();
 
-    await prisma.tgAccount.update({
+    await prisma.channelAccount.update({
       where: { id: 1 },
       data: { photoAutoSend: false },
     });

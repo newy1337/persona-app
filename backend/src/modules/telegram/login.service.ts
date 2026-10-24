@@ -139,7 +139,7 @@ export class LoginService {
         'TG_API_ID / TG_API_HASH are not configured',
       );
     }
-    const account = await this.prisma.tgAccount.findUnique({
+    const account = await this.prisma.channelAccount.findUnique({
       where: { id: accountId },
     });
     if (!account)
@@ -233,7 +233,7 @@ export class LoginService {
       const me = (await client.getMe()) as Api.User;
       const session = client.session.save() as unknown as string;
       const ts = this.clock.ts();
-      await this.prisma.tgAccount.update({
+      await this.prisma.channelAccount.update({
         where: { id: job.account_id },
         data: {
           sessionEncrypted: this.crypto.encrypt(session),
@@ -241,7 +241,7 @@ export class LoginService {
           bannedAt: null,
           banReason: null,
           lastLoginAt: ts,
-          telegramUserId: BigInt(Number(me.id)),
+          peerId: BigInt(Number(me.id)),
           username: me.username ?? null,
         },
       });
@@ -262,7 +262,7 @@ export class LoginService {
 
   private async restoreAfterFailure(accountId: number): Promise<void> {
     this.telegram.release(accountId);
-    const account = await this.prisma.tgAccount
+    const account = await this.prisma.channelAccount
       .findUnique({
         where: { id: accountId },
         select: { sessionEncrypted: true, status: true },

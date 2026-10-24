@@ -203,7 +203,7 @@ export class TelegramService
   }
 
   private async connectAll(): Promise<void> {
-    const accounts = await this.prisma.tgAccount.findMany({
+    const accounts = await this.prisma.channelAccount.findMany({
       where: { status: 'active', sessionEncrypted: { not: null } },
     });
     this.log.log(`подключаю ${accounts.length} аккаунт(ов) в фоне`);
@@ -252,7 +252,7 @@ export class TelegramService
   }
 
   async proxyFor(accountId: number): Promise<ClientProxy | null> {
-    const acc = await this.prisma.tgAccount.findUnique({
+    const acc = await this.prisma.channelAccount.findUnique({
       where: { id: accountId },
       select: { proxyConfigEncrypted: true },
     });
@@ -328,7 +328,7 @@ export class TelegramService
   @Cron(CronExpression.EVERY_MINUTE)
   async reviveOffline(): Promise<void> {
     if (!this.configured || this.stopping) return;
-    const accounts = await this.prisma.tgAccount.findMany({
+    const accounts = await this.prisma.channelAccount.findMany({
       where: { status: 'active', sessionEncrypted: { not: null } },
       select: { id: true },
     });
@@ -386,11 +386,11 @@ export class TelegramService
   async ownUserIds(): Promise<Set<number>> {
     const now = this.clock.ts();
     if (now - this.ownIdsAt > 60) {
-      const rows = await this.prisma.tgAccount.findMany({
-        where: { telegramUserId: { not: null } },
-        select: { telegramUserId: true },
+      const rows = await this.prisma.channelAccount.findMany({
+        where: { peerId: { not: null } },
+        select: { peerId: true },
       });
-      this.ownIds = new Set(rows.map((r) => Number(r.telegramUserId)));
+      this.ownIds = new Set(rows.map((r) => Number(r.peerId)));
       this.ownIdsAt = now;
     }
     for (const entry of this.live.values())
@@ -399,7 +399,7 @@ export class TelegramService
   }
 
   private async connectNow(accountId: number): Promise<void> {
-    const acc = await this.prisma.tgAccount.findUnique({
+    const acc = await this.prisma.channelAccount.findUnique({
       where: { id: accountId },
     });
     if (!acc?.sessionEncrypted)
@@ -431,7 +431,7 @@ export class TelegramService
     }
     if (!authorized) {
       await closeClient(client);
-      await this.prisma.tgAccount.update({
+      await this.prisma.channelAccount.update({
         where: { id: accountId },
         data: {
           status: 'unauthorized',
@@ -508,12 +508,12 @@ export class TelegramService
           `video backfill failed account=${accountId}: ${e?.message ?? e}`,
         ),
       );
-    await this.prisma.tgAccount.update({
+    await this.prisma.channelAccount.update({
       where: { id: accountId },
       data: {
         lastLoginAt: this.clock.ts(),
         lastHeartbeatAt: this.clock.ts(),
-        telegramUserId: telegramUserId === null ? null : BigInt(telegramUserId),
+        peerId: telegramUserId === null ? null : BigInt(telegramUserId),
         username: me && 'username' in me ? (me.username ?? null) : null,
         displayName:
           me instanceof Api.User
@@ -551,12 +551,12 @@ export class TelegramService
     loss: { kind: 'banned' | 'logged_out'; reason: string },
   ): Promise<void> {
     const status = loss.kind === 'banned' ? 'banned' : 'unauthorized';
-    const current = await this.prisma.tgAccount.findUnique({
+    const current = await this.prisma.channelAccount.findUnique({
       where: { id: accountId },
       select: { status: true },
     });
     if (!current || current.status === status) return;
-    await this.prisma.tgAccount.update({
+    await this.prisma.channelAccount.update({
       where: { id: accountId },
       data: { status, bannedAt: this.clock.ts(), banReason: loss.reason },
     });
@@ -650,7 +650,7 @@ export class TelegramService
       await this.prisma.message.findFirst({
         where: {
           chatId: toChatId(chatId),
-          tgMsgId: message.id,
+          peerMsgId: message.id,
           role: 'assistant',
         },
         select: { id: true },
@@ -678,7 +678,7 @@ export class TelegramService
         text,
         ts: message.date,
         author: 'operator:telegram',
-        tgMsgId: message.id,
+        peerMsgId: message.id,
         mediaKind: media?.kind,
         filePath: media?.path,
       });
@@ -1129,7 +1129,7 @@ export class TelegramService
         ? [me.firstName, me.lastName].filter(Boolean).join(' ').trim() || null
         : null;
     const username = me instanceof Api.User ? (me.username ?? null) : null;
-    await this.prisma.tgAccount.update({
+    await this.prisma.channelAccount.update({
       where: { id: entry.id },
       data: { displayName, username },
     });
@@ -1468,15 +1468,15 @@ export class TelegramService
       this.history
         .getLeadFacts(chatId)
         .catch(() => ({}) as Record<string, unknown>),
-      this.prisma.phoneNumber.findFirst({
-        where: { telegramUserId: toChatId(chatId) },
+      this.prisma.lead.findFirst({
+        where: { chatId: toChatId(chatId) },
         orderBy: { id: 'desc' },
-        select: { telegramUsername: true, usernameKey: true },
+        select: { peerUsername: true, usernameKey: true },
       }),
     ]);
     const usernames = [
       ...new Set(
-        [facts['tg_username'], lead?.telegramUsername, lead?.usernameKey]
+        [facts['tg_username'], lead?.peerUsername, lead?.usernameKey]
           .filter((u): u is string => typeof u === 'string' && !!u.trim())
           .map((u) => u.trim().replace(/^@/, '')),
       ),
@@ -1642,7 +1642,7 @@ export class TelegramService
       beforePart?: () => Promise<void>;
       randomIds?: string[];
       onDispatch?: (index: number) => Promise<void>;
-      onPart?: (index: number, tgMsgId: number) => Promise<void>;
+      onPart?: (index: number, peerMsgId: number) => Promise<void>;
     } = {},
   ): Promise<number[]> {
     const account = await this.accountFor(chatId, opts.accountId);
@@ -2006,10 +2006,14 @@ export class TelegramService
   }
 
   /** Исправить отправленный текст. */
-  async editText(chatId: number, tgMsgId: number, text: string): Promise<void> {
+  async editText(
+    chatId: number,
+    peerMsgId: number,
+    text: string,
+  ): Promise<void> {
     const account = await this.accountFor(chatId);
     await this.call(account, 'editMessage', () =>
-      account.client.editMessage(chatId, { message: tgMsgId, text }),
+      account.client.editMessage(chatId, { message: peerMsgId, text }),
     );
   }
 
@@ -2037,7 +2041,7 @@ export class TelegramService
     try {
       const changed = await this.history.editMessageText(
         chatId,
-        { tgMsgId: message.id },
+        { peerMsgId: message.id },
         text,
         message.editDate ?? this.clock.ts(),
       );
@@ -2255,14 +2259,14 @@ export class TelegramService
 
   /** Voice clip from the voicer: send, then record the turn as the persona's. */
   async sendVoice(chatId: number, path: string, text: string): Promise<void> {
-    const tgMsgId = await this.sendVoiceFile(chatId, path);
+    const peerMsgId = await this.sendVoiceFile(chatId, path);
     const ts = this.clock.ts();
     await this.history.appendMessage(chatId, {
       role: 'assistant',
       text: text ? `[Голосовое сообщение]\n${text}` : '[media:voice]',
       ts,
       author: 'operator:voice',
-      tgMsgId,
+      peerMsgId,
       mediaKind: 'voice',
       filePath: path,
     });

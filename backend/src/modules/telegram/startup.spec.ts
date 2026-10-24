@@ -11,7 +11,7 @@ describe('запуск службы: аккаунты подключаются �
     const connected: number[] = [];
     svc.log = { log: () => {}, warn: () => {}, error: () => {} };
     svc.prisma = {
-      tgAccount: { findMany: async () => accounts.map((id) => ({ id })) },
+      channelAccount: { findMany: async () => accounts.map((id) => ({ id })) },
     };
     svc.connect = async (id: number) => {
       connected.push(id);

@@ -45,7 +45,7 @@ export class OutreachWorker implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     const now = this.clock.ts();
-    const stuck = await this.prisma.phoneNumber.findMany({
+    const stuck = await this.prisma.lead.findMany({
       where: {
         status: 'queued',
         assignedAccountId: { not: null },
@@ -78,7 +78,7 @@ export class OutreachWorker implements OnModuleInit {
     untilTs: number,
     reason: string,
   ): Promise<void> {
-    await this.prisma.tgAccount.updateMany({
+    await this.prisma.channelAccount.updateMany({
       where: {
         id: accountId,
         OR: [{ floodUntil: null }, { floodUntil: { lt: untilTs } }],
@@ -93,18 +93,18 @@ export class OutreachWorker implements OnModuleInit {
     reason: string,
     untilTs: number,
   ): Promise<void> {
-    const lead = await this.prisma.phoneNumber.findUniqueOrThrow({
+    const lead = await this.prisma.lead.findUniqueOrThrow({
       where: { id: leadId },
       select: { preferredAccountId: true },
     });
-    const account = await this.prisma.tgAccount.findUnique({
+    const account = await this.prisma.channelAccount.findUnique({
       where: { id: accountId },
       select: { username: true },
     });
     const label = account?.username
       ? `@${account.username}`
       : `аккаунт #${accountId}`;
-    await this.prisma.phoneNumber.update({
+    await this.prisma.lead.update({
       where: { id: leadId },
       data: {
         status: 'queued',
@@ -132,7 +132,7 @@ export class OutreachWorker implements OnModuleInit {
     opts: { permanent?: boolean; until?: number; attempts?: number } = {},
   ): Promise<void> {
     const pinned = lead.preferredAccountId === accountId && !opts.permanent;
-    await this.prisma.phoneNumber.update({
+    await this.prisma.lead.update({
       where: { id: lead.id },
       data: {
         status: 'queued',
@@ -156,7 +156,7 @@ export class OutreachWorker implements OnModuleInit {
     leadId: number,
     ownAccountId: number | null,
   ): Promise<void> {
-    await this.prisma.phoneNumber.update({
+    await this.prisma.lead.update({
       where: { id: leadId },
       data: {
         status: 'dead',
@@ -197,7 +197,7 @@ export class OutreachWorker implements OnModuleInit {
   private async eligibleAccounts(now: number): Promise<number[]> {
     const online = this.telegram.onlineIds();
     if (!online.length) return [];
-    const active = await this.prisma.tgAccount.findMany({
+    const active = await this.prisma.channelAccount.findMany({
       where: {
         id: { in: online },
         status: 'active',
@@ -221,7 +221,7 @@ export class OutreachWorker implements OnModuleInit {
 
   private async usageToday(accountId: number, now: number) {
     const dayStart = mskDayStart(now);
-    const agg = await this.prisma.phoneNumber.aggregate({
+    const agg = await this.prisma.lead.aggregate({
       where: {
         assignedAccountId: accountId,
         firstContactAt: { gte: dayStart },
@@ -229,7 +229,7 @@ export class OutreachWorker implements OnModuleInit {
       _count: { _all: true },
       _max: { firstContactAt: true },
     });
-    const last = await this.prisma.phoneNumber.aggregate({
+    const last = await this.prisma.lead.aggregate({
       where: { assignedAccountId: accountId },
       _max: { firstContactAt: true },
     });
@@ -240,13 +240,13 @@ export class OutreachWorker implements OnModuleInit {
   }
 
   private async processOne(accountId: number, now: number): Promise<void> {
-    const account = await this.prisma.tgAccount.findUnique({
+    const account = await this.prisma.channelAccount.findUnique({
       where: { id: accountId },
       select: { personaId: true },
     });
     const [accountManagers, managers] = await Promise.all([
       this.prisma.managerAccount.findMany({
-        where: { tgAccountId: accountId },
+        where: { accountId: accountId },
         select: { userId: true },
       }),
       this.prisma.dashboardUser.findMany({
@@ -263,7 +263,7 @@ export class OutreachWorker implements OnModuleInit {
     const foreignManagers = managers
       .map((m) => m.id)
       .filter((id) => !mine.has(id));
-    const candidate = await this.prisma.phoneNumber.findFirst({
+    const candidate = await this.prisma.lead.findFirst({
       where: {
         status: 'queued',
         OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
@@ -300,7 +300,7 @@ export class OutreachWorker implements OnModuleInit {
       orderBy: { id: 'asc' },
     });
     if (!candidate) return;
-    const claimed = await this.prisma.phoneNumber.updateMany({
+    const claimed = await this.prisma.lead.updateMany({
       where: {
         id: candidate.id,
         status: 'queued',
@@ -322,7 +322,7 @@ export class OutreachWorker implements OnModuleInit {
           candidate.firstName ?? undefined,
         );
       // Номер или ник — одного из наших аккаунтов: писать самим себе не нужно.
-      const ownAccount = await this.prisma.tgAccount.findFirst({
+      const ownAccount = await this.prisma.channelAccount.findFirst({
         where: {
           OR: [
             ...(candidate.phoneE164
@@ -370,7 +370,7 @@ export class OutreachWorker implements OnModuleInit {
         return;
       }
       if (resolved.kind === 'not_found' || resolved.deleted) {
-        await this.prisma.phoneNumber.update({
+        await this.prisma.lead.update({
           where: { id: candidate.id },
           data: {
             status: 'dead',
@@ -398,12 +398,12 @@ export class OutreachWorker implements OnModuleInit {
           `outreach: lead #${candidate.id} — chat ${chatId} left from a deleted lead wiped (${wiped.messages} message(s)), starting over`,
         );
       }
-      await this.prisma.phoneNumber.update({
+      await this.prisma.lead.update({
         where: { id: candidate.id },
         data: {
           status: 'assigned',
-          telegramUserId: toChatId(chatId),
-          telegramUsername: resolved.username,
+          chatId: toChatId(chatId),
+          peerUsername: resolved.username,
           assignedAt: this.clock.ts(),
         },
       });
@@ -431,7 +431,7 @@ export class OutreachWorker implements OnModuleInit {
         opener: candidate.firstMessage,
       });
       const ts = this.clock.ts();
-      await this.prisma.phoneNumber.update({
+      await this.prisma.lead.update({
         where: { id: candidate.id },
         data: { status: 'contacted', firstContactAt: ts, lastError: null },
       });
@@ -467,7 +467,7 @@ export class OutreachWorker implements OnModuleInit {
             `outreach: ${e.message}; lead #${candidate.id} queued with its sender preference preserved`,
           );
         } else {
-          await this.prisma.phoneNumber.update({
+          await this.prisma.lead.update({
             where: { id: candidate.id },
             data: {
               status: 'queued',
@@ -499,7 +499,7 @@ export class OutreachWorker implements OnModuleInit {
       const attempts = candidate.attempts + 1;
       const dead = attempts >= MAX_OUTREACH_ATTEMPTS;
       if (/already has a transcript/.test(String(e?.message ?? ''))) {
-        await this.prisma.phoneNumber.update({
+        await this.prisma.lead.update({
           where: { id: candidate.id },
           data: {
             status: 'dead',
@@ -517,7 +517,7 @@ export class OutreachWorker implements OnModuleInit {
       const raw = String(e?.message ?? e).slice(0, 200);
       const failure = classifyOutreachError(e);
       if (failure.kind === 'recipient') {
-        await this.prisma.phoneNumber.update({
+        await this.prisma.lead.update({
           where: { id: candidate.id },
           data: {
             status: 'dead',
@@ -559,7 +559,7 @@ export class OutreachWorker implements OnModuleInit {
         );
         return;
       }
-      await this.prisma.phoneNumber.update({
+      await this.prisma.lead.update({
         where: { id: candidate.id },
         data: {
           status: dead ? 'dead' : 'queued',
@@ -582,7 +582,7 @@ export class OutreachWorker implements OnModuleInit {
         orderBy: [{ isDefault: 'desc' }, { id: 'asc' }],
         select: { slug: true, name: true, isDefault: true },
       }),
-      this.prisma.tgAccount.findMany({
+      this.prisma.channelAccount.findMany({
         where: {
           status: 'active',
           ...(scopeAccounts === null ? {} : { id: { in: scopeAccounts } }),
@@ -610,7 +610,7 @@ export class OutreachWorker implements OnModuleInit {
 
   async status(accounts: number[] | null = null) {
     const now = this.clock.ts();
-    const rows = await this.prisma.tgAccount.findMany({
+    const rows = await this.prisma.channelAccount.findMany({
       where: {
         status: 'active',
         ...(accounts === null ? {} : { id: { in: accounts } }),

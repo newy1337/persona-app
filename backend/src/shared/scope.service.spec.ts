@@ -20,8 +20,8 @@ describe('ScopeService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     prisma.managerAccount.findMany.mockResolvedValue([
-      { tgAccountId: 10 },
-      { tgAccountId: 11 },
+      { accountId: 10 },
+      { accountId: 11 },
     ]);
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -66,7 +66,7 @@ describe('ScopeService', () => {
     expect((await service.teamIds(1)).sort()).toEqual([1, 2, 3, 4, 5, 6, 7]);
     // аккаунты считаются по ограниченной команде
     prisma.managerAccount.findMany.mockImplementation((async ({ where }: any) =>
-      where.userId.in.map((id: number) => ({ tgAccountId: id * 10 }))) as any);
+      where.userId.in.map((id: number) => ({ accountId: id * 10 }))) as any);
     const head: any = { id: 1, role: 'head', regionCode: '111' };
     expect(await service.accountsFilter(head)).toEqual([10, 20, 30, 50]);
     prisma.dashboardUser.findMany.mockImplementation((async () => []) as any);

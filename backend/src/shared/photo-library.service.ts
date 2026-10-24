@@ -22,7 +22,7 @@ export interface PhotoSendInput {
   photoId: number;
   accountId?: number | null;
   messageId?: number | null;
-  tgMsgId?: number | null;
+  peerMsgId?: number | null;
   caption: string;
   note: string;
   source: 'bot' | 'manager';
@@ -60,7 +60,7 @@ export class PhotoLibraryService {
    * этого аккаунта. Такого нет — нет образа.
    */
   async currentSetId(accountId: number, db: Db = this.prisma) {
-    const account = await db.tgAccount.findUnique({
+    const account = await db.channelAccount.findUnique({
       where: { id: accountId },
       select: { personaId: true, manager: { select: { userId: true } } },
     });
@@ -134,7 +134,7 @@ export class PhotoLibraryService {
     now: number,
   ): Promise<PhotoAvailability | undefined> {
     const [account, set] = await Promise.all([
-      this.prisma.tgAccount.findUnique({
+      this.prisma.channelAccount.findUnique({
         where: { id: accountId },
         select: { photoAutoSend: true },
       }),
@@ -194,7 +194,7 @@ export class PhotoLibraryService {
       photoId: input.photoId,
       accountId: input.accountId ?? null,
       messageId: input.messageId ?? null,
-      tgMsgId: input.tgMsgId ?? null,
+      peerMsgId: input.peerMsgId ?? null,
       caption: input.caption,
       note: input.note,
       source: input.source,

@@ -98,7 +98,7 @@ export class VoicerChatService {
     );
   }
 
-  private async search(account: Prisma.TgAccountWhereInput, q: string) {
+  private async search(account: Prisma.ChannelAccountWhereInput, q: string) {
     const matches = q
       ? await this.prisma.leadFacts.findMany({
           where: { facts: { contains: q } },
@@ -106,19 +106,19 @@ export class VoicerChatService {
         })
       : [];
     const profiles = q
-      ? await this.prisma.phoneNumber.findMany({
+      ? await this.prisma.lead.findMany({
           where: {
             OR: [
               { firstName: { contains: q } },
-              { telegramUsername: { contains: q } },
+              { peerUsername: { contains: q } },
             ],
           },
-          select: { telegramUserId: true },
+          select: { chatId: true },
         })
       : [];
     const ids = [
       ...matches.map((f) => f.chatId),
-      ...profiles.flatMap((p) => (p.telegramUserId ? [p.telegramUserId] : [])),
+      ...profiles.flatMap((p) => (p.chatId ? [p.chatId] : [])),
     ];
     if (/^\d{1,16}$/.test(q)) ids.push(BigInt(q));
     const rows = await this.prisma.contact.findMany({
@@ -138,27 +138,27 @@ export class VoicerChatService {
         where: { chatId: { in: selected } },
         select: { chatId: true, facts: true },
       }),
-      this.prisma.phoneNumber.findMany({
-        where: { telegramUserId: { in: selected } },
+      this.prisma.lead.findMany({
+        where: { chatId: { in: selected } },
         select: {
-          telegramUserId: true,
+          chatId: true,
           firstName: true,
-          telegramUsername: true,
+          peerUsername: true,
         },
       }),
     ]);
     return {
       items: selected.map((chatId) => {
         const f = factsOf(facts.find((f) => f.chatId === chatId)?.facts),
-          person = people.find((p) => p.telegramUserId === chatId);
+          person = people.find((p) => p.chatId === chatId);
         return {
           chat_id: String(chatId),
           persona_name: rows.find((r) => r.chatId === chatId)?.account
             ?.personaId,
           label: String(f.name || person?.firstName || `Диалог ${chatId}`),
           unassigned: !rows.find((r) => r.chatId === chatId)?.account?.manager,
-          contact_ref: person?.telegramUsername
-            ? `@${person.telegramUsername.replace(/^@/, '')}`
+          contact_ref: person?.peerUsername
+            ? `@${person.peerUsername.replace(/^@/, '')}`
             : '',
         };
       }),

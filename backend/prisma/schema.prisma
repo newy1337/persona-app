@@ -49,13 +49,13 @@ model DashboardUser {
 }
 
 model ManagerAccount {
-  userId      Int @map("user_id")
-  tgAccountId Int @unique @map("tg_account_id")
+  userId    Int @map("user_id")
+  accountId Int @unique @map("account_id")
 
-  user    DashboardUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-  account TgAccount     @relation(fields: [tgAccountId], references: [id], onDelete: Cascade)
+  user    DashboardUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account ChannelAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
-  @@id([userId, tgAccountId])
+  @@id([userId, accountId])
   @@index([userId], map: "idx_manager_accounts_user")
   @@map("manager_accounts")
 }
@@ -116,9 +116,14 @@ model PersonaVersion {
   @@map("persona_versions")
 }
 
-model TgAccount {
+/// Аккаунт в канале переписки (Telegram, VK): от его имени пишет личность.
+model ChannelAccount {
   id                   Int     @id @default(autoincrement())
-  phoneE164            String  @unique @map("phone_e164")
+  /// telegram | vk
+  channel              String  @default("telegram")
+  /// логин в канале: у Telegram — номер, у VK — логин или idN
+  login                String
+  phoneE164            String? @map("phone_e164")
   personaId            String  @map("persona_id")
   sessionEncrypted     String? @map("session_encrypted")
   proxyConfigEncrypted String? @map("proxy_config_encrypted")
@@ -133,7 +138,8 @@ model TgAccount {
   routingWeight        Float   @default(1.0) @map("routing_weight")
   dailyMsgQuota        Int?    @map("daily_msg_quota")
   purpose              String  @default("prod")
-  telegramUserId       BigInt? @map("telegram_user_id")
+  /// id аккаунта в своём канале
+  peerId               BigInt? @map("peer_id")
   username             String?
   displayName          String? @map("display_name")
   floodUntil           Int?    @map("flood_until")
@@ -145,13 +151,19 @@ model TgAccount {
   photoSet PhotoSet?       @relation(fields: [photoSetId], references: [id], onDelete: SetNull)
   contacts Contact[]
 
-  @@index([personaId, status], map: "idx_tg_persona_status")
-  @@index([photoSetId], map: "idx_tg_photo_set")
-  @@map("tg_accounts")
+  @@unique([channel, login])
+  @@index([phoneE164], map: "idx_channel_accounts_phone")
+  @@index([personaId, status], map: "idx_channel_accounts_persona_status")
+  @@index([photoSetId], map: "idx_channel_accounts_photo_set")
+  @@map("channel_accounts")
 }
 
 model Contact {
   chatId             BigInt  @id @map("chat_id")
+  /// telegram | vk
+  channel            String  @default("telegram")
+  /// id собеседника в канале; у Telegram совпадает с chat_id
+  peerId             BigInt? @map("peer_id")
   accountId          Int?    @map("account_id")
   pauseState         String  @default("active") @map("pause_state")
   pauseReason        String? @map("pause_reason")
@@ -176,9 +188,10 @@ model Contact {
   /// образ, на котором начался диалог; смена образа в регионе его не меняет
   photoSetId Int? @map("photo_set_id")
 
-  account  TgAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
-  photoSet PhotoSet?  @relation(fields: [photoSetId], references: [id], onDelete: SetNull)
+  account  ChannelAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  photoSet PhotoSet?       @relation(fields: [photoSetId], references: [id], onDelete: SetNull)
 
+  @@unique([channel, peerId])
   @@index([accountId], map: "idx_contacts_account")
   @@index([photoSetId], map: "idx_contacts_photo_set")
   @@map("contacts")
@@ -193,7 +206,8 @@ model Message {
   author          String  @default("llm")
   sourceMessageId Int?    @map("source_message_id")
   sourceModality  String  @default("text") @map("source_modality")
-  tgMsgId         Int?    @map("tg_msg_id")
+  /// номер сообщения в канале: у Telegram — id, у VK — cmid
+  peerMsgId       Int?    @map("peer_msg_id")
   mediaKind       String? @map("media_kind")
   filePath        String? @map("file_path")
   replyTo         Int?    @map("reply_to")
@@ -364,7 +378,7 @@ model PhotoSet {
   updatedAt      Int     @map("updated_at")
 
   photos      PhotoSetPhoto[]
-  accounts    TgAccount[]
+  accounts    ChannelAccount[]
   contacts    Contact[]
   assignments ManagerPhotoSet[]
 
@@ -443,7 +457,7 @@ model PhotoSend {
   photoId   Int     @map("photo_id")
   accountId Int?    @map("account_id")
   messageId Int?    @unique @map("message_id")
-  tgMsgId   Int?    @map("tg_msg_id")
+  peerMsgId Int?    @map("peer_msg_id")
   caption   String  @default("")
   note      String  @default("")
   /// bot | manager
@@ -470,7 +484,8 @@ model InboundMedia {
   @@map("inbound_media")
 }
 
-model PhoneNumber {
+/// Лид: кому писать первым или кто пришёл по API.
+model Lead {
   id                 Int     @id @default(autoincrement())
   phoneE164          String? @unique @map("phone_e164")
   usernameKey        String? @unique @map("username_key")
@@ -479,8 +494,12 @@ model PhoneNumber {
   age                Int?
   site               String?
   gender             String?
-  telegramUserId     BigInt? @map("telegram_user_id")
-  telegramUsername   String? @map("telegram_username")
+  /// telegram | vk — куда писать лиду
+  channel            String  @default("telegram")
+  /// чат с лидом (был telegram_user_id)
+  chatId             BigInt? @map("chat_id")
+  /// ник лида в канале, как его отдал канал
+  peerUsername       String? @map("peer_username")
   sourceType         String  @default("manual") @map("source_type")
   insertedAt         Int     @map("inserted_at")
   status             String  @default("pending")
@@ -519,12 +538,12 @@ model PhoneNumber {
   /// когда лид попал в буфер (только ник, без телефона); статус 'buffer'
   bufferedAt         Int?    @map("buffered_at")
 
-  @@index([telegramUserId], map: "idx_phone_telegram_user")
-  @@index([ownerUserId], map: "idx_phone_owner")
-  @@index([status, nextAttemptAt], map: "idx_phone_status_next")
-  @@index([assignedAccountId, firstContactAt], map: "idx_phone_account_contact")
-  @@index([ownerUserId, inboundAt], map: "idx_phone_owner_inbound")
-  @@map("phone_numbers")
+  @@index([chatId], map: "idx_leads_chat")
+  @@index([ownerUserId], map: "idx_leads_owner")
+  @@index([status, nextAttemptAt], map: "idx_leads_status_next")
+  @@index([assignedAccountId, firstContactAt], map: "idx_leads_account_contact")
+  @@index([ownerUserId, inboundAt], map: "idx_leads_owner_inbound")
+  @@map("leads")
 }
 
 /// Ключ для внешних систем (входящие лиды). Храним только хеш; сам ключ

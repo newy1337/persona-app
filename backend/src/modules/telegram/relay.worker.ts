@@ -287,7 +287,7 @@ export class RelayWorker implements OnModuleInit {
           row.source.startsWith('bot:voicer:')
             ? row.source
             : 'operator:web',
-        tgMsgId: ids[i],
+        peerMsgId: ids[i],
         mediaKind: kind === 'text' ? null : kind,
         filePath: path,
         replyTo: i === 0 ? row.replyTo : null,
@@ -300,7 +300,7 @@ export class RelayWorker implements OnModuleInit {
           photoId: libraryPhoto.id,
           accountId: row.accountId ?? null,
           messageId: stored.id,
-          tgMsgId: ids[0],
+          peerMsgId: ids[0],
           caption: row.text,
           note: note ?? '',
           source: 'manager',
@@ -342,7 +342,7 @@ export class RelayWorker implements OnModuleInit {
             text,
             ts,
             author: `operator:${data.operator}`,
-            tgMsgId: ids[0] ?? null,
+            peerMsgId: ids[0] ?? null,
           });
           await this.brain.noteOperatorMessage(chatId);
           await this.history.completeAdminAction(action.id);

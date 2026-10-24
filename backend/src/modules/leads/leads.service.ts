@@ -13,7 +13,7 @@ import { HistoryService } from 'src/shared/history.service';
 import { TelegramService } from 'src/modules/telegram/telegram.service';
 import { profileErrorText } from 'src/domain/tg-profile';
 import { UPLOADS_DIR } from '../media/uploads.service';
-import { DashboardUser, PhoneNumber, Prisma } from '@prisma/client';
+import { DashboardUser, Lead, Prisma } from '@prisma/client';
 import { MANAGER_ROLES } from 'src/enums/roles.enum';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
@@ -121,24 +121,24 @@ function phoneNeedle(q: string): string {
   return digits.length >= 5 ? digits.replace(/^[78]/, '') : digits;
 }
 
-export function leadSearchClauses(raw: string): Prisma.PhoneNumberWhereInput[] {
+export function leadSearchClauses(raw: string): Prisma.LeadWhereInput[] {
   const q = raw.trim();
-  const ci = (field: keyof Prisma.PhoneNumberWhereInput, value: string) =>
+  const ci = (field: keyof Prisma.LeadWhereInput, value: string) =>
     ({
       [field]: { contains: value, mode: 'insensitive' },
-    }) as Prisma.PhoneNumberWhereInput;
-  const out: Prisma.PhoneNumberWhereInput[] = [
+    }) as Prisma.LeadWhereInput;
+  const out: Prisma.LeadWhereInput[] = [
     // Телефон ищем по цифрам; ведущие 8 или 7 отбрасываем — в базе номера в +7…
     ci('phoneE164', phoneNeedle(q)),
     ci('usernameKey', q.replace(/^@/, '')),
-    ci('telegramUsername', q.replace(/^@/, '')),
+    ci('peerUsername', q.replace(/^@/, '')),
     ci('firstName', q),
     ci('city', q),
     ci('notes', q),
     ci('donor', q),
     ci('externalId', q),
   ];
-  if (/^\d{5,}$/.test(q)) out.push({ telegramUserId: BigInt(q) });
+  if (/^\d{5,}$/.test(q)) out.push({ chatId: BigInt(q) });
   return out;
 }
 
@@ -158,7 +158,7 @@ export class LeadsService {
    * Лиды раздела «Лиды» в области пользователя. Лиды из буфера сюда не
    * попадают никогда: у них своя страница.
    */
-  private scopeWhere(scope: LeadScope | null): Prisma.PhoneNumberWhereInput {
+  private scopeWhere(scope: LeadScope | null): Prisma.LeadWhereInput {
     const notBuffered = { status: { not: BUFFER_STATUS } };
     if (scope === null) return notBuffered;
     return {
@@ -177,7 +177,7 @@ export class LeadsService {
   }
 
   private async accountNames(): Promise<Map<number, string | null>> {
-    const rows = await this.prisma.tgAccount.findMany({
+    const rows = await this.prisma.channelAccount.findMany({
       select: { id: true, username: true },
     });
     return new Map(rows.map((a) => [a.id, a.username]));
@@ -226,7 +226,7 @@ export class LeadsService {
         username: true,
         role: true,
         regionCode: true,
-        accounts: { select: { tgAccountId: true } },
+        accounts: { select: { accountId: true } },
       },
       orderBy: [{ regionCode: 'asc' }, { username: 'asc' }],
     });
@@ -235,7 +235,7 @@ export class LeadsService {
       username: u.username,
       role: u.role,
       region_code: u.regionCode,
-      account_ids: u.accounts.map((a) => a.tgAccountId),
+      account_ids: u.accounts.map((a) => a.accountId),
       self: u.id === user.id,
     }));
     return {
@@ -266,7 +266,7 @@ export class LeadsService {
   private async canSend(accountId: number, ownerUserId: number) {
     const [links, users, owner] = await Promise.all([
       this.prisma.managerAccount.findMany({
-        where: { tgAccountId: accountId },
+        where: { accountId: accountId },
         select: { userId: true },
       }),
       this.prisma.dashboardUser.findMany({
@@ -308,7 +308,7 @@ export class LeadsService {
       throw new UnprocessableEntityException(
         'этот аккаунт не пишет лидам выбранного сотрудника — выберите его аккаунт или «Автоматически»',
       );
-    const account = await this.prisma.tgAccount.findUnique({
+    const account = await this.prisma.channelAccount.findUnique({
       where: { id: preferredAccountId },
       select: { status: true, personaId: true },
     });
@@ -327,7 +327,7 @@ export class LeadsService {
   }
 
   toView(
-    row: PhoneNumber,
+    row: Lead,
     names: Map<number, string | null> = new Map(),
     personas: Map<string, string> = new Map(),
     managers?: ManagerDirectory,
@@ -348,8 +348,8 @@ export class LeadsService {
       gender: row.gender,
       source_type: row.sourceType,
       status: row.status,
-      telegram_user_id: fromChatId(row.telegramUserId),
-      telegram_username: row.telegramUsername,
+      telegram_user_id: fromChatId(row.chatId),
+      telegram_username: row.peerUsername,
       assigned_account_id: row.assignedAccountId,
       preferred_account_id: row.preferredAccountId,
       preferred_account_username:
@@ -385,9 +385,7 @@ export class LeadsService {
       cold: row.cold,
       buffered_at: row.bufferedAt,
       deal_stage:
-        row.telegramUserId === null
-          ? null
-          : (stages.get(String(row.telegramUserId)) ?? null),
+        row.chatId === null ? null : (stages.get(String(row.chatId)) ?? null),
     };
   }
 
@@ -398,7 +396,7 @@ export class LeadsService {
   private async listLeads(scope: LeadScope | null, filter: LeadFilter) {
     await this.markReplied();
     const q = filter.q?.trim();
-    const where: Prisma.PhoneNumberWhereInput = {
+    const where: Prisma.LeadWhereInput = {
       AND: [
         this.scopeWhere(scope),
         filter.status ? { status: filter.status } : {},
@@ -406,7 +404,7 @@ export class LeadsService {
         await this.stageWhere(scope, filter.deal_stage),
       ],
     };
-    const rows = await this.prisma.phoneNumber.findMany({
+    const rows = await this.prisma.lead.findMany({
       where,
       orderBy: { id: 'desc' },
       take: filter.limit ?? 200,
@@ -415,7 +413,7 @@ export class LeadsService {
       this.accountNames(),
       this.personaNames(),
       this.attribution.directory(),
-      this.stagesByChat(rows.map((r) => r.telegramUserId)),
+      this.stagesByChat(rows.map((r) => r.chatId)),
     ]);
     return {
       items: rows.map((r) => this.toView(r, names, personas, managers, stages)),
@@ -445,21 +443,19 @@ export class LeadsService {
   }
 
   private async chatIdsInScope(scope: LeadScope | null): Promise<bigint[]> {
-    const rows = await this.prisma.phoneNumber.findMany({
+    const rows = await this.prisma.lead.findMany({
       where: {
-        AND: [this.scopeWhere(scope), { telegramUserId: { not: null } }],
+        AND: [this.scopeWhere(scope), { chatId: { not: null } }],
       },
-      select: { telegramUserId: true },
+      select: { chatId: true },
     });
-    return rows
-      .map((r) => r.telegramUserId)
-      .filter((id): id is bigint => id !== null);
+    return rows.map((r) => r.chatId).filter((id): id is bigint => id !== null);
   }
 
   private async stageWhere(
     scope: LeadScope | null,
     stage: DealStageFilter | undefined,
-  ): Promise<Prisma.PhoneNumberWhereInput> {
+  ): Promise<Prisma.LeadWhereInput> {
     if (!stage) return {};
     const stages = await this.stagesByChat(await this.chatIdsInScope(scope));
     const withStage = [...stages.entries()]
@@ -467,11 +463,9 @@ export class LeadsService {
       .map(([id]) => BigInt(id));
     if (stage === 'none') {
       const any = [...stages.keys()].map((id) => BigInt(id));
-      return any.length ? { telegramUserId: { notIn: any } } : {};
+      return any.length ? { chatId: { notIn: any } } : {};
     }
-    return withStage.length
-      ? { telegramUserId: { in: withStage } }
-      : { id: -1 };
+    return withStage.length ? { chatId: { in: withStage } } : { id: -1 };
   }
 
   /** Сколько лидов на каждом этапе; none — без этапа (включая лидов без чата). */
@@ -481,7 +475,7 @@ export class LeadsService {
     );
     const stages = await this.stagesByChat(await this.chatIdsInScope(scope));
     for (const s of stages.values()) out[s] += 1;
-    const total = await this.prisma.phoneNumber.count({
+    const total = await this.prisma.lead.count({
       where: this.scopeWhere(scope),
     });
     out['none'] = total - stages.size;
@@ -489,7 +483,7 @@ export class LeadsService {
   }
 
   async counts(scope: LeadScope | null): Promise<Record<string, number>> {
-    const grouped = await this.prisma.phoneNumber.groupBy({
+    const grouped = await this.prisma.lead.groupBy({
       by: ['status'],
       where: this.scopeWhere(scope),
       _count: { _all: true },
@@ -503,32 +497,32 @@ export class LeadsService {
   }
 
   private async markReplied(): Promise<void> {
-    const contacted = await this.prisma.phoneNumber.findMany({
-      where: { status: 'contacted', telegramUserId: { not: null } },
-      select: { id: true, telegramUserId: true },
+    const contacted = await this.prisma.lead.findMany({
+      where: { status: 'contacted', chatId: { not: null } },
+      select: { id: true, chatId: true },
     });
     if (!contacted.length) return;
     const replied = await this.prisma.message.findMany({
       where: {
         role: 'user',
-        chatId: { in: contacted.map((c) => c.telegramUserId) },
+        chatId: { in: contacted.map((c) => c.chatId) },
       },
       distinct: ['chatId'],
       select: { chatId: true },
     });
     const ids = new Set(replied.map((r) => String(r.chatId)));
     const hit = contacted
-      .filter((c) => ids.has(String(c.telegramUserId)))
+      .filter((c) => ids.has(String(c.chatId)))
       .map((c) => c.id);
     if (hit.length)
-      await this.prisma.phoneNumber.updateMany({
+      await this.prisma.lead.updateMany({
         where: { id: { in: hit } },
         data: { status: 'replied' },
       });
   }
 
-  async get(scope: LeadScope | null, id: number): Promise<PhoneNumber> {
-    const row = await this.prisma.phoneNumber.findFirst({
+  async get(scope: LeadScope | null, id: number): Promise<Lead> {
+    const row = await this.prisma.lead.findFirst({
       where: { AND: [{ id }, this.scopeWhere(scope)] },
     });
     if (!row) throw new NotFoundException('лид не найден');
@@ -565,10 +559,10 @@ export class LeadsService {
     const contact = this.contactOf(dto);
     const sender = await this.senderOf(dto, scope, ownerUserId);
     const existing = contact.phone_e164
-      ? await this.prisma.phoneNumber.findUnique({
+      ? await this.prisma.lead.findUnique({
           where: { phoneE164: contact.phone_e164 },
         })
-      : await this.prisma.phoneNumber.findUnique({
+      : await this.prisma.lead.findUnique({
           where: { usernameKey: contact.username },
         });
     if (existing) {
@@ -585,7 +579,7 @@ export class LeadsService {
           : `${leadKey(contact)} уже в базе (лид #${existing.id}, ${existing.status})`,
       );
     }
-    const row = await this.prisma.phoneNumber.create({
+    const row = await this.prisma.lead.create({
       data: {
         phoneE164: contact.phone_e164 ?? null,
         usernameKey: contact.username ?? null,
@@ -657,7 +651,7 @@ export class LeadsService {
       const chunk = wanted.slice(i, i + 500);
       const phones = chunk.map((d) => d.phone_e164).filter(Boolean);
       const names = chunk.map((d) => d.username).filter(Boolean);
-      const rows = await this.prisma.phoneNumber.findMany({
+      const rows = await this.prisma.lead.findMany({
         where: {
           OR: [{ phoneE164: { in: phones } }, { usernameKey: { in: names } }],
         },
@@ -672,7 +666,7 @@ export class LeadsService {
     const fresh = wanted.filter((d) => !known.has(leadKey(d)));
     const now = this.clock.ts();
     if (fresh.length) {
-      await this.prisma.phoneNumber.createMany({
+      await this.prisma.lead.createMany({
         data: fresh.map((d) => ({
           phoneE164: d.phone_e164 ?? null,
           usernameKey: d.username ?? null,
@@ -700,7 +694,7 @@ export class LeadsService {
     dto: UpdateLeadDto,
   ): Promise<LeadView> {
     await this.get(scope, id);
-    const data: Prisma.PhoneNumberUpdateInput = {};
+    const data: Prisma.LeadUpdateInput = {};
     if (dto.first_name !== undefined)
       data.firstName = dto.first_name?.trim() || null;
     if (dto.city !== undefined) data.city = dto.city?.trim() || null;
@@ -714,7 +708,7 @@ export class LeadsService {
         );
       data.personaId = await this.personaOf(dto.persona_id);
       if (row.preferredAccountId !== null && data.personaId) {
-        const chosen = await this.prisma.tgAccount.findUnique({
+        const chosen = await this.prisma.channelAccount.findUnique({
           where: { id: row.preferredAccountId },
           select: { personaId: true },
         });
@@ -725,7 +719,7 @@ export class LeadsService {
         }
       }
       if (row.assignedAccountId !== null && row.status !== 'contacted') {
-        const acc = await this.prisma.tgAccount.findUnique({
+        const acc = await this.prisma.channelAccount.findUnique({
           where: { id: row.assignedAccountId },
           select: { personaId: true },
         });
@@ -743,7 +737,7 @@ export class LeadsService {
         );
       data.firstMessage = dto.first_message?.trim() || null;
     }
-    const row = await this.prisma.phoneNumber.update({ where: { id }, data });
+    const row = await this.prisma.lead.update({ where: { id }, data });
     const [names, personas, managers] = await Promise.all([
       this.accountNames(),
       this.personaNames(),
@@ -763,8 +757,7 @@ export class LeadsService {
   }> {
     const row = await this.get(scope, id);
 
-    let chatId =
-      row.telegramUserId === null ? null : Number(row.telegramUserId);
+    let chatId = row.chatId === null ? null : Number(row.chatId);
     if (chatId === null) {
       const marked = await this.prisma.leadFacts.findFirst({
         where: {
@@ -780,8 +773,8 @@ export class LeadsService {
     const shared =
       chatId === null
         ? 0
-        : await this.prisma.phoneNumber.count({
-            where: { telegramUserId: BigInt(chatId), id: { not: id } },
+        : await this.prisma.lead.count({
+            where: { chatId: BigInt(chatId), id: { not: id } },
           });
 
     let telegram: TelegramCleanup | null = null;
@@ -801,7 +794,7 @@ export class LeadsService {
       for (const accountId of accountIds) {
         try {
           await this.telegram.deleteDialogForEveryone(accountId, chatId, {
-            username: row.telegramUsername ?? row.usernameKey,
+            username: row.peerUsername ?? row.usernameKey,
           });
           telegram.deleted_in.push(accountId);
         } catch (e) {
@@ -816,7 +809,7 @@ export class LeadsService {
       }
     }
 
-    await this.prisma.phoneNumber.delete({ where: { id } });
+    await this.prisma.lead.delete({ where: { id } });
     if (chatId === null || shared)
       return { wiped_chat: null, messages: 0, telegram };
 
@@ -866,10 +859,9 @@ export class LeadsService {
     }
     if (typeof previous !== 'number' || previous === currentLeadId)
       return false;
-    if (await this.prisma.phoneNumber.count({ where: { id: previous } }))
-      return false;
-    const others = await this.prisma.phoneNumber.count({
-      where: { telegramUserId: id, id: { not: currentLeadId } },
+    if (await this.prisma.lead.count({ where: { id: previous } })) return false;
+    const others = await this.prisma.lead.count({
+      where: { chatId: id, id: { not: currentLeadId } },
     });
     return others === 0;
   }
@@ -878,7 +870,7 @@ export class LeadsService {
     scope: LeadScope | null,
     ids?: number[],
   ): Promise<{ queued: number }> {
-    const where: Prisma.PhoneNumberWhereInput = {
+    const where: Prisma.LeadWhereInput = {
       AND: [
         this.scopeWhere(scope),
         ids?.length
@@ -886,7 +878,7 @@ export class LeadsService {
           : { status: 'pending' },
       ],
     };
-    const r = await this.prisma.phoneNumber.updateMany({
+    const r = await this.prisma.lead.updateMany({
       where,
       data: {
         status: 'queued',
@@ -908,7 +900,7 @@ export class LeadsService {
         'этому лиду уже написали — второе первое сообщение с другого аккаунта будет спамом',
       );
     }
-    const updated = await this.prisma.phoneNumber.update({
+    const updated = await this.prisma.lead.update({
       where: { id },
       data: {
         status: 'queued',
@@ -934,14 +926,14 @@ export class LeadsService {
     scope: LeadScope | null,
     ids?: number[],
   ): Promise<{ unqueued: number }> {
-    const where: Prisma.PhoneNumberWhereInput = {
+    const where: Prisma.LeadWhereInput = {
       AND: [
         this.scopeWhere(scope),
         { status: 'queued' },
         ids?.length ? { id: { in: ids } } : {},
       ],
     };
-    const r = await this.prisma.phoneNumber.updateMany({
+    const r = await this.prisma.lead.updateMany({
       where,
       data: { status: 'pending', assignedAccountId: null },
     });

@@ -35,7 +35,7 @@ it('missing binding stops automatic replies instead of borrowing another persona
   Object.assign(p, {
     chatVars: async () => ({}),
     prisma: {
-      tgAccount: { findUnique: async () => ({ personaId: 'deleted' }) },
+      channelAccount: { findUnique: async () => ({ personaId: 'deleted' }) },
       persona: { findUnique: async () => null },
     },
     defaultRow: jest.fn(),

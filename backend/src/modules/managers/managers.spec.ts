@@ -23,7 +23,7 @@ describe('Manager credentials and regions through authenticated HTTP', () => {
   const previousJwt = process.env.JWT_SECRET;
   const prisma = {
     $transaction: async (fn) => fn(prisma),
-    phoneNumber: { findMany: jest.fn(async () => []) },
+    lead: { findMany: jest.fn(async () => []) },
     dashboardUser: {
       findUnique: jest.fn(async ({ where }) =>
         rows.find((r) => r.id === where.id),

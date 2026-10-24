@@ -128,12 +128,12 @@ export class ManagersController {
   }
 
   @ApiOperation({ summary: 'Set the owner of one account (null releases)' })
-  @Put('accounts/:tgAccountId')
+  @Put('accounts/:accountId')
   @Roles(Role.ADMIN)
   @HttpCode(200)
   @UsePipes(ValidationPipe)
   async setOwner(
-    @Param('tgAccountId', ParseIntPipe) tgAccountId: number,
+    @Param('accountId', ParseIntPipe) accountId: number,
     @Body() dto: AccountOwnerDto,
     @CurrentUser('id') userId: number,
   ) {
@@ -141,9 +141,9 @@ export class ManagersController {
       {
         userId,
         action: 'manager.assign',
-        resource: `tg_account:${tgAccountId}`,
+        resource: `tg_account:${accountId}`,
       },
-      () => this.managers.setAccountOwner(tgAccountId, dto.user_id),
+      () => this.managers.setAccountOwner(accountId, dto.user_id),
     );
   }
 

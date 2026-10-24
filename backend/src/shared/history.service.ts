@@ -7,6 +7,7 @@ import { PhotoLibraryService } from './photo-library.service';
 import { BOT_ACTIVE_REASON, PauseState } from '../domain/pause';
 import { LeadFacts, parseLeadFacts } from '../domain/lead-facts';
 import { toChatId } from '../utils/ids';
+import { peerOf } from '../channels/ids';
 import {
   ClientPresence,
   clientTelegramView,
@@ -40,7 +41,7 @@ export interface AppendMessage {
   author?: string;
   sourceMessageId?: number | null;
   modality?: string;
-  tgMsgId?: number | null;
+  peerMsgId?: number | null;
   mediaKind?: string | null;
   filePath?: string | null;
   replyTo?: number | null;
@@ -51,7 +52,7 @@ export interface AppendMessage {
 const row = (m: any): StoredMessage => ({
   id: m.id,
   chat_id: Number(m.chatId),
-  tg_msg_id: m.tgMsgId ?? null,
+  tg_msg_id: m.peerMsgId ?? null,
   media_kind: m.mediaKind ?? null,
   file_path: m.filePath ?? null,
   reply_to: m.replyTo ?? null,
@@ -106,9 +107,12 @@ export class HistoryService {
       accountId != null && this.photos
         ? await this.photos.currentSetId(accountId).catch(() => null)
         : null;
+    const { channel, peerId } = peerOf(chatId);
     return this.prisma.contact.create({
       data: {
         chatId: id,
+        channel,
+        peerId: BigInt(peerId),
         accountId: accountId ?? null,
         createdAt: this.clock.ts(),
         photoSetId,
@@ -266,7 +270,7 @@ export class HistoryService {
     reason: string | null;
     since: number | null;
   } | null> {
-    const a = await this.prisma.tgAccount.findUnique({
+    const a = await this.prisma.channelAccount.findUnique({
       where: { id: accountId },
       select: { status: true, banReason: true, bannedAt: true },
     });
@@ -302,12 +306,12 @@ export class HistoryService {
       where: {
         chatId: toChatId(chatId),
         role: 'user',
-        OR: [{ tgMsgId: { not: null } }, { sourceMessageId: { not: null } }],
+        OR: [{ peerMsgId: { not: null } }, { sourceMessageId: { not: null } }],
       },
       orderBy: { id: 'desc' },
-      select: { tgMsgId: true, sourceMessageId: true },
+      select: { peerMsgId: true, sourceMessageId: true },
     });
-    return row?.tgMsgId ?? row?.sourceMessageId ?? 0;
+    return row?.peerMsgId ?? row?.sourceMessageId ?? 0;
   }
 
   async telegramReadMarks(
@@ -368,14 +372,16 @@ export class HistoryService {
 
   async editMessageText(
     chatId: number,
-    where: { id?: number; tgMsgId?: number },
+    where: { id?: number; peerMsgId?: number },
     text: string,
     ts: number,
   ): Promise<{ role: string; old: string; id: number } | null> {
     const row = await this.prisma.message.findFirst({
       where: {
         chatId: toChatId(chatId),
-        ...(where.id != null ? { id: where.id } : { tgMsgId: where.tgMsgId }),
+        ...(where.id != null
+          ? { id: where.id }
+          : { peerMsgId: where.peerMsgId }),
       },
       select: { id: true, role: true, text: true, inboundPayload: true },
     });
@@ -520,9 +526,9 @@ export class HistoryService {
       });
       if (dup) return null;
     }
-    if (m.role === 'assistant' && m.tgMsgId) {
+    if (m.role === 'assistant' && m.peerMsgId) {
       const existing = await this.prisma.message.findFirst({
-        where: { chatId: id, role: 'assistant', tgMsgId: m.tgMsgId },
+        where: { chatId: id, role: 'assistant', peerMsgId: m.peerMsgId },
       });
       if (existing) return row(existing);
     }
@@ -535,8 +541,9 @@ export class HistoryService {
         author: m.author ?? 'llm',
         sourceMessageId: m.role === 'user' ? (m.sourceMessageId ?? null) : null,
         sourceModality: m.modality ?? 'text',
-        tgMsgId:
-          m.tgMsgId ?? (m.role === 'user' ? (m.sourceMessageId ?? null) : null),
+        peerMsgId:
+          m.peerMsgId ??
+          (m.role === 'user' ? (m.sourceMessageId ?? null) : null),
         mediaKind: m.mediaKind ?? null,
         filePath: m.filePath ?? null,
         replyTo: m.replyTo ?? null,
@@ -616,12 +623,12 @@ export class HistoryService {
     if (!chats.length) return byChat;
     const where = {
       chatId: { in: chats.map((c) => c.chatId) },
-      tgMsgId: { in: tgMsgIds },
+      peerMsgId: { in: tgMsgIds },
       deletedAt: null,
     };
     const rows = await this.prisma.message.findMany({
       where,
-      select: { chatId: true, tgMsgId: true },
+      select: { chatId: true, peerMsgId: true },
     });
     if (!rows.length) return byChat;
     await this.prisma.message.updateMany({
@@ -630,7 +637,7 @@ export class HistoryService {
     });
     for (const r of rows) {
       const chatId = Number(r.chatId);
-      byChat.set(chatId, [...(byChat.get(chatId) ?? []), r.tgMsgId!]);
+      byChat.set(chatId, [...(byChat.get(chatId) ?? []), r.peerMsgId!]);
     }
     return byChat;
   }
@@ -778,13 +785,13 @@ export class HistoryService {
 
   async setReaction(
     chatId: number,
-    tgMsgId: number,
+    peerMsgId: number,
     emoji: string | null,
   ): Promise<boolean> {
     const r = await this.prisma.message.updateMany({
       where: {
         chatId: toChatId(chatId),
-        OR: [{ tgMsgId }, { sourceMessageId: tgMsgId }],
+        OR: [{ peerMsgId }, { sourceMessageId: peerMsgId }],
       },
       data: { reaction: emoji },
     });

@@ -238,7 +238,7 @@ export class PhotoSetsService {
           where: { setId: { in: ids }, deletedAt: null, reviewed: false },
           _count: { _all: true },
         }),
-        this.prisma.tgAccount.groupBy({
+        this.prisma.channelAccount.groupBy({
           by: ['photoSetId'],
           where: { photoSetId: { in: ids } },
           _count: { _all: true },
@@ -358,7 +358,7 @@ export class PhotoSetsService {
       this.prisma.photoSend.count({ where: { photo: { setId } } }),
       this.prisma.contact.count({ where: { photoSetId: setId } }),
     ]);
-    await this.prisma.tgAccount.updateMany({
+    await this.prisma.channelAccount.updateMany({
       where: { photoSetId: setId },
       data: { photoSetId: null },
     });
@@ -822,7 +822,7 @@ export class PhotoSetsService {
   // ── Аккаунты ─────────────────────────────────────────────────────────────
 
   async setAccountAutoSend(accountId: number, enabled: boolean) {
-    const account = await this.prisma.tgAccount.update({
+    const account = await this.prisma.channelAccount.update({
       where: { id: accountId },
       data: { photoAutoSend: enabled },
       select: { id: true, photoAutoSend: true },
@@ -842,7 +842,7 @@ export class PhotoSetsService {
   async chatLibrary(chatId: number, query: { q?: string; tag?: string } = {}) {
     const accountId = await this.history.chatOwnerAccount(chatId);
     const account = accountId
-      ? await this.prisma.tgAccount.findUnique({
+      ? await this.prisma.channelAccount.findUnique({
           where: { id: accountId },
           select: { photoAutoSend: true },
         })

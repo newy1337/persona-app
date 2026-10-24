@@ -108,7 +108,7 @@ export interface OutboundTransport {
       beforePart?: () => Promise<void>;
       randomIds?: string[];
       onDispatch?: (index: number) => Promise<void>;
-      onPart?: (index: number, tgMsgId: number) => Promise<void>;
+      onPart?: (index: number, peerMsgId: number) => Promise<void>;
     },
   ): Promise<number[]>;
   sendReaction(chatId: number, messageId: number, emoji: string): Promise<void>;
@@ -132,7 +132,7 @@ export interface OutboundTransport {
     },
   ): Promise<number>;
   isOnline?(accountId: number): boolean;
-  editText?(chatId: number, tgMsgId: number, text: string): Promise<void>;
+  editText?(chatId: number, peerMsgId: number, text: string): Promise<void>;
 }
 
 export const OUTBOUND_TRANSPORT = Symbol('OUTBOUND_TRANSPORT');

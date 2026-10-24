@@ -14,7 +14,7 @@ function fixture() {
     prisma: {
       message: {
         findFirst: async ({ where }) =>
-          seen.find((m) => m.tgMsgId === where.tgMsgId),
+          seen.find((m) => m.peerMsgId === where.peerMsgId),
       },
     },
     history: {
@@ -52,7 +52,7 @@ it('imports a phone/Desktop message once with its original timestamp and cancels
   expect(seen[0]).toMatchObject({
     author: 'operator:telegram',
     ts: 800,
-    tgMsgId: 55,
+    peerMsgId: 55,
     text: 'Завтра в шесть',
   });
   expect(service.brain.noteOperatorQueued).toHaveBeenCalledTimes(1);

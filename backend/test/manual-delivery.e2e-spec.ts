@@ -25,8 +25,14 @@ describe('manual outbox recovery against a migrated database', () => {
   beforeAll(async () => {
     db = new PrismaService();
     await db.onModuleInit();
-    await db.tgAccount.create({
-      data: { id: 1, personaId: 'test', phoneE164: '+10001', addedAt: 1 },
+    await db.channelAccount.create({
+      data: {
+        id: 1,
+        personaId: 'test',
+        phoneE164: '+10001',
+        login: '+10001',
+        addedAt: 1,
+      },
     });
   });
   afterAll(async () => {
@@ -137,7 +143,7 @@ describe('manual outbox recovery against a migrated database', () => {
       text: 'Message to react to',
       ts: 900,
       sourceMessageId: 444,
-      tgMsgId: 444,
+      peerMsgId: 444,
     });
     const realPause = new PauseService(
       history,

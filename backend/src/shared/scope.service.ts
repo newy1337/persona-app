@@ -45,10 +45,10 @@ export class ScopeService {
     const accountIds = (
       await this.prisma.managerAccount.findMany({
         where: { userId: { in: userIds } },
-        select: { tgAccountId: true },
-        orderBy: { tgAccountId: 'asc' },
+        select: { accountId: true },
+        orderBy: { accountId: 'asc' },
       })
-    ).map((r) => r.tgAccountId);
+    ).map((r) => r.accountId);
     return { user, role: user.role, userIds, accountIds, isAdmin };
   }
 

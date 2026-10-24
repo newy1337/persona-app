@@ -96,8 +96,14 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.onModuleInit();
-    await prisma.tgAccount.create({
-      data: { id: 1, phoneE164: '+10000000001', personaId: 'test', addedAt: 1 },
+    await prisma.channelAccount.create({
+      data: {
+        id: 1,
+        phoneE164: '+10000000001',
+        login: '+10000000001',
+        personaId: 'test',
+        addedAt: 1,
+      },
     });
   });
   afterAll(async () => {
@@ -206,13 +212,13 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
       role: 'assistant',
       text: 'Old late import',
       ts: now - 10,
-      tgMsgId: 800,
+      peerMsgId: 800,
     });
     await history.appendMessage(chatId, {
       role: 'assistant',
       text: 'New introduction',
       ts: now,
-      tgMsgId: 801,
+      peerMsgId: 801,
     });
     await history.appendMessage(chatId, {
       role: 'user',
@@ -338,7 +344,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
     });
     expect(await brain.runDueReplies()).toBe(1);
     expect(generateDraft).toHaveBeenCalledTimes(1);
-    expect((await assistantRows()).map((m) => m.tgMsgId)).toEqual([700, 701]);
+    expect((await assistantRows()).map((m) => m.peerMsgId)).toEqual([700, 701]);
     expect((await memory.load(chatId)).history).toHaveLength(3);
   });
 
@@ -370,7 +376,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
     });
     expect(await brain.runDueReplies()).toBe(1);
     expect((await memory.load(chatId)).character.open_questions).toEqual([]);
-    expect((await assistantRows()).map((m) => m.tgMsgId)).toEqual([700, 701]);
+    expect((await assistantRows()).map((m) => m.peerMsgId)).toEqual([700, 701]);
   });
 
   it('acknowledgment checkpoint rolls back panel/history/cursor together on database failure', async () => {
@@ -399,7 +405,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
     expect((await schedule.get(chatId)).delivery.sentCount).toBe(0);
     await forceDue();
     await brain.runDueReplies();
-    expect((await assistantRows()).map((m) => m.tgMsgId)).toEqual([700, 701]);
+    expect((await assistantRows()).map((m) => m.peerMsgId)).toEqual([700, 701]);
     expect((await memory.load(chatId)).history).toHaveLength(3);
   });
 
@@ -530,7 +536,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
     ack.resolve();
     await Promise.all([sending, receiving]);
     release();
-    expect((await assistantRows()).map((m) => m.tgMsgId)).toEqual([700]);
+    expect((await assistantRows()).map((m) => m.peerMsgId)).toEqual([700]);
     expect(
       (await memory.load(chatId)).history.filter((m) => m.role === 'assistant'),
     ).toHaveLength(1);
@@ -649,7 +655,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
       text: 'А я завтра на пилатес',
       ts: now,
       author: 'operator:web',
-      tgMsgId: 800,
+      peerMsgId: 800,
     });
     await brain.noteOperatorMessage(chatId);
     expect((await memory.load(chatId)).history.map((m) => m.content)).toEqual([
@@ -784,7 +790,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
   it('an edited unanswered message replaces the queued text and discards its prepared reply', async () => {
     transport.sendText.mockRejectedValueOnce(new Error('offline'));
     await brain.runDueReplies();
-    await history.editMessageText(chatId, { tgMsgId: 1 }, 'Я в Токио', now);
+    await history.editMessageText(chatId, { peerMsgId: 1 }, 'Я в Токио', now);
     await brain.noteEdited(chatId, 'user', incoming(1).text, 'Я в Токио');
     await forceDue();
     await brain.runDueReplies();
@@ -845,7 +851,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
       text: 'Завтра пойду на пилатес',
       ts: now - 200,
       author: 'operator:web',
-      tgMsgId: 801,
+      peerMsgId: 801,
     });
     await memory.reconcile(chatId);
     const own = (await memory.load(chatId)).history.find(

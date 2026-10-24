@@ -98,14 +98,14 @@ export function coldLeadRows(
            (p.first_contact_at IS NOT NULL) AS written,
            (p.first_contact_at IS NULL AND p.status = 'dead') AS invalid,
            COALESCE(m.n, 0)::int AS user_msgs
-    FROM phone_numbers p
+    FROM leads p
     LEFT JOIN LATERAL (
       SELECT count(*) AS n FROM messages m
-      WHERE m.chat_id = p.telegram_user_id
+      WHERE m.chat_id = p.chat_id
         AND m.role = 'user'
         AND m.deleted_at IS NULL
         AND m.ts >= p.first_contact_at
-    ) m ON p.first_contact_at IS NOT NULL AND p.telegram_user_id IS NOT NULL
+    ) m ON p.first_contact_at IS NOT NULL AND p.chat_id IS NOT NULL
     WHERE p.cold AND p.inbound_at >= ${start} AND p.inbound_at < ${end}
   `);
 }

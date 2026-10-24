@@ -64,41 +64,44 @@ describe('photo sets by region: the head runs them, chats keep the set they star
     otherHead = await user('head_spb', 'head', 'SPB');
     manager = await user('mgr_msk', 'manager', 'MSK', head.id);
     const spbManager = await user('mgr_spb', 'manager', 'SPB', otherHead.id);
-    await prisma.tgAccount.create({
+    await prisma.channelAccount.create({
       data: {
         id: 1,
         phoneE164: '+10000000001',
+        login: '+10000000001',
         personaId: 'nadya',
         addedAt: 1,
         status: 'active',
       },
     });
-    await prisma.tgAccount.create({
+    await prisma.channelAccount.create({
       data: {
         id: 2,
         phoneE164: '+10000000002',
+        login: '+10000000002',
         personaId: 'nadya',
         addedAt: 1,
         status: 'active',
       },
     });
     await prisma.managerAccount.create({
-      data: { userId: manager.id, tgAccountId: 1 },
+      data: { userId: manager.id, accountId: 1 },
     });
-    await prisma.tgAccount.create({
+    await prisma.channelAccount.create({
       data: {
         id: 4,
         phoneE164: '+10000000004',
+        login: '+10000000004',
         personaId: 'denis',
         addedAt: 1,
         status: 'active',
       },
     });
     await prisma.managerAccount.create({
-      data: { userId: manager.id, tgAccountId: 4 },
+      data: { userId: manager.id, accountId: 4 },
     });
     await prisma.managerAccount.create({
-      data: { userId: spbManager.id, tgAccountId: 2 },
+      data: { userId: spbManager.id, accountId: 2 },
     });
   });
   afterAll(async () => {

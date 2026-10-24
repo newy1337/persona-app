@@ -14,13 +14,13 @@ describe('Telegram account ownership in the panel', () => {
         id: 2,
         username: 'north',
         regionCode: '0077',
-        accounts: [{ tgAccountId: 10 }],
+        accounts: [{ accountId: 10 }],
       },
       {
         id: 3,
         username: 'south',
         regionCode: '123',
-        accounts: [{ tgAccountId: 20 }],
+        accounts: [{ accountId: 20 }],
       },
     ];
     const prisma = {
@@ -62,7 +62,7 @@ describe('Telegram account ownership in the panel', () => {
       { id: 30, manager_id: null, manager_username: null, region_code: null },
     ]);
     users[0].accounts = [];
-    users[1].accounts.push({ tgAccountId: 10 });
+    users[1].accounts.push({ accountId: 10 });
     users[1].regionCode = '0456';
     expect((await controller.list(admin))[0]).toEqual({
       id: 10,
@@ -77,7 +77,7 @@ describe('Telegram account ownership in the panel', () => {
       { id: 10, manager_id: 2, manager_username: 'north', region_code: '0077' },
     ]);
     users[0].accounts = [];
-    users[1].accounts.push({ tgAccountId: 10 });
+    users[1].accounts.push({ accountId: 10 });
     expect(await controller.list(manager)).toEqual([]);
   });
 });

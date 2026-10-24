@@ -25,7 +25,7 @@ describe('вход в Telegram-аккаунт из панели', () => {
       connect: jest.fn(async () => undefined),
     };
     const prisma = {
-      tgAccount: {
+      channelAccount: {
         findUnique: async () => ({ id: 7, phoneE164: '+79001234567' }),
         update: async () => undefined,
       },

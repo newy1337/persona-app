@@ -172,7 +172,7 @@ export class ManagerService {
   private async stageResolver(): Promise<
     (accountId: number | null, facts: LeadFacts) => StageView | null
   > {
-    const accounts = await this.prisma.tgAccount.findMany({
+    const accounts = await this.prisma.channelAccount.findMany({
       select: { id: true, personaId: true },
     });
     const personaByAccount = new Map(accounts.map((a) => [a.id, a.personaId]));
@@ -300,11 +300,11 @@ export class ManagerService {
                                        WHERE ma.chat_id = c.chat_id AND ma.role = 'assistant' AND ma.text NOT LIKE '[Реакция%'), 0)) AS unread_count,
              (SELECT MAX(ts) FROM messages m WHERE m.chat_id = c.chat_id) AS last_ts,
              p.facts AS facts,
-             (SELECT pn.city FROM phone_numbers pn WHERE pn.telegram_user_id = c.chat_id LIMIT 1) AS profile_city,
-             (SELECT pn.phone_e164 FROM phone_numbers pn WHERE pn.telegram_user_id = c.chat_id LIMIT 1) AS profile_phone,
-             (SELECT COALESCE(pn.telegram_username, pn.username_key) FROM phone_numbers pn WHERE pn.telegram_user_id = c.chat_id LIMIT 1) AS profile_username
+             (SELECT pn.city FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_city,
+             (SELECT pn.phone_e164 FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_phone,
+             (SELECT COALESCE(pn.peer_username, pn.username_key) FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_username
       FROM contacts c LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
-      LEFT JOIN tg_accounts a ON a.id = c.account_id
+      LEFT JOIN channel_accounts a ON a.id = c.account_id
       WHERE 1 = 1 ${this.scopeSql(accounts)} ${visible}
       ORDER BY last_ts DESC NULLS LAST LIMIT ${limit}`;
     const stageOf = await this.stageResolver();
@@ -364,13 +364,13 @@ export class ManagerService {
              (SELECT MAX(ts) FROM messages m WHERE m.chat_id = c.chat_id) AS last_ts,
              (SELECT MAX(ts) FROM messages m WHERE m.chat_id = c.chat_id AND m.role = 'user') AS last_client_ts,
              p.facts AS facts,
-             (SELECT pn.city FROM phone_numbers pn WHERE pn.telegram_user_id = c.chat_id LIMIT 1) AS profile_city,
-             (SELECT pn.phone_e164 FROM phone_numbers pn WHERE pn.telegram_user_id = c.chat_id LIMIT 1) AS profile_phone,
-             (SELECT COALESCE(pn.telegram_username, pn.username_key) FROM phone_numbers pn WHERE pn.telegram_user_id = c.chat_id LIMIT 1) AS profile_username
+             (SELECT pn.city FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_city,
+             (SELECT pn.phone_e164 FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_phone,
+             (SELECT COALESCE(pn.peer_username, pn.username_key) FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_username
       FROM contacts c
       LEFT JOIN lead_handoff h ON h.chat_id = c.chat_id
       LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
-      LEFT JOIN tg_accounts a ON a.id = c.account_id
+      LEFT JOIN channel_accounts a ON a.id = c.account_id
       WHERE 1 = 1 ${this.scopeSql(accounts)} ${NOT_HIDDEN_SQL}`;
 
     const out: ManagerChatRow[] = [];
@@ -474,7 +474,7 @@ export class ManagerService {
       ),
       accounts:
         accounts === null
-          ? await this.prisma.tgAccount.count({
+          ? await this.prisma.channelAccount.count({
               where: { status: { not: 'retired' } },
             })
           : accounts.length,

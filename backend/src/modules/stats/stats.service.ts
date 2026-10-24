@@ -612,11 +612,11 @@ export class StatsService {
   }
 
   private async leadFunnel(range: DayRange): Promise<Map<string, LeadCounts>> {
-    const rows = await this.prisma.phoneNumber.findMany({
+    const rows = await this.prisma.lead.findMany({
       where: { insertedAt: { gte: range.start, lt: range.end } },
       select: {
         ownerUserId: true,
-        telegramUserId: true,
+        chatId: true,
         status: true,
         insertedAt: true,
       },
@@ -639,7 +639,7 @@ export class StatsService {
         );
       counts.uploaded += 1;
       day.uploaded += 1;
-      if (row.telegramUserId !== null) {
+      if (row.chatId !== null) {
         counts.valid += 1;
         day.valid += 1;
       }
@@ -696,7 +696,7 @@ export class StatsService {
         select: { chatId: true, accountId: true },
       }),
       this.prisma.managerAccount.findMany({
-        select: { userId: true, tgAccountId: true },
+        select: { userId: true, accountId: true },
       }),
       this.prisma.dashboardUser.findMany({
         select: { id: true, username: true },
@@ -704,7 +704,7 @@ export class StatsService {
     ]);
     const userById = new Map(users.map((u) => [u.id, u.username]));
     const managerByAccount = new Map(
-      links.map((l) => [l.tgAccountId, String(l.userId)]),
+      links.map((l) => [l.accountId, String(l.userId)]),
     );
     const accountByChat = new Map(
       contacts.map((c) => [String(c.chatId), c.accountId]),

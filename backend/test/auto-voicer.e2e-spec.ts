@@ -121,10 +121,11 @@ describe('automatic voicer: real brain, outbox and a migrated database; offline 
     await prisma.persona.create({
       data: { slug: 'test', name: 'Тест', createdAt: 1, updatedAt: 1 },
     });
-    await prisma.tgAccount.create({
+    await prisma.channelAccount.create({
       data: {
         id: 1,
         phoneE164: '+10000000001',
+        login: '+10000000001',
         personaId: 'test',
         addedAt: 1,
         manager: { create: { userId: manager.id } },
@@ -145,7 +146,7 @@ describe('automatic voicer: real brain, outbox and a migrated database; offline 
     await prisma.voiceTask.deleteMany();
     await history.wipeChat(chatId);
     gate.stopped = false;
-    await prisma.tgAccount.update({
+    await prisma.channelAccount.update({
       where: { id: 1 },
       data: { status: 'active', personaId: 'test' },
     });

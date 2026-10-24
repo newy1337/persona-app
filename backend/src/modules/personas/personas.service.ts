@@ -165,7 +165,7 @@ export class PersonasService {
   }
 
   private async accountsBySlug(): Promise<Map<string, number>> {
-    const rows = await this.prisma.tgAccount.groupBy({
+    const rows = await this.prisma.channelAccount.groupBy({
       by: ['personaId'],
       _count: { _all: true },
     });
@@ -287,7 +287,7 @@ export class PersonasService {
       if (await this.prisma.persona.findUnique({ where: { slug: dto.slug } })) {
         throw new ConflictException(`идентификатор «${dto.slug}» уже занят`);
       }
-      await this.prisma.tgAccount.updateMany({
+      await this.prisma.channelAccount.updateMany({
         where: { personaId: row.slug },
         data: { personaId: dto.slug },
       });
@@ -509,7 +509,7 @@ export class PersonasService {
       throw new UnprocessableEntityException(
         'личность по умолчанию удалить нельзя',
       );
-    const accounts = await this.prisma.tgAccount.count({
+    const accounts = await this.prisma.channelAccount.count({
       where: { personaId: row.slug },
     });
     if (accounts)

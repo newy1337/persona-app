@@ -11,7 +11,7 @@ import {
   profileErrorText,
   usernameError,
 } from 'src/domain/tg-profile';
-import { TgAccount } from '@prisma/client';
+import { ChannelAccount } from '@prisma/client';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import { CryptoService } from 'src/shared/crypto.service';
@@ -71,7 +71,7 @@ export class TgAccountsService {
   ) {}
 
   summary(
-    a: TgAccount,
+    a: ChannelAccount,
     extra: {
       chats?: number;
       personaName?: string | null;
@@ -136,7 +136,7 @@ export class TgAccountsService {
   async list(
     filter: { status?: string; persona_id?: string; purpose?: string } = {},
   ) {
-    const rows = await this.prisma.tgAccount.findMany({
+    const rows = await this.prisma.channelAccount.findMany({
       where: {
         ...(filter.status ? { status: filter.status } : {}),
         ...(filter.persona_id ? { personaId: filter.persona_id } : {}),
@@ -152,13 +152,13 @@ export class TgAccountsService {
       this.prisma.persona.findMany({ select: { slug: true, name: true } }),
       this.prisma.photoSet.findMany({ select: { id: true, name: true } }),
       this.prisma.managerAccount.findMany({
-        where: { tgAccountId: { in: rows.map((a) => a.id) } },
-        select: { tgAccountId: true, userId: true },
+        where: { accountId: { in: rows.map((a) => a.id) } },
+        select: { accountId: true, userId: true },
       }),
       this.prisma.managerPhotoSet.findMany(),
     ]);
     const setNames = new Map(sets.map((s) => [s.id, s.name]));
-    const managerOf = new Map(links.map((l) => [l.tgAccountId, l.userId]));
+    const managerOf = new Map(links.map((l) => [l.accountId, l.userId]));
     const assigned = new Map(
       regional
         .filter((r) => r.personaSlug)
@@ -273,11 +273,11 @@ export class TgAccountsService {
     if (dto.daily_msg_quota !== undefined)
       data.dailyMsgQuota = dto.daily_msg_quota;
     const updated = Object.keys(data).length
-      ? await this.prisma.tgAccount.update({ where: { id }, data })
+      ? await this.prisma.channelAccount.update({ where: { id }, data })
       : before;
 
     if (data.personaId) {
-      const released = await this.prisma.phoneNumber.updateMany({
+      const released = await this.prisma.lead.updateMany({
         where: {
           assignedAccountId: id,
           firstContactAt: null,
@@ -307,8 +307,8 @@ export class TgAccountsService {
     };
   }
 
-  async get(id: number): Promise<TgAccount> {
-    const a = await this.prisma.tgAccount.findUnique({ where: { id } });
+  async get(id: number): Promise<ChannelAccount> {
+    const a = await this.prisma.channelAccount.findUnique({ where: { id } });
     if (!a) throw new NotFoundException(`tg_account id=${id} not found`);
     return a;
   }
@@ -319,9 +319,10 @@ export class TgAccountsService {
       : `+${dto.phone_e164}`;
     if (dto.persona_id) await this.assertPersona(dto.persona_id);
     try {
-      const created = await this.prisma.tgAccount.create({
+      const created = await this.prisma.channelAccount.create({
         data: {
           phoneE164: phone,
+          login: phone,
           personaId: dto.persona_id || appConfig.personaId,
           status: 'unauthorized',
           addedAt: this.clock.ts(),
@@ -335,7 +336,7 @@ export class TgAccountsService {
       });
       if (ownerUserId !== null)
         await this.prisma.managerAccount.create({
-          data: { userId: ownerUserId, tgAccountId: created.id },
+          data: { userId: ownerUserId, accountId: created.id },
         });
       return this.summary(created);
     } catch (e) {
@@ -355,7 +356,7 @@ export class TgAccountsService {
       password: proxy.password || null,
       secret: proxy.type === 'mtproto' ? proxy.secret?.trim() || null : null,
     };
-    const updated = await this.prisma.tgAccount.update({
+    const updated = await this.prisma.channelAccount.update({
       where: { id },
       data: {
         proxyConfigEncrypted: this.crypto.encrypt(JSON.stringify(clean)),
@@ -424,7 +425,7 @@ export class TgAccountsService {
 
   async clearFlood(id: number) {
     await this.get(id);
-    const updated = await this.prisma.tgAccount.update({
+    const updated = await this.prisma.channelAccount.update({
       where: { id },
       data: { floodUntil: null, floodReason: null },
     });
@@ -442,7 +443,10 @@ export class TgAccountsService {
       data.bannedAt = null;
       data.banReason = null;
     }
-    const updated = await this.prisma.tgAccount.update({ where: { id }, data });
+    const updated = await this.prisma.channelAccount.update({
+      where: { id },
+      data,
+    });
     if (
       status === 'active' &&
       updated.sessionEncrypted &&
@@ -461,13 +465,13 @@ export class TgAccountsService {
       where: { accountId: id },
       data: { accountId: null },
     });
-    await this.prisma.tgAccount.delete({ where: { id } });
+    await this.prisma.channelAccount.delete({ where: { id } });
     return { deleted: true, orphaned_chats: orphaned.count };
   }
 
   async liveState() {
     const now = this.clock.ts();
-    const accounts = await this.prisma.tgAccount.findMany({
+    const accounts = await this.prisma.channelAccount.findMany({
       orderBy: { id: 'asc' },
     });
     const since6h = now - 6 * 3600;

@@ -940,7 +940,7 @@ export class NastyaBrainService implements ReplyBrain {
           throw new StaleReply('Reply changed or expired before dispatch');
         checkCancelled(signal);
       };
-      const confirm = async (index: number, tgMsgId: number) => {
+      const confirm = async (index: number, peerMsgId: number) => {
         if (index < confirmed) return;
         if (index !== confirmed)
           throw new Error('Out-of-order delivery acknowledgment');
@@ -977,7 +977,7 @@ export class NastyaBrainService implements ReplyBrain {
           next.state,
           remaining[index].text,
           'llm',
-          tgMsgId,
+          peerMsgId,
           ts,
           next,
           photo,
@@ -1354,19 +1354,23 @@ export class NastyaBrainService implements ReplyBrain {
     } = {},
   ): Promise<void> {
     let stored = 0;
-    const confirm = async (index: number, tgMsgId: number) => {
+    const confirm = async (index: number, peerMsgId: number) => {
       if (index < stored) return;
-      if (index !== stored || !Number.isSafeInteger(tgMsgId) || tgMsgId <= 0)
+      if (
+        index !== stored ||
+        !Number.isSafeInteger(peerMsgId) ||
+        peerMsgId <= 0
+      )
         throw new Error('Invalid delivery acknowledgment');
       const ts = this.clock.ts();
-      if (opts.confirm) await opts.confirm(parts[index], tgMsgId, ts);
+      if (opts.confirm) await opts.confirm(parts[index], peerMsgId, ts);
       else
         await this.history.appendMessage(chatId, {
           role: 'assistant',
           text: parts[index],
           ts,
           author,
-          tgMsgId,
+          peerMsgId,
         });
       stored = index + 1;
     };
@@ -2235,7 +2239,7 @@ export class NastyaBrainService implements ReplyBrain {
       );
     if (row.deletedAt)
       throw new UnprocessableEntityException('сообщение удалено в Telegram');
-    if (!row.tgMsgId)
+    if (!row.peerMsgId)
       throw new UnprocessableEntityException(
         'сообщение ещё не ушло в Telegram',
       );
@@ -2246,7 +2250,7 @@ export class NastyaBrainService implements ReplyBrain {
     if (!this.transport.editText)
       throw new UnprocessableEntityException('правка сообщений недоступна');
     try {
-      await this.transport.editText(chatId, row.tgMsgId, clean);
+      await this.transport.editText(chatId, row.peerMsgId, clean);
     } catch (e) {
       const msg = String(e?.errorMessage ?? e?.message ?? e);
       if (/MESSAGE_EDIT_TIME_EXPIRED/i.test(msg))
@@ -2301,7 +2305,7 @@ export class NastyaBrainService implements ReplyBrain {
       const panel = messageId
         ? await this.history.messageById(chatId, messageId)
         : null;
-      const tgId = edited?.telegram_message_id ?? panel?.tgMsgId ?? undefined;
+      const tgId = edited?.telegram_message_id ?? panel?.peerMsgId ?? undefined;
       await this.schedule.editText(chatId, role, oldText, newText, tgId);
       if (edited) edited.content = newText;
       if (role === 'user') {

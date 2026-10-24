@@ -81,7 +81,7 @@ export class InboundService {
         })
       ).map((r) => r.regionCode),
     );
-    const today = await db.phoneNumber.findMany({
+    const today = await db.lead.findMany({
       where: {
         ownerUserId: { in: users.map((u) => u.id) },
         inboundAt: { gte: mskDayStart(now) },
@@ -173,7 +173,7 @@ export class InboundService {
         async (tx) => {
           // Та же блокировка, что у обычных входящих: квота и счётчики общие.
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('inbound_leads'))`;
-          const existing = await tx.phoneNumber.findFirst({
+          const existing = await tx.lead.findFirst({
             where: {
               OR: [
                 ...(phone ? [{ phoneE164: phone }] : []),
@@ -201,7 +201,7 @@ export class InboundService {
             id: picked.id,
             username: names.get(picked.id) ?? String(picked.id),
           };
-          const row = await tx.phoneNumber.create({
+          const row = await tx.lead.create({
             data: {
               phoneE164: phone,
               usernameKey: username,
@@ -271,7 +271,7 @@ export class InboundService {
           // параллельные запросы видят одни и те же счётчики и обходят лимит.
           // Дубль проверяем под той же блокировкой.
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('inbound_leads'))`;
-          const existing = await tx.phoneNumber.findFirst({
+          const existing = await tx.lead.findFirst({
             where: {
               OR: [
                 ...(phone ? [{ phoneE164: phone }] : []),
@@ -320,7 +320,7 @@ export class InboundService {
           // Только ник, без телефона — в буфер региона: раздавать такой лид
           // не сразу, решают хед и тимлиды.
           if (!phone) {
-            const row = await tx.phoneNumber.create({
+            const row = await tx.lead.create({
               data: { ...fields, status: BUFFER_STATUS, bufferedAt: now },
             });
             this.log.log(
@@ -349,7 +349,7 @@ export class InboundService {
             id: picked.id,
             username: names.get(picked.id) ?? String(picked.id),
           };
-          const row = await tx.phoneNumber.create({
+          const row = await tx.lead.create({
             data: { ...fields, status: INBOUND_STATUS, ownerUserId: owner.id },
           });
           this.log.log(

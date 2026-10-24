@@ -494,7 +494,7 @@ export class PersonaService implements OnModuleInit {
     };
     if (accountId == null) return fallback();
     const account = await this.cached(`account:${accountId}`, () =>
-      this.prisma.tgAccount.findUnique({
+      this.prisma.channelAccount.findUnique({
         where: { id: accountId },
         select: { personaId: true },
       }),

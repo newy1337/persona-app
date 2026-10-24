@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { DashboardUser, PhoneNumber } from '@prisma/client';
+import type { DashboardUser, Lead } from '@prisma/client';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import { Role } from 'src/enums/roles.enum';
@@ -63,7 +63,7 @@ export class BufferService {
   }
 
   async list(user: DashboardUser, region?: string | null) {
-    const rows = await this.prisma.phoneNumber.findMany({
+    const rows = await this.prisma.lead.findMany({
       where: this.where(user, region),
       orderBy: { id: 'asc' },
     });
@@ -99,7 +99,7 @@ export class BufferService {
   }
 
   private view(
-    r: PhoneNumber,
+    r: Lead,
     history: Map<
       string,
       { count: number; last_at: number; last_reason: string | null }
@@ -130,7 +130,7 @@ export class BufferService {
   }
 
   private async requireBuffered(user: DashboardUser, id: number) {
-    const lead = await this.prisma.phoneNumber.findFirst({
+    const lead = await this.prisma.lead.findFirst({
       where: { id, ...this.where(user) },
     });
     if (!lead) throw new NotFoundException('лида нет в буфере');
@@ -143,7 +143,7 @@ export class BufferService {
    */
   async take(user: DashboardUser, id: number) {
     await this.requireBuffered(user, id);
-    const moved = await this.prisma.phoneNumber.updateMany({
+    const moved = await this.prisma.lead.updateMany({
       where: { id, status: BUFFER_STATUS },
       data: { status: 'pending', ownerUserId: user.id },
     });
@@ -169,7 +169,7 @@ export class BufferService {
           declinedById: user.id,
         },
       }),
-      this.prisma.phoneNumber.deleteMany({
+      this.prisma.lead.deleteMany({
         where: { id, status: BUFFER_STATUS },
       }),
     ]);

@@ -80,7 +80,7 @@ export class RegionGateService {
     const cached = this.regions.get(accountId);
     if (cached && now - cached.at < REGION_TTL_MS) return cached.region;
     const link = await this.prisma.managerAccount.findUnique({
-      where: { tgAccountId: accountId },
+      where: { accountId: accountId },
       select: { user: { select: { regionCode: true } } },
     });
     const region = link?.user.regionCode ?? null;

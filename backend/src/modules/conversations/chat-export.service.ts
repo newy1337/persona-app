@@ -82,11 +82,11 @@ export class ChatExportService {
       this.history.telegramReadMarks(chatId),
       this.prisma.inboundMedia.findMany({ where: { chatId: id } }),
       this.prisma.mediaShown.findMany({ where: { chatId: id } }),
-      this.prisma.phoneNumber.findFirst({ where: { telegramUserId: id } }),
+      this.prisma.lead.findFirst({ where: { chatId: id } }),
       this.persona.forChat(chatId).catch(() => null),
     ]);
     const account = contact?.accountId
-      ? await this.prisma.tgAccount.findUnique({
+      ? await this.prisma.channelAccount.findUnique({
           where: { id: contact.accountId },
           select: { id: true, username: true, displayName: true },
         })
@@ -158,7 +158,7 @@ export class ChatExportService {
       clientName,
       clientUsername:
         (facts['tg_username'] as string) ||
-        profile?.telegramUsername ||
+        profile?.peerUsername ||
         profile?.usernameKey ||
         null,
       clientPhone: (facts['phone'] as string) || profile?.phoneE164 || null,

@@ -39,8 +39,8 @@ export class ManagersService {
       orderBy: { id: 'asc' },
       include: {
         accounts: {
-          select: { tgAccountId: true },
-          orderBy: { tgAccountId: 'asc' },
+          select: { accountId: true },
+          orderBy: { accountId: 'asc' },
         },
         voicer: { select: { id: true, username: true } },
         lead: { select: { id: true, username: true } },
@@ -56,7 +56,7 @@ export class ManagersService {
       { from: period.from ?? todayKey, to: period.to ?? todayKey },
       now,
     );
-    const inbound = await this.prisma.phoneNumber.findMany({
+    const inbound = await this.prisma.lead.findMany({
       where: {
         ownerUserId: { not: null },
         inboundAt: { gte: Math.min(range.start, mskDayStart(now)) },
@@ -103,7 +103,7 @@ export class ManagersService {
         telegram_linked: Boolean(u.voiceProfile?.telegramId),
         telegram_username: u.voiceProfile?.telegramUsername ?? null,
         password_available: Boolean(u.passwordEncrypted),
-        account_ids: u.accounts.map((a) => a.tgAccountId),
+        account_ids: u.accounts.map((a) => a.accountId),
         online: u.online,
         leads_today: leadsToday.get(u.id) ?? 0,
         leads_count: leadsCount.get(u.id) ?? 0,
@@ -452,9 +452,9 @@ export class ManagersService {
       if (dto.account_ids !== undefined) {
         await tx.managerAccount.deleteMany({ where: { userId } });
         for (const acc of new Set(dto.account_ids)) {
-          await tx.managerAccount.deleteMany({ where: { tgAccountId: acc } });
+          await tx.managerAccount.deleteMany({ where: { accountId: acc } });
           await tx.managerAccount.create({
-            data: { userId, tgAccountId: acc },
+            data: { userId, accountId: acc },
           });
         }
       }
@@ -506,27 +506,21 @@ export class ManagersService {
     }
   }
 
-  async setAccountOwner(
-    tgAccountId: number,
-    userId: number | null | undefined,
-  ) {
-    return this.setOwnerBulk([tgAccountId], userId);
+  async setAccountOwner(accountId: number, userId: number | null | undefined) {
+    return this.setOwnerBulk([accountId], userId);
   }
 
-  async setOwnerBulk(
-    tgAccountIds: number[],
-    userId: number | null | undefined,
-  ) {
+  async setOwnerBulk(accountIds: number[], userId: number | null | undefined) {
     await this.resolveOwner(userId);
-    const ids = [...new Set(tgAccountIds)];
+    const ids = [...new Set(accountIds)];
     await this.prisma.$transaction(async (tx) => {
       await this.requireAccounts(tx, ids);
       await tx.managerAccount.deleteMany({
-        where: { tgAccountId: { in: ids } },
+        where: { accountId: { in: ids } },
       });
       if (userId != null)
         await tx.managerAccount.createMany({
-          data: ids.map((tgAccountId) => ({ userId, tgAccountId })),
+          data: ids.map((accountId) => ({ userId, accountId })),
         });
     });
     return this.list();
@@ -534,7 +528,7 @@ export class ManagersService {
 
   private async requireAccounts(tx: Prisma.TransactionClient, ids: number[]) {
     if (
-      (await tx.tgAccount.count({
+      (await tx.channelAccount.count({
         where: { id: { in: [...new Set(ids)] } },
       })) !== new Set(ids).size
     ) {

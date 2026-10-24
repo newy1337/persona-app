@@ -2,7 +2,7 @@ import { TelegramService } from './telegram.service';
 
 describe('сторож офлайн-аккаунтов', () => {
   function service(now: () => number) {
-    const prisma = { tgAccount: { findMany: async () => [{ id: 28 }] } };
+    const prisma = { channelAccount: { findMany: async () => [{ id: 28 }] } };
     const svc: any = Object.create(TelegramService.prototype);
     Object.defineProperty(svc, 'configured', { value: true });
     Object.assign(svc, {

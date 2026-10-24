@@ -403,9 +403,10 @@ describe('Manager panel API (e2e)', () => {
         })
         .expect(200)
     ).body.created_user_id;
-    const acc = await db.tgAccount.create({
+    const acc = await db.channelAccount.create({
       data: {
         phoneE164: '+10000008881',
+        login: '+10000008881',
         personaId: 'nastya',
         addedAt: 1,
         manager: { create: { userId: first } },
@@ -420,7 +421,7 @@ describe('Manager panel API (e2e)', () => {
       expect(
         (
           await db.managerAccount.findUniqueOrThrow({
-            where: { tgAccountId: acc.id },
+            where: { accountId: acc.id },
           })
         ).userId,
       ).toBe(first);
@@ -436,12 +437,12 @@ describe('Manager panel API (e2e)', () => {
       expect(
         (
           await db.managerAccount.findUniqueOrThrow({
-            where: { tgAccountId: acc.id },
+            where: { accountId: acc.id },
           })
         ).userId,
       ).toBe(first);
     } finally {
-      await db.tgAccount.delete({ where: { id: acc.id } });
+      await db.channelAccount.delete({ where: { id: acc.id } });
       await db.dashboardUser.deleteMany({
         where: { id: { in: [first, second] } },
       });
@@ -1605,7 +1606,7 @@ describe('Manager panel API (e2e)', () => {
         .expect(401);
 
       const prisma = app.get(PrismaService);
-      await prisma.phoneNumber.deleteMany({
+      await prisma.lead.deleteMany({
         where: {
           id: {
             in: [l1.id, l2.id, l3.id, l5.id, l6.id, lp.id, both.id],
@@ -1692,7 +1693,7 @@ describe('Manager panel API (e2e)', () => {
       ]);
       expect(twins.map((r) => r.status).sort()).toEqual([201, 409]);
 
-      await prisma.phoneNumber.deleteMany({
+      await prisma.lead.deleteMany({
         where: { ownerUserId: manager },
       });
       await prisma.apiKey.deleteMany({ where: { id: made.body.item.id } });
@@ -1792,7 +1793,7 @@ describe('Manager panel API (e2e)', () => {
         age: 30,
       }).expect(201);
       expect(first.body.assigned_to.user_id).toBe(c1);
-      const row = await prisma.phoneNumber.findUnique({
+      const row = await prisma.lead.findUnique({
         where: { id: first.body.id },
       });
       expect(row).toMatchObject({
@@ -1815,7 +1816,7 @@ describe('Manager panel API (e2e)', () => {
         age: '27',
       }).expect(201);
       expect(
-        await prisma.phoneNumber.findUnique({ where: { id: second.body.id } }),
+        await prisma.lead.findUnique({ where: { id: second.body.id } }),
       ).toMatchObject({ phoneE164: '+79015551235', age: 27 });
       expect(second.body.assigned_to.user_id).toBe(c2);
       const third = await post({
@@ -1865,7 +1866,7 @@ describe('Manager panel API (e2e)', () => {
         first_name: 'Олег',
       });
 
-      await prisma.phoneNumber.deleteMany({
+      await prisma.lead.deleteMany({
         where: { id: { in: [first.body.id, second.body.id, third.body.id] } },
       });
       for (const id of [c1, c2, c3, c4])
@@ -2005,7 +2006,7 @@ describe('Manager panel API (e2e)', () => {
       ]);
       expect(await leadsOf(leadAuth)).toContain('buf_alpha');
       expect(
-        (await prisma.phoneNumber.findUnique({ where: { id: a.id } }))!,
+        (await prisma.lead.findUnique({ where: { id: a.id } }))!,
       ).toMatchObject({ status: 'pending', ownerUserId: lead });
 
       // хед отклоняет «бету»: лид удалён, слепок с причиной сохранён
@@ -2014,9 +2015,7 @@ describe('Manager panel API (e2e)', () => {
         .set(headAuth)
         .send({ reason: 'спам' })
         .expect(200);
-      expect(
-        await prisma.phoneNumber.findUnique({ where: { id: b.id } }),
-      ).toBeNull();
+      expect(await prisma.lead.findUnique({ where: { id: b.id } })).toBeNull();
       const archived = await prisma.declinedLead.findMany({
         where: { usernameKey: 'buf_beta' },
       });
@@ -2043,7 +2042,7 @@ describe('Manager panel API (e2e)', () => {
         last_reason: 'спам',
       });
 
-      await prisma.phoneNumber.deleteMany({
+      await prisma.lead.deleteMany({
         where: { id: { in: [a.id, again.id, withPhone.id] } },
       });
       await prisma.declinedLead.deleteMany({
@@ -2193,7 +2192,7 @@ describe('Manager panel API (e2e)', () => {
         .expect(200);
       await post({ phone: '+79005591005', reassigned: true }).expect(422);
 
-      await prisma.phoneNumber.deleteMany({
+      await prisma.lead.deleteMany({
         where: { id: { in: [plain.id, on.id, buffered.id] } },
       });
       await prisma.regionSetting.deleteMany({ where: { regionCode: '0911' } });
@@ -2244,9 +2243,9 @@ describe('Manager panel API (e2e)', () => {
       const h = { Authorization: `Bearer ${token}` };
       const prisma = app.get(PrismaService);
       const chatId = 424301;
-      await prisma.phoneNumber.update({
+      await prisma.lead.update({
         where: { id: leadId },
-        data: { telegramUserId: BigInt(chatId) },
+        data: { chatId: BigInt(chatId) },
       });
       await request(app.getHttpServer())
         .post(`/api/conversations/${chatId}/deal-stage`)
@@ -2278,9 +2277,9 @@ describe('Manager panel API (e2e)', () => {
       await prisma.funnelEvent.deleteMany({
         where: { chatId: BigInt(chatId) },
       });
-      await prisma.phoneNumber.update({
+      await prisma.lead.update({
         where: { id: leadId },
-        data: { telegramUserId: null },
+        data: { chatId: null },
       });
     });
 
@@ -2394,7 +2393,7 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .send({ phone_e164: '+79001110042', persona_id: 'nastya' })
         .expect(200);
-      await prisma.tgAccount.updateMany({
+      await prisma.channelAccount.updateMany({
         where: { id: { in: [a1.body.id, a2.body.id] } },
         data: { status: 'active' },
       });
@@ -2494,7 +2493,7 @@ describe('Manager panel API (e2e)', () => {
         .send({ text: '@lena_lead' })
         .expect(200);
       expect(imported.body.created).toBe(1);
-      const leadLena = await prisma.phoneNumber.findUnique({
+      const leadLena = await prisma.lead.findUnique({
         where: { usernameKey: 'lena_lead' },
       });
       expect(leadLena!.ownerUserId).toBe(lena.id);
@@ -2539,11 +2538,11 @@ describe('Manager panel API (e2e)', () => {
       expect(JSON.stringify(dup.body)).not.toMatch(/лид #/);
 
       // Оба лида в очереди, но аккаунт Иры берёт только лида Иры.
-      await prisma.phoneNumber.updateMany({
+      await prisma.lead.updateMany({
         where: { status: 'queued' },
         data: { status: 'pending' },
       });
-      await prisma.phoneNumber.updateMany({
+      await prisma.lead.updateMany({
         where: { id: { in: [leadIra.body.id, leadLena!.id] } },
         data: { status: 'queued' },
       });
@@ -2556,8 +2555,7 @@ describe('Manager panel API (e2e)', () => {
       resolve.mockRestore();
       expect(calls).toEqual(['ira_lead']);
       expect(
-        (await prisma.phoneNumber.findUnique({ where: { id: leadLena!.id } }))!
-          .status,
+        (await prisma.lead.findUnique({ where: { id: leadLena!.id } }))!.status,
       ).toBe('queued');
 
       await request(app.getHttpServer())
@@ -2606,7 +2604,7 @@ describe('Manager panel API (e2e)', () => {
         .send({ user_id: mine })
         .expect(200);
       const lead = (owner: number, username: string) =>
-        prisma.phoneNumber.create({
+        prisma.lead.create({
           data: {
             usernameKey: username,
             ownerUserId: owner,
@@ -2616,7 +2614,7 @@ describe('Manager panel API (e2e)', () => {
         });
       const headLead = await lead(head, 'own_head_lead');
       const outLead = await lead(outsider, 'own_out_lead');
-      await prisma.phoneNumber.updateMany({
+      await prisma.lead.updateMany({
         where: { status: 'queued', id: { notIn: [headLead.id, outLead.id] } },
         data: { status: 'pending' },
       });
@@ -2630,11 +2628,10 @@ describe('Manager panel API (e2e)', () => {
       // аккаунт менеджера под хедом берёт лид хеда, лид менеджера из другой команды остаётся
       expect(calls).toEqual(['own_head_lead']);
       expect(
-        (await prisma.phoneNumber.findUnique({ where: { id: outLead.id } }))!
-          .status,
+        (await prisma.lead.findUnique({ where: { id: outLead.id } }))!.status,
       ).toBe('queued');
 
-      await prisma.phoneNumber.deleteMany({
+      await prisma.lead.deleteMany({
         where: { id: { in: [headLead.id, outLead.id] } },
       });
       await request(app.getHttpServer())
@@ -2672,7 +2669,7 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .send({ phone_e164: '+79001110071', persona_id: 'nastya' })
         .expect(200);
-      await prisma.tgAccount.update({
+      await prisma.channelAccount.update({
         where: { id: acc1.body.id },
         data: { status: 'active' },
       });
@@ -2727,7 +2724,7 @@ describe('Manager panel API (e2e)', () => {
         })
         .expect(200);
       expect(
-        (await prisma.phoneNumber.findUnique({ where: { id: forM1.body.id } }))!
+        (await prisma.lead.findUnique({ where: { id: forM1.body.id } }))!
           .ownerUserId,
       ).toBe(m1);
       // аккаунт m1 лиду m2 не пишет — отказ, а не зависший лид
@@ -2750,7 +2747,7 @@ describe('Manager panel API (e2e)', () => {
         .send({ phone: '@add_for_head', preferred_account_id: acc1.body.id })
         .expect(200);
       expect(
-        (await prisma.phoneNumber.findUnique({
+        (await prisma.lead.findUnique({
           where: { id: forHead.body.id },
         }))!.ownerUserId,
       ).toBe(head);
@@ -2774,7 +2771,7 @@ describe('Manager panel API (e2e)', () => {
       ).body.items;
       expect(seen.map((x: any) => x.id)).toEqual([forM1.body.id]);
 
-      await prisma.phoneNumber.deleteMany({
+      await prisma.lead.deleteMany({
         where: { id: { in: [forM1.body.id, forHead.body.id] } },
       });
       await request(app.getHttpServer())
@@ -2963,12 +2960,12 @@ describe('Manager panel API (e2e)', () => {
         ).body.id as number;
       const frozen = await mk('+79001110071');
       const other = await mk('+79001110072');
-      await prisma.tgAccount.updateMany({
+      await prisma.channelAccount.updateMany({
         where: { id: { in: [frozen, other] } },
         data: { status: 'active' },
       });
       const queue = async (phone: string, pin?: number) => {
-        const lead = await prisma.phoneNumber.create({
+        const lead = await prisma.lead.create({
           data: {
             phoneE164: phone,
             status: 'queued',
@@ -2976,7 +2973,7 @@ describe('Manager panel API (e2e)', () => {
             ...(pin ? { preferredAccountId: pin } : {}),
           },
         });
-        await prisma.phoneNumber.updateMany({
+        await prisma.lead.updateMany({
           where: { status: 'queued', id: { not: lead.id } },
           data: { status: 'pending' },
         });
@@ -2995,9 +2992,7 @@ describe('Manager panel API (e2e)', () => {
         );
       await (worker as any).processOne(frozen, now);
       freeze.mockRestore();
-      expect(
-        await prisma.phoneNumber.findUnique({ where: { id: a } }),
-      ).toMatchObject({
+      expect(await prisma.lead.findUnique({ where: { id: a } })).toMatchObject({
         status: 'queued',
         assignedAccountId: null,
         avoidAccountId: frozen,
@@ -3007,12 +3002,14 @@ describe('Manager panel API (e2e)', () => {
           /заморожен Telegram.*другому аккаунту/,
         ),
       });
-      const acc = await prisma.tgAccount.findUnique({ where: { id: frozen } });
+      const acc = await prisma.channelAccount.findUnique({
+        where: { id: frozen },
+      });
       expect(acc!.floodUntil).toBeGreaterThanOrEqual(now + 7 * 86400);
       expect(acc!.floodReason).toMatch(/заморожен/);
 
       // Неизвестная ошибка до отправки: попытка засчитана, лид — другому аккаунту.
-      await prisma.tgAccount.update({
+      await prisma.channelAccount.update({
         where: { id: frozen },
         data: { floodUntil: null, floodReason: null },
       });
@@ -3022,9 +3019,7 @@ describe('Manager panel API (e2e)', () => {
         .mockRejectedValueOnce(new Error('500: INTERNAL_SERVER_ERROR'));
       await (worker as any).processOne(other, now);
       glitch.mockRestore();
-      expect(
-        await prisma.phoneNumber.findUnique({ where: { id: b } }),
-      ).toMatchObject({
+      expect(await prisma.lead.findUnique({ where: { id: b } })).toMatchObject({
         status: 'queued',
         assignedAccountId: null,
         avoidAccountId: other,
@@ -3043,9 +3038,7 @@ describe('Manager panel API (e2e)', () => {
         );
       await (worker as any).processOne(other, now);
       premium.mockRestore();
-      expect(
-        await prisma.phoneNumber.findUnique({ where: { id: c } }),
-      ).toMatchObject({
+      expect(await prisma.lead.findUnique({ where: { id: c } })).toMatchObject({
         status: 'dead',
         lastError: expect.stringMatching(/Premium/),
       });
@@ -3057,7 +3050,7 @@ describe('Manager panel API (e2e)', () => {
       expect(lookup).not.toHaveBeenCalled();
       lookup.mockRestore();
       expect(
-        await prisma.phoneNumber.findUnique({ where: { id: own } }),
+        await prisma.lead.findUnique({ where: { id: own } }),
       ).toMatchObject({
         status: 'dead',
         lastError: expect.stringMatching(/^собственный аккаунт/),
@@ -3065,9 +3058,9 @@ describe('Manager panel API (e2e)', () => {
 
       // Ник нашёлся, но это id нашего аккаунта — тоже не пишем.
       const ownTg = await queue('+79005557104');
-      await prisma.tgAccount.update({
+      await prisma.channelAccount.update({
         where: { id: other },
-        data: { telegramUserId: BigInt(555000111) },
+        data: { peerId: BigInt(555000111) },
       });
       (telegram as any).ownIdsAt = 0;
       const found = jest.spyOn(telegram, 'resolvePhone').mockResolvedValueOnce({
@@ -3079,10 +3072,10 @@ describe('Manager panel API (e2e)', () => {
       await (worker as any).processOne(frozen, now);
       found.mockRestore();
       expect(
-        await prisma.phoneNumber.findUnique({ where: { id: ownTg } }),
-      ).toMatchObject({ status: 'dead', telegramUserId: null });
+        await prisma.lead.findUnique({ where: { id: ownTg } }),
+      ).toMatchObject({ status: 'dead', chatId: null });
 
-      await prisma.phoneNumber.deleteMany({
+      await prisma.lead.deleteMany({
         where: { id: { in: [a, b, c, own, ownTg] } },
       });
       for (const id of [frozen, other])
@@ -3109,7 +3102,7 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .send({ phone_e164: '+79001110002', persona_id: 'nastya' })
         .expect(200);
-      await prisma.tgAccount.update({
+      await prisma.channelAccount.update({
         where: { id: a1.body.id },
         data: { status: 'active', username: 'nastyayasz1' },
       });
@@ -3124,7 +3117,7 @@ describe('Manager panel API (e2e)', () => {
         .send({ ids: [lead.body.id] })
         .expect(200);
       // Воркер берёт самого старого в очереди — остальные лиды из прошлых проверок выводим из неё.
-      await prisma.phoneNumber.updateMany({
+      await prisma.lead.updateMany({
         where: { status: 'queued', id: { not: lead.body.id } },
         data: { status: 'pending' },
       });
@@ -3167,7 +3160,7 @@ describe('Manager panel API (e2e)', () => {
       jest
         .spyOn(telegram, 'onlineIds')
         .mockReturnValue([a1.body.id, a2.body.id]);
-      await prisma.tgAccount.update({
+      await prisma.channelAccount.update({
         where: { id: a2.body.id },
         data: { status: 'active' },
       });
@@ -3176,7 +3169,7 @@ describe('Manager panel API (e2e)', () => {
       (telegram.onlineIds as jest.Mock).mockRestore();
 
       // «Написать с другого»: лид привязан к аккаунту, первого сообщения не было.
-      await prisma.phoneNumber.update({
+      await prisma.lead.update({
         where: { id: lead.body.id },
         data: { assignedAccountId: a2.body.id, status: 'assigned' },
       });
@@ -3191,7 +3184,7 @@ describe('Manager panel API (e2e)', () => {
         last_error: null,
       });
       // Этот аккаунт лид больше не возьмёт.
-      const claim = await prisma.phoneNumber.findFirst({
+      const claim = await prisma.lead.findFirst({
         where: {
           id: lead.body.id,
           OR: [
@@ -3203,7 +3196,7 @@ describe('Manager panel API (e2e)', () => {
       expect(claim).toBeNull();
 
       // Уже написали — второе «первое» сообщение с другого аккаунта не отправляем.
-      await prisma.phoneNumber.update({
+      await prisma.lead.update({
         where: { id: lead.body.id },
         data: { firstContactAt: now, status: 'contacted' },
       });
@@ -3223,11 +3216,11 @@ describe('Manager panel API (e2e)', () => {
       });
 
       // И номер, и ник: сначала ник, не нашёлся — номер, потом сдаётся.
-      await prisma.phoneNumber.updateMany({
+      await prisma.lead.updateMany({
         where: { status: 'queued' },
         data: { status: 'pending' },
       });
-      const both = await prisma.phoneNumber.create({
+      const both = await prisma.lead.create({
         data: {
           phoneE164: '+79005556688',
           usernameKey: 'both_contact',
@@ -3253,15 +3246,15 @@ describe('Manager panel API (e2e)', () => {
       );
       byPhone.mockRestore();
       byName.mockRestore();
-      const dead = await prisma.phoneNumber.findUnique({
+      const dead = await prisma.lead.findUnique({
         where: { id: both.id },
       });
       expect(dead).toMatchObject({ status: 'dead' });
       expect(dead!.lastError).toContain('ни номера, ни @username');
-      await prisma.phoneNumber.delete({ where: { id: both.id } });
+      await prisma.lead.delete({ where: { id: both.id } });
 
       // Ник нашёлся — номер даже не пробуем (без импорта контакта).
-      const both2 = await prisma.phoneNumber.create({
+      const both2 = await prisma.lead.create({
         data: {
           phoneE164: '+79005556689',
           usernameKey: 'both_contact2',
@@ -3284,10 +3277,9 @@ describe('Manager panel API (e2e)', () => {
       phone2.mockRestore();
       name2.mockRestore();
       expect(
-        (await prisma.phoneNumber.findUnique({ where: { id: both2.id } }))!
-          .lastError,
+        (await prisma.lead.findUnique({ where: { id: both2.id } }))!.lastError,
       ).toBe('аккаунт Telegram удалён');
-      await prisma.phoneNumber.delete({ where: { id: both2.id } });
+      await prisma.lead.delete({ where: { id: both2.id } });
 
       await request(app.getHttpServer())
         .delete(`/api/leads/${lead.body.id}`)
@@ -3325,7 +3317,7 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .send({ phone_e164: '+79001110012', persona_id: 'lena-outreach' })
         .expect(200);
-      await prisma.tgAccount.updateMany({
+      await prisma.channelAccount.updateMany({
         where: { id: { in: [aNastya.body.id, aLena.body.id] } },
         data: { status: 'active' },
       });
@@ -3363,7 +3355,7 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .send({ ids: [lead.body.id] })
         .expect(200);
-      await prisma.phoneNumber.updateMany({
+      await prisma.lead.updateMany({
         where: { status: 'queued', id: { not: lead.body.id } },
         data: { status: 'pending' },
       });
@@ -3382,7 +3374,7 @@ describe('Manager panel API (e2e)', () => {
         'Игорь',
       );
       resolve.mockRestore();
-      const taken = await prisma.phoneNumber.findUnique({
+      const taken = await prisma.lead.findUnique({
         where: { id: lead.body.id },
       });
       expect(taken).toMatchObject({
@@ -3423,7 +3415,7 @@ describe('Manager panel API (e2e)', () => {
         persona_name: 'Настя',
         assigned_account_id: null,
       });
-      await prisma.phoneNumber.update({
+      await prisma.lead.update({
         where: { id: lead.body.id },
         data: { firstContactAt: now, status: 'contacted' },
       });
@@ -3481,14 +3473,14 @@ describe('Manager panel API (e2e)', () => {
           ids.push(a.body.id);
         }
         [own, other, foreign] = ids;
-        await app.get(PrismaService).tgAccount.updateMany({
+        await app.get(PrismaService).channelAccount.updateMany({
           where: { id: { in: ids } },
           data: { status: 'active' },
         });
         await app.get(PrismaService).managerAccount.createMany({
-          data: [own, other].map((tgAccountId) => ({
+          data: [own, other].map((accountId) => ({
             userId: managerId,
-            tgAccountId,
+            accountId,
           })),
         });
       });
@@ -3499,7 +3491,7 @@ describe('Manager panel API (e2e)', () => {
             .delete(`/api/leads/${id}`)
             .set(h)
             .expect(200);
-        await app.get(PrismaService).tgAccount.updateMany({
+        await app.get(PrismaService).channelAccount.updateMany({
           where: { id: { in: [own, other, foreign] } },
           data: { floodUntil: null, floodReason: null, status: 'active' },
         });
@@ -3525,7 +3517,7 @@ describe('Manager panel API (e2e)', () => {
         return result.body;
       }
       async function queue(id: number) {
-        await app.get(PrismaService).phoneNumber.updateMany({
+        await app.get(PrismaService).lead.updateMany({
           where: { status: 'queued' },
           data: { status: 'pending' },
         });
@@ -3545,13 +3537,15 @@ describe('Manager panel API (e2e)', () => {
         await post({ preferred_account_id: 999999 }).expect(422);
         await post({ preferred_account_id: -1 }).expect(400);
         await post({ preferred_account_id: String(own) }).expect(400);
-        await app
-          .get(PrismaService)
-          .tgAccount.update({ where: { id: own }, data: { status: 'paused' } });
+        await app.get(PrismaService).channelAccount.update({
+          where: { id: own },
+          data: { status: 'paused' },
+        });
         await post({ preferred_account_id: own }).expect(422);
-        await app
-          .get(PrismaService)
-          .tgAccount.update({ where: { id: own }, data: { status: 'active' } });
+        await app.get(PrismaService).channelAccount.update({
+          where: { id: own },
+          data: { status: 'active' },
+        });
         const persona = await request(app.getHttpServer())
           .post('/api/personas')
           .set(h)
@@ -3578,7 +3572,7 @@ describe('Manager panel API (e2e)', () => {
           })
           .expect(422);
         expect(
-          await app.get(PrismaService).phoneNumber.count({
+          await app.get(PrismaService).lead.count({
             where: { usernameKey: { startsWith: 'sender_' } },
           }),
         ).toBe(0);
@@ -3603,7 +3597,7 @@ describe('Manager panel API (e2e)', () => {
           (
             await app
               .get(PrismaService)
-              .phoneNumber.findUniqueOrThrow({ where: { id: lead.id } })
+              .lead.findUniqueOrThrow({ where: { id: lead.id } })
           ).preferredAccountId,
         ).toBe(own);
         await queue(lead.id);
@@ -3641,7 +3635,7 @@ describe('Manager panel API (e2e)', () => {
         await worker.processOne(own, now);
         const waiting = await app
           .get(PrismaService)
-          .phoneNumber.findUniqueOrThrow({ where: { id: lead.id } });
+          .lead.findUniqueOrThrow({ where: { id: lead.id } });
         expect(waiting).toMatchObject({
           status: 'queued',
           assignedAccountId: null,
@@ -3654,11 +3648,11 @@ describe('Manager panel API (e2e)', () => {
         expect(resolve).not.toHaveBeenCalled();
         await app
           .get(PrismaService)
-          .managerAccount.delete({ where: { tgAccountId: own } });
+          .managerAccount.delete({ where: { accountId: own } });
         await worker.processOne(own, now + 4000);
         expect(resolve).not.toHaveBeenCalled();
         await app.get(PrismaService).managerAccount.create({
-          data: { userId: managerId, tgAccountId: own },
+          data: { userId: managerId, accountId: own },
         });
         const moved = await request(app.getHttpServer())
           .post(`/api/leads/${lead.id}/write-from-another`)
@@ -3718,7 +3712,7 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .send({ phone: '+7 900 555-88-02' })
         .expect(200);
-      await prisma.phoneNumber.updateMany({
+      await prisma.lead.updateMany({
         where: { id: { in: [leadNastya.body.id, leadAny.body.id] } },
         data: { assignedAccountId: acc.body.id, status: 'queued' },
       });
@@ -3754,7 +3748,7 @@ describe('Manager panel API (e2e)', () => {
       });
 
       // Лид под Настю отпущен — его напишет аккаунт Насти; лид без личности остался за аккаунтом.
-      const rows = await prisma.phoneNumber.findMany({
+      const rows = await prisma.lead.findMany({
         where: { id: { in: [leadNastya.body.id, leadAny.body.id] } },
       });
       expect(
@@ -3804,9 +3798,9 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .send({ phone: '+7 900 555-99-01', first_name: 'Антон' })
         .expect(200);
-      await prisma.phoneNumber.update({
+      await prisma.lead.update({
         where: { id: lead.body.id },
-        data: { telegramUserId: id, status: 'replied', firstContactAt: 1 },
+        data: { chatId: id, status: 'replied', firstContactAt: 1 },
       });
       await prisma.contact.create({
         data: { chatId: id, createdAt: 1, pauseState: 'paused' },
@@ -3900,9 +3894,9 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .send({ phone: '+7 900 555-99-03' })
         .expect(200);
-      await prisma.phoneNumber.updateMany({
+      await prisma.lead.updateMany({
         where: { id: { in: [a.body.id, b.body.id] } },
-        data: { telegramUserId: id },
+        data: { chatId: id },
       });
       const kept = await request(app.getHttpServer())
         .delete(`/api/leads/${a.body.id}`)
@@ -3970,9 +3964,9 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .send({ username: '@aladin_test', first_name: 'Саша' })
         .expect(200);
-      await prisma.phoneNumber.update({
+      await prisma.lead.update({
         where: { id: lead.body.id },
-        data: { telegramUserId: id, assignedAccountId: null, status: 'queued' },
+        data: { chatId: id, assignedAccountId: null, status: 'queued' },
       });
       await request(app.getHttpServer())
         .put(`/api/leads/${lead.body.id}`)
@@ -3980,12 +3974,11 @@ describe('Manager panel API (e2e)', () => {
         .send({ persona_id: 'nastya' })
         .expect(200);
       expect(
-        (await prisma.phoneNumber.findUnique({ where: { id: lead.body.id } }))!
-          .telegramUserId,
+        (await prisma.lead.findUnique({ where: { id: lead.body.id } }))!.chatId,
       ).toBe(id);
 
       // Рассылка берёт этого лида: чат от удалённого — стирается, первое сообщение уходит.
-      await prisma.phoneNumber.updateMany({
+      await prisma.lead.updateMany({
         where: { status: 'queued', id: { not: lead.body.id } },
         data: { status: 'pending' },
       });
@@ -4007,7 +4000,7 @@ describe('Manager panel API (e2e)', () => {
       resolve.mockRestore();
       send.mockRestore();
 
-      const sent = await prisma.phoneNumber.findUnique({
+      const sent = await prisma.lead.findUnique({
         where: { id: lead.body.id },
       });
       expect(sent).toMatchObject({ status: 'contacted', lastError: null });
@@ -4045,7 +4038,7 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .send({ ids: [live.body.id] })
         .expect(200);
-      await prisma.phoneNumber.updateMany({
+      await prisma.lead.updateMany({
         where: { status: 'queued', id: { not: live.body.id } },
         data: { status: 'pending' },
       });
@@ -4059,7 +4052,7 @@ describe('Manager panel API (e2e)', () => {
         });
       await (worker as any).processOne(acc.body.id, now + 400);
       resolveLive.mockRestore();
-      const liveRow = await prisma.phoneNumber.findUnique({
+      const liveRow = await prisma.lead.findUnique({
         where: { id: live.body.id },
       });
       expect(liveRow!.status).toBe('dead');
@@ -4067,9 +4060,9 @@ describe('Manager panel API (e2e)', () => {
       expect(await prisma.message.count({ where: { chatId: liveId } })).toBe(1);
 
       // Удаление лида находит чат, даже если связь в лиде уже пуста, — по пометке в карточке.
-      await prisma.phoneNumber.update({
+      await prisma.lead.update({
         where: { id: lead.body.id },
-        data: { telegramUserId: null },
+        data: { chatId: null },
       });
       const removed = await request(app.getHttpServer())
         .delete(`/api/leads/${lead.body.id}`)
@@ -4153,7 +4146,7 @@ describe('Manager panel API (e2e)', () => {
           text: 'скинь фотку свою',
           author: 'client',
           sourceMessageId: 5,
-          tgMsgId: 5,
+          peerMsgId: 5,
         },
       });
 
@@ -4442,7 +4435,7 @@ describe('Manager panel API (e2e)', () => {
             role: 'assistant',
             text: 'Привет) это Настя',
             author: 'outreach',
-            tgMsgId: 5,
+            peerMsgId: 5,
           },
           {
             chatId: id,
@@ -4451,7 +4444,7 @@ describe('Manager panel API (e2e)', () => {
             text: '[Кружок]',
             author: 'client',
             sourceMessageId: 2,
-            tgMsgId: 2,
+            peerMsgId: 2,
           },
           {
             chatId: id,
@@ -4460,7 +4453,7 @@ describe('Manager panel API (e2e)', () => {
             text: '[Голосовое сообщение]\nя на рыбалке',
             author: 'client',
             sourceMessageId: 3,
-            tgMsgId: 3,
+            peerMsgId: 3,
           },
           {
             chatId: id,
@@ -4469,7 +4462,7 @@ describe('Manager panel API (e2e)', () => {
             text: '[Фото]',
             author: 'client',
             sourceMessageId: 4,
-            tgMsgId: 4,
+            peerMsgId: 4,
           },
           {
             chatId: id,
@@ -4477,7 +4470,7 @@ describe('Manager panel API (e2e)', () => {
             role: 'assistant',
             text: 'ого, клёво',
             author: 'operator:web',
-            tgMsgId: 6,
+            peerMsgId: 6,
           },
         ],
       });
@@ -4636,7 +4629,7 @@ describe('Manager panel API (e2e)', () => {
         orderBy: { id: 'asc' },
       });
       expect(
-        rows.map((r) => [r.text, r.tgMsgId, r.mediaKind, r.filePath]),
+        rows.map((r) => [r.text, r.peerMsgId, r.mediaKind, r.filePath]),
       ).toEqual([
         ['мы на море', 501, 'photo', a],
         ['[фото]', 502, 'photo', b],
@@ -4789,7 +4782,7 @@ describe('Manager panel API (e2e)', () => {
           text: 'и тебе)',
           author: 'client',
           sourceMessageId: 9,
-          tgMsgId: 9,
+          peerMsgId: 9,
         },
       });
       const turn = {
@@ -4968,12 +4961,12 @@ describe('Manager panel API (e2e)', () => {
         .expect(200);
       expect(
         await prisma.managerAccount.findUnique({
-          where: { tgAccountId: mine.body.id },
+          where: { accountId: mine.body.id },
         }),
       ).toMatchObject({ userId: vera.user_id });
       expect(
         await prisma.managerAccount.findUnique({
-          where: { tgAccountId: foreign.body.id },
+          where: { accountId: foreign.body.id },
         }),
       ).toBeNull();
 
@@ -5037,7 +5030,7 @@ describe('Manager panel API (e2e)', () => {
           role: 'assistant',
           text: 'я в Мардиде',
           author: 'llm',
-          tgMsgId: 50,
+          peerMsgId: 50,
         },
       });
       const theirs = await prisma.message.create({
@@ -5048,7 +5041,7 @@ describe('Manager panel API (e2e)', () => {
           text: 'где?',
           author: 'client',
           sourceMessageId: 51,
-          tgMsgId: 51,
+          peerMsgId: 51,
         },
       });
       const photo = await prisma.message.create({
@@ -5058,7 +5051,7 @@ describe('Manager panel API (e2e)', () => {
           role: 'assistant',
           text: '[фото]',
           author: 'operator:web',
-          tgMsgId: 52,
+          peerMsgId: 52,
           mediaKind: 'photo',
           filePath: '/x.jpg',
         },
@@ -5125,7 +5118,7 @@ describe('Manager panel API (e2e)', () => {
       const brain = app.get(REPLY_BRAIN_TOKEN) as any;
       const changed = await app
         .get(TelegramService)
-        ['history'].editMessageText(chatId, { tgMsgId: 51 }, 'где ты?', now);
+        ['history'].editMessageText(chatId, { peerMsgId: 51 }, 'где ты?', now);
       await brain.noteEdited(chatId, 'user', changed.old, 'где ты?');
       const state2 = JSON.parse(
         (await prisma.brainState.findUnique({ where: { chatId: id } }))!
@@ -5157,7 +5150,7 @@ describe('Manager panel API (e2e)', () => {
           role: i % 2 ? 'assistant' : 'user',
           text: `m${i}`,
           author: i % 2 ? 'llm' : 'client',
-          tgMsgId: 700 + i,
+          peerMsgId: 700 + i,
           sourceMessageId: i % 2 ? null : 700 + i,
         })),
       });
@@ -5248,7 +5241,7 @@ describe('Manager panel API (e2e)', () => {
           text: '[кружок]',
           mediaKind: 'video_note',
           filePath: path,
-          tgMsgId: 901,
+          peerMsgId: 901,
         }),
       ]);
 
@@ -5279,7 +5272,7 @@ describe('Manager panel API (e2e)', () => {
           text: 'Молодец',
           author: 'client',
           sourceMessageId: 7,
-          tgMsgId: 7,
+          peerMsgId: 7,
         },
       });
       const turn = {
@@ -5386,7 +5379,7 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .send({ phone_e164: '+79001110071', persona_id: 'nastya' })
         .expect(200);
-      await prisma.tgAccount.update({
+      await prisma.channelAccount.update({
         where: { id: acc.body.id },
         data: { status: 'active' },
       });
@@ -5401,7 +5394,7 @@ describe('Manager panel API (e2e)', () => {
           text: 'привет',
           author: 'client',
           sourceMessageId: 3,
-          tgMsgId: 3,
+          peerMsgId: 3,
         },
       });
       const detail = async () =>
@@ -5481,7 +5474,7 @@ describe('Manager panel API (e2e)', () => {
         lost_at: expect.any(Number),
       });
       // Включили снова (например, после разбана) — отметка снята.
-      await prisma.tgAccount.update({
+      await prisma.channelAccount.update({
         where: { id: acc.body.id },
         data: { sessionEncrypted: null },
       });
@@ -5524,7 +5517,7 @@ describe('Manager panel API (e2e)', () => {
             role: 'assistant',
             text: 'привет',
             author: 'outreach',
-            tgMsgId: 10,
+            peerMsgId: 10,
           },
           {
             chatId: id,
@@ -5533,7 +5526,7 @@ describe('Manager panel API (e2e)', () => {
             text: 'привет)',
             author: 'client',
             sourceMessageId: 11,
-            tgMsgId: 11,
+            peerMsgId: 11,
           },
           {
             chatId: id,
@@ -5541,7 +5534,7 @@ describe('Manager panel API (e2e)', () => {
             role: 'assistant',
             text: 'как дела?',
             author: 'llm',
-            tgMsgId: 12,
+            peerMsgId: 12,
           },
           {
             chatId: id,
@@ -5550,7 +5543,7 @@ describe('Manager panel API (e2e)', () => {
             text: 'норм',
             author: 'client',
             sourceMessageId: 13,
-            tgMsgId: 13,
+            peerMsgId: 13,
           },
           {
             chatId: id,
@@ -5624,7 +5617,7 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .send({ username: '@ira_timeout', first_name: 'Ира' })
         .expect(200);
-      await prisma.phoneNumber.updateMany({
+      await prisma.lead.updateMany({
         where: { status: 'queued' },
         data: { status: 'pending' },
       });
@@ -5653,7 +5646,7 @@ describe('Manager panel API (e2e)', () => {
       const send = jest.spyOn(telegram, 'sendText').mockResolvedValue([1]);
 
       await (worker as any).processOne(stuck.body.id, now);
-      const released = await prisma.phoneNumber.findUnique({
+      const released = await prisma.lead.findUnique({
         where: { id: lead.body.id },
       });
       expect(released).toMatchObject({
@@ -5662,7 +5655,7 @@ describe('Manager panel API (e2e)', () => {
         nextAttemptAt: null,
       });
       expect(released!.lastError).toMatch(/Telegram не отвечает/);
-      const paused = await prisma.tgAccount.findUnique({
+      const paused = await prisma.channelAccount.findUnique({
         where: { id: stuck.body.id },
       });
       expect(paused!.floodUntil).toBeGreaterThan(now);
@@ -5673,7 +5666,7 @@ describe('Manager panel API (e2e)', () => {
       resolve.mockRestore();
       send.mockRestore();
       expect(
-        await prisma.phoneNumber.findUnique({ where: { id: lead.body.id } }),
+        await prisma.lead.findUnique({ where: { id: lead.body.id } }),
       ).toMatchObject({
         status: 'contacted',
         assignedAccountId: healthy.body.id,
@@ -5757,7 +5750,7 @@ describe('Manager panel API (e2e)', () => {
         where: { chatId: BigInt(chatId) },
         orderBy: { id: 'asc' },
       });
-      expect(rows.map((r) => r.tgMsgId)).toEqual([500, 501, 502]);
+      expect(rows.map((r) => r.peerMsgId)).toEqual([500, 501, 502]);
       expect(rows[2].ts).toBeGreaterThan(rows[0].ts);
 
       await app
@@ -6001,7 +5994,7 @@ describe('Manager panel API (e2e)', () => {
       expect(acc.body).toMatchObject({ display_name: null, avatar_url: null });
 
       // Так пишет подключение: имя из getMe, фото — файлом.
-      await prisma.tgAccount.update({
+      await prisma.channelAccount.update({
         where: { id: acc.body.id },
         data: { displayName: 'Настя Иванова', username: 'nastya_iv' },
       });
@@ -6064,7 +6057,7 @@ describe('Manager panel API (e2e)', () => {
       const profile = jest
         .spyOn(telegram, 'updateOwnProfile')
         .mockImplementation((async (id: number, patch: any) => {
-          await prisma.tgAccount.update({
+          await prisma.channelAccount.update({
             where: { id },
             data: {
               displayName: `${patch.firstName} ${patch.lastName}`.trim(),
@@ -6156,10 +6149,10 @@ describe('Manager panel API (e2e)', () => {
           .set(h)
           .send({ username })
           .expect(200);
-        await prisma.phoneNumber.update({
+        await prisma.lead.update({
           where: { id: lead.body.id },
           data: {
-            telegramUserId: BigInt(chatId),
+            chatId: BigInt(chatId),
             assignedAccountId: acc.body.id,
             status: 'contacted',
           },
@@ -6216,9 +6209,7 @@ describe('Manager panel API (e2e)', () => {
       expect(r3.body.telegram.failed).toEqual([
         { account_id: acc.body.id, error: 'аккаунт #1 не в сети' },
       ]);
-      expect(await prisma.phoneNumber.count({ where: { id: failing } })).toBe(
-        0,
-      );
+      expect(await prisma.lead.count({ where: { id: failing } })).toBe(0);
       expect(
         await prisma.message.count({ where: { chatId: BigInt(777001003) } }),
       ).toBe(0);
@@ -6245,7 +6236,7 @@ describe('Manager panel API (e2e)', () => {
         .send({ phone: '+7 900 555-66-88' })
         .expect(200);
       // Так лид выглядел на проде: привязан к аккаунту и ждёт 6 часов.
-      await prisma.phoneNumber.update({
+      await prisma.lead.update({
         where: { id: lead.body.id },
         data: {
           status: 'queued',
@@ -6825,7 +6816,7 @@ describe('Manager panel API (e2e)', () => {
           role: 'assistant',
           text: 'вот',
           author: 'operator:web',
-          tgMsgId: 900,
+          peerMsgId: 900,
           mediaKind: 'photo',
           filePath: 'C:/uploads/x.png',
           replyTo: 77,
