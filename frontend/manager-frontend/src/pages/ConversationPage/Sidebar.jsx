@@ -282,7 +282,12 @@ function Sidebar({
             />
           )}
           {avatarOpen && (
-            <PanelUX.Modal title={name} wide onClose={() => setAvatarOpen(false)}>
+            <PanelUX.Modal
+              title={name}
+              wide
+              onClose={() => setAvatarOpen(false)}
+              footer={<Button type="button" variant="outline" data-autofocus onClick={() => setAvatarOpen(false)}>Закрыть</Button>}
+            >
               <AvatarPreview src={data.client_avatar} />
             </PanelUX.Modal>
           )}
