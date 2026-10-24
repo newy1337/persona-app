@@ -24,7 +24,6 @@ import { HistoryService } from 'src/shared/history.service';
 import { toChatId } from 'src/utils/ids';
 import {
   InboundMedia,
-  OutboundTransport,
   REPLY_BRAIN,
   ReplyBrain,
 } from 'src/brain/reply-brain.port';
@@ -50,6 +49,7 @@ import {
 import { VoiceEncoderService } from 'src/modules/media/voice-encoder.service';
 import { closeClient } from './close-client';
 import { offlineReason, offlineReasonOf } from 'src/domain/offline-reason';
+import type { ChannelTransport, ResolvedPeer } from 'src/channels/channel';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const TG_CALL_TIMEOUT_MS = 60_000;
@@ -120,10 +120,8 @@ export function typingKind(action: unknown): ClientActivity | null {
   return null;
 }
 
-export type ResolvedPhone =
-  | { kind: 'found'; userId: number; username: string | null; deleted: boolean }
-  | { kind: 'not_found' }
-  | { kind: 'retry' };
+/** Найденный собеседник; у Telegram chatId совпадает с id пользователя. */
+export type ResolvedPhone = ResolvedPeer;
 
 interface LiveAccount {
   id: number;
@@ -157,7 +155,7 @@ export function inboundText(
 
 @Injectable()
 export class TelegramService
-  implements OnModuleInit, OnModuleDestroy, OutboundTransport
+  implements OnModuleInit, OnModuleDestroy, ChannelTransport
 {
   private readonly log = new Logger(TelegramService.name);
   private readonly live = new Map<number, LiveAccount>();
@@ -181,6 +179,12 @@ export class TelegramService
     if (!entry?.client.connected)
       throw new Error('Telegram-аккаунт не подключён');
     return entry.client;
+  }
+
+  // Геттер, а не поле: из-за круговой зависимости с брейном Nest отдаёт
+  // сервис в реестр раньше, чем отработает конструктор.
+  get channel(): 'telegram' {
+    return 'telegram';
   }
 
   get configured(): boolean {
@@ -383,7 +387,7 @@ export class TelegramService
    * Telegram-id всех наших аккаунтов. Сообщения от них бот не обрабатывает и
    * сам им первым не пишет: иначе наши аккаунты переписываются друг с другом.
    */
-  async ownUserIds(): Promise<Set<number>> {
+  async ownChatIds(): Promise<Set<number>> {
     const now = this.clock.ts();
     if (now - this.ownIdsAt > 60) {
       const rows = await this.prisma.channelAccount.findMany({
@@ -768,7 +772,7 @@ export class TelegramService
     const sender = await message.getSender().catch(() => null);
     if (!isConversableUser(sender instanceof Api.User ? sender : null, chatId))
       return;
-    if ((await this.ownUserIds()).has(chatId)) {
+    if ((await this.ownChatIds()).has(chatId)) {
       this.log.warn(
         `chat ${chatId} is one of our own accounts; message ${message.id} to account ${account.id} is not passed to the bot`,
       );
@@ -1197,7 +1201,7 @@ export class TelegramService
       const chatId = Number(user.id);
       if (
         !isConversableUser(user, chatId) ||
-        (await this.ownUserIds()).has(chatId) ||
+        (await this.ownChatIds()).has(chatId) ||
         (await this.ownedByOther(chatId, account.id))
       )
         continue;
@@ -1538,6 +1542,7 @@ export class TelegramService
     if (user)
       return {
         kind: 'found',
+        chatId: Number(user.id),
         userId: Number(user.id),
         username: user.username ?? null,
         deleted: Boolean(user.deleted),
@@ -1564,6 +1569,7 @@ export class TelegramService
       if (!(entity instanceof Api.User)) return { kind: 'not_found' }; // a channel or a group behind the name
       return {
         kind: 'found',
+        chatId: Number(entity.id),
         userId: Number(entity.id),
         username: entity.username ?? username,
         deleted: Boolean(entity.deleted),

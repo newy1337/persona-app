@@ -23,6 +23,7 @@ import {
 import { toChatId } from 'src/utils/ids';
 import { isTelegramTimeout } from 'src/domain/timeout';
 import { classifyOutreachError } from 'src/domain/outreach-errors';
+import { ChannelRegistry } from 'src/channels/registry';
 
 const STALLED_ACCOUNT_PAUSE_S = 15 * 60;
 const TICK_STALE_S = 10 * 60;
@@ -39,6 +40,7 @@ export class OutreachWorker implements OnModuleInit {
     private funnel: FunnelEventsService,
     private gate: GlobalGateService,
     private telegram: TelegramService,
+    private channels: ChannelRegistry,
     private leads: LeadsService,
     @Inject(REPLY_BRAIN) private brain: ReplyBrain,
   ) {}
@@ -172,7 +174,7 @@ export class OutreachWorker implements OnModuleInit {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async tick(): Promise<void> {
-    if (!this.telegram.configured || this.gate.stopped) return;
+    if (!this.channels.configured || this.gate.stopped) return;
     const now = this.clock.ts();
     if (this.runningSince !== null) {
       if (now - this.runningSince < TICK_STALE_S) return;
@@ -195,7 +197,7 @@ export class OutreachWorker implements OnModuleInit {
   }
 
   private async eligibleAccounts(now: number): Promise<number[]> {
-    const online = this.telegram.onlineIds();
+    const online = this.channels.onlineIds();
     if (!online.length) return [];
     const active = await this.prisma.channelAccount.findMany({
       where: {
@@ -315,8 +317,9 @@ export class OutreachWorker implements OnModuleInit {
       // Ник в приоритете: по нему пишем без импорта контакта (лимит импорта
       // и скрытый приватностью номер не мешают). Ника нет или он не нашёлся —
       // пробуем номер.
+      const channel = await this.channels.forAccount(accountId);
       const byPhone = () =>
-        this.telegram.resolvePhone(
+        channel.resolvePhone(
           accountId,
           candidate.phoneE164!,
           candidate.firstName ?? undefined,
@@ -347,7 +350,7 @@ export class OutreachWorker implements OnModuleInit {
         return;
       }
       let resolved = candidate.usernameKey
-        ? await this.telegram.resolveUsername(accountId, candidate.usernameKey)
+        ? await channel.resolveUsername(accountId, candidate.usernameKey)
         : await byPhone();
       if (
         resolved.kind === 'not_found' &&
@@ -388,7 +391,7 @@ export class OutreachWorker implements OnModuleInit {
         return;
       }
       const chatId = resolved.userId;
-      if ((await this.telegram.ownUserIds()).has(chatId)) {
+      if ((await this.channels.ownChatIds()).has(chatId)) {
         await this.markOwnAccount(candidate.id, null);
         return;
       }
@@ -600,7 +603,7 @@ export class OutreachWorker implements OnModuleInit {
           accounts: mine.length,
           accounts_ready: mine.filter(
             (a) =>
-              this.telegram.isOnline(a.id) &&
+              this.channels.isOnline(a.id) &&
               !(a.floodUntil && a.floodUntil > now),
           ).length,
         };
@@ -631,14 +634,14 @@ export class OutreachWorker implements OnModuleInit {
         account_id: a.id,
         phone_e164: a.phoneE164,
         persona_id: a.personaId,
-        online: this.telegram.isOnline(a.id),
+        online: this.channels.isOnline(a.id),
         flood_until: limited ? a.floodUntil : null,
         flood_reason: limited ? a.floodReason : null,
         ...usage,
       });
     }
     return {
-      enabled: this.telegram.configured && !this.gate.stopped,
+      enabled: this.channels.configured && !this.gate.stopped,
       within_hours: withinOutreachHours(now, appConfig.outreachHours),
       hours_msk: appConfig.outreachHours,
       daily_per_account: appConfig.outreachDailyPerAccount,

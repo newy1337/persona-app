@@ -3991,6 +3991,7 @@ describe('Manager panel API (e2e)', () => {
         .spyOn(telegram, 'resolveUsername')
         .mockResolvedValue({
           kind: 'found',
+          chatId,
           userId: chatId,
           username: 'aladin_test',
           deleted: false,
@@ -4046,6 +4047,7 @@ describe('Manager panel API (e2e)', () => {
         .spyOn(telegram, 'resolveUsername')
         .mockResolvedValue({
           kind: 'found',
+          chatId: 7026943193,
           userId: 7026943193,
           username: 'live_test',
           deleted: false,
@@ -5639,6 +5641,7 @@ describe('Manager panel API (e2e)', () => {
         )
         .mockResolvedValueOnce({
           kind: 'found',
+          chatId: 777000555,
           userId: 777000555,
           username: 'ira_timeout',
           deleted: false,

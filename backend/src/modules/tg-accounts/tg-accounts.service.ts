@@ -25,6 +25,7 @@ import {
   UpdateTgProfileDto,
 } from './dto/tg-account.dto';
 import { proxyLabel } from 'src/domain/proxy';
+import { ChannelRegistry } from 'src/channels/registry';
 
 const HEARTBEAT_ALIVE_S = 120;
 
@@ -67,6 +68,7 @@ export class TgAccountsService {
     private crypto: CryptoService,
     private history: HistoryService,
     private telegram: TelegramService,
+    private channels: ChannelRegistry,
     private presence: PresenceService,
   ) {}
 
@@ -127,8 +129,8 @@ export class TgAccountsService {
         a.status === 'banned' || a.status === 'unauthorized'
           ? a.banReason
           : null,
-      online: this.telegram.isOnline(a.id),
-      offline_reason: this.telegram.offlineReason(a.id),
+      online: this.channels.isOnline(a.id),
+      offline_reason: this.channels.offlineReason(a.id, a.channel),
       has_session: Boolean(a.sessionEncrypted),
     };
   }
@@ -364,16 +366,16 @@ export class TgAccountsService {
       },
     });
     let reconnectError: string | null = null;
-    if (this.telegram.isOnline(id) && updated.status === 'active') {
+    if (this.channels.isOnline(id) && updated.status === 'active') {
       try {
-        await this.telegram.reconnect(id);
+        await (await this.channels.forAccount(id)).reconnect(id);
       } catch (e) {
         reconnectError = String(e?.message ?? e);
       }
     }
     return {
       ...this.summary(updated),
-      online: this.telegram.isOnline(id),
+      online: this.channels.isOnline(id),
       reconnect_error: reconnectError,
     };
   }
@@ -391,14 +393,14 @@ export class TgAccountsService {
     }
     let error: string | null = null;
     try {
-      await this.telegram.reconnect(id);
+      await (await this.channels.forAccount(id)).reconnect(id);
     } catch (e) {
       error = String(e?.message ?? e);
     }
     const updated = await this.get(id);
     return {
       ...this.summary(updated),
-      online: this.telegram.isOnline(id),
+      online: this.channels.isOnline(id),
       reconnect_error: error,
     };
   }
@@ -450,17 +452,22 @@ export class TgAccountsService {
     if (
       status === 'active' &&
       updated.sessionEncrypted &&
-      !this.telegram.isOnline(id)
+      !this.channels.isOnline(id)
     ) {
-      await this.telegram.connect(id).catch(() => undefined);
+      await (
+        await this.channels.forAccount(id)
+      )
+        .connect(id)
+        .catch(() => undefined);
     }
-    if (status !== 'active') await this.telegram.disconnect(id);
+    if (status !== 'active')
+      await (await this.channels.forAccount(id)).disconnect(id);
     return this.summary(await this.get(id));
   }
 
   async remove(id: number) {
     await this.get(id);
-    await this.telegram.disconnect(id);
+    await (await this.channels.forAccount(id)).disconnect(id);
     const orphaned = await this.prisma.contact.updateMany({
       where: { accountId: id },
       data: { accountId: null },
@@ -490,15 +497,15 @@ export class TgAccountsService {
         status: a.status,
         last_heartbeat_at: a.lastHeartbeatAt,
         alive:
-          this.telegram.isOnline(a.id) ||
+          this.channels.isOnline(a.id) ||
           (a.lastHeartbeatAt !== null &&
             now - a.lastHeartbeatAt <= HEARTBEAT_ALIVE_S),
-        offline_reason: this.telegram.offlineReason(a.id),
+        offline_reason: this.channels.offlineReason(a.id, a.channel),
         purpose: a.purpose,
       })),
       active_conversations: Number(active[0]?.n ?? 0),
       pending_replies: pending.length,
-      online_accounts: this.telegram.onlineIds().length,
+      online_accounts: this.channels.onlineIds().length,
       ts: now,
     };
   }

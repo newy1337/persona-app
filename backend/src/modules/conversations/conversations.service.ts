@@ -56,6 +56,7 @@ import {
   stagesReachedBy,
 } from 'src/domain/deal-stage';
 import { ManagerAttributionService } from 'src/shared/manager-attribution.service';
+import { ChannelRegistry } from 'src/channels/registry';
 
 const DETAIL_LIMIT = 500;
 const LIST_LIMIT = 200;
@@ -93,6 +94,7 @@ export class ConversationsService {
     private clock: ClockService,
     private funnel: FunnelEventsService,
     private telegram: TelegramService,
+    private channels: ChannelRegistry,
     private settings: SettingsService,
     private persona: PersonaService,
     private brainState: BrainStateService,
@@ -320,7 +322,7 @@ export class ConversationsService {
   async markSeen(chatId: number): Promise<void> {
     const manual = (await this.pause.status(chatId)).status === 'paused';
     if (manual && (await this.hasUnreadFromClient(chatId)))
-      await this.telegram.markRead(chatId).catch(() => undefined);
+      await this.channels.markRead(chatId).catch(() => undefined);
     await this.history.markManagerSeen(chatId, this.clock.ts());
   }
 
@@ -533,7 +535,7 @@ export class ConversationsService {
         'Отмечать прослушанным можно только голосовое или кружок',
       );
     }
-    await this.telegram.markListened(chatId, [row.sourceMessageId]);
+    await this.channels.markListened(chatId, [row.sourceMessageId]);
     return { ok: true, message_id: messageId };
   }
 
