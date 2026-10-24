@@ -166,6 +166,10 @@ function Recording({ item, role, context, onChange, onOpen }) {
     a.href = fileUrl; a.download = filename(item.title); a.click(); setTimeout(() => URL.revokeObjectURL(fileUrl), 10000);
   }
   const [sending, setSending] = useState(false);
+  async function remove() {
+    if (!await PanelUX.confirm({ title: 'Удалить запись?', message: `«${item.title}» пропадёт из библиотеки, файл будет стёрт.`, confirmLabel: 'Удалить', danger: true })) return;
+    await perform(async () => { await api.delete(isCall ? `/api/voicer/calls/${item.call_id}/recording` : `/api/voicer/recordings/${item.id}`); onChange(); });
+  }
   return <article className={v.card}>
     <div className={v.cardTop}><h3>{item.title}</h3><span className={isCall ? v.tag : item.current ? s.badgeActive : v.tag} data-testid={isCall ? 'call-recording' : undefined}>{isCall ? 'Звонок' : item.current ? 'Актуальная' : 'Предыдущая'}</span></div>
     <p className={v.meta}>{item.task.personaName} · {item.task.contactLabel}<br />{item.task.managerName} → {item.task.voicerName}<br />{date(item.createdAt)} · {item.duration} сек.{isCall ? (item.titled ? '' : ' · без подписи') : ` · Версия ${item.revision}`}</p>
@@ -183,6 +187,7 @@ function Recording({ item, role, context, onChange, onOpen }) {
       {role !== 'voice' && !isCall && item.current && <button className={s.btnPrimary} disabled={busy} onClick={() => setSending(true)}>Отправить в диалог</button>}
       {(role !== 'voice' || isCall) && <button className={s.btnSm} disabled={busy} onClick={() => setEditing(!editing)}>{isCall ? 'Подписать' : 'Переименовать'}</button>}
       <button className={s.btnSm} disabled={busy} onClick={() => onOpen(item.task.id)}>Задание #{item.task.id}</button>
+      {role !== 'voice' && <button className={s.btnSmDanger} disabled={busy} onClick={remove}>Удалить</button>}
     </div>
   </article>;
 }

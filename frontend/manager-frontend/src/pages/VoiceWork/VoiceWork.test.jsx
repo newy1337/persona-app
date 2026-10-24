@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, afterEach, expect, test, vi } from 'vitest';
 import { api } from '../../api/client';
 import VoiceWork from './VoiceWork';
+import { PanelUX } from '../../ui/PanelUX';
 vi.mock('../../components/Header/Header', () => ({ default: () => null }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let root, host, options, result, currentRoute;
@@ -105,6 +106,24 @@ test('library allows choosing a recipient and queues the file without claiming d
   expect(post).toHaveBeenCalledWith('/api/voicer/recordings/1/send', { chat_id: '123', request_id: expect.any(String) });
   expect(host.textContent).toContain('В очереди на отправку');
   expect(host.textContent).not.toContain('Голосовое отправлено'); expect(fetch).not.toHaveBeenCalled();
+});
+
+test('manager deletes voice and call recordings after confirmation; voicer has no delete button', async () => {
+  const task = { id: 1, personaSlug: 'nastya', personaName: 'Настя', contactLabel: 'Дима', managerName: 'manager', voicerName: 'Оля' };
+  result = { total: 2, items: [{ id: 1, kind: 'voice', title: 'Утро', current: true, revision: 1, duration: 5, createdAt: 2, task },
+    { id: 9, kind: 'call', call_id: 'c-1', title: 'Звонок', titled: true, duration: 30, createdAt: 1, task }] };
+  const confirm = vi.spyOn(PanelUX, 'confirm').mockResolvedValueOnce(false).mockResolvedValue(true);
+  const remove = vi.spyOn(api, 'delete').mockResolvedValue({ ok: true });
+  await render('/voice?tab=library');
+  const buttons = () => [...host.querySelectorAll('button')].filter(b => b.textContent === 'Удалить');
+  await act(async () => buttons()[0].click());
+  expect(remove).not.toHaveBeenCalled();
+  await act(async () => buttons()[0].click());
+  await act(async () => buttons()[1].click());
+  expect(confirm).toHaveBeenCalledTimes(3);
+  expect(remove.mock.calls).toEqual([['/api/voicer/recordings/1'], ['/api/voicer/calls/c-1/recording']]);
+  options.role = 'voice'; await act(async () => root.render(null)); await render('/voice?tab=library');
+  expect(buttons()).toHaveLength(0);
 });
 
 test('one-time mode clearly requires a recipient and submits automatic delivery intent', async () => {

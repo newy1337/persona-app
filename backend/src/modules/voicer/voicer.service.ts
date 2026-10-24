@@ -49,6 +49,14 @@ const parse = (text: string) => {
   }
 };
 
+/** Стирает файл записи, только если он лежит в каталоге войсера. */
+export async function removeVoicerFile(path: string) {
+  const file = resolve(path),
+    rel = relative(resolve(appConfig.mediaDir, 'voicer'), file);
+  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return;
+  await rm(file, { force: true }).catch(() => undefined);
+}
+
 export function biographyText(value: unknown, depth = 0): string {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value))
@@ -811,6 +819,7 @@ export class VoicerService {
   async recordings(user: DashboardUser, q = '', page = 1) {
     const where: Prisma.VoiceRecordingWhereInput = {
       task: { ...(await this.scopeWhere(user)), voiceMode: 'library' },
+      deletedAt: null,
       ...(q ? { title: { contains: q } } : {}),
     };
     const [rows, total] = await Promise.all([
@@ -829,6 +838,7 @@ export class VoicerService {
           filePath,
           telegramChatId,
           telegramMessageId,
+          deletedAt,
           task,
           deliveries,
           ...r
@@ -850,7 +860,7 @@ export class VoicerService {
 
   async recording(user: DashboardUser, id: number) {
     const recording = await this.prisma.voiceRecording.findFirst({
-      where: { id, task: await this.scopeWhere(user) },
+      where: { id, deletedAt: null, task: await this.scopeWhere(user) },
       include: { task: true },
     });
     if (!recording) throw new NotFoundException('Запись не найдена');
@@ -873,6 +883,28 @@ export class VoicerService {
       where: { id },
       data: { title: title.trim() },
     });
+    return { ok: true };
+  }
+
+  /** Стирает файл; строка остаётся, чтобы не терять историю отправок. */
+  async removeRecording(user: DashboardUser, id: number) {
+    this.scope.requireManager(user);
+    const r = await this.recording(user, id);
+    const sending = await this.prisma.voiceDelivery.count({
+      where: {
+        recordingId: id,
+        pendingReply: { status: { in: ['pending', 'claimed'] } },
+      },
+    });
+    if (sending)
+      throw new ConflictException(
+        'Запись сейчас отправляется. Удалите её после отправки',
+      );
+    const changed = await this.prisma.voiceRecording.updateMany({
+      where: { id, deletedAt: null },
+      data: { deletedAt: this.clock.ts() },
+    });
+    if (changed.count) await removeVoicerFile(r.filePath);
     return { ok: true };
   }
 

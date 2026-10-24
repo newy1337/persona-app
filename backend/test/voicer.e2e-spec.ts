@@ -2,7 +2,14 @@ import { useTestDatabase } from './database';
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { resolve } from 'path';
 
@@ -1658,6 +1665,51 @@ describe('Voicer workflow against a real migrated database', () => {
         .map((i) => i.chat_id)
         .sort(),
     ).toEqual(['444', '445']);
+  });
+
+  it('deletes a library recording: file erased, delivery history kept, no sends after', async () => {
+    const { id } = await recorded('library');
+    const { filePath } = await prisma.voiceRecording.findUniqueOrThrow({
+      where: { id },
+    });
+    const remove = (token: string) =>
+      request(app.getHttpServer())
+        .delete(`/api/voicer/recordings/${id}`)
+        .set(auth(token));
+    expect((await remove(voice)).status).toBe(403);
+    expect((await remove(other)).status).toBe(404);
+    const sent = await request(app.getHttpServer())
+      .post(`/api/voicer/recordings/${id}/send`)
+      .set(auth(manager))
+      .send({ chat_id: '444', request_id: randomUUID() })
+      .expect(200);
+    expect((await remove(manager)).status).toBe(409);
+    await prisma.pendingReply.updateMany({ data: { status: 'failed' } });
+    expect((await remove(manager)).status).toBe(200);
+    expect(existsSync(filePath)).toBe(false);
+    expect(
+      await prisma.voiceDelivery.count({ where: { id: sent.body.id } }),
+    ).toBe(1);
+    const library = await request(app.getHttpServer())
+      .get('/api/voicer/recordings')
+      .set(auth(manager))
+      .expect(200);
+    expect(library.body.items.map((i) => i.id)).not.toContain(id);
+    await request(app.getHttpServer())
+      .get(`/api/voicer/recordings/${id}/file`)
+      .set(auth(manager))
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(`/api/voicer/recordings/${id}/send`)
+      .set(auth(manager))
+      .send({ chat_id: '444', request_id: randomUUID() })
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(`/api/voicer/deliveries/${sent.body.id}/retry`)
+      .set(auth(manager))
+      .send({})
+      .expect(409);
+    expect((await remove(manager)).status).toBe(404);
   });
 
   it('rechecks ownership at delivery time and restricts admin grants to their specific one-time task', async () => {
