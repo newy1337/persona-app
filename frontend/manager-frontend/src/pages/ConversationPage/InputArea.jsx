@@ -21,11 +21,11 @@ const NEXT_DOT = {
 // осталось над ним. Отступы py-3 оставляют 12px между содержимым и нижним краем
 // окна; горизонтальные отступы и колонка (COLUMN) — те же, что у ленты.
 const AREA = 'inputArea shrink-0 border-t bg-background px-4 py-3 md:px-6';
-const COLUMN = 'inputColumn mx-auto flex w-full max-w-3xl flex-col gap-2';
+const COLUMN = 'inputColumn mx-auto flex w-full max-w-3xl flex-col gap-2 2xl:max-w-4xl';
 // Полоса режима — одна строка 32px: тумблер, подпись и одна обрезаемая строка
 // (подсказка · что дальше · почему молчит); полный текст — в title. Те же классы
 // собирают скелетон первой загрузки — высоты совпадают по построению.
-const STRIP = 'modeStrip flex h-8 min-w-0 items-center gap-3';
+const STRIP = 'modeStrip flex min-h-8 min-w-0 items-center gap-3';
 const DOT = 'size-1.5 shrink-0 rounded-full';
 const SEP = ' · ';
 
@@ -80,9 +80,8 @@ function InputArea({
 }) {
   const attach = attachments[0] ?? null;
   const nextAction = nextActionLabel(data.next_bot_action);
-  const hint = aiActive
-    ? 'Диалог ведёт бот. Выключи, чтобы забрать чат себе'
-    : 'Чат за тобой. Включи, чтобы вернуть боту';
+  // Пока ведёт бот, это говорит плашка «Диалог ведёт бот» под полосой — здесь не повторяем.
+  const hint = aiActive ? '' : 'Чат за тобой. Включи, чтобы вернуть боту';
   const pauseText = pauseLabel ? `Почему молчит: ${pauseLabel}${pauseDetail ? ` — ${pauseDetail}` : ''}` : '';
   const status = [hint, nextAction?.text, pauseText].filter(Boolean).join(SEP);
 
@@ -122,11 +121,11 @@ function InputArea({
             <IconAction icon={X} label="Скрыть ошибку" size="icon-xs" onClick={() => setError(null)} />
           </span>
         ) : (
-          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={status} data-testid="mode-status">
+          <span className="line-clamp-2 min-w-0 flex-1 text-xs leading-4 text-muted-foreground" title={status} data-testid="mode-status">
             {hint}
             {nextAction && (
               <>
-                {SEP}
+                {hint ? SEP : null}
                 <span
                   className={cn(DOT, 'mr-1.5 inline-block align-middle', NEXT_DOT[nextAction.tone] || NEXT_DOT.wait)}
                   aria-hidden="true"
@@ -136,7 +135,7 @@ function InputArea({
             )}
             {pauseLabel && (
               <>
-                {SEP}
+                {hint || nextAction ? SEP : null}
                 <span data-testid="pause-reason" title={pauseReasonRaw}>
                   <span className="text-foreground">Почему молчит: {pauseLabel}</span>
                   {pauseDetail && <> — {pauseDetail}</>}
@@ -168,6 +167,19 @@ function InputArea({
           </Button>
         )}
       </div>
+
+      {aiActive && (
+        /* Пока ведёт бот, поля ввода нет (как в рабочей панели); на его месте —
+           понятная плашка, а не пустота. Кнопка делает то же, что тумблер. */
+        <div className="botLeads flex min-h-12 items-center justify-between gap-3 rounded-lg border border-dashed bg-muted/30 px-3 py-2" data-testid="bot-leads">
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Диалог ведёт бот.</span> Чтобы написать самим — заберите чат.
+          </p>
+          <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={busy} onClick={toggleAi}>
+            Забрать чат
+          </Button>
+        </div>
+      )}
 
       {!aiActive && (
           /* Один блок в рамке, как в мессенджере: сверху полосы ответа и вложений,

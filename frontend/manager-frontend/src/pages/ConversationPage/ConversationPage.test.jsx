@@ -229,16 +229,19 @@ describe('ConversationPage: «К дашборду» и каркас страни
     expect(strip.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('режим бота: в подвале одна строка — тумблер, подпись и строка состояния; поля нет', async () => {
+  it('режим бота: в подвале полоса режима и плашка «Диалог ведёт бот» с кнопкой «Забрать чат»; поля нет', async () => {
     getConversationById.mockResolvedValueOnce({ ...PAUSED, is_paused: false });
     await renderPage();
     const input = container.querySelector('[class*="inputArea"]');
     const column = input.firstElementChild;
-    expect(column.children.length).toBe(1);
+    expect(column.children.length).toBe(2);
     const strip = column.firstElementChild;
     expect(strip.className).toContain('modeStrip');
     expect(strip.querySelector('[class*="aiToggle"]')).toBeTruthy();
     expect(strip.querySelector('[data-testid="mode-status"]')).toBeTruthy();
+    const plate = column.querySelector('[data-testid="bot-leads"]');
+    expect(plate.textContent).toContain('Диалог ведёт бот');
+    expect([...plate.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Забрать чат']);
     expect(input.querySelector('textarea')).toBeNull();
   });
 
@@ -279,13 +282,13 @@ describe('ConversationPage: «К дашборду» и каркас страни
     expect(bar.compareDocumentPosition(composer.querySelector('textarea')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('полоса режима — одна строка 32px: подсказка и «что дальше» в одной обрезаемой строке, полный текст в title', async () => {
+  it('полоса режима — от 32px: подсказка и «что дальше» в двух строках без обрезки посреди слова, полный текст в title', async () => {
     getConversationById.mockResolvedValueOnce({ ...PAUSED, next_bot_action: { kind: 'none' } });
     await renderPage();
     const strip = container.querySelector('[class*="modeStrip"]');
-    expect(strip.className.split(' ')).toContain('h-8');
+    expect(strip.className.split(' ')).toContain('min-h-8');
     const line = strip.querySelector('[data-testid="mode-status"]');
-    expect(line.className.split(' ')).toContain('truncate');
+    expect(line.className.split(' ')).toContain('line-clamp-2');
     const next = line.querySelector('[data-testid="next-bot-action"]').textContent;
     expect(next).toBeTruthy();
     expect(line.textContent).toContain('Чат за тобой');
@@ -1542,5 +1545,25 @@ describe('состояния, которые раньше не было видн
     await renderPage();
     const frame = container.querySelector('textarea').closest('[class*="focus-within:ring"]');
     expect(frame).toBeTruthy();
+  });
+});
+
+describe('ConversationPage: разделители дней', () => {
+  const PAUSED = { chat_id: 111, is_paused: true, funnel_stage: 'rapport', pinned_facts: {}, first_seen: 1000, messages: [], funnel_events: [] };
+  it('между сообщениями разных дней — разделитель с датой, в пределах дня — нет', async () => {
+    const DAY = 24 * 3600;
+    const base = Math.floor(new Date(2026, 9, 20, 12).getTime() / 1000);
+    getConversationById.mockResolvedValueOnce({
+      ...PAUSED,
+      messages: [
+        { id: 1, tg_msg_id: 10, ts: base, role: 'user', author: 'llm', content: 'раз' },
+        { id: 2, tg_msg_id: 11, ts: base + 60, role: 'assistant', author: 'llm', content: 'два' },
+        { id: 3, tg_msg_id: 12, ts: base + DAY, role: 'user', author: 'llm', content: 'три' },
+      ],
+    });
+    await renderPage();
+    const dividers = [...container.querySelectorAll('[role="separator"].dayDivider')];
+    expect(dividers).toHaveLength(1);
+    expect(dividers[0].getAttribute('aria-label')).toContain('21 октября');
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { Fragment, useEffect } from 'react';
 import { Bot, ChevronDown, Paperclip, UserRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,7 @@ import ClientAvatar, { ACTIVITY_LABEL } from '../../components/ClientAvatar/Clie
 import VoicePlayer from '../../components/VoicePlayer/VoicePlayer';
 import {
   authorClass,
+  fmtChatDate,
   mediaKind,
   mediaUrl,
   telegramReadMark,
@@ -32,7 +33,7 @@ const NOTE_ITEM = 'mediaItem videoNote block size-full object-cover';
 // Подряд идущие сообщения одного автора — одна группа: между пузырями группы
 // 2px (GROUP_NEXT), между группами 12px (GROUP_FIRST). Обёрток у групп нет —
 // строки остаются прямыми детьми ленты: от этого зависят прокрутка и «прочитано».
-const ROW = 'msgRow group mx-auto flex w-full max-w-3xl shrink-0 items-end gap-2';
+const ROW = 'msgRow group mx-auto flex w-full max-w-3xl shrink-0 items-end gap-2 2xl:max-w-4xl';
 const GROUP_FIRST = 'mt-3';
 const GROUP_NEXT = 'mt-0.5';
 const INNER = 'flex min-w-0 flex-1 items-end gap-2';
@@ -283,9 +284,23 @@ function MessageFeed({
             )}
           </span>
         );
+        // Сменился день — разделитель с датой прямо в ленте (плавающая дата сверху остаётся).
+        const day = fmtChatDate(msg.ts);
+        const newDay = i > 0 && day && day !== fmtChatDate(messages[i - 1].ts);
         return (
+          <Fragment key={`${msg.ts}-${i}`}>
+          {newDay && (
+            <div
+              className="dayDivider mx-auto flex w-full max-w-3xl shrink-0 items-center gap-3 py-3 text-[11px] text-muted-foreground 2xl:max-w-4xl"
+              role="separator"
+              aria-label={day}
+            >
+              <span className="h-px flex-1 bg-border" aria-hidden="true" />
+              {day}
+              <span className="h-px flex-1 bg-border" aria-hidden="true" />
+            </div>
+          )}
           <div
-            key={`${msg.ts}-${i}`}
             data-idx={i}
             ref={(el) => { rowRefs.current[i] = el; }}
             className={cn(
@@ -387,6 +402,7 @@ function MessageFeed({
               </div>
             </div>
           </div>
+          </Fragment>
         );
       })}
       {typing && (
