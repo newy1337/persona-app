@@ -22,7 +22,7 @@ import {
   phoneLabel,
   shortTitle,
 } from '../../utils/scenario';
-import { genderLabel, mediaUrl } from '../../utils/chat';
+import { genderLabel, mediaUrl, withToken } from '../../utils/chat';
 import { accountContact, channelBadge, clientContact } from '../../utils/channel';
 import { PanelUX } from '../../ui/PanelUX';
 import { showScenario } from './scenarioFlag';
@@ -180,6 +180,21 @@ function ScenarioFailed({ onRetry }) {
   );
 }
 
+/** Фото собеседника крупно; не загрузилось (удалено, нет доступа) — так и пишем. */
+function AvatarPreview({ src }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) return <p className="py-6 text-center text-sm text-muted-foreground">Фото недоступно</p>;
+  return (
+    <img
+      className="mx-auto block max-h-[75vh] w-auto max-w-full rounded-lg object-contain"
+      src={withToken(src)}
+      alt="Фото собеседника"
+      data-testid="avatar-preview"
+      onError={() => setBroken(true)}
+    />
+  );
+}
+
 function Sidebar({
   id,
   data,
@@ -206,6 +221,7 @@ function Sidebar({
   onBack,
 }) {
   const [scenarioOpen, toggleScenario] = useScenarioOpen();
+  const [avatarOpen, setAvatarOpen] = useState(false);
   // Опрос сценария иногда падает, и родитель сбрасывает beats в null. Список
   // при этом не убираем: показываем последний удачный ответ этого же чата.
   const lastScenario = useRef(null);
@@ -241,12 +257,35 @@ function Sidebar({
       <div className={SIDEBAR_BODY}>
       <section className={cn('agentCard', SECTION)}>
         <div className="flex items-center gap-2.5">
-          <ClientAvatar
-            className="size-10 shrink-0 rounded-full border text-sm"
-            style={{ '--av-bg': AVATAR_BG.blue }}
-            src={data.client_avatar}
-            name={name}
-          />
+          {data.client_avatar ? (
+            // Фото собеседника (из Telegram или VK): по клику — крупно.
+            <button
+              type="button"
+              className="shrink-0 cursor-zoom-in rounded-full outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              aria-label="Открыть фото собеседника"
+              title="Открыть фото"
+              onClick={() => setAvatarOpen(true)}
+            >
+              <ClientAvatar
+                className="size-10 rounded-full border text-sm"
+                style={{ '--av-bg': AVATAR_BG.blue }}
+                src={data.client_avatar}
+                name={name}
+              />
+            </button>
+          ) : (
+            <ClientAvatar
+              className="size-10 shrink-0 rounded-full border text-sm"
+              style={{ '--av-bg': AVATAR_BG.blue }}
+              src={data.client_avatar}
+              name={name}
+            />
+          )}
+          {avatarOpen && (
+            <PanelUX.Modal title={name} wide onClose={() => setAvatarOpen(false)}>
+              <AvatarPreview src={data.client_avatar} />
+            </PanelUX.Modal>
+          )}
           <div className="flex min-w-0 flex-1 flex-col">
             <span className="text-sm leading-5 font-semibold [overflow-wrap:anywhere]">{name}</span>
             <span className="flex min-h-4 items-center text-xs leading-4">

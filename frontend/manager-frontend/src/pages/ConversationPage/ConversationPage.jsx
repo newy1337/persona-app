@@ -118,7 +118,7 @@ function PageSkeleton() {
             <ChatTopBarSkeleton />
             <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-hidden px-4 pt-9 pb-3 md:px-6">
               {SKELETON_BUBBLES.map(([side, size], i) => (
-                <div key={i} className={`mx-auto flex w-full max-w-3xl flex-col 2xl:max-w-4xl gap-0.5 ${side}`}>
+                <div key={i} className={`mx-auto flex w-full max-w-3xl flex-col gap-0.5 xl:max-w-none ${side}`}>
                   <Skeleton className={`rounded-2xl ${size}`} />
                   <Skeleton className="my-0.5 h-3 w-12" />
                 </div>
@@ -658,7 +658,6 @@ function ConversationPage() {
               <ChatTopBar
                 id={id}
                 data={data}
-                name={name}
                 pins={pins}
                 navigate={navigate}
                 busy={busy}
@@ -731,6 +730,8 @@ function ConversationPage() {
               <InputArea
                 id={id}
                 data={data}
+                name={name}
+                navigate={navigate}
                 aiActive={aiActive}
                 toggleAi={toggleAi}
                 busy={busy}

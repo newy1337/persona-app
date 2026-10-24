@@ -9,6 +9,7 @@ import { IconAction } from '@/components/IconAction/IconAction';
 import { nextActionLabel } from '../../utils/scenario';
 import { answerNow } from '../../api/conversations';
 import EmojiPicker from '../../components/composer/EmojiPicker';
+import VoicerActions from './VoicerActions';
 
 /* «Что дальше» — нейтральный текст; тон показывает только точка перед ним. */
 const NEXT_DOT = {
@@ -21,7 +22,7 @@ const NEXT_DOT = {
 // осталось над ним. Отступы py-3 оставляют 12px между содержимым и нижним краем
 // окна; горизонтальные отступы и колонка (COLUMN) — те же, что у ленты.
 const AREA = 'inputArea shrink-0 border-t bg-background px-4 py-3 md:px-6';
-const COLUMN = 'inputColumn mx-auto flex w-full max-w-3xl flex-col gap-2 2xl:max-w-4xl';
+const COLUMN = 'inputColumn mx-auto flex w-full max-w-3xl flex-col gap-2 xl:max-w-none';
 // Полоса режима — одна строка 32px: тумблер, подпись и одна обрезаемая строка
 // (подсказка · что дальше · почему молчит); полный текст — в title. Те же классы
 // собирают скелетон первой загрузки — высоты совпадают по построению.
@@ -50,6 +51,8 @@ export function InputAreaSkeleton() {
 function InputArea({
   id,
   data,
+  name,
+  navigate,
   aiActive,
   toggleAi,
   busy,
@@ -175,9 +178,12 @@ function InputArea({
           <p className="text-sm text-muted-foreground">
             <span className="font-medium text-foreground">Диалог ведёт бот.</span> Чтобы написать самим — заберите чат.
           </p>
-          <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={busy} onClick={toggleAi}>
-            Забрать чат
-          </Button>
+          <span className="flex shrink-0 items-center gap-1">
+            <VoicerActions id={id} data={data} name={name} navigate={navigate} />
+            <Button type="button" variant="outline" size="sm" className="ml-1" disabled={busy} onClick={toggleAi}>
+              Забрать чат
+            </Button>
+          </span>
         </div>
       )}
 
@@ -327,6 +333,8 @@ function InputArea({
                   data-testid="send-round"
                   onClick={() => roundInput.current?.click()}
                 />
+                <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true" />
+                <VoicerActions id={id} data={data} name={name} navigate={navigate} />
               </div>
               <Button
                 type="button"

@@ -241,7 +241,7 @@ describe('ConversationPage: «К дашборду» и каркас страни
     expect(strip.querySelector('[data-testid="mode-status"]')).toBeTruthy();
     const plate = column.querySelector('[data-testid="bot-leads"]');
     expect(plate.textContent).toContain('Диалог ведёт бот');
-    expect([...plate.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Забрать чат']);
+    expect([...plate.querySelectorAll('button')].map((b) => b.getAttribute('aria-label') || b.textContent)).toEqual(['Задание войсеру', 'Голосовые', 'Забрать чат']);
     expect(input.querySelector('textarea')).toBeNull();
   });
 
@@ -1565,5 +1565,34 @@ describe('ConversationPage: разделители дней', () => {
     const dividers = [...container.querySelectorAll('[role="separator"].dayDivider')];
     expect(dividers).toHaveLength(1);
     expect(dividers[0].getAttribute('aria-label')).toContain('21 октября');
+  });
+});
+
+describe('ConversationPage: войсер внизу и фото собеседника', () => {
+  const PAUSED = { chat_id: 111, is_paused: true, funnel_stage: 'rapport', pinned_facts: {}, first_seen: 1000, messages: [], funnel_events: [] };
+  const labels = (root) => [...root.querySelectorAll('button')].map((b) => b.getAttribute('aria-label') || b.textContent);
+
+  it('«Задание войсеру» и «Голосовые» — в строке кнопок под полем, не в верхней полосе', async () => {
+    getConversationById.mockResolvedValueOnce(PAUSED);
+    await renderPage();
+    const tools = container.querySelector('[class*="composerTools"]');
+    expect(labels(tools)).toEqual(expect.arrayContaining(['Задание войсеру', 'Голосовые']));
+    const top = container.querySelector('[class*="inputArea"]').parentElement.firstElementChild;
+    expect(labels(top)).not.toContain('Задание войсеру');
+  });
+
+  it('есть фото — клик по аватару открывает его крупно; нет фото — аватар не кнопка', async () => {
+    getConversationById.mockResolvedValueOnce({ ...PAUSED, client_avatar: '/api/conversations/111/avatar' });
+    await renderPage();
+    const open = container.querySelector('[aria-label="Открыть фото собеседника"]');
+    expect(open).toBeTruthy();
+    await act(async () => open.click());
+    expect(document.querySelector('[data-testid="avatar-preview"]').getAttribute('src')).toContain('/api/conversations/111/avatar');
+  });
+
+  it('без фото кнопки нет', async () => {
+    getConversationById.mockResolvedValueOnce(PAUSED);
+    await renderPage();
+    expect(container.querySelector('[aria-label="Открыть фото собеседника"]')).toBeNull();
   });
 });

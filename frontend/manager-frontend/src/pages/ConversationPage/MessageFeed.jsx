@@ -33,11 +33,11 @@ const NOTE_ITEM = 'mediaItem videoNote block size-full object-cover';
 // Подряд идущие сообщения одного автора — одна группа: между пузырями группы
 // 2px (GROUP_NEXT), между группами 12px (GROUP_FIRST). Обёрток у групп нет —
 // строки остаются прямыми детьми ленты: от этого зависят прокрутка и «прочитано».
-const ROW = 'msgRow group mx-auto flex w-full max-w-3xl shrink-0 items-end gap-2 2xl:max-w-4xl';
+const ROW = 'msgRow group mx-auto flex w-full max-w-3xl shrink-0 items-end gap-2 xl:max-w-none';
 const GROUP_FIRST = 'mt-3';
 const GROUP_NEXT = 'mt-0.5';
 const INNER = 'flex min-w-0 flex-1 items-end gap-2';
-const CONTENT = 'flex max-w-[85%] min-w-0 flex-col gap-0.5 sm:max-w-[70%]';
+const CONTENT = 'flex max-w-[85%] min-w-0 flex-col gap-0.5 sm:max-w-[70%] xl:max-w-[60%]';
 const AVATAR = 'clientAvatar size-8 shrink-0 rounded-full border text-[10px]';
 // Аватар стоит только у последнего сообщения группы; у остальных — пустое место той же ширины.
 const AVATAR_GAP = 'size-8 shrink-0';
@@ -291,7 +291,7 @@ function MessageFeed({
           <Fragment key={`${msg.ts}-${i}`}>
           {newDay && (
             <div
-              className="dayDivider mx-auto flex w-full max-w-3xl shrink-0 items-center gap-3 py-3 text-[11px] text-muted-foreground 2xl:max-w-4xl"
+              className="dayDivider mx-auto flex w-full max-w-3xl shrink-0 items-center gap-3 py-3 text-[11px] text-muted-foreground xl:max-w-none"
               role="separator"
               aria-label={day}
             >
