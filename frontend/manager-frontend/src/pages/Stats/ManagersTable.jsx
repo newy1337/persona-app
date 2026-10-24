@@ -79,11 +79,14 @@ const TITLE = 'По менеджерам';
 
 const DESCRIPTION = 'Нажмите на строку — раскроются дни. Заголовок столбца сортирует таблицу.';
 
-function Head({ sort, onSort }) {
+const ROLE_TITLE = { head: 'хед', teamlead: 'тимлид' };
+const people = (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'человек' : 'чел.'}`;
+
+function Head({ sort, onSort, nameHeader = 'Менеджер' }) {
   return (
     <TableHeader>
       <TableRow>
-        <TableHead className={TH}>Менеджер</TableHead>
+        <TableHead className={TH}>{nameHeader}</TableHead>
         {COLUMNS.map((c) => (
           <TableHead
             key={c.id}
@@ -105,12 +108,12 @@ function Head({ sort, onSort }) {
 
 // Первая загрузка: та же карточка, описание и шапка, что у готовой таблицы, —
 // отличаются только строки тела.
-export function ManagersTableSkeleton({ label, ...props }) {
+export function ManagersTableSkeleton({ label, title = TITLE, nameHeader, hint = DESCRIPTION, ...props }) {
   return (
-    <Section title={TITLE} flush description={DESCRIPTION} aria-busy="true" {...props}>
+    <Section title={title} flush description={hint} aria-busy="true" {...props}>
       <span className="sr-only">{label}</span>
       <Table className={EDGE}>
-        <Head sort="cost_usd" />
+        <Head sort="cost_usd" nameHeader={nameHeader} />
         <TableBody>
           <SkeletonRows rows={6} cols={COLUMNS.length + 1} />
         </TableBody>
@@ -119,7 +122,18 @@ export function ManagersTableSkeleton({ label, ...props }) {
   );
 }
 
-export default function ManagersTable({ rows }) {
+/**
+ * Таблица расхода и работы по людям. По умолчанию — по менеджерам; вкладка
+ * «По командам» передаёт свои заголовки, а строки команд несут роль, регион и
+ * размер команды руководителя.
+ */
+export default function ManagersTable({
+  rows,
+  title = TITLE,
+  nameHeader = 'Менеджер',
+  hint = DESCRIPTION,
+  empty = 'За период работы не было',
+}) {
   const [open, setOpen] = useState(() => new Set());
   const [sort, setSort] = useState('cost_usd');
 
@@ -162,16 +176,16 @@ export default function ManagersTable({ rows }) {
 
   if (!rows?.length) {
     return (
-      <Section title={TITLE}>
-        <p className="text-sm text-muted-foreground">За период работы не было</p>
+      <Section title={title}>
+        <p className="text-sm text-muted-foreground">{empty}</p>
       </Section>
     );
   }
 
   return (
-    <Section title={TITLE} flush description={DESCRIPTION}>
+    <Section title={title} flush description={hint}>
       <Table className={EDGE}>
-        <Head sort={sort} onSort={setSort} />
+        <Head sort={sort} onSort={setSort} nameHeader={nameHeader} />
         <TableBody>
           {sorted.map((r) => {
             const id = r.manager_id ?? 'none';
@@ -191,6 +205,11 @@ export default function ManagersTable({ rows }) {
                     {shown ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
                   </span>
                   {r.username}
+                  {r.role && (
+                    <div className="pl-5 text-xs font-normal text-muted-foreground" data-testid={`team-meta-${id}`}>
+                      {[ROLE_TITLE[r.role] ?? r.role, r.region_code ? `регион ${r.region_code}` : null, `команда: ${people(r.members ?? 0)}`].filter(Boolean).join(' · ')}
+                    </div>
+                  )}
                 </TableCell>
                 <Cells row={r} share={total.cost_usd ? r.cost_usd / total.cost_usd : null} />
               </TableRow>,

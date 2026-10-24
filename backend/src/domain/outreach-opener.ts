@@ -1,4 +1,4 @@
-import { fillText } from 'src/brain/nastya/config/variables';
+import { fillText } from 'src/brain/config/variables';
 
 /** Запасное название сайта: незаполненный {site} ушёл бы собеседнику
  *  фигурными скобками прямо в первом сообщении. */

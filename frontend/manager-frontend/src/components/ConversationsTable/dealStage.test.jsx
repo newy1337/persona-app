@@ -59,3 +59,45 @@ test('с обработчиком в строке появляется селе�
   });
   expect(onDealStage).toHaveBeenCalledWith(1, 'soglas', expect.objectContaining({ chat_id: 1 }));
 });
+
+test('фильтр колонки «Этап» отбирает по этапу и «не указан», считает строки', async () => {
+  const rows = [
+    row({ chat_id: 1, id: 1, name: 'Первый', deal_stage: 'soglas' }),
+    row({ chat_id: 2, id: 2, name: 'Второй', deal_stage: 'vbros' }),
+    row({ chat_id: 3, id: 3, name: 'Третий' }),
+  ];
+  const names = () => [...host.querySelectorAll('tbody tr')].map((tr) => tr.textContent).join(' ');
+  const draw = async (deal) => {
+    let state = { deal };
+    const filters = [state, (key, value) => { state = { ...state, [key]: value }; }, () => {}];
+    await act(async () => root.render(<ConversationsTable rows={rows} filters={filters} />));
+  };
+  await draw(['soglas']);
+  expect(host.querySelectorAll('tbody tr').length).toBe(1);
+  expect(names()).toContain('Первый');
+  await draw(['']);
+  expect(names()).toContain('Третий');
+  expect(names()).not.toContain('Первый');
+  await draw(['soglas', 'vbros']);
+  expect(host.querySelectorAll('tbody tr').length).toBe(2);
+});
+
+test('фильтр канала появляется, когда в списке и Telegram, и VK', async () => {
+  const rows = [
+    row({ chat_id: 1, id: 1, name: 'Тг' }),
+    row({ chat_id: 2, id: 2, name: 'Вк', channel: 'vk' }),
+  ];
+  await act(async () => root.render(<ConversationsTable rows={rows} />));
+  const chips = [...host.querySelectorAll('[data-testid="channel-filters"] button')];
+  expect(chips.map((b) => b.textContent)).toEqual(['Все · 2', 'Telegram · 1', 'ВКонтакте · 1']);
+  await act(async () => chips[2].click());
+  const text = [...host.querySelectorAll('tbody tr')].map((tr) => tr.textContent).join(' ');
+  expect(text).toContain('Вк');
+  expect(text).not.toContain('Тг');
+  expect(host.querySelector('[data-testid="channel-badge"]').textContent).toBe('VK');
+});
+
+test('в списке только Telegram — фильтра канала нет', async () => {
+  await act(async () => root.render(<ConversationsTable rows={[row({})]} />));
+  expect(host.querySelector('[data-testid="channel-filters"]')).toBeNull();
+});

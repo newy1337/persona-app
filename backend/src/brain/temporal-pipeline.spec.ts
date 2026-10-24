@@ -1,14 +1,14 @@
 import { ChatActivity } from './chat-activity';
-import { NastyaBrainService } from './nastya-brain.service';
-import { judgeDialogue } from './nastya/judge/plan';
-import { generateDraft } from './nastya/llm/generate';
-import { reviewReply } from './nastya/judge/review';
-import { cityPlace } from './nastya/kernel/location';
-import { DEFAULT_RHYTHM } from './nastya/config/rhythm';
-import { mergePrompts } from './nastya/config/prompts';
-jest.mock('./nastya/judge/plan', () => ({ judgeDialogue: jest.fn() }));
-jest.mock('./nastya/llm/generate', () => ({ generateDraft: jest.fn() }));
-jest.mock('./nastya/judge/review', () => ({ reviewReply: jest.fn() }));
+import { PersonaBrainService } from './persona-brain.service';
+import { judgeDialogue } from './judge/plan';
+import { generateDraft } from './llm/generate';
+import { reviewReply } from './judge/review';
+import { cityPlace } from './kernel/location';
+import { DEFAULT_RHYTHM } from './config/rhythm';
+import { mergePrompts } from './config/prompts';
+jest.mock('./judge/plan', () => ({ judgeDialogue: jest.fn() }));
+jest.mock('./llm/generate', () => ({ generateDraft: jest.fn() }));
+jest.mock('./judge/review', () => ({ reviewReply: jest.fn() }));
 
 function setup(zone = 'Asia/Bangkok') {
   const now = new Date('2026-09-24T16:55:00Z'),
@@ -41,7 +41,7 @@ function setup(zone = 'Asia/Bangkok') {
       },
     },
   };
-  const brain: any = Object.create(NastyaBrainService.prototype);
+  const brain: any = Object.create(PersonaBrainService.prototype);
   Object.assign(brain, {
     activity: new ChatActivity(),
     clock: { now: () => now, ts: () => ts },

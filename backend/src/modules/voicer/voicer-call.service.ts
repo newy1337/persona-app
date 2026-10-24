@@ -23,10 +23,14 @@ import { GlobalGateService } from 'src/shared/global-gate.service';
 import { TakeoverReason } from 'src/domain/pause';
 import { VoicerChatService } from './voicer-chat.service';
 import { VoicerAutomationService } from './voicer-automation.service';
-import { TelegramService } from '../telegram/telegram.service';
+import { TelegramService } from '../../channels/telegram/telegram.service';
 import { CallMedia } from './voicer-call-media';
 import { credentialTag } from 'src/shared/session-claims';
 import { VoicerCallOutcomeService } from './voicer-call-outcome.service';
+import {
+  CallRecorder,
+  VoicerCallRecordingService,
+} from './voicer-call-recording.service';
 import { REPLY_BRAIN, ReplyBrain } from 'src/brain/reply-brain.port';
 
 type Ticket = {
@@ -60,6 +64,8 @@ type LiveCall = Ticket & {
   mediaReady: boolean;
   dialPending: boolean;
   discarded?: boolean;
+  /** диктофон: пишет обе стороны с момента соединения */
+  recorder?: CallRecorder;
   endStatus?: string;
   draining?: Promise<void>;
   timer?: NodeJS.Timeout;
@@ -104,6 +110,7 @@ export class VoicerCallService
     private gate: GlobalGateService,
     private http: HttpAdapterHost,
     private outcomes: VoicerCallOutcomeService,
+    private recordings: VoicerCallRecordingService,
     @Inject(REPLY_BRAIN) private brain: ReplyBrain,
   ) {}
 
@@ -283,7 +290,10 @@ export class VoicerCallService
             call.bytes += pcm.length;
             if (pcm.length !== 960 || call.bytes > 192000)
               throw new BadRequestException('Некорректный поток микрофона');
-            if (call.connectedAt) call.media.audio(pcm);
+            if (call.connectedAt) {
+              call.media.audio(pcm);
+              call.recorder?.fromVoicer(pcm);
+            }
           } else if (JSON.parse(data.toString()).action === 'hangup')
             await this.end(call, 'ended', 'Войсер завершил звонок');
         }
@@ -339,7 +349,9 @@ export class VoicerCallService
         .catch((e) => this.end(c, 'failed', callError(e)));
     });
     c.media.on('audio', (data: Buffer) => {
-      if (c.ended || c.socket.readyState !== WebSocket.OPEN) return;
+      if (c.ended) return;
+      c.recorder?.fromPeer(data);
+      if (c.socket.readyState !== WebSocket.OPEN) return;
       if (c.socket.bufferedAmount > 96000) {
         void this.end(c, 'failed', 'Соединение с браузером слишком медленное');
         return;
@@ -349,6 +361,15 @@ export class VoicerCallService
     c.media.on('state', (state: string) => {
       if (c.ended) return;
       if (state === 'CONNECTED' && !c.connectedAt) {
+        void this.recordings
+          .start(c.id)
+          .then((recorder) => {
+            if (c.ended) return this.recordings.discard(recorder);
+            c.recorder = recorder;
+          })
+          .catch((e) =>
+            this.log.warn(`call ${c.id}: recorder failed: ${e?.message ?? e}`),
+          );
         if (c.timer) clearTimeout(c.timer);
         c.connectedAt = this.clock.ts();
         void this.prisma.voiceCall
@@ -605,6 +626,17 @@ export class VoicerCallService
     c.endStatus = status;
     if (c.timer) clearTimeout(c.timer);
     c.media.stop();
+    const recorder = c.recorder;
+    c.recorder = undefined;
+    if (recorder) {
+      const endedAt = this.clock.ts();
+      void (c.connectedAt && !c.dialPending
+        ? this.recordings.complete(
+            { id: c.id, taskId: c.taskId, connectedAt: c.connectedAt, endedAt },
+            recorder,
+          )
+        : this.recordings.discard(recorder));
+    }
     if (c.handler && c.raw) c.client.removeEventHandler(c.handler, c.raw);
     wsSend(c.socket, { status, reason, ended: true });
     c.socket.close(1000);

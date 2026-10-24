@@ -3,10 +3,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { DashboardUser } from '@prisma/client';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
-import {
-  fillVariables,
-  variableValues,
-} from 'src/brain/nastya/config/variables';
+import { fillVariables, variableValues } from 'src/brain/config/variables';
 import { VoicerChatService } from './voicer-chat.service';
 
 const object = (v: any): Record<string, any> =>

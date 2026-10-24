@@ -5,6 +5,7 @@ import { useIsAdmin } from '../AppLayout/me';
 import { Badge } from '@/components/ui/badge';
 import ClientAvatar, { ACTIVITY_LABEL } from '../ClientAvatar/ClientAvatar';
 import { PRIORITY_COLORS, priorityColor, stageColors } from '../../data/stages';
+import { accountContact, channelBadge } from '../../utils/channel';
 
 function waitingFor(ts) {
   if (!ts) return '—';
@@ -93,9 +94,10 @@ function AgentCard({ agent }) {
   const online = clientPresence?.kind === 'online';
 
   const who = name || `Чат ${chatId}`;
+  const channel = channelBadge(agent.channel);
   const about =
     [age ? years(age) : null, city].filter(Boolean).join(' · ') ||
-    (accountId == null ? 'аккаунт удалён' : accountUsername ? `@${accountUsername}` : 'возраст и город неизвестны');
+    (accountId == null ? 'аккаунт удалён' : accountUsername ? accountContact(agent)?.display ?? `@${accountUsername}` : 'возраст и город неизвестны');
   const activity = typing ? `${ACTIVITY_LABEL[typing] || 'печатает'}…` : null;
   const time = waitingFor(waitingSince ?? holdArmedAt);
   const stageTitle = stage?.title ? `${stage.title} · этап ${stage.index} из ${stage.total}` : null;
@@ -148,6 +150,11 @@ function AgentCard({ agent }) {
           )}
         </span>
         <span className="max-w-[60%] shrink-0 truncate font-medium">{who}</span>
+        {channel.other && (
+          <Badge variant="outline" className="h-4 shrink-0 px-1 text-[10px] font-normal" data-channel={channel.key} data-testid="channel-badge" title={channel.title}>
+            {channel.label}
+          </Badge>
+        )}
         <span className="min-w-0 truncate text-xs text-muted-foreground">{activity || about}</span>
       </div>
 

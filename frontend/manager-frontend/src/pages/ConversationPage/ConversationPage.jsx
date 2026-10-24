@@ -10,6 +10,8 @@ import Sidebar, { SIDEBAR, SIDEBAR_TOP, SIDEBAR_BODY, SECTION, META_ROW } from '
 import ChatTopBar, { ChatTopBarSkeleton } from './ChatTopBar';
 import MessageFeed from './MessageFeed';
 import InputArea, { InputAreaSkeleton } from './InputArea';
+import LibraryPicker from '../PhotoSets/LibraryPicker';
+import { showScenario } from './scenarioFlag';
 import {
   goalRows,
   goalNow,
@@ -29,6 +31,7 @@ import {
 import {
   getConversationById,
   getConversationRevision,
+  getConversations,
   getBeats,
   getInboundMedia,
   editMessage,
@@ -43,6 +46,7 @@ import {
 import { pauseReasonDetail, pauseReasonLabel } from '../../utils/pauseReason';
 
 export { canEdit, pickerPlacement } from './MessageFeed';
+export { showScenario } from './scenarioFlag';
 
 export const TOGGLE_COOLDOWN_MS = 2000;
 const MAX_ALBUM = 10;
@@ -150,6 +154,9 @@ function ConversationPage() {
   const [editing, setEditing] = useState(null);
   const [gallery, setGallery] = useState(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  // Список чатов дашборда — для перехода «Предыдущий / Следующий чат».
+  const [chats, setChats] = useState(null);
   const [reactFor, setReactFor] = useState(null);
   const fileInput = useRef(null);
   const voiceInput = useRef(null);
@@ -179,7 +186,10 @@ function ConversationPage() {
   // сбое всё же убираем.
   const loadBeats = useCallback(
     () =>
-      getBeats(id)
+      // Сценарий скрыт (scenarioFlag) — и не спрашиваем его у сервера.
+      !showScenario()
+        ? Promise.resolve()
+        : getBeats(id)
         .then((b) => {
           beatsFor.current = id;
           setBeats(b);
@@ -193,6 +203,12 @@ function ConversationPage() {
         }),
     [id],
   );
+
+  useEffect(() => {
+    getConversations()
+      .then((rows) => setChats(rows))
+      .catch(() => setChats([]));
+  }, [id]);
 
   const load = useCallback(() => {
     getConversationById(id)
@@ -504,7 +520,7 @@ function ConversationPage() {
   }
 
   async function sendGifLink() {
-    const url = window.prompt('Ссылка на гифку (https://…gif или .mp4):');
+    const url = await PanelUX.prompt({ title: 'Отправить гифку', message: 'Ссылка на гифку (https://…gif или .mp4):', placeholder: 'https://', confirmLabel: 'Отправить' });
     if (!url || !/^https:\/\//i.test(url.trim())) return;
     setBusy(true);
     setError(null);
@@ -661,6 +677,7 @@ function ConversationPage() {
                 setExporting={setExporting}
                 exportError={exportError}
                 setExportError={setExportError}
+                chatIds={chats ? chats.map((c) => c.chat_id) : []}
               />
 
               <MessageFeed
@@ -702,6 +719,15 @@ function ConversationPage() {
                 />
               )}
 
+              {libraryOpen && (
+                <LibraryPicker
+                  chatId={id}
+                  replyTo={reply?.tg_msg_id ?? null}
+                  onClose={() => setLibraryOpen(false)}
+                  onSent={() => { setReply(null); load(); }}
+                />
+              )}
+
               <InputArea
                 id={id}
                 data={data}
@@ -728,6 +754,7 @@ function ConversationPage() {
                 roundInput={roundInput}
                 send={send}
                 sendGifLink={sendGifLink}
+                openLibrary={() => setLibraryOpen(true)}
                 pickFiles={pickFiles}
                 sendVoiceFile={sendVoiceFile}
                 sendRoundFile={sendRoundFile}

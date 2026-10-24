@@ -1,9 +1,9 @@
-import { NastyaBrainService } from './nastya-brain.service';
-import { cityPlace } from './nastya/kernel/location';
+import { PersonaBrainService } from './persona-brain.service';
+import { cityPlace } from './kernel/location';
 
 describe('часы хода не зависят от определения места', () => {
   const brain = (persona: Record<string, unknown>) => {
-    const svc: any = Object.create(NastyaBrainService.prototype);
+    const svc: any = Object.create(PersonaBrainService.prototype);
     Object.assign(svc, {
       persona: {
         interlocutorLocation: async () => cityPlace('Madrid', 'ES'),

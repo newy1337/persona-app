@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -9,13 +10,15 @@ import { rmSync } from 'fs';
 import { appConfig } from 'src/config/app.config';
 import { join } from 'path';
 import { HistoryService } from 'src/shared/history.service';
-import { TelegramService } from 'src/modules/telegram/telegram.service';
-import { profileErrorText } from 'src/domain/tg-profile';
+import { TelegramService } from 'src/channels/telegram/telegram.service';
+import { profileErrorText } from 'src/channels/telegram/profile';
 import { UPLOADS_DIR } from '../media/uploads.service';
-import { PhoneNumber, Prisma } from '@prisma/client';
+import { DashboardUser, Lead, Prisma } from '@prisma/client';
+import { MANAGER_ROLES } from 'src/enums/roles.enum';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import {
+  BUFFER_STATUS,
   LEAD_STATUSES,
   LeadDraft,
   leadKey,
@@ -24,16 +27,14 @@ import {
   parseLeadLines,
 } from 'src/domain/leads';
 import { fromChatId } from 'src/utils/ids';
-import { DEAL_NOTE_KEY, DEAL_STAGE_KEY } from 'src/domain/deal-stage';
-import { parseLeadFacts } from 'src/domain/lead-facts';
+import { allowedOwners } from 'src/domain/lead-owners';
 import {
-  CreateLeadDto,
   DEAL_STAGE_FILTERS,
-  ImportLeadsDto,
-  NO_DEAL_STAGE,
-  UpdateLeadDto,
-  csvValues,
-} from './dto/lead.dto';
+  DEAL_STAGES,
+  DealStage,
+  DealStageFilter,
+} from 'src/domain/deal-stage';
+import { CreateLeadDto, ImportLeadsDto, UpdateLeadDto } from './dto/lead.dto';
 import {
   ManagerAttributionService,
   ManagerAttribution,
@@ -52,9 +53,6 @@ export interface LeadView extends ManagerAttribution {
   gender: string | null;
   source_type: string;
   status: string;
-  /** этап сделки и причина из карточки диалога; null — диалога или этапа нет */
-  deal_stage: string | null;
-  deal_note: string | null;
   telegram_user_id: number | null;
   telegram_username: string | null;
   assigned_account_id: number | null;
@@ -70,7 +68,29 @@ export interface LeadView extends ManagerAttribution {
   next_attempt_at: number | null;
   last_error: string | null;
   notes: string | null;
+  first_message: string | null;
   inserted_at: number;
+  /** этап сделки из карточки связанного чата; null — чат не связан или этап не задан */
+  deal_stage: string | null;
+  donor: string | null;
+  account_label: string | null;
+  external_id: string | null;
+  profile_url: string | null;
+  last_messages: string | null;
+  inbound_at: number | null;
+  requested_region: string | null;
+  requested_persona: string | null;
+  reassigned: boolean;
+  /** холодка: пришёл через /api/post/cold */
+  cold: boolean;
+  buffered_at: number | null;
+}
+
+export interface LeadFilter {
+  status?: string;
+  q?: string;
+  limit?: number;
+  deal_stage?: DealStageFilter;
 }
 
 export interface ImportResult {
@@ -84,19 +104,42 @@ export interface TelegramCleanup {
   failed: Array<{ account_id: number | null; error: string }>;
 }
 
-export interface LeadDeal {
-  deal_stage: string | null;
-  deal_note: string | null;
-}
-
-const NO_DEAL: LeadDeal = { deal_stage: null, deal_note: null };
-
-const textOrNull = (value: unknown): string | null =>
-  typeof value === 'string' && value ? value : null;
-
 export interface LeadScope {
   userId: number;
+  /** пользователь и его команда: лиды, которые они добавили, видны руководителю */
+  userIds?: number[];
   accounts: number[];
+}
+
+/**
+ * Поиск по лидам: без учёта регистра, по телефону, нику, имени, городу,
+ * заметке и по id чата в Telegram, если ввели число.
+ */
+function phoneNeedle(q: string): string {
+  const digits = q.replace(/\D/g, '');
+  if (digits.length < 3) return q.replace(/[\s()-]/g, '');
+  return digits.length >= 5 ? digits.replace(/^[78]/, '') : digits;
+}
+
+export function leadSearchClauses(raw: string): Prisma.LeadWhereInput[] {
+  const q = raw.trim();
+  const ci = (field: keyof Prisma.LeadWhereInput, value: string) =>
+    ({
+      [field]: { contains: value, mode: 'insensitive' },
+    }) as Prisma.LeadWhereInput;
+  const out: Prisma.LeadWhereInput[] = [
+    // Телефон ищем по цифрам; ведущие 8 или 7 отбрасываем — в базе номера в +7…
+    ci('phoneE164', phoneNeedle(q)),
+    ci('usernameKey', q.replace(/^@/, '')),
+    ci('peerUsername', q.replace(/^@/, '')),
+    ci('firstName', q),
+    ci('city', q),
+    ci('notes', q),
+    ci('donor', q),
+    ci('externalId', q),
+  ];
+  if (/^\d{5,}$/.test(q)) out.push({ chatId: BigInt(q) });
+  return out;
 }
 
 @Injectable()
@@ -111,11 +154,21 @@ export class LeadsService {
     private attribution: ManagerAttributionService,
   ) {}
 
-  private scopeWhere(scope: LeadScope | null): Prisma.PhoneNumberWhereInput {
-    if (scope === null) return {};
+  /**
+   * Лиды раздела «Лиды» в области пользователя. Лиды из буфера сюда не
+   * попадают никогда: у них своя страница.
+   */
+  private scopeWhere(scope: LeadScope | null): Prisma.LeadWhereInput {
+    const notBuffered = { status: { not: BUFFER_STATUS } };
+    if (scope === null) return notBuffered;
     return {
+      ...notBuffered,
       OR: [
-        { ownerUserId: scope.userId },
+        {
+          ownerUserId: {
+            in: scope.userIds?.length ? scope.userIds : [scope.userId],
+          },
+        },
         ...(scope.accounts.length
           ? [{ assignedAccountId: { in: scope.accounts } }]
           : []),
@@ -124,7 +177,7 @@ export class LeadsService {
   }
 
   private async accountNames(): Promise<Map<number, string | null>> {
-    const rows = await this.prisma.tgAccount.findMany({
+    const rows = await this.prisma.channelAccount.findMany({
       select: { id: true, username: true },
     });
     return new Map(rows.map((a) => [a.id, a.username]));
@@ -155,7 +208,89 @@ export class LeadsService {
     return slug;
   }
 
-  private async senderOf(dto: CreateLeadDto, scope: LeadScope | null) {
+  /**
+   * На кого можно записать новый лид: сам пользователь и его команда (у
+   * менеджера — только он сам), у админа — сам и все сотрудники. С аккаунтами:
+   * форма показывает аккаунты выбранного владельца.
+   */
+  async ownerChoices(user: DashboardUser, teamIds: number[] | null) {
+    const rows = await this.prisma.dashboardUser.findMany({
+      where:
+        teamIds === null
+          ? {
+              OR: [{ id: user.id }, { role: { in: [...MANAGER_ROLES] } }],
+            }
+          : { id: { in: teamIds }, role: { in: [...MANAGER_ROLES] } },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        regionCode: true,
+        accounts: { select: { accountId: true } },
+      },
+      orderBy: [{ regionCode: 'asc' }, { username: 'asc' }],
+    });
+    const items = rows.map((u) => ({
+      user_id: u.id,
+      username: u.username,
+      role: u.role,
+      region_code: u.regionCode,
+      account_ids: u.accounts.map((a) => a.accountId),
+      self: u.id === user.id,
+    }));
+    return {
+      items: [...items.filter((u) => u.self), ...items.filter((u) => !u.self)],
+    };
+  }
+
+  /** Владелец нового лида: по умолчанию сам; другой — только из своей команды. */
+  async ownerFor(
+    user: DashboardUser,
+    scope: LeadScope | null,
+    requested: number | undefined,
+  ): Promise<number> {
+    if (requested === undefined || requested === user.id) return user.id;
+    const target = await this.prisma.dashboardUser.findUnique({
+      where: { id: requested },
+      select: { role: true },
+    });
+    const inTeam = scope === null || (scope.userIds ?? []).includes(requested);
+    if (!target || !MANAGER_ROLES.includes(target.role) || !inTeam)
+      throw new ForbiddenException(
+        'лид можно записать только на себя или сотрудника своей команды',
+      );
+    return requested;
+  }
+
+  /** Может ли аккаунт писать лиду этого владельца — то же правило, что у прозвона. */
+  private async canSend(accountId: number, ownerUserId: number) {
+    const [links, users, owner] = await Promise.all([
+      this.prisma.managerAccount.findMany({
+        where: { accountId: accountId },
+        select: { userId: true },
+      }),
+      this.prisma.dashboardUser.findMany({
+        where: { role: { not: 'admin' } },
+        select: { id: true, leadId: true },
+      }),
+      this.prisma.dashboardUser.findUnique({
+        where: { id: ownerUserId },
+        select: { role: true },
+      }),
+    ]);
+    // Лиды админа прозвон берёт любым аккаунтом.
+    if (owner?.role === 'admin') return true;
+    return allowedOwners(
+      links.map((l) => l.userId),
+      users,
+    ).has(ownerUserId);
+  }
+
+  private async senderOf(
+    dto: CreateLeadDto,
+    scope: LeadScope | null,
+    ownerUserId: number | null = null,
+  ) {
     const personaId = await this.personaOf(dto.persona_id);
     const preferredAccountId = dto.preferred_account_id ?? null;
     if (preferredAccountId === null) return { personaId, preferredAccountId };
@@ -164,7 +299,16 @@ export class LeadsService {
         'можно выбрать только свой Telegram-аккаунт',
       );
     }
-    const account = await this.prisma.tgAccount.findUnique({
+    // Прозвон отдаёт лид только аккаунтам владельца и его подчинённых: чужой
+    // аккаунт лид бы не взял, и он завис бы в очереди.
+    if (
+      ownerUserId !== null &&
+      !(await this.canSend(preferredAccountId, ownerUserId))
+    )
+      throw new UnprocessableEntityException(
+        'этот аккаунт не пишет лидам выбранного сотрудника — выберите его аккаунт или «Автоматически»',
+      );
+    const account = await this.prisma.channelAccount.findUnique({
       where: { id: preferredAccountId },
       select: { status: true, personaId: true },
     });
@@ -183,11 +327,11 @@ export class LeadsService {
   }
 
   toView(
-    row: PhoneNumber,
+    row: Lead,
     names: Map<number, string | null> = new Map(),
     personas: Map<string, string> = new Map(),
     managers?: ManagerDirectory,
-    deal: LeadDeal = NO_DEAL,
+    stages: Map<string, DealStage> = new Map(),
   ): LeadView {
     return {
       ...(managers?.forLead(
@@ -204,10 +348,8 @@ export class LeadsService {
       gender: row.gender,
       source_type: row.sourceType,
       status: row.status,
-      deal_stage: deal.deal_stage,
-      deal_note: deal.deal_note,
-      telegram_user_id: fromChatId(row.telegramUserId),
-      telegram_username: row.telegramUsername,
+      telegram_user_id: fromChatId(row.chatId),
+      telegram_username: row.peerUsername,
       assigned_account_id: row.assignedAccountId,
       preferred_account_id: row.preferredAccountId,
       preferred_account_username:
@@ -229,148 +371,119 @@ export class LeadsService {
       next_attempt_at: row.nextAttemptAt,
       last_error: row.lastError,
       notes: row.notes,
+      first_message: row.firstMessage,
       inserted_at: row.insertedAt,
+      donor: row.donor,
+      account_label: row.accountLabel,
+      external_id: row.externalId,
+      profile_url: row.profileUrl,
+      last_messages: row.lastMessages,
+      inbound_at: row.inboundAt,
+      requested_region: row.requestedRegion,
+      requested_persona: row.requestedPersona,
+      reassigned: row.reassigned,
+      cold: row.cold,
+      buffered_at: row.bufferedAt,
+      deal_stage:
+        row.chatId === null ? null : (stages.get(String(row.chatId)) ?? null),
     };
   }
 
-  async list(
-    scope: LeadScope | null,
-    filter: {
-      status?: string;
-      deal_stage?: string;
-      q?: string;
-      limit?: number;
-      offset?: number;
-    },
-  ) {
-    const statuses = this.filterValues(filter.status, LEAD_STATUSES, 'статус');
-    const stages = this.filterValues(
-      filter.deal_stage,
-      DEAL_STAGE_FILTERS,
-      'этап',
-    );
+  async list(scope: LeadScope | null, filter: LeadFilter) {
+    return this.listLeads(scope, filter);
+  }
+
+  private async listLeads(scope: LeadScope | null, filter: LeadFilter) {
     await this.markReplied();
     const q = filter.q?.trim();
-    const stageChats = stages.length
-      ? await this.chatsByDealStage(stages)
-      : null;
-    const where: Prisma.PhoneNumberWhereInput = {
+    const where: Prisma.LeadWhereInput = {
       AND: [
         this.scopeWhere(scope),
-        statuses.length === 1
-          ? { status: statuses[0] }
-          : statuses.length
-            ? { status: { in: statuses } }
-            : {},
-        q
-          ? {
-              OR: [
-                { phoneE164: { contains: q } },
-                {
-                  usernameKey: { contains: q.replace(/^@/, '').toLowerCase() },
-                },
-                { firstName: { contains: q } },
-                { city: { contains: q } },
-                { telegramUsername: { contains: q } },
-              ],
-            }
-          : {},
-        // Этап живёт в карточке диалога: сюда приходят уже найденные чаты.
-        stageChats ? { telegramUserId: { in: stageChats } } : {},
+        filter.status ? { status: filter.status } : {},
+        q ? { OR: leadSearchClauses(q) } : {},
+        await this.stageWhere(scope, filter.deal_stage),
       ],
     };
-    const [rows, total] = await Promise.all([
-      this.prisma.phoneNumber.findMany({
-        where,
-        orderBy: { id: 'desc' },
-        skip: filter.offset ?? 0,
-        take: filter.limit ?? 200,
-      }),
-      // То же условие, что и у выборки: статус + этап + поиск + область видимости.
-      this.prisma.phoneNumber.count({ where }),
-    ]);
-    const [names, personas, managers, deals] = await Promise.all([
+    const rows = await this.prisma.lead.findMany({
+      where,
+      orderBy: { id: 'desc' },
+      take: filter.limit ?? 200,
+    });
+    const [names, personas, managers, stages] = await Promise.all([
       this.accountNames(),
       this.personaNames(),
       this.attribution.directory(),
-      this.dealsOf(rows),
+      this.stagesByChat(rows.map((r) => r.chatId)),
     ]);
     return {
-      items: rows.map((r) =>
-        this.toView(
-          r,
-          names,
-          personas,
-          managers,
-          deals.get(String(r.telegramUserId)),
-        ),
-      ),
-      total,
-      // Счётчики воронки — по всем лидам области, фильтры их не сужают.
+      items: rows.map((r) => this.toView(r, names, personas, managers, stages)),
       counts: await this.counts(scope),
+      stages: await this.stageCounts(scope),
     };
   }
 
-  private filterValues(
-    raw: string | undefined,
-    allowed: readonly string[],
-    what: string,
-  ): string[] {
-    const values = [...new Set(csvValues(raw))];
-    const unknown = values.filter((v) => !allowed.includes(v));
-    if (unknown.length)
-      throw new BadRequestException(
-        `неизвестный ${what}: ${unknown.join(', ')}`,
-      );
-    return values;
-  }
-
   /**
-   * Чаты лидов, у диалога которых этап сделки среди выбранных. Этап лежит в
-   * JSON карточки диалога (pinned_facts), как его читает список диалогов;
-   * none — диалог есть, этап не выставлен. Один запрос на весь фильтр.
+   * Этап сделки живёт в карточке чата, а не в лиде: читаем его по chat_id
+   * связанных чатов. Лиды без чата этапа не имеют.
    */
-  private async chatsByDealStage(stages: string[]): Promise<bigint[]> {
-    const named = stages.filter((s) => s !== NO_DEAL_STAGE);
-    const conds: Prisma.Sql[] = [];
-    if (named.length)
-      conds.push(
-        Prisma.sql`p.facts::jsonb->>'deal_stage' IN (${Prisma.join(named)})`,
-      );
-    if (stages.includes(NO_DEAL_STAGE))
-      conds.push(Prisma.sql`COALESCE(p.facts::jsonb->>'deal_stage', '') = ''`);
-    const rows = await this.prisma.$queryRaw<{ chat_id: bigint | number }[]>(
-      Prisma.sql`SELECT c.chat_id FROM contacts c
-        LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
-        WHERE c.chat_id IN (SELECT pn.telegram_user_id FROM phone_numbers pn
-                            WHERE pn.telegram_user_id IS NOT NULL)
-          AND (${Prisma.join(conds, ' OR ')})`,
-    );
-    return rows.map((r) => BigInt(r.chat_id));
+  private async stagesByChat(
+    chatIds: Array<bigint | null>,
+  ): Promise<Map<string, DealStage>> {
+    const ids = chatIds.filter((id): id is bigint => id !== null);
+    const out = new Map<string, DealStage>();
+    if (!ids.length) return out;
+    const rows = await this.prisma.$queryRaw<
+      Array<{ chat_id: bigint; stage: string | null }>
+    >`SELECT chat_id, facts::jsonb->>'deal_stage' AS stage
+      FROM pinned_facts WHERE chat_id IN (${Prisma.join(ids)})`;
+    for (const r of rows)
+      if (r.stage && (DEAL_STAGES as readonly string[]).includes(r.stage))
+        out.set(String(r.chat_id), r.stage as DealStage);
+    return out;
   }
 
-  /** Этап сделки для строк страницы: один запрос на страницу, не на строку. */
-  private async dealsOf(rows: PhoneNumber[]): Promise<Map<string, LeadDeal>> {
-    const out = new Map<string, LeadDeal>();
-    const chatIds = rows
-      .map((r) => r.telegramUserId)
-      .filter((id): id is bigint => id !== null && id !== undefined);
-    if (!chatIds.length) return out;
-    const cards = await this.prisma.leadFacts.findMany({
-      where: { chatId: { in: chatIds } },
+  private async chatIdsInScope(scope: LeadScope | null): Promise<bigint[]> {
+    const rows = await this.prisma.lead.findMany({
+      where: {
+        AND: [this.scopeWhere(scope), { chatId: { not: null } }],
+      },
+      select: { chatId: true },
     });
-    for (const card of cards) {
-      const facts = parseLeadFacts(card.facts);
-      out.set(String(card.chatId), {
-        deal_stage: textOrNull(facts[DEAL_STAGE_KEY]),
-        deal_note: textOrNull(facts[DEAL_NOTE_KEY]),
-      });
+    return rows.map((r) => r.chatId).filter((id): id is bigint => id !== null);
+  }
+
+  private async stageWhere(
+    scope: LeadScope | null,
+    stage: DealStageFilter | undefined,
+  ): Promise<Prisma.LeadWhereInput> {
+    if (!stage) return {};
+    const stages = await this.stagesByChat(await this.chatIdsInScope(scope));
+    const withStage = [...stages.entries()]
+      .filter(([, s]) => s === stage)
+      .map(([id]) => BigInt(id));
+    if (stage === 'none') {
+      const any = [...stages.keys()].map((id) => BigInt(id));
+      return any.length ? { chatId: { notIn: any } } : {};
     }
+    return withStage.length ? { chatId: { in: withStage } } : { id: -1 };
+  }
+
+  /** Сколько лидов на каждом этапе; none — без этапа (включая лидов без чата). */
+  async stageCounts(scope: LeadScope | null): Promise<Record<string, number>> {
+    const out: Record<string, number> = Object.fromEntries(
+      DEAL_STAGE_FILTERS.map((s) => [s, 0]),
+    );
+    const stages = await this.stagesByChat(await this.chatIdsInScope(scope));
+    for (const s of stages.values()) out[s] += 1;
+    const total = await this.prisma.lead.count({
+      where: this.scopeWhere(scope),
+    });
+    out['none'] = total - stages.size;
     return out;
   }
 
   async counts(scope: LeadScope | null): Promise<Record<string, number>> {
-    const grouped = await this.prisma.phoneNumber.groupBy({
+    const grouped = await this.prisma.lead.groupBy({
       by: ['status'],
       where: this.scopeWhere(scope),
       _count: { _all: true },
@@ -384,32 +497,32 @@ export class LeadsService {
   }
 
   private async markReplied(): Promise<void> {
-    const contacted = await this.prisma.phoneNumber.findMany({
-      where: { status: 'contacted', telegramUserId: { not: null } },
-      select: { id: true, telegramUserId: true },
+    const contacted = await this.prisma.lead.findMany({
+      where: { status: 'contacted', chatId: { not: null } },
+      select: { id: true, chatId: true },
     });
     if (!contacted.length) return;
     const replied = await this.prisma.message.findMany({
       where: {
         role: 'user',
-        chatId: { in: contacted.map((c) => c.telegramUserId) },
+        chatId: { in: contacted.map((c) => c.chatId) },
       },
       distinct: ['chatId'],
       select: { chatId: true },
     });
     const ids = new Set(replied.map((r) => String(r.chatId)));
     const hit = contacted
-      .filter((c) => ids.has(String(c.telegramUserId)))
+      .filter((c) => ids.has(String(c.chatId)))
       .map((c) => c.id);
     if (hit.length)
-      await this.prisma.phoneNumber.updateMany({
+      await this.prisma.lead.updateMany({
         where: { id: { in: hit } },
         data: { status: 'replied' },
       });
   }
 
-  async get(scope: LeadScope | null, id: number): Promise<PhoneNumber> {
-    const row = await this.prisma.phoneNumber.findFirst({
+  async get(scope: LeadScope | null, id: number): Promise<Lead> {
+    const row = await this.prisma.lead.findFirst({
       where: { AND: [{ id }, this.scopeWhere(scope)] },
     });
     if (!row) throw new NotFoundException('лид не найден');
@@ -444,12 +557,12 @@ export class LeadsService {
     scope: LeadScope | null = null,
   ): Promise<LeadView> {
     const contact = this.contactOf(dto);
-    const sender = await this.senderOf(dto, scope);
+    const sender = await this.senderOf(dto, scope, ownerUserId);
     const existing = contact.phone_e164
-      ? await this.prisma.phoneNumber.findUnique({
+      ? await this.prisma.lead.findUnique({
           where: { phoneE164: contact.phone_e164 },
         })
-      : await this.prisma.phoneNumber.findUnique({
+      : await this.prisma.lead.findUnique({
           where: { usernameKey: contact.username },
         });
     if (existing) {
@@ -466,7 +579,7 @@ export class LeadsService {
           : `${leadKey(contact)} уже в базе (лид #${existing.id}, ${existing.status})`,
       );
     }
-    const row = await this.prisma.phoneNumber.create({
+    const row = await this.prisma.lead.create({
       data: {
         phoneE164: contact.phone_e164 ?? null,
         usernameKey: contact.username ?? null,
@@ -478,6 +591,7 @@ export class LeadsService {
         gender: dto.gender ?? null,
         sourceType: dto.source_type?.trim() || 'manual',
         notes: dto.notes?.trim() || null,
+        firstMessage: dto.first_message?.trim() || null,
         ownerUserId,
         insertedAt: this.clock.ts(),
       },
@@ -537,7 +651,7 @@ export class LeadsService {
       const chunk = wanted.slice(i, i + 500);
       const phones = chunk.map((d) => d.phone_e164).filter(Boolean);
       const names = chunk.map((d) => d.username).filter(Boolean);
-      const rows = await this.prisma.phoneNumber.findMany({
+      const rows = await this.prisma.lead.findMany({
         where: {
           OR: [{ phoneE164: { in: phones } }, { usernameKey: { in: names } }],
         },
@@ -552,7 +666,7 @@ export class LeadsService {
     const fresh = wanted.filter((d) => !known.has(leadKey(d)));
     const now = this.clock.ts();
     if (fresh.length) {
-      await this.prisma.phoneNumber.createMany({
+      await this.prisma.lead.createMany({
         data: fresh.map((d) => ({
           phoneE164: d.phone_e164 ?? null,
           usernameKey: d.username ?? null,
@@ -580,7 +694,7 @@ export class LeadsService {
     dto: UpdateLeadDto,
   ): Promise<LeadView> {
     await this.get(scope, id);
-    const data: Prisma.PhoneNumberUpdateInput = {};
+    const data: Prisma.LeadUpdateInput = {};
     if (dto.first_name !== undefined)
       data.firstName = dto.first_name?.trim() || null;
     if (dto.city !== undefined) data.city = dto.city?.trim() || null;
@@ -594,7 +708,7 @@ export class LeadsService {
         );
       data.personaId = await this.personaOf(dto.persona_id);
       if (row.preferredAccountId !== null && data.personaId) {
-        const chosen = await this.prisma.tgAccount.findUnique({
+        const chosen = await this.prisma.channelAccount.findUnique({
           where: { id: row.preferredAccountId },
           select: { personaId: true },
         });
@@ -605,7 +719,7 @@ export class LeadsService {
         }
       }
       if (row.assignedAccountId !== null && row.status !== 'contacted') {
-        const acc = await this.prisma.tgAccount.findUnique({
+        const acc = await this.prisma.channelAccount.findUnique({
           where: { id: row.assignedAccountId },
           select: { personaId: true },
         });
@@ -616,7 +730,14 @@ export class LeadsService {
     }
     if (dto.gender !== undefined) data.gender = dto.gender;
     if (dto.notes !== undefined) data.notes = dto.notes?.trim() || null;
-    const row = await this.prisma.phoneNumber.update({ where: { id }, data });
+    if (dto.first_message !== undefined) {
+      if ((await this.get(scope, id)).firstContactAt)
+        throw new UnprocessableEntityException(
+          'лиду уже написали — первое сообщение изменить нельзя',
+        );
+      data.firstMessage = dto.first_message?.trim() || null;
+    }
+    const row = await this.prisma.lead.update({ where: { id }, data });
     const [names, personas, managers] = await Promise.all([
       this.accountNames(),
       this.personaNames(),
@@ -636,8 +757,7 @@ export class LeadsService {
   }> {
     const row = await this.get(scope, id);
 
-    let chatId =
-      row.telegramUserId === null ? null : Number(row.telegramUserId);
+    let chatId = row.chatId === null ? null : Number(row.chatId);
     if (chatId === null) {
       const marked = await this.prisma.leadFacts.findFirst({
         where: {
@@ -653,8 +773,8 @@ export class LeadsService {
     const shared =
       chatId === null
         ? 0
-        : await this.prisma.phoneNumber.count({
-            where: { telegramUserId: BigInt(chatId), id: { not: id } },
+        : await this.prisma.lead.count({
+            where: { chatId: BigInt(chatId), id: { not: id } },
           });
 
     let telegram: TelegramCleanup | null = null;
@@ -674,7 +794,7 @@ export class LeadsService {
       for (const accountId of accountIds) {
         try {
           await this.telegram.deleteDialogForEveryone(accountId, chatId, {
-            username: row.telegramUsername ?? row.usernameKey,
+            username: row.peerUsername ?? row.usernameKey,
           });
           telegram.deleted_in.push(accountId);
         } catch (e) {
@@ -689,7 +809,7 @@ export class LeadsService {
       }
     }
 
-    await this.prisma.phoneNumber.delete({ where: { id } });
+    await this.prisma.lead.delete({ where: { id } });
     if (chatId === null || shared)
       return { wiped_chat: null, messages: 0, telegram };
 
@@ -739,10 +859,9 @@ export class LeadsService {
     }
     if (typeof previous !== 'number' || previous === currentLeadId)
       return false;
-    if (await this.prisma.phoneNumber.count({ where: { id: previous } }))
-      return false;
-    const others = await this.prisma.phoneNumber.count({
-      where: { telegramUserId: id, id: { not: currentLeadId } },
+    if (await this.prisma.lead.count({ where: { id: previous } })) return false;
+    const others = await this.prisma.lead.count({
+      where: { chatId: id, id: { not: currentLeadId } },
     });
     return others === 0;
   }
@@ -751,7 +870,7 @@ export class LeadsService {
     scope: LeadScope | null,
     ids?: number[],
   ): Promise<{ queued: number }> {
-    const where: Prisma.PhoneNumberWhereInput = {
+    const where: Prisma.LeadWhereInput = {
       AND: [
         this.scopeWhere(scope),
         ids?.length
@@ -759,7 +878,7 @@ export class LeadsService {
           : { status: 'pending' },
       ],
     };
-    const r = await this.prisma.phoneNumber.updateMany({
+    const r = await this.prisma.lead.updateMany({
       where,
       data: {
         status: 'queued',
@@ -781,7 +900,7 @@ export class LeadsService {
         'этому лиду уже написали — второе первое сообщение с другого аккаунта будет спамом',
       );
     }
-    const updated = await this.prisma.phoneNumber.update({
+    const updated = await this.prisma.lead.update({
       where: { id },
       data: {
         status: 'queued',
@@ -807,14 +926,14 @@ export class LeadsService {
     scope: LeadScope | null,
     ids?: number[],
   ): Promise<{ unqueued: number }> {
-    const where: Prisma.PhoneNumberWhereInput = {
+    const where: Prisma.LeadWhereInput = {
       AND: [
         this.scopeWhere(scope),
         { status: 'queued' },
         ids?.length ? { id: { in: ids } } : {},
       ],
     };
-    const r = await this.prisma.phoneNumber.updateMany({
+    const r = await this.prisma.lead.updateMany({
       where,
       data: { status: 'pending', assignedAccountId: null },
     });

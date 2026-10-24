@@ -22,7 +22,10 @@ import {
   phoneLabel,
   shortTitle,
 } from '../../utils/scenario';
-import { mediaUrl } from '../../utils/chat';
+import { genderLabel, mediaUrl } from '../../utils/chat';
+import { accountContact, channelBadge, clientContact } from '../../utils/channel';
+import { PanelUX } from '../../ui/PanelUX';
+import { showScenario } from './scenarioFlag';
 import { setChatNote, pinFact, setDealStage, setSlot } from '../../api/conversations';
 import { DEAL_STAGES } from '../../data/dealStages';
 
@@ -248,7 +251,15 @@ function Sidebar({
             <span className="text-sm leading-5 font-semibold [overflow-wrap:anywhere]">{name}</span>
             <span className="flex min-h-4 items-center text-xs leading-4">
               {data.blocked_by_client_at ? (
-                <span className="font-medium text-destructive" data-testid="client-blocked">заблокировал(а) нас</span>
+                <span className="font-medium text-destructive" data-testid="client-blocked">ЧС: заблокировал(а) нас</span>
+              ) : data.likely_blocked_at ? (
+                <span
+                  className="font-medium text-destructive"
+                  data-testid="client-likely-blocked"
+                  title="Статус собеседника вдруг скрылся — так бывает, когда кидают в ЧС (или скрыли статус приватностью)"
+                >
+                  вероятно, ЧС · {whenLabel(data.likely_blocked_at)}
+                </span>
               ) : data.cleared_by_client_at ? (
                 <span className="font-medium text-destructive" data-testid="client-cleared">почистил(а) диалог · {whenLabel(data.cleared_by_client_at)}</span>
               ) : (
@@ -298,8 +309,8 @@ function Sidebar({
                 if (!stage) return;
                 let note = '';
                 if (stage === 'archive') {
-                  note = window.prompt('Почему в архив?', pins.deal_note || '');
-                  if (note == null || !note.trim()) return;
+                  note = await PanelUX.prompt({ title: 'В архив', message: 'Почему диалог уходит в архив?', value: pins.deal_note || '', confirmLabel: 'В архив' });
+                  if (!note) return;
                 }
                 setBusy(true);
                 try {
@@ -334,6 +345,10 @@ function Sidebar({
               />
             </span>
           </div>
+          <div className={metaRow} data-testid="client-gender">
+            <span className={metaLabel}>Пол</span>
+            <span className={cn(metaValue, metaText)}>{genderLabel(data.client_gender) || '—'}</span>
+          </div>
           <div className={metaRow}>
             <span className={metaLabel}>Город</span>
             <span className={metaValue}>
@@ -359,9 +374,9 @@ function Sidebar({
           <div className={metaRow}>
             <span className={metaLabel}>Контакт</span>
             <span className={cn(metaValue, metaText)}>
-              {phoneLabel(pins, dbPhone) || (data.client_username ? (
-                <a className={metaLink} href={`https://t.me/${data.client_username}`} target="_blank" rel="noreferrer" title="Номер скрыт в Telegram — ник собеседника">
-                  @{data.client_username}
+              {phoneLabel(pins, dbPhone) || (clientContact(data) ? (
+                <a className={metaLink} href={clientContact(data).url} target="_blank" rel="noreferrer" title={`Номер скрыт — профиль собеседника в ${channelBadge(data.channel).title}`}>
+                  {clientContact(data).display}
                 </a>
               ) : '—')}
             </span>
@@ -370,10 +385,15 @@ function Sidebar({
             <span className={metaLabel}>Аккаунт</span>
             <span className={cn(metaValue, metaText)}>
               {data.account ? (
-                <span title={`Аккаунт Telegram, с которого ${data.persona_name || data.account.persona_id || 'личность'} ведёт этот чат`}>
+                <span title={`Аккаунт ${channelBadge(data.account.channel).title}, с которого ${data.persona_name || data.account.persona_id || 'личность'} ведёт этот чат`}>
                   {data.account.display_name || data.persona_name || data.account.persona_id}
-                  {data.account.username ? (
-                    <> · <a className={metaLink} href={`https://t.me/${data.account.username}`} target="_blank" rel="noreferrer">@{data.account.username}</a></>
+                  {channelBadge(data.account.channel).other && (
+                    <Badge variant="outline" className="ml-1.5 h-4 px-1 align-middle text-[10px]" data-channel={channelBadge(data.account.channel).key}>
+                      {channelBadge(data.account.channel).label}
+                    </Badge>
+                  )}
+                  {accountContact(data.account) ? (
+                    <> · <a className={metaLink} href={accountContact(data.account).url} target="_blank" rel="noreferrer">{accountContact(data.account).display}</a></>
                   ) : data.account.phone ? ` · ${data.account.phone}` : ''}
                 </span>
               ) : '—'}
@@ -457,14 +477,14 @@ function Sidebar({
         )}
       </section>
 
-      {!scenario &&
+      {showScenario() && !scenario &&
         (scenarioFailed ? (
           <ScenarioFailed onRetry={onRetryScenario} />
         ) : (
           <ScenarioSkeleton open={scenarioOpen} onToggle={toggleScenario} />
         ))}
 
-      {scenario && (
+      {showScenario() && scenario && (
         <section className={section}>
           <ScenarioToggle open={scenarioOpen} onToggle={toggleScenario}>
             <span className={sectionCount}>

@@ -17,6 +17,14 @@ import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 
 export const EMPTY_PROXY = { type: 'socks5', host: '', port: '', username: '', password: '', secret: '' };
+export const EMPTY_VK_PROXY = { ...EMPTY_PROXY, type: 'http' };
+
+/** Типы прокси по каналу аккаунта: Telegram и VK принимают разные. */
+export const PROXY_TYPES = {
+  telegram: [['socks5', 'SOCKS5'], ['mtproto', 'MTProto'], ['socks4', 'SOCKS4']],
+  vk: [['http', 'HTTP'], ['https', 'HTTPS'], ['socks5', 'SOCKS5']],
+};
+const typesFor = (channel) => PROXY_TYPES[channel === 'vk' ? 'vk' : 'telegram'];
 
 export function proxyPayload(p) {
   return {
@@ -35,7 +43,7 @@ export function proxyPayload(p) {
  * поэтому первое поле занимает всю ширину через col-span-full.
  * autoFocus — только внутри ProxyDialog; в форме добавления фокус держит телефон.
  */
-export function ProxyFields({ value, onChange, autoFocus = false }) {
+export function ProxyFields({ value, onChange, autoFocus = false, channel = 'telegram' }) {
   const set = (patch) => onChange({ ...value, ...patch });
   const [line, setLine] = useState('');
   const [parsed, setParsed] = useState(null);
@@ -46,7 +54,7 @@ export function ProxyFields({ value, onChange, autoFocus = false }) {
       setParsed(null);
       return;
     }
-    const r = parseProxyLine(text);
+    const r = parseProxyLine(text, { channel });
     setParsed(r);
     if (r.ok) onChange({ ...EMPTY_PROXY, ...r.proxy });
   };
@@ -67,15 +75,13 @@ export function ProxyFields({ value, onChange, autoFocus = false }) {
           className="font-mono"
           value={line}
           onChange={(e) => applyLine(e.target.value)}
-          placeholder="1.2.3.4:1080:логин:пароль или socks5://логин:пароль@хост:порт"
+          placeholder={channel === 'vk' ? 'хост:порт:логин:пароль или http://логин:пароль@хост:порт' : '1.2.3.4:1080:логин:пароль или socks5://логин:пароль@хост:порт'}
           autoFocus={autoFocus}
         />
       </Field>
       <Field label="Тип">
         <NativeSelect value={value.type} onChange={(e) => set({ type: e.target.value })}>
-          <option value="socks5">SOCKS5</option>
-          <option value="mtproto">MTProto</option>
-          <option value="socks4">SOCKS4</option>
+          {typesFor(channel).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </NativeSelect>
       </Field>
       <Field label="Хост">
@@ -102,10 +108,10 @@ export function ProxyFields({ value, onChange, autoFocus = false }) {
   );
 }
 
-export function proxyValid(p) {
+export function proxyValid(p, channel = 'telegram') {
   const port = Number(p.port);
   return (
-    ['socks5', 'socks4', 'mtproto'].includes(p.type)
+    typesFor(channel).some(([key]) => key === p.type)
     && p.host.trim()
     && Number.isInteger(port) && port > 0 && port < 65536
     && (p.type !== 'mtproto' || p.secret)
@@ -113,13 +119,14 @@ export function proxyValid(p) {
 }
 
 export default function ProxyDialog({ account, onClose }) {
-  const [proxy, setProxy] = useState(EMPTY_PROXY);
+  const channel = account.channel === 'vk' ? 'vk' : 'telegram';
+  const [proxy, setProxy] = useState(channel === 'vk' ? EMPTY_VK_PROXY : EMPTY_PROXY);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
-    if (busy || !proxyValid(proxy)) return;
+    if (busy || !proxyValid(proxy, channel)) return;
     setBusy(true);
     setError(null);
     try {
@@ -141,7 +148,7 @@ export default function ProxyDialog({ account, onClose }) {
       <DialogContent portal={false} showCloseButton={false}>
         <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>Прокси: <span className="font-mono">{account.phone_e164}</span></DialogTitle>
+            <DialogTitle>Прокси: <span className="font-mono">{account.login || account.phone_e164}</span></DialogTitle>
           </DialogHeader>
           <DialogBody className="flex flex-col gap-3">
             {/* Порядок абзацев как в исходном окне: сначала текущий прокси, затем пояснение.
@@ -155,13 +162,13 @@ export default function ProxyDialog({ account, onClose }) {
               После сохранения аккаунт переподключится через этот прокси. Не подключится — будет видно по статусу «онлайн».
             </DialogDescription>
             <div className="grid gap-3 sm:grid-cols-2">
-              <ProxyFields value={proxy} onChange={setProxy} autoFocus />
+              <ProxyFields value={proxy} onChange={setProxy} channel={channel} autoFocus />
             </div>
           </DialogBody>
           <DialogError>{error}</DialogError>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onClose(false)}>Отмена</Button>
-            <Button type="submit" disabled={busy || !proxyValid(proxy)}>
+            <Button type="submit" disabled={busy || !proxyValid(proxy, channel)}>
               {busy ? 'Сохранение…' : 'Сохранить'}
             </Button>
           </DialogFooter>

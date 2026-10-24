@@ -298,8 +298,8 @@ export default function Personas() {
   }
 
   async function rename() {
-    const name = window.prompt('Имя личности (оно же имя в разговоре):', persona.name);
-    if (name == null || !name.trim() || name === persona.name) return;
+    const name = await PanelUX.prompt({ title: 'Переименовать личность', message: 'Имя личности — оно же имя в разговоре.', value: persona.name, confirmLabel: 'Переименовать' });
+    if (!name || name === persona.name) return;
     setRenaming(true);
     try {
       await run(() => updatePersona(persona.id, { name: name.trim() }));

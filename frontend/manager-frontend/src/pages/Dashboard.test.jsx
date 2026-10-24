@@ -4,6 +4,7 @@ import React, { act } from 'react';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 import { createRoot } from 'react-dom/client';
+import { HeaderToolsContext } from '../components/AppLayout/headerTools';
 
 const DAY = 24 * 3600;
 const now = () => Math.floor(Date.now() / 1000);
@@ -23,8 +24,8 @@ vi.mock('../api/conversations', () => ({
   setConversationHidden: vi.fn(),
 }));
 
-// Статистика живёт в своём модуле: без этой подмены запрос падал, и страница
-// в тестах оставалась без строк.
+// Плитки живут в своём модуле: без этой заглушки загрузка падала целиком и
+// проверка живых диалогов проходила случайно, по цифре из другого места.
 vi.mock('../api/stats', () => ({ getStats: stats }));
 
 vi.mock('react-router-dom', async () => {
@@ -47,6 +48,11 @@ const row = (chatId, agoSeconds) => ({
 });
 
 let Dashboard;
+// Страница отдаёт счётчик LIVE общей шапке через контекст — ловим его здесь.
+const published = { tools: null };
+function Shell({ children }) {
+  return React.createElement(HeaderToolsContext.Provider, { value: { tools: published.tools, setTools: (t) => { published.tools = t; } } }, children);
+}
 
 beforeEach(async () => {
   conversations.mockResolvedValue([row(1, 60), row(2, 3 * 3600), row(3, DAY + 3600)]);
@@ -62,7 +68,7 @@ async function draw() {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
-  await act(async () => root.render(React.createElement(Dashboard)));
+  await act(async () => root.render(React.createElement(Shell, null, React.createElement(Dashboard))));
   return { host, root };
 }
 
@@ -70,6 +76,13 @@ describe('главная панель: один список вместо дву
   it('тяжёлый список запрашивается ровно один раз за загрузку', async () => {
     const { root } = await draw();
     expect(conversations).toHaveBeenCalledTimes(1);
+    await act(async () => root.unmount());
+  });
+
+  it('живые берутся из того же списка: граница — сутки', async () => {
+    const { root } = await draw();
+    // Третья строка старше суток, значит в живых остаются две.
+    expect(published.tools?.liveCount).toBe(2);
     await act(async () => root.unmount());
   });
 
@@ -85,20 +98,41 @@ describe('главная панель: один список вместо дву
     await act(async () => root.unmount());
   });
 
-  it('в архиве список диалогов запрашивается один раз — второй запрос ради «активных» больше не нужен', async () => {
+  it('в архиве основной список тоже запрашивается: из него считаются живые диалоги', async () => {
     const { host, root } = await draw();
     conversations.mockClear();
     const button = [...host.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Архив');
     await act(async () => button.click());
     expect(hidden).toHaveBeenCalled();
-    expect(conversations).not.toHaveBeenCalled();
+    expect(conversations).toHaveBeenCalled();
+    expect(published.tools?.liveCount).toBe(2);
     await act(async () => root.unmount());
   });
 
-  it('шапка страницы — «Диалоги», фильтра по периоду больше нет', async () => {
+  it('шапка страницы — «Диалоги»; период меняет запрос плиток', async () => {
+    window.sessionStorage.clear();
     const { host, root } = await draw();
     expect(host.querySelector('h1').textContent).toBe('Диалоги');
-    expect(host.textContent).not.toContain('Период');
+    expect(stats).toHaveBeenLastCalledWith({});
+    const period = host.querySelector('select[aria-label="Период"]');
+    await act(async () => {
+      period.value = 'today';
+      period.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const [range] = stats.mock.calls.at(-1);
+    expect(range.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(range.from).toBe(range.to);
+    window.sessionStorage.clear();
+    await act(async () => root.unmount());
+  });
+
+  it('поиск по имени подтягивает архив и показывает его строки', async () => {
+    window.sessionStorage.setItem('panel_filters_dialogs', JSON.stringify({ who: 'Архивный' }));
+    hidden.mockResolvedValue([{ ...row(9, 120), name: 'Архивный' }]);
+    const { host, root } = await draw();
+    expect(hidden).toHaveBeenCalled();
+    expect(host.textContent).toContain('Архивный');
+    window.sessionStorage.clear();
     await act(async () => root.unmount());
   });
 

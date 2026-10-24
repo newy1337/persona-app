@@ -45,20 +45,22 @@ const OUTREACH = {
 };
 const lead = (id, extra = {}) => ({ id, first_name: `Лид ${id}`, phone_e164: `+7900000${String(id).padStart(4, '0')}`, status: 'pending', ...extra });
 
-// Сервер-заглушка: 60 лидов, id по убыванию; отдаёт страницу по limit / offset.
-// При filtering фильтры status / deal_stage (списки через запятую) сужают
-// выборку и total, counts остаются по всем лидам — как на бэкенде.
+// Сервер-заглушка как бэкенд рабочей панели: 60 лидов, id по убыванию; один
+// status и один deal_stage сужают выборку, отдаются первые limit строк без
+// total; counts и stages — по всем лидам. Страницы листает сама панель.
 let total;
 let rowExtra;
-let filtering;
-function serve({ limit = 200, offset = 0, status = '', deal_stage = '' } = {}) {
-  const statuses = filtering && status ? status.split(',') : [];
-  const stages = filtering && deal_stage ? deal_stage.split(',') : [];
-  const all = Array.from({ length: total }, (_, i) => lead(total - i, rowExtra(total - i)))
-    .filter((row) => !statuses.length || statuses.includes(row.status))
-    .filter((row) => !stages.length || stages.includes(row.deal_stage ?? (row.telegram_user_id ? 'none' : '')));
-  return Promise.resolve({ items: all.slice(offset, offset + limit), total: all.length, counts: { ...COUNTS, total } });
+const stageOfRow = (row) => row.deal_stage || 'none';
+function serve({ limit = 200, status = '', deal_stage = '' } = {}) {
+  const everyone = Array.from({ length: total }, (_, i) => lead(total - i, rowExtra(total - i)));
+  const all = everyone
+    .filter((row) => !status || row.status === status)
+    .filter((row) => !deal_stage || stageOfRow(row) === deal_stage);
+  const stages = {};
+  for (const row of everyone) stages[stageOfRow(row)] = (stages[stageOfRow(row)] ?? 0) + 1;
+  return Promise.resolve({ items: all.slice(0, limit), counts: { ...COUNTS, total }, stages });
 }
+const QUERY = { status: '', q: '', limit: 1000 };
 
 let host;
 let root;
@@ -104,7 +106,6 @@ const openMenu = async (row) => {
 beforeEach(() => {
   total = 60;
   rowExtra = () => ({});
-  filtering = false;
   window.sessionStorage.clear();
   vi.clearAllMocks();
   leadsApi.getLeads.mockReset().mockImplementation(serve);
@@ -118,15 +119,16 @@ afterEach(() => {
 });
 
 describe('лиды: постраничный список', () => {
-  it('первая страница — limit 25, offset 0; переход по номеру просит следующую', async () => {
+  it('список приходит одним запросом, страницы листаются без нового запроса', async () => {
     await mount();
-    expect(lastQuery()).toEqual({ status: '', q: '', limit: 25, offset: 0 });
+    expect(lastQuery()).toEqual(QUERY);
     expect(rowIds()).toHaveLength(25);
     expect(rowIds()[0]).toBe(60);
     expect(pagerStatus()).toBe('Всего: 60 · 1–25');
 
+    const calls = leadsApi.getLeads.mock.calls.length;
     await click(byLabel('Страница 2', host));
-    expect(lastQuery()).toMatchObject({ limit: 25, offset: 25 });
+    expect(leadsApi.getLeads.mock.calls.length).toBe(calls);
     expect(rowIds()[0]).toBe(35);
     expect(pagerStatus()).toBe('Всего: 60 · 26–50');
     expect(byLabel('Страница 2', host).getAttribute('aria-current')).toBe('page');
@@ -135,20 +137,25 @@ describe('лиды: постраничный список', () => {
   it('смена статуса, размера страницы и поиска возвращает на первую страницу', async () => {
     await mount();
     await click(byLabel('Страница 3', host));
-    expect(lastQuery()).toMatchObject({ offset: 50 });
+    expect(pagerStatus()).toBe('Всего: 60 · 51–60');
 
     await click(stage('В очереди'));
-    expect(lastQuery()).toEqual({ status: 'queued', q: '', limit: 25, offset: 0 });
+    expect(lastQuery()).toEqual({ ...QUERY, status: 'queued' });
     expect(stage('В очереди').getAttribute('aria-pressed')).toBe('true');
+    expect(byLabel('Страница 1', host).getAttribute('aria-current')).toBe('page');
 
+    total = 120;
+    rowExtra = () => ({ status: 'queued' });
+    await click(stage('Все'));
+    await click(stage('В очереди'));
     await click(byLabel('Страница 2', host));
     const size = byLabel('Строк на странице', host);
     await act(async () => { size.value = '50'; size.dispatchEvent(new Event('change', { bubbles: true })); });
     await flush();
-    expect(lastQuery()).toEqual({ status: 'queued', q: '', limit: 50, offset: 0 });
+    expect(pagerStatus()).toBe('Всего: 120 · 1–50');
 
     await click(byLabel('Страница 2', host));
-    expect(lastQuery()).toMatchObject({ offset: 50 });
+    expect(pagerStatus()).toBe('Всего: 120 · 51–100');
     vi.useFakeTimers();
     const search = byLabel('Поиск лидов', host);
     await act(async () => {
@@ -156,10 +163,11 @@ describe('лиды: постраничный список', () => {
       search.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await act(async () => { await vi.advanceTimersByTimeAsync(300); });
-    expect(lastQuery()).toEqual({ status: 'queued', q: 'олег', limit: 50, offset: 0 });
+    expect(lastQuery()).toEqual({ ...QUERY, status: 'queued', q: 'олег' });
+    expect(pagerStatus()).toBe('Всего: 120 · 1–50');
   });
 
-  it('опрос раз в 10 секунд перезапрашивает текущую страницу и не убирает строки', async () => {
+  it('опрос раз в 10 секунд перезапрашивает список и оставляет текущую страницу', async () => {
     vi.useFakeTimers();
     await mount();
     await click(byLabel('Страница 2', host));
@@ -168,7 +176,7 @@ describe('лиды: постраничный список', () => {
     const before = leadsApi.getLeads.mock.calls.length;
     await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
     expect(leadsApi.getLeads.mock.calls.length).toBe(before + 1);
-    expect(lastQuery()).toMatchObject({ limit: 25, offset: 25 });
+    expect(lastQuery()).toEqual(QUERY);
     // Ответ ещё не пришёл — прежние строки на месте, скелета нет.
     expect(rowIds()).toHaveLength(25);
     expect(host.querySelector('[data-slot="skeleton"]')).toBeNull();
@@ -193,21 +201,23 @@ describe('лиды: постраничный список', () => {
     await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
     await flush();
     await flush();
-    expect(lastQuery()).toMatchObject({ limit: 25, offset: 25 });
+    expect(lastQuery()).toEqual(QUERY);
     expect(pagerStatus()).toBe('Всего: 30 · 26–30');
     expect(rowIds()).toHaveLength(5);
   });
 
-  it('ответ прошлой страницы, пришедший позже, не затирает новую', async () => {
+  it('ответ прошлого фильтра, пришедший позже, не затирает новый', async () => {
+    rowExtra = (id) => (id % 2 ? { status: 'queued' } : {});
     await mount();
     let late;
     leadsApi.getLeads.mockImplementationOnce((query) => new Promise((resolve) => { late = () => serve(query).then(resolve); }));
-    await click(byLabel('Страница 2', host));
-    await click(byLabel('Страница 3', host));
-    expect(rowIds()[0]).toBe(10);
+    await click(stage('В очереди'));
+    await click(stage('Все'));
+    expect(rowIds()[0]).toBe(60);
     await act(async () => { await late(); });
     await flush();
-    expect(rowIds()[0]).toBe(10);
+    expect(rowIds()[0]).toBe(60);
+    expect(pressed()).toEqual(['Все']);
   });
 });
 
@@ -216,7 +226,6 @@ describe('лиды: фильтры колонок «Статус» и «Этап
   const mixed = (id) => (id % 3 === 0
     ? { status: 'replied', telegram_user_id: 1000 + id, deal_stage: id % 2 === 0 ? 'lead' : null, deal_note: id % 2 === 0 ? 'ждёт звонка' : null }
     : id % 3 === 1 ? { status: 'contacted', telegram_user_id: 1000 + id, deal_stage: 'vbros' } : {});
-  beforeEach(() => { filtering = true; });
 
   it('колонка «Этап»: подпись этапа, причина в подсказке, без этапа — прочерк', async () => {
     rowExtra = mixed;
@@ -232,24 +241,25 @@ describe('лиды: фильтры колонок «Статус» и «Этап
     expect(cellOf(59).textContent).toBe('—');
   });
 
-  it('у «Статуса» и «Этапа» есть значок фильтра; варианты статуса — с числами из counts', async () => {
+  it('у «Статуса» и «Этапа» есть значок фильтра; варианты — с числами из counts и stages', async () => {
     await mount();
     expect([...host.querySelectorAll('thead button[aria-label^="Фильтр: "]')].map((b) => b.getAttribute('aria-label'))).toEqual(['Фильтр: Статус', 'Фильтр: Этап']);
     await click(filterButton('Статус'));
     expect([...popover().querySelectorAll('label')].map((l) => l.textContent)).toEqual(['В базе40', 'В очереди10', 'Найден0', 'Написали6', 'Ответил4', 'Недоступен0']);
     await closePopover();
     await click(filterButton('Этап'));
-    expect([...popover().querySelectorAll('label')].map((l) => l.textContent)).toEqual(['Вброс', 'Предлога', 'Соглас', 'Лид', 'Депозит', 'Архив', 'не указан']);
+    expect([...popover().querySelectorAll('label')].map((l) => l.textContent)).toEqual(['Вброс', 'Предлога', 'Соглас', 'Лид', 'Депозит', 'Архив', 'не указан60']);
   });
 
   it('фильтр по статусу уходит в запрос, возвращает на первую страницу и подсвечивает сегмент воронки', async () => {
     rowExtra = mixed;
     await mount();
     await click(byLabel('Страница 2', host));
-    expect(lastQuery()).toMatchObject({ offset: 25 });
+    expect(pagerStatus()).toBe('Всего: 60 · 26–50');
 
     await tick('Статус', 'Ответил');
-    expect(lastQuery()).toEqual({ status: 'replied', q: '', limit: 25, offset: 0 });
+    expect(lastQuery()).toEqual({ ...QUERY, status: 'replied' });
+    expect(pagerStatus()).toBe('Всего: 20 · 1–20');
     expect(pressed()).toEqual(['Ответил']);
     expect(filterButton('Статус').hasAttribute('data-active')).toBe(true);
     expect(chips().textContent).toContain('Статус: Ответил');
@@ -262,8 +272,9 @@ describe('лиды: фильтры колонок «Статус» и «Этап
     await mount();
     await tick('Статус', 'Ответил');
     await tick('Статус', 'Написали');
-    // порядок — как в воронке, а не как кликали
-    expect(lastQuery()).toEqual({ status: 'contacted,replied', q: '', limit: 25, offset: 0 });
+    // несколько статусов бэкенд не фильтрует: запрос без статуса, отбор здесь
+    expect(lastQuery()).toEqual(QUERY);
+    expect(rowIds().every((id) => id % 3 !== 2)).toBe(true);
     expect(pressed()).toEqual([]);
     expect(stage('Все').getAttribute('aria-pressed')).toBe('false');
     expect(chips().textContent).toContain('Статус: Написали, Ответил');
@@ -281,7 +292,7 @@ describe('лиды: фильтры колонок «Статус» и «Этап
     await closePopover();
 
     await click(stage('В очереди'));
-    expect(lastQuery()).toEqual({ status: 'queued', q: '', limit: 25, offset: 0 });
+    expect(lastQuery()).toEqual({ ...QUERY, status: 'queued' });
     expect(pressed()).toEqual(['В очереди']);
     expect(chips().textContent).toContain('Статус: В очереди');
     await click(filterButton('Статус'));
@@ -290,23 +301,24 @@ describe('лиды: фильтры колонок «Статус» и «Этап
     await closePopover();
 
     await click(stage('Все'));
-    expect(lastQuery()).toEqual({ status: '', q: '', limit: 25, offset: 0 });
+    expect(lastQuery()).toEqual(QUERY);
     expect(pressed()).toEqual(['Все']);
     expect(chips()).toBeNull();
     expect(filterButton('Статус').hasAttribute('data-active')).toBe(false);
     expect(host.querySelector('[data-testid="leads-found"]')).toBeNull();
   });
 
-  it('фильтр по этапу: deal_stage через запятую вместе со статусом, страница сбрасывается', async () => {
+  it('фильтр по этапу: один этап — в запрос вместе со статусом, несколько — отбираются здесь', async () => {
     rowExtra = mixed;
     await mount();
     await click(stage('Ответил'));
     await click(byLabel('Страница 1', host));
     await tick('Этап', 'не указан');
-    expect(lastQuery()).toEqual({ status: 'replied', deal_stage: 'none', q: '', limit: 25, offset: 0 });
+    expect(lastQuery()).toEqual({ ...QUERY, status: 'replied', deal_stage: 'none' });
     expect(rowIds().every((id) => id % 6 === 3)).toBe(true);
     await tick('Этап', 'Лид');
-    expect(lastQuery()).toEqual({ status: 'replied', deal_stage: 'lead,none', q: '', limit: 25, offset: 0 });
+    expect(lastQuery()).toEqual({ ...QUERY, status: 'replied' });
+    expect(rowIds()).toHaveLength(20);
     expect(chips().textContent).toContain('Этап: Лид, не указан');
     // воронку фильтр по этапу не трогает
     expect(pressed()).toEqual(['Ответил']);
@@ -322,13 +334,13 @@ describe('лиды: фильтры колонок «Статус» и «Этап
     expect(host.querySelector('[data-testid="leads-found"]').textContent).toBe('Найдено 10 из 60');
 
     await click(byLabel('Убрать фильтр: Этап', host));
-    expect(lastQuery()).toEqual({ status: 'replied', q: '', limit: 25, offset: 0 });
+    expect(lastQuery()).toEqual({ ...QUERY, status: 'replied' });
     expect(chips().textContent).not.toContain('Этап');
 
     await tick('Этап', 'Лид');
     await closePopover();
     await click(buttonByText('Сбросить все'));
-    expect(lastQuery()).toEqual({ status: '', q: '', limit: 25, offset: 0 });
+    expect(lastQuery()).toEqual(QUERY);
     expect(chips()).toBeNull();
     expect(pressed()).toEqual(['Все']);
     expect(rowIds()).toHaveLength(25);
@@ -354,14 +366,14 @@ describe('лиды: фильтры колонок «Статус» и «Этап
     const before = leadsApi.getLeads.mock.calls.length;
     await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
     expect(leadsApi.getLeads.mock.calls.length).toBe(before + 1);
-    expect(lastQuery()).toEqual({ status: 'replied', deal_stage: 'lead', q: '', limit: 25, offset: 0 });
+    expect(lastQuery()).toEqual({ ...QUERY, status: 'replied', deal_stage: 'lead' });
     expect(chips().textContent).toContain('Этап: Лид');
 
     // Ушли в диалог и вернулись: страница смонтирована заново, фильтры из sessionStorage.
     act(() => root.unmount());
     host.remove();
     await mount();
-    expect(leadsApi.getLeads.mock.calls.at(-1)[0]).toEqual({ status: 'replied', deal_stage: 'lead', q: '', limit: 25, offset: 0 });
+    expect(leadsApi.getLeads.mock.calls.at(-1)[0]).toEqual({ ...QUERY, status: 'replied', deal_stage: 'lead' });
     expect(pressed()).toEqual(['Ответил']);
     expect(chips().textContent).toContain('Статус: Ответил');
   });
@@ -369,7 +381,7 @@ describe('лиды: фильтры колонок «Статус» и «Этап
   it('мусор в сохранённых фильтрах в запрос не попадает', async () => {
     window.sessionStorage.setItem('panel_filters_leads', JSON.stringify({ status: ['bogus', 'queued'], stage: ['nope'], other: 'x' }));
     await mount();
-    expect(lastQuery()).toEqual({ status: 'queued', q: '', limit: 25, offset: 0 });
+    expect(lastQuery()).toEqual({ ...QUERY, status: 'queued' });
     expect(pressed()).toEqual(['В очереди']);
     expect(chips().textContent).not.toContain('Этап');
   });

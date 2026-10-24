@@ -18,19 +18,23 @@ const accounts = [
   { id: 7, username: 'sender_test', phone_e164: '+70000000000', status: 'active', persona_id: 'nastya', manager_username: 'manager_test', region_code: '0077' },
   { id: 8, username: 'taken_test', phone_e164: '+70000000008', status: 'active', persona_id: 'nastya', manager_username: 'other_manager', region_code: '0078' },
 ];
-// GET /api/managers/:id — всё, что нужно окну учётки, одним ответом.
+// GET /api/managers/:id/credentials (как в рабочей панели) — логин, регион и сохранённый пароль;
+// остальное окно учётки берёт из строки списка.
 const editors = {
-  1: { user_id: 1, username: 'admin', role: 'admin', region_code: null, voicer_id: null, account_ids: [], password: null },
-  2: { user_id: 2, username: 'manager_test', role: 'manager', region_code: '0077', voicer_id: null, account_ids: [7], password: 'stored-test-only' },
-  3: { user_id: 3, username: 'new_manager', role: 'manager', region_code: '0123', voicer_id: null, account_ids: [], password: 'synthetic-test-only' },
+  1: { user_id: 1, username: 'admin', region_code: null, password: null },
+  2: { user_id: 2, username: 'manager_test', region_code: '0077', password: 'stored-test-only' },
+  3: { user_id: 3, username: 'new_manager', region_code: '0123', password: 'synthetic-test-only' },
 };
+let me;
 beforeEach(() => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host); failEditor = false;
+  me = { user_id: 1, role: 'admin' };
   vi.spyOn(api, 'get').mockImplementation(async path => {
     if (path === '/api/managers') return users;
     if (path === '/api/tg-accounts') return accounts;
-    const id = /^\/api\/managers\/(\d+)$/.exec(path)?.[1];
-    if (!id) return { user_id: 1, role: 'admin' };
+    if (path === '/auth/me') return me;
+    const id = /^\/api\/managers\/(\d+)\/credentials$/.exec(path)?.[1];
+    if (!id) return {};
     if (failEditor) throw { status: 500 };
     return editors[id];
   });
@@ -65,8 +69,8 @@ test('creates a manager with a leading-zero region and no manually entered passw
   const form=host.querySelector('form'); const fields=form.querySelectorAll('input');
   await input(fields[0],'new_manager'); await input(fields[1],'0123');
   await act(async()=>form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
-  expect(post).toHaveBeenCalledWith('/api/managers',{username:'new_manager',role:'manager',region_code:'0123',voicer_id:null});
-  expect(api.get).toHaveBeenCalledWith('/api/managers/3');
+  expect(post).toHaveBeenCalledWith('/api/managers',{username:'new_manager',role:'manager',region_code:'0123',voicer_id:null,lead_id:null});
+  expect(api.get).toHaveBeenCalledWith('/api/managers/3/credentials');
   expect(host.textContent).toContain('Данные для входа: new_manager');
   // Пароль лежит в обычном текстовом поле и скрыт точками, пока не нажмут «Показать пароль».
   expect(host.querySelector('input[type=password]')).toBeNull();
@@ -113,7 +117,7 @@ test('the editor shows the stored password and loads everything with a single re
   expect(host.querySelector('[aria-label="Ещё"]')).toBeNull();
   const before = api.get.mock.calls.length;
   await openEditor(2);
-  expect(api.get.mock.calls.slice(before)).toEqual([['/api/managers/2']]);
+  expect(api.get.mock.calls.slice(before)).toEqual([['/api/managers/2/credentials']]);
   expect(host.querySelector('[role=dialog]').textContent).toContain('Учётка: manager_test');
   expect(field('username').value).toBe('manager_test');
   // Скрытый пароль — точки в обычном текстовом поле: полей type=password в окне нет вовсе.
@@ -142,7 +146,7 @@ test('the editor does not look like a credential form to a password manager', as
 });
 test('the stored password hint has its line from the start, so the answer moves nothing', async () => {
   let release;
-  api.get.mockImplementation(path => path === '/api/managers/1' ? new Promise(done => { release = done; }) : Promise.resolve(path === '/api/managers' ? users : path === '/api/tg-accounts' ? accounts : { user_id: 1, role: 'admin' }));
+  api.get.mockImplementation(path => path === '/api/managers/1/credentials' ? new Promise(done => { release = done; }) : Promise.resolve(path === '/api/managers' ? users : path === '/api/tg-accounts' ? accounts : path === '/auth/me' ? me : {}));
   await render(<ManagersPage />);
   await openEditor(1);
   const messages = () => [...host.querySelectorAll('#manager-editor [data-slot=field-message]')].length;
@@ -175,7 +179,7 @@ test('a row deletes another account only after confirmation and never offers it 
 
 test('the editor renames the login and sends only what changed', async () => {
   const renamed = { ...users, items: users.items.map(item => item.user_id === 2 ? { ...item, username: 'renamed_manager' } : item) };
-  const put = vi.spyOn(api, 'put').mockResolvedValue({ ...renamed, editor: { ...editors[2], username: 'renamed_manager' } });
+  const put = vi.spyOn(api, 'put').mockResolvedValue(renamed);
   await render(<ManagersPage />);
   await openEditor(2);
   await input(field('username'), '   ');
@@ -191,7 +195,7 @@ test('the editor renames the login and sends only what changed', async () => {
   expect(host.querySelector('[data-manager-id="2"]').textContent).toContain('renamed_manager');
 });
 test('the editor sets an explicit password only when it is long enough', async () => {
-  const put = vi.spyOn(api, 'put').mockResolvedValue({ ...users, editor: editors[2] });
+  const put = vi.spyOn(api, 'put').mockResolvedValue(users);
   await render(<ManagersPage />);
   await openEditor(2);
   await input(field('password'), 'short');
@@ -204,25 +208,27 @@ test('the editor sets an explicit password only when it is long enough', async (
   expect(put).toHaveBeenCalledWith('/api/managers/2', { password: 'long-enough-pass' });
 });
 test('the editor creates a new password after confirmation and shows it in place', async () => {
-  const put = vi.spyOn(api, 'put').mockResolvedValue({ ...users, editor: { ...editors[2], password: 'regenerated-test-only' } });
+  const put = vi.spyOn(api, 'put');
+  const post = vi.spyOn(api, 'post').mockResolvedValue({ ...editors[2], password: 'regenerated-test-only' });
   await render(page);
   await openEditor(2);
   await input(field('region'), '0999');
   await click('Создать новый пароль');
   expect(question().textContent).toContain('Прежний пароль перестанет действовать');
-  expect(put).not.toHaveBeenCalled();
+  expect(post).not.toHaveBeenCalled();
   await answer('Создать пароль');
-  expect(put).toHaveBeenCalledWith('/api/managers/2', { regenerate_password: true });
+  expect(post).toHaveBeenCalledWith('/api/managers/2/password', {});
+  expect(put).not.toHaveBeenCalled();
   // Окно осталось открытым, пароль виден, несохранённая правка региона на месте, второго запроса нет.
   expect(field('current-password').value).toBe('regenerated-test-only');
   expect(field('current-password').hasAttribute('data-masked')).toBe(false);
   expect(field('region').value).toBe('0999');
   expect(button('Сохранить').disabled).toBe(false);
-  expect(api.get.mock.calls.filter(([path]) => path === '/api/managers/2')).toHaveLength(1);
+  expect(api.get.mock.calls.filter(([path]) => path === '/api/managers/2/credentials')).toHaveLength(1);
 });
 test('while a new password is being created only that button shows progress', async () => {
   let finish;
-  vi.spyOn(api, 'put').mockImplementation(() => new Promise(done => { finish = done; }));
+  vi.spyOn(api, 'post').mockImplementation(() => new Promise(done => { finish = done; }));
   await render(page);
   await openEditor(2);
   await input(field('region'), '0999');
@@ -232,7 +238,7 @@ test('while a new password is being created only that button shows progress', as
   expect(button('Создать новый пароль')).toBeUndefined();
   expect(button('Сохранить').disabled).toBe(true);
   expect(button('Сохраняем…')).toBeUndefined();
-  await act(async () => finish({ ...users, editor: { ...editors[2], password: 'regenerated-test-only' } }));
+  await act(async () => finish({ ...editors[2], password: 'regenerated-test-only' }));
   expect(button('Создать новый пароль').disabled).toBe(false);
   expect(button('Сохранить').disabled).toBe(false);
   expect(field('current-password').value).toBe('regenerated-test-only');
@@ -269,7 +275,7 @@ test('errors sit in one line above the buttons and a successful copy keeps a sav
   delete navigator.clipboard;
 });
 test('accounts are saved together with the other fields and a taken account asks first', async () => {
-  const put = vi.spyOn(api, 'put').mockResolvedValue({ ...users, editor: editors[2] });
+  const put = vi.spyOn(api, 'put').mockResolvedValue(users);
   await render(page);
   await openEditor(2);
   expect(host.querySelector('.mr-assignment-list').textContent).toContain('other_manager');
@@ -287,7 +293,7 @@ test('accounts are saved together with the other fields and a taken account asks
   expect(host.querySelector('#manager-editor')).toBeNull();
 });
 test('a role change warns about released accounts and your own role stays locked', async () => {
-  const put = vi.spyOn(api, 'put').mockResolvedValue({ ...users, editor: { ...editors[2], role: 'admin', account_ids: [] } });
+  const put = vi.spyOn(api, 'put').mockResolvedValue(users);
   await render(page);
   await openEditor(1);
   expect(field('role').disabled).toBe(true);
@@ -309,7 +315,7 @@ test('a role change warns about released accounts and your own role stays locked
   expect(put).toHaveBeenCalledWith('/api/managers/2', { role: 'admin', account_ids: [] });
 });
 test('a manager cannot be saved without a region', async () => {
-  const put = vi.spyOn(api, 'put').mockResolvedValue({ ...users, editor: editors[2] });
+  const put = vi.spyOn(api, 'put').mockResolvedValue(users);
   await render(<ManagersPage />);
   await openEditor(2);
   await input(field('region'), '');
@@ -338,4 +344,74 @@ test('a failed load keeps the window in place and offers a retry', async () => {
   await reveal();
   expect(field('current-password').value).toBe('stored-test-only');
   expect(button('Сохранить')).toBeDefined();
+});
+
+const team = { roles: ['admin', 'head', 'teamlead', 'manager', 'voice'], items: [
+  { user_id: 1, username: 'admin', role: 'admin', account_ids: [] },
+  { user_id: 10, username: 'boss', role: 'head', region_code: '0077', account_ids: [] },
+  { user_id: 11, username: 'tl', role: 'teamlead', region_code: '0077', lead_id: 10, lead_username: 'boss', account_ids: [] },
+  { user_id: 12, username: 'm1', role: 'manager', region_code: '0077', lead_id: 11, lead_username: 'tl', account_ids: [7], can_edit_photo_sets: false },
+  { user_id: 13, username: 'm2', role: 'manager', region_code: '0077', lead_id: 10, lead_username: 'boss', account_ids: [] },
+] };
+const useTeam = () => api.get.mockImplementation(async path => path === '/api/managers' ? team : path === '/api/tg-accounts' ? accounts : path === '/auth/me' ? me : /credentials$/.test(path) ? { user_id: 12, username: 'm1', region_code: '0077', password: 'x-test-only' } : {});
+
+test('руководитель, команда и тимлид: размер команды, руководитель в строке, выбор тимлида у менеджера', async () => {
+  useTeam();
+  const put = vi.spyOn(api, 'put').mockResolvedValue(team);
+  await render(page);
+  expect(host.querySelector('[data-manager-id="10"]').textContent).toContain('Команда: 3 чел.');
+  expect(host.querySelector('[data-manager-id="11"]').textContent).toContain('Команда: 1 чел.');
+  expect(host.querySelector('[data-manager-id="12"]').textContent).toContain('Руководитель: tl');
+  await openEditor(12);
+  const lead = host.querySelector('#manager-editor [aria-label="Руководитель"]');
+  expect([...lead.options].map(o => o.textContent)).toEqual(['Без тимлида — напрямую хеду boss', 'tl']);
+  expect(lead.value).toBe('11');
+  await choose(lead, '');
+  const flag = [...host.querySelectorAll('#manager-editor label')].find(l => l.textContent === 'Может менять образы').querySelector('input');
+  await act(async () => flag.click());
+  await submit();
+  expect(put).toHaveBeenCalledWith('/api/managers/12', { lead_id: null, can_edit_photo_sets: true });
+});
+
+test('тимлиду хед региона назначается сам — в окне подпись вместо выбора', async () => {
+  useTeam();
+  await render(page);
+  await openEditor(11);
+  expect(host.querySelector('#manager-editor [aria-label="Руководитель"]')).toBeNull();
+  expect(host.querySelector('[data-testid="auto-head"]').textContent).toBe('Хед региона 0077: boss — назначается автоматически.');
+});
+
+test('хед видит «Мою команду»: правит только тимлида у менеджеров, без входа, аккаунтов и удаления', async () => {
+  me = { user_id: 10, role: 'head', region_code: '0077' };
+  useTeam();
+  const put = vi.spyOn(api, 'put').mockResolvedValue(team);
+  await render(page);
+  expect(host.textContent).toContain('Моя команда · регион 0077');
+  expect(button('+ Создать учётку')).toBeUndefined();
+  expect(host.querySelector('[aria-label="Удалить"]')).toBeNull();
+  expect(host.querySelector('[data-manager-id="11"] [aria-label="Назначить тимлида"]')).toBeNull();
+  await act(async () => host.querySelector('[data-manager-id="13"] [aria-label="Назначить тимлида"]').click());
+  expect(api.get.mock.calls.some(([path]) => /credentials$/.test(path))).toBe(false);
+  expect(field('role').disabled).toBe(true);
+  expect(field('region').disabled).toBe(true);
+  expect(host.querySelector('#manager-editor [name="current-password"]')).toBeNull();
+  expect(host.querySelector('.mr-assignment-list')).toBeNull();
+  await choose(host.querySelector('#manager-editor [aria-label="Руководитель"]'), '11');
+  await submit();
+  expect(put).toHaveBeenCalledWith('/api/managers/13', { lead_id: 11 });
+});
+
+test('новая учётка: тимлид, хед и доноры менеджера уходят в запрос', async () => {
+  useTeam();
+  api.get.mockImplementation(async path => path === '/api/managers' ? team : path === '/api/tg-accounts' ? accounts : path === '/auth/me' ? me : path === '/api/donors' ? { items: [{ id: 5, name: 'camp-1' }] } : /credentials$/.test(path) ? editors[3] : {});
+  const post = vi.spyOn(api, 'post').mockResolvedValue({ ...team, created_user_id: 3 });
+  await render(page);
+  await click('+ Создать учётку');
+  const form = host.querySelector('form[aria-label="Создание учётки"]');
+  await input(form.querySelector('input'), 'new_manager');
+  await input(form.querySelector('input[inputmode="numeric"]'), '0077');
+  await choose(form.querySelector('[aria-label="Руководитель"]'), '11');
+  expect(host.querySelector('[data-testid="create-donors"]')).not.toBeNull();
+  await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  expect(post).toHaveBeenCalledWith('/api/managers', { username: 'new_manager', role: 'manager', region_code: '0077', voicer_id: null, lead_id: 11 });
 });

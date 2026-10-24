@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getUsage, getManagerUsage, getBalance, getDealStages } from '../../api/usage';
+import { getUsage, getManagerUsage, getBalance, getDealStages, getColdLeads } from '../../api/usage';
 import DailyChart, { DailyChartSkeleton } from './DailyChart';
 import DateRangePicker, { mskToday, addDays } from '../../components/DateRangePicker/DateRangePicker';
 import PricesEditor from './PricesEditor';
 import ManagersTable, { ManagersTableSkeleton } from './ManagersTable';
 import StagesTable, { StagesTableSkeleton } from './StagesTable';
 import Balance, { BalanceSkeleton } from './Balance';
+import ColdTable from './ColdTable';
 import { ArrowUpRight, Tags } from 'lucide-react';
 import { useRouteBusy } from '@/components/AppLayout/routeBusy';
 import { IconAction } from '@/components/IconAction/IconAction';
@@ -45,7 +46,21 @@ const SPLIT_COLORS = [
   'bg-muted-foreground/15',
 ];
 
-const TABS = [['overview', 'Обзор'], ['managers', 'По менеджерам'], ['stages', 'Этапы']];
+const TABS = [['overview', 'Обзор'], ['managers', 'По менеджерам'], ['teams', 'По командам'], ['stages', 'Этапы'], ['cold', 'Холодка']];
+
+const TEAMS_HINT =
+  'Хед — вся цепочка: тимлиды, их менеджеры и прямые менеджеры. Тимлид — его менеджеры. Цифры руководителя включены в команду. Нажмите на строку — раскроются дни.';
+
+// Первая загрузка «Холодки»: та же полоса показателей и рамка таблицы, без цифр.
+function ColdSkeleton() {
+  return (
+    <div className="flex flex-col gap-4" aria-busy="true">
+      <span className="sr-only">Считаю холодку…</span>
+      <Skeleton className="h-[86px] w-full rounded-lg" />
+      <Skeleton className="h-64 w-full rounded-lg" />
+    </div>
+  );
+}
 
 // Показатели — одна полоса в общей рамке, ячейки разделены линиями. Ячейка одна
 // и на загрузку, и на данные: заглушки стоят внутри тех же строк (значение h-7,
@@ -138,9 +153,11 @@ export default function Stats() {
   const [showPrices, setShowPrices] = useState(false);
   const [tab, setTab] = useState('overview');
   const [managers, setManagers] = useState(null);
+  const [teams, setTeams] = useState(null);
   const [managersLoading, setManagersLoading] = useState(false);
   const [balance, setBalance] = useState(null);
   const [stages, setStages] = useState(null);
+  const [cold, setCold] = useState(null);
 
   const load = useCallback(() => {
     getUsage({ from: range.from, to: range.to })
@@ -189,13 +206,37 @@ export default function Stats() {
   }, [tab, range]);
 
   useEffect(() => {
-    if (tab !== 'managers') return undefined;
+    if (tab !== 'cold') return undefined;
+    let alive = true;
+    setCold(null);
+    const pull = () => getColdLeads({ from: range.from, to: range.to })
+      .then((r) => {
+        if (!alive) return;
+        setCold(r);
+        setError(null);
+      })
+      .catch((e) => alive && setError(e.detail || e.message));
+    pull();
+    const onVisible = () => document.visibilityState === 'visible' && pull();
+    const timer = setInterval(onVisible, 30000);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [tab, range]);
+
+  // «По менеджерам» и «По командам» — один запрос: ответ несёт обе разбивки.
+  useEffect(() => {
+    if (tab !== 'managers' && tab !== 'teams') return undefined;
     let alive = true;
     setManagersLoading(true);
     const pull = () => getManagerUsage({ from: range.from, to: range.to })
       .then((r) => {
         if (!alive) return;
         setManagers(r.by_manager ?? []);
+        setTeams(r.by_team ?? []);
         setError(null);
       })
       .catch((e) => alive && setError(e.detail || e.message))
@@ -260,18 +301,38 @@ export default function Stats() {
             </Tabs>
             <p className="min-h-4 min-w-0 flex-1 truncate text-xs text-destructive" role="status" title={error ?? undefined}>{error}</p>
             <p className="min-h-4 min-w-[9ch] text-right text-xs text-muted-foreground" aria-live="polite">
-              {tab === 'managers' && managers && managersLoading ? 'обновляю…' : ''}
+              {(tab === 'managers' && managers && managersLoading) || (tab === 'teams' && teams && managersLoading) ? 'обновляю…' : ''}
             </p>
           </div>
 
           <div className="flex min-h-[320px] flex-col gap-4" aria-busy={(tab === 'overview' && !data) || undefined}>
-            {tab === 'stages' ? (
+            {tab === 'cold' ? (
+              cold ? <ColdTable data={cold} /> : <ColdSkeleton />
+            ) : tab === 'stages' ? (
               stages ? <StagesTable data={stages} /> : <StagesTableSkeleton label="Считаю этапы…" />
             ) : tab === 'managers' ? (
               managers ? (
                 <ManagersTable rows={managers} />
               ) : (
                 <ManagersTableSkeleton label="Считаю по менеджерам…" data-testid="managers-loading" />
+              )
+            ) : tab === 'teams' ? (
+              teams ? (
+                <ManagersTable
+                  rows={teams}
+                  title="По командам"
+                  nameHeader="Команда"
+                  hint={TEAMS_HINT}
+                  empty="Тимлидов и хедов пока нет"
+                />
+              ) : (
+                <ManagersTableSkeleton
+                  label="Считаю по командам…"
+                  title="По командам"
+                  nameHeader="Команда"
+                  hint={TEAMS_HINT}
+                  data-testid="teams-loading"
+                />
               )
             ) : (
               // Обзор — одно дерево и на первую загрузку, и на данные: блоки, шапки

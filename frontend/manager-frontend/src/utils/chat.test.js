@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { authorClass, fmtChatDate, loadReadCursor, mediaUrl, saveReadCursor, telegramReadMark, withToken } from './chat';
+import { authorClass, genderLabel, fmtChatDate, loadReadCursor, mediaUrl, saveReadCursor, telegramReadMark, withToken } from './chat';
 
 const D1 = Math.floor(new Date(2026, 7, 20, 12).getTime() / 1000);
 
@@ -66,5 +66,14 @@ describe('галочки Telegram', () => {
   it('не ушло в Telegram или старый ответ сервера — без галочки', () => {
     expect(telegramReadMark({ tg_read: null }, 'bot')).toBeNull();
     expect(telegramReadMark({}, 'client')).toBeNull();
+  });
+});
+
+describe('genderLabel', () => {
+  it('m / f — подпись, остальное — ничего', () => {
+    expect(genderLabel('m')).toBe('Мужской');
+    expect(genderLabel('f', true)).toBe('жен.');
+    expect(genderLabel('unknown')).toBeNull();
+    expect(genderLabel(null)).toBeNull();
   });
 });

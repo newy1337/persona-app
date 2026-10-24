@@ -1,8 +1,10 @@
-import { Suspense, useCallback, useState } from 'react';
-import { Outlet, useMatch } from 'react-router-dom';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Outlet, useLocation, useMatch } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import Header from '../Header/Header';
+import ErrorBoundary from './ErrorBoundary';
+import { HeaderToolsContext } from './headerTools';
 import { RouteBusyContext, useRouteBusy } from './routeBusy';
 import { MeContext } from './me';
 
@@ -23,10 +25,13 @@ function PageFallback() {
  * Каркас панели: шапка монтируется один раз, при переходах меняется только
  * содержимое <main>. Страницы возвращают свой контент без .app / Header / main.
  * Переписка занимает ровно экран (лента прокручивается внутри), остальные
- * страницы растут по содержимому.
+ * страницы растут по содержимому. Ошибка страницы не гасит шапку, а переход
+ * на другую страницу сбрасывает экран ошибки.
  */
 export default function AppLayout({ me }) {
   const [waiting, setWaiting] = useState(0);
+  const [tools, setTools] = useState(null);
+  const { pathname } = useLocation();
   const hold = useCallback(() => {
     let held = true;
     setWaiting((n) => n + 1);
@@ -38,18 +43,26 @@ export default function AppLayout({ me }) {
   }, []);
   const fixed = Boolean(useMatch('/conversation/:id'));
 
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [pathname]);
+
   return (
     <MeContext.Provider value={me}>
-    <RouteBusyContext.Provider value={hold}>
-      <div className={cn('app', fixed && 'h-dvh overflow-hidden')}>
-        <Header me={me} busy={waiting > 0} />
-        <main className={cn('main', fixed && 'min-h-0')}>
-          <Suspense fallback={<PageFallback />}>
-            <Outlet />
-          </Suspense>
-        </main>
-      </div>
-    </RouteBusyContext.Provider>
+      <HeaderToolsContext.Provider value={{ tools, setTools }}>
+        <RouteBusyContext.Provider value={hold}>
+          <div className={cn('app', fixed && 'h-dvh overflow-hidden')}>
+            <Header me={me} busy={waiting > 0} {...(tools ?? {})} />
+            <main className={cn('main', fixed && 'min-h-0')}>
+              <ErrorBoundary key={pathname}>
+                <Suspense fallback={<PageFallback />}>
+                  <Outlet />
+                </Suspense>
+              </ErrorBoundary>
+            </main>
+          </div>
+        </RouteBusyContext.Provider>
+      </HeaderToolsContext.Provider>
     </MeContext.Provider>
   );
 }

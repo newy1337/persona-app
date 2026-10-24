@@ -8,22 +8,23 @@ import {
 import type { Persona } from '@prisma/client';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
-import { PERSONA_SECTIONS, PersonaSection } from 'src/brain/persona.service';
+import {
+  PERSONA_SECTIONS,
+  PersonaSection,
+  PersonaService,
+} from 'src/brain/persona.service';
 import {
   DEFAULT_PROMPTS,
   PROMPT_KEYS,
   PROMPT_LABELS,
   mergePrompts,
-} from 'src/brain/nastya/config/prompts';
+} from 'src/brain/config/prompts';
 import {
   DEFAULT_RHYTHM,
   mergeRhythm,
   rhythmErrors,
-} from 'src/brain/nastya/config/rhythm';
-import {
-  BUILTIN_VARIABLES,
-  variableErrors,
-} from 'src/brain/nastya/config/variables';
+} from 'src/brain/config/rhythm';
+import { BUILTIN_VARIABLES, variableErrors } from 'src/brain/config/variables';
 import {
   JUDGE_MODEL_OPTIONS,
   MODEL_OPTIONS,
@@ -31,7 +32,7 @@ import {
   isGeneratorModel,
   isJudgeModel,
   judgeModelFor,
-} from 'src/brain/nastya/config/models';
+} from 'src/brain/config/models';
 import { appConfig } from 'src/config/app.config';
 
 const COLUMN: Record<PersonaSection, keyof Persona> = {
@@ -139,9 +140,12 @@ export class PersonasService {
   constructor(
     private prisma: PrismaService,
     private clock: ClockService,
+    private personaRuntime: PersonaService,
   ) {}
 
   private nextStamp(row: Pick<Persona, 'updatedAt'>): number {
+    // Любая запись идёт через новую метку: тут же сбрасываем кеш строк у движка.
+    this.personaRuntime.forgetRows();
     return Math.max(this.clock.ts(), row.updatedAt + 1);
   }
 
@@ -158,7 +162,7 @@ export class PersonasService {
   }
 
   private async accountsBySlug(): Promise<Map<string, number>> {
-    const rows = await this.prisma.tgAccount.groupBy({
+    const rows = await this.prisma.channelAccount.groupBy({
       by: ['personaId'],
       _count: { _all: true },
     });
@@ -280,7 +284,7 @@ export class PersonasService {
       if (await this.prisma.persona.findUnique({ where: { slug: dto.slug } })) {
         throw new ConflictException(`идентификатор «${dto.slug}» уже занят`);
       }
-      await this.prisma.tgAccount.updateMany({
+      await this.prisma.channelAccount.updateMany({
         where: { personaId: row.slug },
         data: { personaId: dto.slug },
       });
@@ -502,7 +506,7 @@ export class PersonasService {
       throw new UnprocessableEntityException(
         'личность по умолчанию удалить нельзя',
       );
-    const accounts = await this.prisma.tgAccount.count({
+    const accounts = await this.prisma.channelAccount.count({
       where: { personaId: row.slug },
     });
     if (accounts)

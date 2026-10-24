@@ -25,6 +25,8 @@ export function splitName(displayName) {
 }
 
 export default function EditAccountDialog({ account, personas, onClose }) {
+  // Профиль и приватность правятся через Telegram; у VK-аккаунта этого блока пока нет.
+  const telegram = account.channel !== 'vk';
   const initialName = splitName(account.display_name);
   const [profile, setProfile] = useState({ first: initialName.first, last: initialName.last, username: account.username || '' });
   const [avatarUrl, setAvatarUrl] = useState(account.avatar_url);
@@ -36,11 +38,11 @@ export default function EditAccountDialog({ account, personas, onClose }) {
     profile.username.trim().replace(/^@+/, '') !== (account.username || '');
   const [lastSeen, setLastSeen] = useState({ hidden: null, busy: false, error: null });
   useEffect(() => {
-    if (!account.online) return;
+    if (!account.online || !telegram) return;
     getAccountPrivacy(account.id)
       .then((r) => setLastSeen({ hidden: r.hide_last_seen, busy: false, error: null }))
       .catch((e) => setLastSeen({ hidden: null, busy: false, error: e.detail || e.message }));
-  }, [account.id, account.online]);
+  }, [account.id, account.online, telegram]);
   const toggleLastSeen = async (hide) => {
     setLastSeen((v) => ({ ...v, busy: true, error: null }));
     try {
@@ -102,11 +104,11 @@ export default function EditAccountDialog({ account, personas, onClose }) {
         <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>
-              Аккаунт {account.username ? `@${account.username}` : account.phone_e164}
+              Аккаунт {account.username ? (telegram ? `@${account.username}` : account.username) : account.login || account.phone_e164}
             </DialogTitle>
           </DialogHeader>
           <DialogBody className="flex flex-col gap-3">
-            <fieldset
+            {telegram && <fieldset
               className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0 disabled:opacity-60"
               disabled={!account.online || busy}
             >
@@ -176,7 +178,7 @@ export default function EditAccountDialog({ account, personas, onClose }) {
                   Скрывать «был в сети»{lastSeenSuffix}
                 </Label>
               </div>
-            </fieldset>
+            </fieldset>}
             <Separator />
             <p className="text-sm font-medium text-foreground">Работа в панели</p>
             <Field label="Личность">

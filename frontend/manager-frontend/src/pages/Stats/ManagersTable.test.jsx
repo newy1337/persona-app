@@ -135,3 +135,18 @@ describe('итог и сортировка', () => {
     expect(day.querySelectorAll('td').length).toBe(9);
   });
 });
+
+describe('таблица по командам', () => {
+  it('показывает роль, регион и размер команды под названием', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    act(() => createRoot(host).render(React.createElement(ManagersTable, {
+      rows: [{ ...ROWS[0], manager_id: 9, username: 'boss', role: 'head', region_code: '0101', members: 3 }],
+      title: 'По командам', nameHeader: 'Команда',
+    })));
+    expect(host.querySelector('h2').textContent).toBe('По командам');
+    expect(host.querySelector('th').textContent).toBe('Команда');
+    expect(host.querySelector('[data-testid="team-meta-9"]').textContent).toBe('хед · регион 0101 · команда: 3 чел.');
+    expect(host.querySelector('[data-testid="manager-row-9"]').textContent).toContain('boss');
+  });
+});

@@ -73,11 +73,11 @@ const click = (el) => act(async () => el.click());
 describe('таблица лидов: настройка полей', () => {
   it('по умолчанию на узком экране нет «Telegram» и «Сайта»; сайт дописан под имя', async () => {
     await draw();
-    expect(heads()).toEqual(['', 'Лид', 'Контакт', 'Личность', 'Менеджер', 'Аккаунт', 'Статус', 'Этап', 'Написали', 'Действия']);
+    expect(heads()).toEqual(['', 'Лид', 'Контакт', 'Источник', 'Личность', 'Менеджер', 'Аккаунт', 'Статус', 'Этап', 'Написали', 'Действия']);
     expect(firstRow().length).toBe(heads().length);
     expect(cellOf('Лид').textContent).toContain('· mamba');
     expect(cellOf('Лид').getAttribute('title')).toContain('Telegram: @ira_tg');
-    expect(host.querySelector('table').style.minWidth).toBe('1312px');
+    expect(host.querySelector('table').style.minWidth).toBe('1462px');
   });
 
   it('на широком экране обе колонки видны, сайт под именем не повторяется', async () => {
@@ -86,7 +86,7 @@ describe('таблица лидов: настройка полей', () => {
     expect(cellOf('Telegram').textContent).toBe('@ira_tg');
     expect(cellOf('Сайт').textContent).toBe('mamba');
     expect(cellOf('Лид').textContent).not.toContain('mamba');
-    expect(host.querySelector('table').style.minWidth).toBe('1312px');
+    expect(host.querySelector('table').style.minWidth).toBe('1462px');
   });
 
   it('явное включение показывает «Telegram» на узком экране', async () => {
@@ -95,7 +95,7 @@ describe('таблица лидов: настройка полей', () => {
     await click(box('Telegram'));
     expect(cellOf('Telegram').querySelector('a').getAttribute('href')).toBe('https://t.me/ira_tg');
     expect(JSON.parse(localStorage.getItem(KEY))).toEqual({ telegram: true });
-    expect(host.querySelector('table').style.minWidth).toBe('1480px');
+    expect(host.querySelector('table').style.minWidth).toBe('1630px');
   });
 
   it('скрытая колонка пропадает из заголовка и строк, значение остаётся в подсказке лида', async () => {
@@ -103,7 +103,7 @@ describe('таблица лидов: настройка полей', () => {
     await openPicker();
     await click(box('Менеджер'));
     await click(box('Написали'));
-    expect(heads()).toEqual(['', 'Лид', 'Контакт', 'Личность', 'Аккаунт', 'Статус', 'Этап', 'Действия']);
+    expect(heads()).toEqual(['', 'Лид', 'Контакт', 'Источник', 'Личность', 'Аккаунт', 'Статус', 'Этап', 'Действия']);
     expect(firstRow().length).toBe(heads().length);
     const title = cellOf('Лид').getAttribute('title');
     expect(title).toContain('Менеджер: olga');
@@ -116,7 +116,7 @@ describe('таблица лидов: настройка полей', () => {
     expect(host.querySelector('thead [aria-label="Выбрать лидов на странице"]')).not.toBeNull();
     expect(heads()).toContain('Лид');
     await openPicker();
-    expect(boxes().map((item) => item.textContent)).toEqual(['Контакт', 'Telegram', 'Сайт', 'Личность', 'Менеджер', 'Аккаунт', 'Статус', 'Этап', 'Написали']);
+    expect(boxes().map((item) => item.textContent)).toEqual(['Контакт', 'Telegram', 'Сайт', 'Источник', 'Личность', 'Менеджер', 'Аккаунт', 'Статус', 'Этап', 'Написали']);
   });
 
   it('заглушка и пустое состояние собраны из видимых колонок', async () => {
@@ -175,7 +175,7 @@ describe('таблица лидов: колонка «Этап»', () => {
   });
 });
 
-describe('таблица лидов: колонка «Менеджер» только у админа', () => {
+describe('таблица лидов: колонка «Менеджер» — у руководителей, не у менеджера', () => {
   const drawAs = (me) =>
     act(async () =>
       root.render(
@@ -187,12 +187,12 @@ describe('таблица лидов: колонка «Менеджер» тол�
 
   it('менеджер: колонки нет в заголовке, строках, заглушке и настройке полей; имя менеджера не попадает в подсказки', async () => {
     await drawAs({ id: 2, username: 'olga', role: 'manager' });
-    expect(heads()).toEqual(['', 'Лид', 'Контакт', 'Личность', 'Аккаунт', 'Статус', 'Этап', 'Написали', 'Действия']);
+    expect(heads()).toEqual(['', 'Лид', 'Контакт', 'Источник', 'Личность', 'Аккаунт', 'Статус', 'Этап', 'Написали', 'Действия']);
     expect(firstRow().length).toBe(heads().length);
-    expect(host.querySelector('table').style.minWidth).toBe('1196px');
+    expect(host.querySelector('table').style.minWidth).toBe('1346px');
     expect(host.querySelector('tbody').innerHTML).not.toContain('Менеджер:');
     await openPicker();
-    expect(boxes().map((item) => item.textContent)).toEqual(['Контакт', 'Telegram', 'Сайт', 'Личность', 'Аккаунт', 'Статус', 'Этап', 'Написали']);
+    expect(boxes().map((item) => item.textContent)).toEqual(['Контакт', 'Telegram', 'Сайт', 'Источник', 'Личность', 'Аккаунт', 'Статус', 'Этап', 'Написали']);
     // Даже явная запись в хранилище колонку не возвращает.
     localStorage.setItem(KEY, JSON.stringify({ manager: true, contact: false }));
     await drawAs({ id: 2, username: 'olga', role: 'manager' });
@@ -212,11 +212,13 @@ describe('таблица лидов: колонка «Менеджер» тол�
     expect(heads()).not.toContain('Менеджер');
   });
 
-  it('админ и рендер вне каркаса колонку видят', async () => {
-    await drawAs({ id: 1, username: 'root', role: 'admin' });
-    expect(cellOf('Менеджер').textContent).toBe('olga');
-    await draw();
-    expect(cellOf('Менеджер').textContent).toBe('olga');
+  it('админ, хед, тимлид и рендер вне каркаса колонку видят: менеджер и регион', async () => {
+    for (const role of ['admin', 'head', 'teamlead']) {
+      await drawAs({ id: 1, username: 'root', role });
+      expect(cellOf('Менеджер').querySelector('[data-testid="manager-attribution"]').textContent).toBe('olga');
+    }
+    await draw([{ ...ROWS[0], region_code: '0077' }]);
+    expect(cellOf('Менеджер').textContent).toBe('olgaрегион 0077');
   });
 });
 
@@ -239,5 +241,42 @@ describe('таблица лидов: меню «Ещё»', () => {
     const menu = await menuOf();
     expect(menu.querySelectorAll('[role="menuitem"]').length).toBe(2);
     expect(menu.querySelector('[role="separator"]')).not.toBeNull();
+  });
+});
+
+describe('таблица лидов: данные из рабочей панели', () => {
+  const popover = () => document.querySelector('[data-slot="popover-content"]');
+
+  it('пол стоит рядом с возрастом и городом, имя — вместо номера', async () => {
+    await draw([{ id: 89, first_name: 'Олег', phone_e164: '+79261994454', age: 48, gender: 'm', city: 'Москва', status: 'pending' }]);
+    expect(cellOf('Лид').textContent).toContain('Олег');
+    expect(cellOf('Лид').textContent).toContain('48 лет · муж. · Москва');
+  });
+
+  it('«Источник»: входящий лид — источник и метки холодки, перезабива и донора; ручной — «вручную»', async () => {
+    await draw([
+      { id: 7, first_name: 'Ира', status: 'pending', inbound_at: 1, source_type: 'beboo', cold: true, reassigned: true, donor: 'camp-1', requested_region: '0077' },
+      { id: 6, first_name: 'Оля', status: 'pending', source_type: 'manual' },
+    ]);
+    const rows = [...host.querySelectorAll('tbody tr')];
+    const at = heads().indexOf('Источник');
+    expect(rows[0].children[at].textContent).toBe('beboo' + 'Холодка · Перезабив · донор camp-1');
+    expect(rows[0].children[at].querySelector('[title]').title).toContain('Регион: 0077');
+    expect(rows[1].children[at].textContent).toBe('вручную');
+  });
+
+  it('подробности лида: ссылка на профиль http(s), история от донора', async () => {
+    await draw([{ id: 1, first_name: 'А', status: 'pending', inbound_at: 1, source_type: 'api', profile_url: 'https://example.com/u/1', last_messages: 'привет' }]);
+    await click(host.querySelector('[aria-label="Подробнее о лиде: А"]'));
+    expect(popover().querySelector('a').getAttribute('href')).toBe('https://example.com/u/1');
+    expect(popover().textContent).toContain('История общения от донора');
+    expect(popover().querySelector('[data-testid="lead-inbound"]').textContent).toBe('Источник: api');
+  });
+
+  it('подробности лида: javascript: в профиле — просто текстом, без ссылки', async () => {
+    await draw([{ id: 2, first_name: 'Б', status: 'pending', inbound_at: 1, source_type: 'api', profile_url: 'javascript:alert(1)' }]);
+    await click(host.querySelector('[aria-label="Подробнее о лиде: Б"]'));
+    expect(popover().querySelector('a')).toBeNull();
+    expect(popover().querySelector('[data-testid="profile-text"]').textContent).toBe('javascript:alert(1)');
   });
 });

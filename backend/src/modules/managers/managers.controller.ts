@@ -1,5 +1,6 @@
 import {
   Body,
+  Query,
   Controller,
   Delete,
   Get,
@@ -12,12 +13,18 @@ import {
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiQuery,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ManagersService } from './managers.service';
 import { Auth } from 'src/decorators/auth.decorator';
 import { Roles } from 'src/decorators/roles.decorator';
 import { Role } from 'src/enums/roles.enum';
 import { CurrentUser } from 'src/decorators/user.decorator';
+import { DashboardUser } from '@prisma/client';
 import { AuditService } from 'src/shared/audit.service';
 import {
   AccountOwnerDto,
@@ -26,21 +33,10 @@ import {
   UpdateManagerDto,
 } from './dto/manager.dto';
 
-// В журнал уходят только названия изменённых полей: значения (пароль) туда не пишем.
-const UPDATE_FIELDS = [
-  'username',
-  'role',
-  'region_code',
-  'voicer_id',
-  'account_ids',
-  'password',
-  'regenerate_password',
-] as const;
-
 @ApiTags('Managers')
 @ApiBearerAuth()
 @Auth()
-@Roles(Role.ADMIN)
+@Roles(Role.HEAD)
 @Controller('api/managers')
 export class ManagersController {
   constructor(
@@ -49,17 +45,21 @@ export class ManagersController {
   ) {}
 
   @ApiOperation({ summary: 'All panel users with role and assigned accounts' })
+  @ApiQuery({ name: 'from', required: false, example: '2026-10-01' })
+  @ApiQuery({ name: 'to', required: false, example: '2026-10-07' })
   @Get()
-  async list() {
-    return this.managers.list();
+  async list(
+    @CurrentUser() user: DashboardUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.managers.list(user, { from, to });
   }
 
-  @ApiOperation({
-    summary: 'Everything the account editor shows, the stored password too',
-  })
-  @Get(':userId')
+  @Get(':userId/credentials')
+  @Roles(Role.ADMIN)
   @Header('Cache-Control', 'no-store')
-  async editor(
+  async credentials(
     @Param('userId', ParseIntPipe) target: number,
     @CurrentUser('id') userId: number,
   ) {
@@ -69,12 +69,31 @@ export class ManagersController {
         action: 'manager.credentials_view',
         resource: `user:${target}`,
       },
-      () => this.managers.editor(target),
+      () => this.managers.credentials(target),
+    );
+  }
+
+  @Post(':userId/password')
+  @Roles(Role.ADMIN)
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  async regeneratePassword(
+    @Param('userId', ParseIntPipe) target: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    return this.audit.wrap(
+      {
+        userId,
+        action: 'manager.password_regenerate',
+        resource: `user:${target}`,
+      },
+      () => this.managers.regeneratePassword(target),
     );
   }
 
   @ApiOperation({ summary: 'Create a panel user' })
   @Post()
+  @Roles(Role.ADMIN)
   @HttpCode(200)
   @UsePipes(ValidationPipe)
   async create(
@@ -91,6 +110,7 @@ export class ManagersController {
     summary: 'Assign several accounts to one manager (null releases)',
   })
   @Put('accounts')
+  @Roles(Role.ADMIN)
   @HttpCode(200)
   @UsePipes(ValidationPipe)
   async setOwnerBulk(
@@ -108,11 +128,12 @@ export class ManagersController {
   }
 
   @ApiOperation({ summary: 'Set the owner of one account (null releases)' })
-  @Put('accounts/:tgAccountId')
+  @Put('accounts/:accountId')
+  @Roles(Role.ADMIN)
   @HttpCode(200)
   @UsePipes(ValidationPipe)
   async setOwner(
-    @Param('tgAccountId', ParseIntPipe) tgAccountId: number,
+    @Param('accountId', ParseIntPipe) accountId: number,
     @Body() dto: AccountOwnerDto,
     @CurrentUser('id') userId: number,
   ) {
@@ -120,42 +141,30 @@ export class ManagersController {
       {
         userId,
         action: 'manager.assign',
-        resource: `tg_account:${tgAccountId}`,
+        resource: `tg_account:${accountId}`,
       },
-      () => this.managers.setAccountOwner(tgAccountId, dto.user_id),
+      () => this.managers.setAccountOwner(accountId, dto.user_id),
     );
   }
 
-  @ApiOperation({
-    summary: 'Update login, role, region, voicer, password and the account set',
-  })
+  @ApiOperation({ summary: 'Update role, password and the full account set' })
   @Put(':userId')
   @HttpCode(200)
-  @Header('Cache-Control', 'no-store')
   @UsePipes(ValidationPipe)
   async update(
     @Param('userId', ParseIntPipe) target: number,
     @Body() dto: UpdateManagerDto,
-    @CurrentUser('id') userId: number,
+    @CurrentUser() user: DashboardUser,
   ) {
     return this.audit.wrap(
-      {
-        userId,
-        // Случайный пароль — отдельное событие журнала, как до объединения запросов.
-        action: dto.regenerate_password
-          ? 'manager.password_regenerate'
-          : 'manager.update',
-        resource: `user:${target}`,
-        payload: {
-          fields: UPDATE_FIELDS.filter((key) => dto[key] !== undefined),
-        },
-      },
-      () => this.managers.update(target, dto),
+      { userId: user.id, action: 'manager.update', resource: `user:${target}` },
+      () => this.managers.update(target, dto, user),
     );
   }
 
   @ApiOperation({ summary: 'Delete a panel user (not yourself)' })
   @Delete(':userId')
+  @Roles(Role.ADMIN)
   @HttpCode(200)
   async remove(
     @Param('userId', ParseIntPipe) target: number,

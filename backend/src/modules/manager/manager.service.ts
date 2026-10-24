@@ -1,7 +1,20 @@
+import type { Channel } from 'src/channels/ids';
+import {
+  accountContact,
+  chatChannel,
+  clientContact,
+  type ContactLink,
+} from 'src/channels/contact';
 import { Inject, Injectable } from '@nestjs/common';
 import { REPLY_BRAIN, type ReplyBrain } from 'src/brain/reply-brain.port';
-import type { NextBotAction } from 'src/brain/nastya/dialogue/forecast';
+import type { NextBotAction } from 'src/brain/dialogue/forecast';
 import { Prisma } from '@prisma/client';
+import { resolveRange, type DayRange } from '../stats/range';
+import {
+  stageMovesInRange,
+  stagesReachedEver,
+  zeroStages,
+} from 'src/shared/deal-stage-stats';
 import { PrismaService } from 'src/prisma.service';
 import { PersonaService } from 'src/brain/persona.service';
 import { ClockService } from 'src/shared/clock.service';
@@ -23,9 +36,9 @@ import {
 } from 'src/shared/presence.service';
 import {
   accountLostOf,
-  clientTelegramView,
+  clientStatusView,
   type ClientPresence,
-} from 'src/domain/tg-status';
+} from 'src/domain/client-status';
 import {
   ManagerAttributionService,
   ManagerAttribution,
@@ -46,8 +59,14 @@ export interface StageView {
 
 export interface ManagerChatRow extends ManagerAttribution {
   chat_id: number;
+  /** канал чата: telegram или vk */
+  channel: Channel;
   account_id: number | null;
   account_username: string | null;
+  /** аккаунт ссылкой в его мессенджере */
+  account_contact: ContactLink | null;
+  /** собеседник ссылкой в его мессенджере */
+  contact: ContactLink | null;
   name: string | null;
   /** этап сделки, выставленный менеджером; null — не задан */
   deal_stage: string | null;
@@ -61,6 +80,7 @@ export interface ManagerChatRow extends ManagerAttribution {
   next_bot_action: NextBotAction | null;
   client_presence: ClientPresence | null;
   blocked_by_client_at: number | null;
+  likely_blocked_at: number | null;
   cleared_by_client_at: number | null;
   unread_count: number;
   account_lost: 'banned' | 'logged_out' | null;
@@ -80,6 +100,8 @@ interface RawRow {
   chat_id: bigint | number;
   account_id: number | null;
   account_username?: string | null;
+  account_channel?: string | null;
+  account_peer_id?: bigint | number | null;
   pause_state: string | null;
   pause_reason?: string | null;
   paused_ts?: number | null;
@@ -96,6 +118,7 @@ interface RawRow {
   client_status?: string | null;
   client_status_at?: number | bigint | null;
   blocked_by_client_at?: number | bigint | null;
+  likely_blocked_at?: number | bigint | null;
   cleared_by_client_at?: number | bigint | null;
   unread_count?: number | bigint | null;
 }
@@ -117,14 +140,35 @@ export class ManagerService {
     private attribution: ManagerAttributionService,
   ) {}
 
+  /**
+   * Прогноз «что бот сделает дальше» на строку дашборда. Движок сбрасывает
+   * прогноз чата сам, когда в нём что-то происходит, поэтому кешированный
+   * ответ можно отдавать долго; пересчёт устаревших идёт в фоне.
+   */
+  private static readonly FORECAST_MAX_AGE_S = 120;
+
   private async withNextActions(
     rows: ManagerChatRow[],
   ): Promise<ManagerChatRow[]> {
+    // Список не ждёт прогнозов: на холодном кеше это ~10 запросов на каждый из
+    // сотен чатов, и весь дашборд висел секунды. Нет в кеше — строка без
+    // прогноза, он досчитается в фоне и придёт со следующим опросом.
+    const peek = this.brain.peekNextAction?.bind(this.brain);
+    if (peek)
+      return rows.map((row) => {
+        let next: NextBotAction | null = null;
+        try {
+          next = peek(row.chat_id, ManagerService.FORECAST_MAX_AGE_S);
+        } catch {
+          // прогноз — подсказка, без него строка остаётся
+        }
+        return { ...row, next_bot_action: next };
+      });
     return Promise.all(
       rows.map(async (row) => ({
         ...row,
         next_bot_action: await this.brain
-          .nextAction(row.chat_id, 30)
+          .nextAction(row.chat_id, ManagerService.FORECAST_MAX_AGE_S)
           .catch(() => null),
       })),
     );
@@ -143,7 +187,7 @@ export class ManagerService {
   private async stageResolver(): Promise<
     (accountId: number | null, facts: LeadFacts) => StageView | null
   > {
-    const accounts = await this.prisma.tgAccount.findMany({
+    const accounts = await this.prisma.channelAccount.findMany({
       select: { id: true, personaId: true },
     });
     const personaByAccount = new Map(accounts.map((a) => [a.id, a.personaId]));
@@ -198,8 +242,21 @@ export class ManagerService {
     return {
       ...UNASSIGNED_MANAGER,
       chat_id: Number(r.chat_id),
+      channel: chatChannel(r.chat_id),
       account_id: r.account_id === null ? null : Number(r.account_id),
       account_username: r.account_username || null,
+      account_contact: accountContact(
+        r.account_channel,
+        r.account_username,
+        r.account_peer_id,
+      ),
+      contact: clientContact(
+        r.chat_id,
+        (facts['tg_username'] as string) ||
+          (facts['vk_username'] as string) ||
+          r.profile_username ||
+          null,
+      ),
       name: (facts['name'] as string) ?? null,
       deal_stage: (facts['deal_stage'] as string) ?? null,
       deal_note: (facts['deal_note'] as string) ?? null,
@@ -215,12 +272,13 @@ export class ManagerService {
       avatar_url: this.presence.avatarUrl(Number(r.chat_id)),
       typing: this.presence.activityOf(Number(r.chat_id)),
       next_bot_action: null,
-      ...clientTelegramView(
+      ...clientStatusView(
         {
           clientStatus: r.client_status ?? null,
           clientStatusAt: n(r.client_status_at),
           blockedByClientAt: n(r.blocked_by_client_at),
           clearedByClientAt: n(r.cleared_by_client_at),
+          likelyBlockedAt: n(r.likely_blocked_at),
         },
         this.clock.ts(),
       ),
@@ -261,8 +319,8 @@ export class ManagerService {
       ? HAS_CLIENT_SQL
       : Prisma.sql`${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL}`;
     const rows = await this.prisma.$queryRaw<RawRow[]>`
-      SELECT c.chat_id, c.account_id, c.pause_state, a.username AS account_username, a.status AS account_status, a.banned_at AS account_lost_at,
-             c.client_status, c.client_status_at, c.blocked_by_client_at, c.cleared_by_client_at,
+      SELECT c.chat_id, c.account_id, c.pause_state, a.username AS account_username, a.channel AS account_channel, a.peer_id AS account_peer_id, a.status AS account_status, a.banned_at AS account_lost_at,
+             c.client_status, c.client_status_at, c.blocked_by_client_at, c.cleared_by_client_at, c.likely_blocked_at,
              (SELECT COUNT(*) FROM messages mu
                WHERE mu.chat_id = c.chat_id AND mu.role = 'user' AND mu.deleted_at IS NULL
                  AND mu.ts > COALESCE(c.manager_seen_ts, 0)
@@ -270,34 +328,61 @@ export class ManagerService {
                                        WHERE ma.chat_id = c.chat_id AND ma.role = 'assistant' AND ma.text NOT LIKE '[Реакция%'), 0)) AS unread_count,
              (SELECT MAX(ts) FROM messages m WHERE m.chat_id = c.chat_id) AS last_ts,
              p.facts AS facts,
-             (SELECT pn.city FROM phone_numbers pn WHERE pn.telegram_user_id = c.chat_id LIMIT 1) AS profile_city,
-             (SELECT pn.phone_e164 FROM phone_numbers pn WHERE pn.telegram_user_id = c.chat_id LIMIT 1) AS profile_phone,
-             (SELECT COALESCE(pn.telegram_username, pn.username_key) FROM phone_numbers pn WHERE pn.telegram_user_id = c.chat_id LIMIT 1) AS profile_username
+             (SELECT pn.city FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_city,
+             (SELECT pn.phone_e164 FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_phone,
+             (SELECT COALESCE(pn.peer_username, pn.username_key) FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_username
       FROM contacts c LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
-      LEFT JOIN tg_accounts a ON a.id = c.account_id
+      LEFT JOIN channel_accounts a ON a.id = c.account_id
       WHERE 1 = 1 ${this.scopeSql(accounts)} ${visible}
       ORDER BY last_ts DESC NULLS LAST LIMIT ${limit}`;
     const stageOf = await this.stageResolver();
-    return this.withNextActions(
-      await this.withManagers(
-        rows.map((r) => {
-          const facts = parseLeadFacts(r.facts);
-          return this.row(
-            r,
-            facts,
-            stageOf(r.account_id === null ? null : Number(r.account_id), facts),
-          );
-        }),
-      ),
+    const listed = await this.withManagers(
+      rows.map((r) => {
+        const facts = parseLeadFacts(r.facts);
+        return this.row(
+          r,
+          facts,
+          stageOf(r.account_id === null ? null : Number(r.account_id), facts),
+        );
+      }),
     );
+    // В архиве бот молчит: прогноз там не нужен, а стоил он десяток запросов на чат.
+    return opts.includeHidden ? listed : this.withNextActions(listed);
+  }
+
+  /** Этапы для плиток: за период — пройденные в эти дни, без периода — дошли всего. */
+  private async stageTiles(
+    accounts: number[] | null,
+    range: DayRange | null,
+  ): Promise<Record<string, number>> {
+    const mine =
+      accounts === null
+        ? null
+        : new Set(
+            (
+              await this.prisma.contact.findMany({
+                where: { accountId: { in: accounts } },
+                select: { chatId: true },
+              })
+            ).map((c) => String(c.chatId)),
+          );
+    if (!range) return stagesReachedEver(this.prisma, mine);
+    const out = zeroStages();
+    for (const m of await stageMovesInRange(
+      this.prisma,
+      range.start,
+      range.end,
+    ))
+      if (!mine || mine.has(String(m.chatId))) out[m.stage] += 1;
+    return out;
   }
 
   private async readAttentionQueue(
     accounts: number[] | null,
   ): Promise<ManagerChatRow[]> {
     const rows = await this.prisma.$queryRaw<RawRow[]>`
-      SELECT c.chat_id, c.account_id, c.pause_state, c.pause_reason, c.paused_ts, a.username AS account_username, a.status AS account_status, a.banned_at AS account_lost_at,
-             c.client_status, c.client_status_at, c.blocked_by_client_at, c.cleared_by_client_at,
+      SELECT c.chat_id, c.account_id, c.pause_state, c.pause_reason, c.paused_ts, a.username AS account_username, a.channel AS account_channel, a.peer_id AS account_peer_id, a.status AS account_status, a.banned_at AS account_lost_at,
+             c.client_status, c.client_status_at, c.blocked_by_client_at, c.cleared_by_client_at, c.likely_blocked_at,
              (SELECT COUNT(*) FROM messages mu
                WHERE mu.chat_id = c.chat_id AND mu.role = 'user' AND mu.deleted_at IS NULL
                  AND mu.ts > COALESCE(c.manager_seen_ts, 0)
@@ -307,13 +392,13 @@ export class ManagerService {
              (SELECT MAX(ts) FROM messages m WHERE m.chat_id = c.chat_id) AS last_ts,
              (SELECT MAX(ts) FROM messages m WHERE m.chat_id = c.chat_id AND m.role = 'user') AS last_client_ts,
              p.facts AS facts,
-             (SELECT pn.city FROM phone_numbers pn WHERE pn.telegram_user_id = c.chat_id LIMIT 1) AS profile_city,
-             (SELECT pn.phone_e164 FROM phone_numbers pn WHERE pn.telegram_user_id = c.chat_id LIMIT 1) AS profile_phone,
-             (SELECT COALESCE(pn.telegram_username, pn.username_key) FROM phone_numbers pn WHERE pn.telegram_user_id = c.chat_id LIMIT 1) AS profile_username
+             (SELECT pn.city FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_city,
+             (SELECT pn.phone_e164 FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_phone,
+             (SELECT COALESCE(pn.peer_username, pn.username_key) FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_username
       FROM contacts c
       LEFT JOIN lead_handoff h ON h.chat_id = c.chat_id
       LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
-      LEFT JOIN tg_accounts a ON a.id = c.account_id
+      LEFT JOIN channel_accounts a ON a.id = c.account_id
       WHERE 1 = 1 ${this.scopeSql(accounts)} ${NOT_HIDDEN_SQL}`;
 
     const out: ManagerChatRow[] = [];
@@ -367,34 +452,57 @@ export class ManagerService {
     return this.readAttentionQueue(accounts);
   }
 
-  async stats(accounts: number[] | null) {
+  /**
+   * Плитки дашборда. Без периода — как есть: все диалоги, лиды за всё время,
+   * этапы «дошли всего». С периодом (дни по Москве) — диалоги, в которых
+   * клиент писал в эти дни, лиды, оформленные в эти дни, и этапы, пройденные
+   * в эти дни. «Ждут менеджера», «активны сейчас» и аккаунты от периода не
+   * зависят: это состояние на сейчас.
+   */
+  async stats(
+    accounts: number[] | null,
+    period: { from?: string; to?: string } = {},
+  ) {
     const nowTs = this.clock.ts();
     const activeSince = nowTs - ACTIVE_WINDOW_S;
     const scope = this.scopeSql(accounts);
+    const range = period.from || period.to ? resolveRange(period, nowTs) : null;
     const one = async (sql: Prisma.Sql) => {
       const r = await this.prisma.$queryRaw<{ n: bigint | number }[]>(sql);
       return Number(r[0]?.n ?? 0);
     };
+    const inPeriod = range
+      ? Prisma.sql`AND EXISTS (SELECT 1 FROM messages mp WHERE mp.chat_id = c.chat_id AND mp.role = 'user' AND mp.ts >= ${range.start} AND mp.ts < ${range.end})`
+      : Prisma.empty;
     const total = await one(Prisma.sql`
       SELECT COUNT(*) AS n FROM contacts c LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
-      WHERE 1 = 1 ${scope} ${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL}`);
+      WHERE 1 = 1 ${scope} ${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL} ${inPeriod}`);
     const active = await one(Prisma.sql`
       SELECT COUNT(*) AS n FROM contacts c LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
       WHERE EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.chat_id AND m.ts >= ${activeSince})
       ${scope} ${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL}`);
+    const leadsInPeriod = range
+      ? Prisma.sql`AND COALESCE(h.closed_at, h.contact_delivered_at, h.analyst_assigned_at, h.updated_at) >= ${range.start}
+                   AND COALESCE(h.closed_at, h.contact_delivered_at, h.analyst_assigned_at, h.updated_at) < ${range.end}`
+      : Prisma.empty;
     const leads = await one(Prisma.sql`
       SELECT COUNT(*) AS n FROM lead_handoff h JOIN contacts c ON c.chat_id = h.chat_id
-      WHERE h.state IN ('analyst_assigned', 'contact_delivered', 'closed') ${scope}`);
+      WHERE h.state IN ('analyst_assigned', 'contact_delivered', 'closed') ${scope} ${leadsInPeriod}`);
     const queue = await this.readAttentionQueue(accounts);
     const need = queue.filter((r) => r.queue_reason !== 'manual_mode').length;
+    const stages = await this.stageTiles(accounts, range);
     return {
       need_manager: need,
       total,
       active_now: active,
       leads,
+      period: range ? { from: range.from, to: range.to } : null,
+      ...Object.fromEntries(
+        Object.entries(stages).map(([k, v]) => [`stage_${k}`, v]),
+      ),
       accounts:
         accounts === null
-          ? await this.prisma.tgAccount.count({
+          ? await this.prisma.channelAccount.count({
               where: { status: { not: 'retired' } },
             })
           : accounts.length,

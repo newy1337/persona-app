@@ -5,7 +5,7 @@ import { api } from '../../api/client';
 import { PanelUX } from '../../ui/PanelUX';
 import { cn } from '@/lib/utils';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { BANNER_MS, loadDismissed, loadShown, normalizeQueue, pruneDismissed, queueKey, queueText, saveDismissed, saveShown } from './queueNotices';
+import { BANNER_MS, loadDismissed, loadShown, loadVoiceSeen, normalizeQueue, pruneDismissed, queueKey, queueText, saveDismissed, saveShown, saveVoiceSeen } from './queueNotices';
 
 const normalize = data => ({ items: Array.isArray(data?.items) ? data.items : [], unread: Number(data?.unread) || 0 });
 const waitingLabel = since => {
@@ -31,7 +31,7 @@ function UnreadDot({ className }) {
 
 export default function VoiceNotifications({ userId }) {
   const [data, setData] = useState({ items: [], unread: 0 }), [open, setOpen] = useState(false), [error, setError] = useState('');
-  const [dismissed, setDismissed] = useState(null);
+  const [voiceSeen, setVoiceSeen] = useState(() => loadVoiceSeen(userId));
   const [queue, setQueue] = useState([]);
   const [closed, setClosed] = useState(() => loadDismissed());
   const [shown, setShown] = useState(() => loadShown());
@@ -133,13 +133,20 @@ export default function VoiceNotifications({ userId }) {
     const timer = setTimeout(() => markShown(latestQueue), BANNER_MS);
     return () => clearTimeout(timer);
   }, [latestQueue, open, markShown]);
-  const latest = data.items.find(item => !item.readAt);
+  // Баннер голосовых — только для уведомлений новее уже показанного: один раз
+  // на уведомление, дальше оно живёт в колокольчике до «Прочитано».
+  const markVoiceSeen = useCallback(id => setVoiceSeen(prev => {
+    const next = Math.max(prev ?? 0, id);
+    saveVoiceSeen(userId, next);
+    return next;
+  }), [userId]);
+  const latest = data.items.find(item => !item.readAt && (voiceSeen == null || item.id > voiceSeen));
   useEffect(() => {
-    if (!latest || latest.id === dismissed || open) return;
-    const timer = setTimeout(() => setDismissed(latest.id), 7000);
+    if (!latest || open) return;
+    const timer = setTimeout(() => markVoiceSeen(latest.id), 7000);
     return () => clearTimeout(timer);
-  }, [latest?.id, dismissed, open]); // eslint-disable-line react-hooks/exhaustive-deps
-  const showVoiceBanner = latest && latest.id !== dismissed && !open;
+  }, [latest?.id, open, markVoiceSeen]); // eslint-disable-line react-hooks/exhaustive-deps
+  const showVoiceBanner = latest && !open;
   const showQueueBanner = !showVoiceBanner && latestQueue && !open;
   return <>
     <Button
@@ -166,7 +173,7 @@ export default function VoiceNotifications({ userId }) {
     {showVoiceBanner && <div className={BANNER_CLASS} role="status">
       <UnreadDot className="mt-2" />
       <button type="button" className={BANNER_TEXT_CLASS} onClick={() => setOpen(true)}>{latest.text}</button>
-      <Button type="button" variant="ghost" size="icon-xs" className={BANNER_CLOSE_CLASS} aria-label="Скрыть уведомление" onClick={() => setDismissed(latest.id)}>
+      <Button type="button" variant="ghost" size="icon-xs" className={BANNER_CLOSE_CLASS} aria-label="Скрыть уведомление" onClick={() => markVoiceSeen(latest.id)}>
         <X aria-hidden="true" />
       </Button>
     </div>}

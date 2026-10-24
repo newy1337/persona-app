@@ -2,12 +2,15 @@ import {
   Archive,
   ArchiveRestore,
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   AudioLines,
   Ban,
   ChevronDown,
   ChevronUp,
   Download,
   Eraser,
+  EyeOff,
   Images,
   LoaderCircle,
   MicVocal,
@@ -27,6 +30,7 @@ import {
   setConversationHidden,
   setDealStage,
 } from '../../api/conversations';
+import { PanelUX } from '../../ui/PanelUX';
 
 // Единственная строка над лентой, 44px: действия слева, поиск справа, все
 // элементы — 32px. На широком экране она стоит вровень со строкой «К дашборду»
@@ -74,7 +78,16 @@ function ChatTopBar({
   setExporting,
   exportError,
   setExportError,
+  chatIds = [],
 }) {
+  // Соседние чаты — по списку дашборда, как в рабочей панели.
+  const idx = chatIds.indexOf(Number(id));
+  const goPrev = () => {
+    if (idx > 0) navigate(`/conversation/${chatIds[idx - 1]}`);
+  };
+  const goNext = () => {
+    if (idx !== -1 && idx < chatIds.length - 1) navigate(`/conversation/${chatIds[idx + 1]}`);
+  };
   const searching = msgQuery.trim() !== '';
   const stepHit = (delta) => {
     if (!hits.length) return;
@@ -99,6 +112,21 @@ function ChatTopBar({
             className="lg:hidden"
             onClick={() => setSidebarOpen(true)}
           />
+          <span className="flex shrink-0 items-center" data-testid="chat-nav">
+            <IconAction icon={ChevronLeft} label="Предыдущий чат" disabled={idx <= 0} onClick={goPrev} />
+            <span className="min-w-[44px] px-1 text-center text-xs tabular-nums text-muted-foreground">
+              <span className="text-foreground">{idx >= 0 ? idx + 1 : '—'}</span> / {chatIds.length || '—'}
+            </span>
+            <IconAction
+              icon={ChevronRight}
+              label="Следующий чат"
+              disabled={idx === -1 || idx >= chatIds.length - 1}
+              onClick={goNext}
+            />
+          </span>
+          <span className="shrink-0 px-1 text-xs text-muted-foreground max-sm:hidden" title="Номер чата">
+            чат <span className="tabular-nums text-foreground">{data.chat_id}</span>
+          </span>
           <IconAction
             icon={Images}
             label="Медиа"
@@ -125,9 +153,9 @@ function ChatTopBar({
               try {
                 if (data.archived) await setConversationHidden(id, false);
                 else {
-                  const note = window.prompt('Почему в архив?', pins.deal_note || '');
-                  if (note == null || !note.trim()) return;
-                  await setDealStage(id, 'archive', note.trim());
+                  const note = await PanelUX.prompt({ title: 'В архив', message: 'Почему диалог уходит в архив?', value: pins.deal_note || '', confirmLabel: 'В архив' });
+                  if (!note) return;
+                  await setDealStage(id, 'archive', note);
                 }
                 load();
               } catch (e) {
@@ -234,6 +262,14 @@ function ChatTopBar({
           <Eraser aria-hidden="true" />
           <AlertDescription className="block">
             Собеседник почистил диалог — {whenLabel(data.cleared_by_client_at)} удалил переписку в Telegram. В панели она сохранена (зачёркнута). Отметка снимется, когда он снова напишет.
+          </AlertDescription>
+        </Alert>
+      )}
+      {!data.account_lost && !data.blocked_by_client_at && data.likely_blocked_at && (
+        <Alert variant="warning" className={BANNER} role="status" data-testid="likely-blocked-banner">
+          <EyeOff aria-hidden="true" />
+          <AlertDescription className="block">
+            Вероятно, собеседник кинул в ЧС: {whenLabel(data.likely_blocked_at)} его статус в Telegram вдруг скрылся. Telegram о блокировке не сообщает, поэтому это не факт — так же бывает, если он скрыл статус приватностью. Отметка снимется, когда он напишет или статус снова станет виден.
           </AlertDescription>
         </Alert>
       )}

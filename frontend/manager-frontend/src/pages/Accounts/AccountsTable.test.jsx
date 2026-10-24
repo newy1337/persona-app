@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { api } from '../../api/client';
 import { AccountsTable, AccountsTableSkeleton } from './AccountsTable';
+import { MeContext } from '../../components/AppLayout/me';
 
 vi.mock('../../components/Header/Header', () => ({ default: () => null }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -86,4 +87,68 @@ test('empty state and the first-load skeleton live inside the table block', asyn
   await render(<AccountsTableSkeleton rows={2} />);
   expect(host.querySelectorAll('[role="status"] tbody tr').length).toBe(2);
   expect(host.querySelectorAll('[role="status"] tbody tr:first-child td').length).toBe(host.querySelectorAll('[role="status"] thead th').length);
+});
+
+test('аккаунт не в сети — видна причина; в сети — нет; число чатов в строке', async () => {
+  await render(
+    <AccountsTable
+      rows={[
+        { id: 1, status: 'active', username: 'a1', chats: 37, offline_reason: 'прокси не отвечает (Socks5 timeout)' },
+        { id: 2, status: 'active', username: 'a2', chats: 0, offline_reason: 'старая причина' },
+      ]}
+      alive={{ 1: false, 2: true }}
+      helpers={helpers}
+    />,
+  );
+  expect(rowOf(1).querySelector('[data-testid="offline-reason"]').textContent).toBe('прокси не отвечает (Socks5 timeout)');
+  expect(rowOf(1).querySelector('[data-testid="account-chats"]').textContent).toBe('37');
+  expect(rowOf(2).querySelector('[data-testid="offline-reason"]')).toBeNull();
+});
+
+test('VK-аккаунт: бейдж канала, ссылка на профиль VK, логин вместо телефона, «Новые куки»', async () => {
+  const onLogin = vi.fn();
+  await render(
+    <AccountsTable
+      rows={[
+        { id: 5, channel: 'vk', login: 'vk@mail.ru', username: 'id123', status: 'active', chats: 1 },
+        { id: 6, status: 'active', username: 'tg_user', phone_e164: '+70000000001' },
+      ]}
+      alive={{}}
+      helpers={helpers}
+      onLogin={onLogin}
+    />,
+  );
+  expect(rowOf(5).querySelector('[data-testid="channel-badge"]').textContent).toBe('VK');
+  expect(rowOf(6).querySelector('[data-testid="channel-badge"]')).toBeNull();
+  expect(rowOf(5).querySelector('a').getAttribute('href')).toBe('https://vk.com/id123');
+  expect(rowOf(6).querySelector('a').getAttribute('href')).toBe('https://t.me/tg_user');
+  expect(rowOf(5).textContent).toContain('vk@mail.ru');
+  await act(async () => byLabel('Подробнее', rowOf(5)).click());
+  await act(async () => byText('Новые куки').click());
+  expect(onLogin).toHaveBeenCalledWith(expect.objectContaining({ id: 5 }));
+});
+
+test('автоотправка фото: кнопка в раскрытии переключает, образ — в подробностях', async () => {
+  const onPhotoAutoSend = vi.fn();
+  await render(
+    <AccountsTable
+      rows={[{ id: 8, status: 'active', username: 'p1', photo_set_id: 3, photo_set_name: 'Осень', photo_auto_send: true }]}
+      alive={{}}
+      helpers={helpers}
+      onPhotoAutoSend={onPhotoAutoSend}
+    />,
+  );
+  await act(async () => byLabel('Подробнее').click());
+  const facts = Object.fromEntries([...host.querySelectorAll('[role="region"] dl > div')].map((el) => [el.querySelector('dt').textContent, el.querySelector('dd').textContent]));
+  expect(facts).toMatchObject({ Образ: 'Осень', 'Автоотправка фото': 'Разрешена' });
+  await act(async () => byText('Выключить автофото').click());
+  expect(onPhotoAutoSend).toHaveBeenCalledWith(expect.objectContaining({ id: 8 }), false);
+});
+
+test('хед видит «Менеджер» своей команды, менеджер — нет', async () => {
+  const rows = [{ id: 9, status: 'active', username: 'h1', manager_username: 'anna', region_code: '0777' }];
+  await render(<MeContext.Provider value={{ id: 1, role: 'head' }}><AccountsTable rows={rows} alive={{}} helpers={helpers} /></MeContext.Provider>);
+  expect(host.querySelector('[data-testid="account-owner"]').textContent).toBe('anna');
+  await render(<MeContext.Provider value={{ id: 2, role: 'manager' }}><AccountsTable rows={rows} alive={{}} helpers={helpers} /></MeContext.Provider>);
+  expect(host.querySelector('[data-testid="account-owner"]')).toBeNull();
 });

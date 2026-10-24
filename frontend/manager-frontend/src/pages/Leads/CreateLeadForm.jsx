@@ -7,18 +7,22 @@ import { Dialog, DialogBody, DialogContent, DialogError, DialogFooter, DialogHea
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
+import { Textarea } from '@/components/ui/textarea';
+import { ROLE_LABELS } from '../../utils/roles';
 
 const errorText = e => {
   const message = e.detail || e.message || 'Не удалось выполнить действие';
   return Array.isArray(message) ? message.join('; ') : String(message);
 };
-const EMPTY_DRAFT = { phone: '', first_name: '', city: '', age: '', site: '', persona_id: '', preferred_account_id: '' };
+const EMPTY_DRAFT = { phone: '', first_name: '', city: '', age: '', site: '', first_message: '', persona_id: '', preferred_account_id: '', owner_user_id: '' };
 
 /* Окно «Новый лид». Поля и проверка те же, что были у встроенной формы;
    окно лежит поверх страницы и не сдвигает её. */
 export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [accounts, setAccounts] = useState([]);
+  // Тимлид, хед и админ записывают лид на себя или на сотрудника команды; у менеджера выбора нет.
+  const [owners, setOwners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [reload, setReload] = useState(0);
@@ -28,18 +32,20 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
     let active = true;
     setLoading(true); setLoadError('');
     loadAccounts().then(rows => { if (active) setAccounts(rows); }).catch(e => { if (active) setLoadError(errorText(e)); }).finally(() => { if (active) setLoading(false); });
+    api.get('/api/leads/owners').then(r => { if (active) setOwners(Array.isArray(r?.items) ? r.items : []); }).catch(() => { if (active) setOwners([]); });
     return () => { active = false; };
   }, [reload]);
+  const owner = owners.find(o => String(o.user_id) === draft.owner_user_id && !o.self) || null;
   const change = patch => setDraft(previous => ({ ...previous, ...patch }));
   const valid = draft.phone.replace(/\D/g, '').length >= 10 || /^@?[a-zA-Z][\w]{3,}$|t\.me\//.test(draft.phone.trim());
-  const available = accounts.filter(a => a.status === 'active' && personas.some(p => p.slug === a.persona_id) && (!draft.persona_id || a.persona_id === draft.persona_id));
+  const available = accounts.filter(a => a.status === 'active' && personas.some(p => p.slug === a.persona_id) && (!draft.persona_id || a.persona_id === draft.persona_id) && (!owner || owner.account_ids.includes(a.id)));
   const personaName = slug => personas.find(p => p.slug === slug)?.name;
   async function submit(e) {
     e.preventDefault();
     if (busy || !valid) return;
     setBusy(true); setError('');
     try {
-      await api.post('/api/leads', { phone: draft.phone, first_name: draft.first_name || undefined, city: draft.city || undefined, age: draft.age ? Number(draft.age) : undefined, site: draft.site.trim() || undefined, persona_id: draft.persona_id || undefined, preferred_account_id: draft.preferred_account_id ? Number(draft.preferred_account_id) : undefined });
+      await api.post('/api/leads', { phone: draft.phone, first_name: draft.first_name || undefined, city: draft.city || undefined, age: draft.age ? Number(draft.age) : undefined, site: draft.site.trim() || undefined, first_message: draft.first_message.trim() || undefined, persona_id: draft.persona_id || undefined, preferred_account_id: draft.preferred_account_id ? Number(draft.preferred_account_id) : undefined, owner_user_id: owner ? owner.user_id : undefined });
       onDone();
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
@@ -55,7 +61,9 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
   const senderHint = draft.preferred_account_id
     ? 'Напишет только выбранный аккаунт. Если он временно недоступен, лид останется в очереди.'
     : !loading && !loadError && available.length === 0
-      ? 'Нет включённых аккаунтов для этой личности.'
+      ? owner
+        ? `У ${owner.username} нет включённых аккаунтов${draft.persona_id ? ' этой личности' : ''} — лид будет ждать в очереди.`
+        : 'Нет включённых аккаунтов для этой личности.'
       : 'Без выбора аккаунт подбирается автоматически, как раньше.';
   return (
     <Dialog open onOpenChange={open => { if (!open && !busy) onCancel(); }}>
@@ -66,6 +74,17 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
           </DialogHeader>
           <DialogBody className="grid content-start gap-3 sm:grid-cols-2">
             {input('phone', 'Телефон или @username', { autoFocus: true, placeholder: '+7 900 123-45-67 или @name', maxLength: 64 })}
+            {owners.length > 1 && (
+              <Field label="Чей лид">
+                <NativeSelect value={draft.owner_user_id} disabled={busy} aria-label="Чей лид" onChange={e => change({ owner_user_id: e.target.value, preferred_account_id: '' })}>
+                  {owners.map(o => (
+                    <option key={o.user_id} value={o.self ? '' : String(o.user_id)}>
+                      {o.self ? `Себе (${o.username})` : [o.username, ROLE_LABELS[o.role] || o.role, o.region_code ? `регион ${o.region_code}` : null].filter(Boolean).join(' · ')}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+            )}
             {input('first_name', 'Имя', { maxLength: 64 })}
             {input('city', 'Город', { maxLength: 64 })}
             {input('age', 'Возраст', { inputMode: 'numeric' })}
@@ -95,6 +114,14 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
                   <option value="">{loading ? 'Загружаем аккаунты…' : 'Автоматически'}</option>
                   {available.map(a => <option key={a.id} value={String(a.id)}>{accountLabel(a)}</option>)}
                 </NativeSelect>
+              </Field>
+            </div>
+            <div className="col-span-full min-w-0">
+              <Field
+                label="Первое сообщение"
+                hint={draft.first_message.trim() ? 'Лид получит именно этот текст, без подстановок. Дальше диалог ведёт бот.' : 'Без текста первое сообщение составит бот, как раньше.'}
+              >
+                <Textarea rows={3} maxLength={1000} value={draft.first_message} disabled={busy} placeholder="Оставьте пустым — бот напишет по шаблону личности" onChange={e => change({ first_message: e.target.value })} />
               </Field>
             </div>
           </DialogBody>

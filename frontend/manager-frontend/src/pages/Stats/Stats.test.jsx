@@ -49,7 +49,8 @@ beforeEach(async () => {
   get = vi.spyOn(api, 'get').mockImplementation(async (path) => {
     if (path.startsWith('/api/stats/balance')) return { left: 249.15, today: 1, week: 2, month: 3, days_left: 12, error: null };
     if (path.startsWith('/api/stats/prices')) return prices;
-    if (path.startsWith('/api/stats/managers')) return { by_manager: [] };
+    if (path.startsWith('/api/stats/managers')) return { by_manager: [], by_team: [{ manager_id: 9, username: 'boss', role: 'head', region_code: '0101', members: 3, cost_usd: 1, calls: 1, days: [], tokens }] };
+    if (path.startsWith('/api/stats/cold')) return { active_after: 5, totals: { received: 2, written: 1, replied: 0, active: 0 }, by_manager: [] };
     if (path.startsWith('/api/stats/stages')) return { stages: [], days: [], totals: {}, reached: {} };
     return usage;
   });
@@ -130,5 +131,29 @@ describe('страница статистики', () => {
     await flush();
     await act(async () => buttonByText(document.querySelector('[role="dialog"]'), 'Отмена').click());
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+});
+
+describe('вкладки «По командам» и «Холодка» (как в рабочей панели)', () => {
+  const open = (id) =>
+    act(async () => {
+      const tab = host.querySelector(`[data-testid="stats-tab-${id}"]`);
+      tab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+      tab.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+  it('«По командам» берёт by_team из того же запроса и показывает состав команды', async () => {
+    await open('teams');
+    await flush();
+    expect(get.mock.calls.some(([path]) => path.startsWith('/api/stats/managers'))).toBe(true);
+    expect(host.textContent).toContain('По командам');
+    expect(host.querySelector('[data-testid="team-meta-9"]').textContent).toBe('хед · регион 0101 · команда: 3 чел.');
+  });
+
+  it('«Холодка» запрашивает свою статистику и показывает итог', async () => {
+    await open('cold');
+    await flush();
+    expect(get.mock.calls.some(([path]) => path.startsWith('/api/stats/cold'))).toBe(true);
+    expect(host.querySelector('[data-testid="cold-kpis"]').textContent).toContain('Получено лидов2');
   });
 });

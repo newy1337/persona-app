@@ -1,4 +1,4 @@
-import { proxyLabel, toClientProxy } from './proxy';
+import { proxyLabel, toClientProxy, toProxyUrl } from './proxy';
 
 describe('прокси аккаунта для Telegram-клиента', () => {
   it('SOCKS5 и SOCKS4 с логином', () => {
@@ -75,5 +75,26 @@ describe('прокси аккаунта для Telegram-клиента', () => {
       }),
     ).toBe('mtproto mt.example.com:443');
     expect(proxyLabel(null)).toBeNull();
+  });
+});
+
+describe('прокси VK', () => {
+  it('адрес с логином; без прокси и с MTProto — ошибка', () => {
+    expect(
+      toProxyUrl({
+        type: 'http',
+        host: '1.2.3.4',
+        port: 8080,
+        username: 'u@x',
+        password: 'p:w',
+      }),
+    ).toBe('http://u%40x:p%3Aw@1.2.3.4:8080');
+    expect(toProxyUrl({ type: 'socks5', host: 'h', port: 1080 })).toBe(
+      'socks5://h:1080',
+    );
+    expect(() => toProxyUrl(null)).toThrow('нет прокси');
+    expect(() => toProxyUrl({ type: 'mtproto', host: 'h', port: 1 })).toThrow(
+      'не поддерживает',
+    );
   });
 });

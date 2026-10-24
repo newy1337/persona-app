@@ -1,5 +1,6 @@
 import { AlertCircle, Check, Loader2, X } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { NativeCheckbox } from '../components/ui/native-checkbox';
 import { cn } from '../lib/utils';
@@ -29,6 +30,19 @@ export function createPanelUX({ React, api }) {
     confirmation = null;
     updateConfirmation();
     current?.resolve(value);
+  }
+  /** Вопрос с полем ввода вместо window.prompt: тот же стек и стиль, что у confirm. Отмена — null. */
+  function prompt(options) {
+    const config = typeof options === 'string' ? { title: options } : options;
+    return confirm({ ...config, input: { value: config.value ?? '', placeholder: config.placeholder ?? '' } })
+      .then(value => (value === false ? null : value));
+  }
+  function PromptBody({ question }) {
+    const [value, setValue] = useState(question.input.value);
+    const submit = event => { event.preventDefault(); if (value.trim()) answer(value.trim()); };
+    return h('form', { id: 'ux-prompt-form', onSubmit: submit, className: 'grid gap-3' },
+      question.message ? h('p', { className: 'whitespace-pre-line text-muted-foreground' }, question.message) : null,
+      h(Input, { 'data-autofocus': true, value, placeholder: question.input.placeholder, maxLength: question.maxLength ?? 500, 'aria-label': question.title || 'Значение', onChange: event => setValue(event.target.value) }));
   }
   // Окно всегда из трёх частей: заголовок, прокручиваемое тело и подвал с
   // действиями (outline «Отмена» + одна главная кнопка). Отступы, шрифты и шаг
@@ -90,10 +104,15 @@ export function createPanelUX({ React, api }) {
         item.status === 'pending'
           ? h('span', { className: 'size-7 shrink-0', 'aria-hidden': true })
           : h(Button, { type: 'button', variant: 'ghost', size: 'icon-xs', className: 'text-muted-foreground hover:text-foreground', 'aria-label': 'Закрыть уведомление', onClick: () => store.dismiss(item.id) }, h(X, { 'aria-hidden': true }))))),
-      question && h(Modal, { title: question.title || 'Подтвердите действие', described: true, onClose: () => answer(false), footer: h(React.Fragment, null,
-        h(Button, { type: 'button', variant: 'outline', 'data-autofocus': true, onClick: () => answer(false) }, 'Отмена'),
-        h(Button, { type: 'button', variant: question.danger ? 'destructive' : 'default', onClick: () => answer(true) }, question.confirmLabel || 'Подтвердить')) },
-      h(DialogDescription, { className: 'whitespace-pre-line [overflow-wrap:anywhere]' }, question.message)));
+      question && (question.input
+        ? h(Modal, { title: question.title || 'Введите значение', onClose: () => answer(false), footer: h(React.Fragment, null,
+            h(Button, { type: 'button', variant: 'outline', onClick: () => answer(false) }, 'Отмена'),
+            h(Button, { type: 'submit', form: 'ux-prompt-form', variant: question.danger ? 'destructive' : 'default' }, question.confirmLabel || 'Сохранить')) },
+          h(PromptBody, { question }))
+        : h(Modal, { title: question.title || 'Подтвердите действие', described: true, onClose: () => answer(false), footer: h(React.Fragment, null,
+            h(Button, { type: 'button', variant: 'outline', 'data-autofocus': true, onClick: () => answer(false) }, 'Отмена'),
+            h(Button, { type: 'button', variant: question.danger ? 'destructive' : 'default', onClick: () => answer(true) }, question.confirmLabel || 'Подтвердить')) },
+          h(DialogDescription, { className: 'whitespace-pre-line [overflow-wrap:anywhere]' }, question.message))));
   }
   function DeleteLeadModal({ lead, onCancel, onConfirm }) {
     const [telegram, setTelegram] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -115,5 +134,5 @@ export function createPanelUX({ React, api }) {
     lead.telegram_user_id && h('div', { className: 'mt-2 min-h-4 text-xs text-destructive' }, telegram && h('p', null, 'Сообщения исчезнут у обоих. Отменить это нельзя.')),
     h('div', { className: 'mt-2 min-h-4 text-xs text-destructive' }, error && h('p', { role: 'alert' }, error)));
   }
-  return { Modal, FeedbackHost, DeleteLeadModal, confirm, useActions, readableError, ...store };
+  return { Modal, FeedbackHost, DeleteLeadModal, confirm, prompt, useActions, readableError, ...store };
 }

@@ -3,11 +3,21 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import { toChatId } from 'src/utils/ids';
-import type { ConversationState } from './nastya/kernel/types';
+import type { ConversationState } from './kernel/types';
 import type { ReplyDelivery } from './reply-delivery';
-import { reconcileTranscript } from './nastya/memory/transcript';
-import { pruneUnsupportedEvents } from './nastya/memory/persona-events';
+import { reconcileTranscript } from './memory/transcript';
+import { pruneUnsupportedEvents } from './memory/persona-events';
 import { stateFingerprint } from './reply-delivery';
+import { withPhotoNote } from 'src/domain/photo-library';
+import type { PhotoSendInput } from 'src/shared/photo-library.service';
+
+/** Фото из образа, которое уходит этой частью ответа. */
+export interface PartPhoto {
+  photoId: number;
+  filePath: string;
+  note: string;
+  accountId: number;
+}
 
 @Injectable()
 export class BrainStateService {
@@ -65,9 +75,9 @@ export class BrainStateService {
             chat_id: chatId,
             ts: m.ts,
             role: m.role,
-            text: m.text,
+            text: withPhotoNote(m.text, m.mediaNote),
             author: m.author,
-            tg_msg_id: m.tgMsgId,
+            tg_msg_id: m.peerMsgId,
             source_message_id: m.sourceMessageId,
             deleted_at: m.deletedAt,
           }) as any,
@@ -95,31 +105,68 @@ export class BrainStateService {
     state: ConversationState,
     text: string,
     author: string,
-    tgMsgId: number,
+    peerMsgId: number,
     ts: number,
     delivery?: ReplyDelivery,
+    photo?: PartPhoto,
   ): Promise<void> {
-    if (!Number.isSafeInteger(tgMsgId) || tgMsgId <= 0)
+    if (!Number.isSafeInteger(peerMsgId) || peerMsgId <= 0)
       throw new Error('Telegram did not acknowledge a message id');
     const id = toChatId(chatId);
+    const content = photo ? withPhotoNote(text, photo.note) : text;
     await this.prisma.$transaction(async (tx) => {
       const existing = await tx.message.findFirst({
-        where: { chatId: id, role: 'assistant', tgMsgId },
+        where: { chatId: id, role: 'assistant', peerMsgId },
       });
       const message =
         existing ??
         (await tx.message.create({
-          data: { chatId: id, role: 'assistant', text, author, ts, tgMsgId },
+          data: {
+            chatId: id,
+            role: 'assistant',
+            text: photo ? text || '[фото]' : text,
+            author,
+            ts,
+            peerMsgId,
+            ...(photo
+              ? {
+                  mediaKind: 'photo',
+                  filePath: photo.filePath,
+                  mediaNote: photo.note,
+                }
+              : {}),
+          },
         }));
+      if (photo) {
+        const send: PhotoSendInput = {
+          chatId,
+          photoId: photo.photoId,
+          accountId: photo.accountId,
+          messageId: message.id,
+          peerMsgId,
+          caption: text,
+          note: photo.note,
+          source: 'bot',
+          actor: author,
+          sentAt: ts,
+        };
+        await tx.photoSend.upsert({
+          where: { messageId: message.id },
+          create: { ...send, chatId: id },
+          update: {},
+        });
+      }
       const own = [...state.history]
         .reverse()
         .find(
           (m) =>
-            m.role === 'assistant' && m.content === text && !m.panel_message_id,
+            m.role === 'assistant' &&
+            m.content === content &&
+            !m.panel_message_id,
         );
       if (own) {
         own.panel_message_id = message.id;
-        own.telegram_message_id = tgMsgId;
+        own.telegram_message_id = peerMsgId;
       }
       // Свой ответ уже разобран тем ходом, который его и сочинил: отмечаем
       // это сразу, иначе догоняющий разбор платил бы за него второй раз.

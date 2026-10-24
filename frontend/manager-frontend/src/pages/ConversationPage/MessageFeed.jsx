@@ -84,6 +84,8 @@ function MediaContent({ chatId, msg, inbound = null }) {
       return <>
         <a className={MEDIA_BOX} href={src} target="_blank" rel="noreferrer"><img className={MEDIA_ITEM} src={src} alt={caption || 'Вложение'} loading="lazy" /></a>
         {label}
+        {/* Описание снимка из образа: менеджер видит то же, что помнит бот. */}
+        {msg.media_note && <p className="mediaNote mt-1 text-[11px] leading-snug opacity-65">Из образа: {msg.media_note}</p>}
       </>;
     }
     if (msg.media_kind === 'video_note') {
@@ -124,7 +126,7 @@ function MediaContent({ chatId, msg, inbound = null }) {
     const caption = text.split('\n').slice(1).join('\n').trim();
     const label = caption ? <p>{caption}</p> : null;
     let body = null;
-    if (k === 'photo') body = <span className={MEDIA_BOX}><img className={MEDIA_ITEM} src={src} alt="Фото клиента" /></span>;
+    if (k === 'photo') body = <span className={MEDIA_BOX}><img className={MEDIA_ITEM} src={src} alt="Фото клиента" loading="lazy" decoding="async" /></span>;
     else if (k === 'video_note') body = <span className={NOTE_BOX}><video className={NOTE_ITEM} src={src} controls playsInline preload="metadata" /></span>;
     else if (k === 'video') body = <span className={MEDIA_BOX}><video className={MEDIA_ITEM} src={src} controls playsInline preload="metadata" /></span>;
     else if (k === 'animation') body = <span className={MEDIA_BOX}><video className={MEDIA_ITEM} src={src} autoPlay loop muted playsInline preload="metadata" /></span>;
@@ -135,7 +137,7 @@ function MediaContent({ chatId, msg, inbound = null }) {
     return text.split('\n\n').map((para, j) => <p key={j}>{para}</p>);
   }
   if (kind === 'photo') {
-    return <span className={MEDIA_BOX}><img className={MEDIA_ITEM} src={src} alt="Фото" /></span>;
+    return <span className={MEDIA_BOX}><img className={MEDIA_ITEM} src={src} alt="Фото" loading="lazy" decoding="async" /></span>;
   }
   if (kind === 'video' || kind === 'video_note') {
     return <span className={MEDIA_BOX}><video className={MEDIA_ITEM} src={src} controls preload="metadata" /></span>;

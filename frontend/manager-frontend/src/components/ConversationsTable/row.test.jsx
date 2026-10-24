@@ -96,7 +96,7 @@ describe('строка диалога', () => {
 
   it('без ника в контакте номер чата, блокировка видна под именем', async () => {
     await draw();
-    expect(cellOf(2, 'Собеседник').textContent).toContain('Заблокировал(а) нас');
+    expect(cellOf(2, 'Собеседник').textContent).toContain('ЧС: заблокировал(а) нас');
     expect(cellOf(2, 'Контакт').textContent).toBe('ID 3');
   });
 

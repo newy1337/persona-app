@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { getSettings, updateSettings } from '../../api/settings';
+import ApiKeys from './ApiKeys';
 import { useRouteBusy } from '@/components/AppLayout/routeBusy';
 import { IconAction } from '@/components/IconAction/IconAction';
 import { PageHeader } from '@/components/PageHeader/PageHeader';
@@ -167,9 +168,12 @@ export default function Settings() {
             <p className="text-xs leading-relaxed text-muted-foreground">
               Если клиент написал что-то из этого списка, бот сразу замолкает, чат уходит в очередь
               «ждут менеджера» с пометкой «Стоп-фраза клиента». Фраза ищется внутри сообщения:
-              регистр, буква ё и пробелы не важны, другие окончания подходят («менеджерка» для
-              «менеджер»), опечатки прощаются — одна в словах из 5–6 букв, две в более длинных,
-              слова короче 5 букв только точно. Вернуть бота — кнопкой «Продолжить» в диалоге.
+              регистр, буква ё и пробелы не важны. Подходят другие формы того же слова («позвоните»
+              для «позвонить», «менеджерка» для «менеджер»), но не другие слова с тем же началом
+              («позвоночник», «позволить»). Опечатки прощаются — одна в словах из 5–6 букв, две в
+              более длинных, и только правдоподобные: соседняя клавиша, перепутанная гласная,
+              переставленные или одна пропущенная буква. Слова короче 5 букв — только точно.
+              Вернуть бота — кнопкой «Продолжить» в диалоге.
             </p>
           </div>
           {settings ? (
@@ -181,6 +185,9 @@ export default function Settings() {
             !error && <TriggersSkeleton />
           )}
         </section>
+
+        <Separator />
+        <ApiKeys />
       </div>
     </div>
   );

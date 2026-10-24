@@ -1,7 +1,7 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { NastyaBrainService } from './nastya-brain.service';
+import { PersonaBrainService } from './persona-brain.service';
 import { BrainStateService } from './brain-state.service';
 import { PersonaService } from './persona.service';
 import { UsageRecorderService } from './usage-recorder.service';
@@ -9,7 +9,7 @@ import { ReplyScheduleService } from './reply-schedule.service';
 import { MemoryWatchService } from './memory-watch.service';
 import { REPLY_BRAIN, ReplyBrain } from './reply-brain.port';
 import { SettingsModule } from 'src/modules/settings/settings.module';
-import { TelegramModule } from 'src/modules/telegram/telegram.module';
+import { TelegramModule } from 'src/channels/telegram/telegram.module';
 
 @Injectable()
 export class InitiativeScheduler {
@@ -44,7 +44,8 @@ export class RhythmScheduler {
     if (this.replying) return;
     this.replying = true;
     try {
-      await this.brain.runDueReplies();
+      if (this.brain.pumpDueReplies) await this.brain.pumpDueReplies();
+      else await this.brain.runDueReplies();
     } catch (e) {
       this.log.error(`due replies tick failed: ${e?.message ?? e}`);
     } finally {
@@ -74,8 +75,8 @@ export class RhythmScheduler {
     PersonaService,
     UsageRecorderService,
     ReplyScheduleService,
-    NastyaBrainService,
-    { provide: REPLY_BRAIN, useExisting: NastyaBrainService },
+    PersonaBrainService,
+    { provide: REPLY_BRAIN, useExisting: PersonaBrainService },
     InitiativeScheduler,
     RhythmScheduler,
     MemoryWatchService,
@@ -85,6 +86,7 @@ export class RhythmScheduler {
     PersonaService,
     BrainStateService,
     ReplyScheduleService,
+    UsageRecorderService,
   ],
 })
 export class BrainModule {}

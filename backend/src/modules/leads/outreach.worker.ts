@@ -2,11 +2,12 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { appConfig } from 'src/config/app.config';
 import { PrismaService } from 'src/prisma.service';
+import { allowedOwners } from 'src/domain/lead-owners';
 import { ClockService } from 'src/shared/clock.service';
 import { HistoryService } from 'src/shared/history.service';
 import { FunnelEventsService } from 'src/shared/funnel-events.service';
 import { GlobalGateService } from 'src/shared/global-gate.service';
-import { TelegramService } from 'src/modules/telegram/telegram.service';
+import { TelegramService } from 'src/channels/telegram/telegram.service';
 import { LeadsService } from './leads.service';
 import { REPLY_BRAIN, ReplyBrain } from 'src/brain/reply-brain.port';
 import { FIRST_CONTACT_TS_KEY } from 'src/domain/lead-facts';
@@ -21,6 +22,8 @@ import {
 } from 'src/domain/leads';
 import { toChatId } from 'src/utils/ids';
 import { isTelegramTimeout } from 'src/domain/timeout';
+import { classifyOutreachError } from 'src/domain/outreach-errors';
+import { ChannelRegistry } from 'src/channels/registry';
 
 const STALLED_ACCOUNT_PAUSE_S = 15 * 60;
 const TICK_STALE_S = 10 * 60;
@@ -37,13 +40,14 @@ export class OutreachWorker implements OnModuleInit {
     private funnel: FunnelEventsService,
     private gate: GlobalGateService,
     private telegram: TelegramService,
+    private channels: ChannelRegistry,
     private leads: LeadsService,
     @Inject(REPLY_BRAIN) private brain: ReplyBrain,
   ) {}
 
   async onModuleInit(): Promise<void> {
     const now = this.clock.ts();
-    const stuck = await this.prisma.phoneNumber.findMany({
+    const stuck = await this.prisma.lead.findMany({
       where: {
         status: 'queued',
         assignedAccountId: { not: null },
@@ -76,7 +80,7 @@ export class OutreachWorker implements OnModuleInit {
     untilTs: number,
     reason: string,
   ): Promise<void> {
-    await this.prisma.tgAccount.updateMany({
+    await this.prisma.channelAccount.updateMany({
       where: {
         id: accountId,
         OR: [{ floodUntil: null }, { floodUntil: { lt: untilTs } }],
@@ -91,18 +95,18 @@ export class OutreachWorker implements OnModuleInit {
     reason: string,
     untilTs: number,
   ): Promise<void> {
-    const lead = await this.prisma.phoneNumber.findUniqueOrThrow({
+    const lead = await this.prisma.lead.findUniqueOrThrow({
       where: { id: leadId },
       select: { preferredAccountId: true },
     });
-    const account = await this.prisma.tgAccount.findUnique({
+    const account = await this.prisma.channelAccount.findUnique({
       where: { id: accountId },
       select: { username: true },
     });
     const label = account?.username
       ? `@${account.username}`
       : `аккаунт #${accountId}`;
-    await this.prisma.phoneNumber.update({
+    await this.prisma.lead.update({
       where: { id: leadId },
       data: {
         status: 'queued',
@@ -117,9 +121,60 @@ export class OutreachWorker implements OnModuleInit {
     });
   }
 
+  /**
+   * Отдать лид другому аккаунту той же личности: этот аккаунт для него
+   * запоминается как неподходящий. Закреплённый за аккаунтом лид ждёт его,
+   * если аккаунт оживёт сам (until); если не оживёт (permanent) — закрепление
+   * снимается, иначе лид висел бы вечно.
+   */
+  private async handOff(
+    lead: { id: number; preferredAccountId: number | null },
+    accountId: number,
+    reason: string,
+    opts: { permanent?: boolean; until?: number; attempts?: number } = {},
+  ): Promise<void> {
+    const pinned = lead.preferredAccountId === accountId && !opts.permanent;
+    await this.prisma.lead.update({
+      where: { id: lead.id },
+      data: {
+        status: 'queued',
+        assignedAccountId: null,
+        assignedAt: null,
+        avoidAccountId: pinned ? undefined : accountId,
+        ...(lead.preferredAccountId === accountId && opts.permanent
+          ? { preferredAccountId: null }
+          : {}),
+        nextAttemptAt: pinned ? (opts.until ?? null) : null,
+        ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
+        lastError: pinned
+          ? `${reason} — ждём выбранный аккаунт`
+          : `${reason} — лид отдан другому аккаунту`,
+      },
+    });
+  }
+
+  /** Лид оказался нашим же аккаунтом — невалид, первое сообщение не пишем. */
+  private async markOwnAccount(
+    leadId: number,
+    ownAccountId: number | null,
+  ): Promise<void> {
+    await this.prisma.lead.update({
+      where: { id: leadId },
+      data: {
+        status: 'dead',
+        assignedAccountId: null,
+        nextAttemptAt: null,
+        lastError: `собственный аккаунт${ownAccountId ? ` #${ownAccountId}` : ''}`,
+      },
+    });
+    this.log.warn(
+      `outreach: lead #${leadId} is our own account${ownAccountId ? ` #${ownAccountId}` : ''} — marked dead`,
+    );
+  }
+
   @Cron(CronExpression.EVERY_MINUTE)
   async tick(): Promise<void> {
-    if (!this.telegram.configured || this.gate.stopped) return;
+    if (!this.channels.configured || this.gate.stopped) return;
     const now = this.clock.ts();
     if (this.runningSince !== null) {
       if (now - this.runningSince < TICK_STALE_S) return;
@@ -142,9 +197,9 @@ export class OutreachWorker implements OnModuleInit {
   }
 
   private async eligibleAccounts(now: number): Promise<number[]> {
-    const online = this.telegram.onlineIds();
+    const online = this.channels.onlineIds();
     if (!online.length) return [];
-    const active = await this.prisma.tgAccount.findMany({
+    const active = await this.prisma.channelAccount.findMany({
       where: {
         id: { in: online },
         status: 'active',
@@ -168,7 +223,7 @@ export class OutreachWorker implements OnModuleInit {
 
   private async usageToday(accountId: number, now: number) {
     const dayStart = mskDayStart(now);
-    const agg = await this.prisma.phoneNumber.aggregate({
+    const agg = await this.prisma.lead.aggregate({
       where: {
         assignedAccountId: accountId,
         firstContactAt: { gte: dayStart },
@@ -176,7 +231,7 @@ export class OutreachWorker implements OnModuleInit {
       _count: { _all: true },
       _max: { firstContactAt: true },
     });
-    const last = await this.prisma.phoneNumber.aggregate({
+    const last = await this.prisma.lead.aggregate({
       where: { assignedAccountId: accountId },
       _max: { firstContactAt: true },
     });
@@ -187,27 +242,34 @@ export class OutreachWorker implements OnModuleInit {
   }
 
   private async processOne(accountId: number, now: number): Promise<void> {
-    const account = await this.prisma.tgAccount.findUnique({
+    const account = await this.prisma.channelAccount.findUnique({
       where: { id: accountId },
-      select: { personaId: true },
+      select: { personaId: true, channel: true },
     });
     const [accountManagers, managers] = await Promise.all([
       this.prisma.managerAccount.findMany({
-        where: { tgAccountId: accountId },
+        where: { accountId: accountId },
         select: { userId: true },
       }),
       this.prisma.dashboardUser.findMany({
         where: { role: { not: 'admin' } },
-        select: { id: true },
+        select: { id: true, leadId: true },
       }),
     ]);
-    const mine = accountManagers.map((m) => m.userId);
+    // Свои владельцы: менеджеры аккаунта и их руководители (лид тимлида или
+    // хеда пишет аккаунт кого-то из его команды).
+    const mine = allowedOwners(
+      accountManagers.map((m) => m.userId),
+      managers,
+    );
     const foreignManagers = managers
       .map((m) => m.id)
-      .filter((id) => !mine.includes(id));
-    const candidate = await this.prisma.phoneNumber.findFirst({
+      .filter((id) => !mine.has(id));
+    const candidate = await this.prisma.lead.findFirst({
       where: {
         status: 'queued',
+        // Лид VK пишет аккаунт VK, лид Telegram — аккаунт Telegram.
+        channel: account?.channel ?? 'telegram',
         OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
         AND: [
           {
@@ -242,7 +304,7 @@ export class OutreachWorker implements OnModuleInit {
       orderBy: { id: 'asc' },
     });
     if (!candidate) return;
-    const claimed = await this.prisma.phoneNumber.updateMany({
+    const claimed = await this.prisma.lead.updateMany({
       where: {
         id: candidate.id,
         status: 'queued',
@@ -254,13 +316,50 @@ export class OutreachWorker implements OnModuleInit {
 
     let openerStarted = false;
     try {
-      const resolved = candidate.phoneE164
-        ? await this.telegram.resolvePhone(
-            accountId,
-            candidate.phoneE164,
-            candidate.firstName ?? undefined,
-          )
-        : await this.telegram.resolveUsername(accountId, candidate.usernameKey);
+      // Ник в приоритете: по нему пишем без импорта контакта (лимит импорта
+      // и скрытый приватностью номер не мешают). Ника нет или он не нашёлся —
+      // пробуем номер.
+      const channel = await this.channels.forAccount(accountId);
+      const byPhone = () =>
+        channel.resolvePhone(
+          accountId,
+          candidate.phoneE164!,
+          candidate.firstName ?? undefined,
+        );
+      // Номер или ник — одного из наших аккаунтов: писать самим себе не нужно.
+      const ownAccount = await this.prisma.channelAccount.findFirst({
+        where: {
+          OR: [
+            ...(candidate.phoneE164
+              ? [{ phoneE164: candidate.phoneE164 }]
+              : []),
+            ...(candidate.usernameKey
+              ? [
+                  {
+                    username: {
+                      equals: candidate.usernameKey,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                ]
+              : []),
+          ],
+        },
+        select: { id: true },
+      });
+      if (ownAccount) {
+        await this.markOwnAccount(candidate.id, ownAccount.id);
+        return;
+      }
+      let resolved = candidate.usernameKey
+        ? await channel.resolveUsername(accountId, candidate.usernameKey)
+        : await byPhone();
+      if (
+        resolved.kind === 'not_found' &&
+        candidate.usernameKey &&
+        candidate.phoneE164
+      )
+        resolved = await byPhone();
       if (resolved.kind === 'retry') {
         const until = now + IMPORT_THROTTLE_BACKOFF_S;
         await this.limitAccount(accountId, until, 'лимит импорта контактов');
@@ -276,34 +375,40 @@ export class OutreachWorker implements OnModuleInit {
         return;
       }
       if (resolved.kind === 'not_found' || resolved.deleted) {
-        await this.prisma.phoneNumber.update({
+        await this.prisma.lead.update({
           where: { id: candidate.id },
           data: {
             status: 'dead',
             lastError:
               resolved.kind === 'found'
                 ? 'аккаунт Telegram удалён'
-                : candidate.phoneE164
-                  ? 'номера нет в Telegram или он скрыт приватностью («кто видит мой номер»)'
-                  : 'такого @username нет (или это канал/группа)',
+                : candidate.phoneE164 && candidate.usernameKey
+                  ? 'ни номера, ни @username нет в Telegram (номер мог быть скрыт приватностью)'
+                  : candidate.phoneE164
+                    ? 'номера нет в Telegram или он скрыт приватностью («кто видит мой номер»)'
+                    : 'такого @username нет (или это канал/группа)',
             attempts: { increment: 1 },
           },
         });
         return;
       }
-      const chatId = resolved.userId;
+      const chatId = resolved.chatId;
+      if ((await this.channels.ownChatIds()).has(chatId)) {
+        await this.markOwnAccount(candidate.id, null);
+        return;
+      }
       if (await this.leads.isLeftoverOfDeletedLead(chatId, candidate.id)) {
         const wiped = await this.leads.wipeChatWithFiles(chatId);
         this.log.log(
           `outreach: lead #${candidate.id} — chat ${chatId} left from a deleted lead wiped (${wiped.messages} message(s)), starting over`,
         );
       }
-      await this.prisma.phoneNumber.update({
+      await this.prisma.lead.update({
         where: { id: candidate.id },
         data: {
           status: 'assigned',
-          telegramUserId: toChatId(chatId),
-          telegramUsername: resolved.username,
+          chatId: toChatId(chatId),
+          peerUsername: resolved.username,
           assignedAt: this.clock.ts(),
         },
       });
@@ -328,9 +433,10 @@ export class OutreachWorker implements OnModuleInit {
         city: candidate.city,
         age: candidate.age,
         site: candidate.site,
+        opener: candidate.firstMessage,
       });
       const ts = this.clock.ts();
-      await this.prisma.phoneNumber.update({
+      await this.prisma.lead.update({
         where: { id: candidate.id },
         data: { status: 'contacted', firstContactAt: ts, lastError: null },
       });
@@ -366,7 +472,7 @@ export class OutreachWorker implements OnModuleInit {
             `outreach: ${e.message}; lead #${candidate.id} queued with its sender preference preserved`,
           );
         } else {
-          await this.prisma.phoneNumber.update({
+          await this.prisma.lead.update({
             where: { id: candidate.id },
             data: {
               status: 'queued',
@@ -398,7 +504,7 @@ export class OutreachWorker implements OnModuleInit {
       const attempts = candidate.attempts + 1;
       const dead = attempts >= MAX_OUTREACH_ATTEMPTS;
       if (/already has a transcript/.test(String(e?.message ?? ''))) {
-        await this.prisma.phoneNumber.update({
+        await this.prisma.lead.update({
           where: { id: candidate.id },
           data: {
             status: 'dead',
@@ -413,17 +519,62 @@ export class OutreachWorker implements OnModuleInit {
         );
         return;
       }
-      await this.prisma.phoneNumber.update({
+      const raw = String(e?.message ?? e).slice(0, 200);
+      const failure = classifyOutreachError(e);
+      if (failure.kind === 'recipient') {
+        await this.prisma.lead.update({
+          where: { id: candidate.id },
+          data: {
+            status: 'dead',
+            attempts,
+            nextAttemptAt: null,
+            lastError: failure.reason,
+          },
+        });
+        this.log.warn(
+          `outreach: lead #${candidate.id} cannot be written by anyone (${raw}) — marked dead`,
+        );
+        return;
+      }
+      if (failure.kind === 'account') {
+        // Беда аккаунта, не лида: попытку не тратим, лид — другому аккаунту.
+        const until = now + failure.pauseS;
+        await this.limitAccount(accountId, until, failure.reason);
+        await this.handOff(candidate, accountId, failure.reason, {
+          permanent: failure.permanent,
+          until,
+        });
+        this.log.warn(
+          `outreach: account ${accountId} ${failure.reason} (${raw}); lead #${candidate.id} handed to another account`,
+        );
+        return;
+      }
+      // Этот аккаунт не смог — пробуем другим. Если первое сообщение уже
+      // могло уйти (ошибка после начала отправки), меняя аккаунт, рискуем
+      // написать человеку дважды — тогда повторяем тем же, как раньше.
+      if (!dead && (failure.kind === 'switch' || !openerStarted)) {
+        await this.handOff(
+          candidate,
+          accountId,
+          failure.kind === 'switch' ? failure.reason : raw,
+          { attempts, until: now + RETRY_BACKOFF_S },
+        );
+        this.log.warn(
+          `outreach: lead #${candidate.id} attempt ${attempts} failed on account ${accountId}: ${raw} — handed to another account`,
+        );
+        return;
+      }
+      await this.prisma.lead.update({
         where: { id: candidate.id },
         data: {
           status: dead ? 'dead' : 'queued',
           attempts,
           nextAttemptAt: dead ? null : now + RETRY_BACKOFF_S,
-          lastError: String(e?.message ?? e).slice(0, 256),
+          lastError: raw,
         },
       });
       this.log.warn(
-        `outreach: lead #${candidate.id} attempt ${attempts} failed: ${e?.message ?? e}`,
+        `outreach: lead #${candidate.id} attempt ${attempts} failed: ${raw}`,
       );
     }
   }
@@ -436,7 +587,7 @@ export class OutreachWorker implements OnModuleInit {
         orderBy: [{ isDefault: 'desc' }, { id: 'asc' }],
         select: { slug: true, name: true, isDefault: true },
       }),
-      this.prisma.tgAccount.findMany({
+      this.prisma.channelAccount.findMany({
         where: {
           status: 'active',
           ...(scopeAccounts === null ? {} : { id: { in: scopeAccounts } }),
@@ -454,7 +605,7 @@ export class OutreachWorker implements OnModuleInit {
           accounts: mine.length,
           accounts_ready: mine.filter(
             (a) =>
-              this.telegram.isOnline(a.id) &&
+              this.channels.isOnline(a.id) &&
               !(a.floodUntil && a.floodUntil > now),
           ).length,
         };
@@ -464,7 +615,7 @@ export class OutreachWorker implements OnModuleInit {
 
   async status(accounts: number[] | null = null) {
     const now = this.clock.ts();
-    const rows = await this.prisma.tgAccount.findMany({
+    const rows = await this.prisma.channelAccount.findMany({
       where: {
         status: 'active',
         ...(accounts === null ? {} : { id: { in: accounts } }),
@@ -485,14 +636,14 @@ export class OutreachWorker implements OnModuleInit {
         account_id: a.id,
         phone_e164: a.phoneE164,
         persona_id: a.personaId,
-        online: this.telegram.isOnline(a.id),
+        online: this.channels.isOnline(a.id),
         flood_until: limited ? a.floodUntil : null,
         flood_reason: limited ? a.floodReason : null,
         ...usage,
       });
     }
     return {
-      enabled: this.telegram.configured && !this.gate.stopped,
+      enabled: this.channels.configured && !this.gate.stopped,
       within_hours: withinOutreachHours(now, appConfig.outreachHours),
       hours_msk: appConfig.outreachHours,
       daily_per_account: appConfig.outreachDailyPerAccount,

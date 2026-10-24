@@ -12,6 +12,8 @@ import { useColumnFilters } from '../ColumnFilter/useColumnFilters';
 import { stageColors } from '../../data/stages';
 import { accountLostLabel, presenceLabel } from '../../utils/telegramStatus';
 import { nextActionLabel } from '../../utils/scenario';
+import { matchesDateFilter } from '../../utils/search';
+import { CHANNEL_FILTERS, channelKey, matchesChannel } from '../../utils/channel';
 import { dialogFilterDefs, useDialogColumnList, waitsForManager } from './rowLayout';
 
 export { waitsForManager };
@@ -65,8 +67,20 @@ function ConversationsTable({
   onHide = null,
   onDealStage = null,
   headerExtra = null,
+  // Состояние фильтров колонок может держать страница (ей нужны поиск и период
+  // для архива и плиток); без него таблица хранит его сама.
+  filters = null,
 }) {
-  const [filterState, setFilter, resetFilters] = useColumnFilters('dialogs');
+  const own = useColumnFilters('dialogs');
+  const [filterState, setFilter, resetFilters] = filters ?? own;
+  const [channel, setChannel] = useState('all');
+  // Фильтр канала — когда в списке больше одного мессенджера (или он уже выбран).
+  const channelCounts = CHANNEL_FILTERS.map(([key, label]) => [
+    key,
+    label,
+    key === 'all' ? rows.length : rows.filter((c) => channelKey(c.channel) === key).length,
+  ]);
+  const multiChannel = channelCounts.filter(([key, , n]) => key !== 'all' && n > 0).length > 1 || channel !== 'all';
   const columnList = useDialogColumnList();
   // Названия стадий, которые уже встречались: выбранная стадия остаётся
   // подписанной и после того, как её строки ушли из списка.
@@ -100,8 +114,17 @@ function ConversationsTable({
     .filter((col) => isActive(filterState[col.key]))
     .map((col) => `${col.key}=${JSON.stringify(filterState[col.key])}`)
     .join('&');
-  const hasFilters = filterKey !== '';
-  const filtered = applyFilters(rows, filterDefs, filterState);
+  const hasFilters = filterKey !== '' || channel !== 'all';
+  // Конкретный день («date:ГГГГ-ММ-ДД» из периода страницы) фильтр колонки не
+  // знает — его отбираем здесь, как в рабочей панели.
+  const byDay = String(filterState.last ?? '').startsWith('date:') ? filterState.last : '';
+  const filtered = applyFilters(rows, filterDefs, filterState).filter(
+    (c) => matchesChannel(c, channel) && (!byDay || matchesDateFilter(c, byDay)),
+  );
+  const resetAll = () => {
+    resetFilters();
+    setChannel('all');
+  };
 
   const sorted = sort.col
     ? [...filtered].sort((a, b) => {
@@ -130,7 +153,7 @@ function ConversationsTable({
     setPage(1);
     // Зависимость — строка с заданными фильтрами, а не их объект: опрос
     // списка страницу не сбрасывает.
-  }, [filterKey, showHidden, pageSize]);
+  }, [filterKey, showHidden, pageSize, channel, byDay]);
   const current = Math.min(page, pages);
   const visible = useMemo(
     () => sorted.slice((current - 1) * pageSize, current * pageSize),
@@ -153,13 +176,32 @@ function ConversationsTable({
           size="xs"
           className="min-w-20 shrink-0 justify-start font-normal tabular-nums text-muted-foreground disabled:opacity-100"
           disabled={!hasFilters}
-          onClick={resetFilters}
+          onClick={resetAll}
           title={hasFilters ? 'Сбросить все фильтры' : undefined}
         >
           {hasFilters
             ? `НАЙДЕНО: ${filtered.length} из ${rows.length}`
             : `ВСЕГО: ${total}${truncated ? ` · показаны последние ${rows.length}` : ''}`}
         </Button>
+        {multiChannel && (
+          <div className="flex shrink-0 items-center gap-1" data-testid="channel-filters" role="radiogroup" aria-label="Канал">
+            {channelCounts.map(([key, label, n]) => (
+              <Button
+                key={key}
+                type="button"
+                role="radio"
+                aria-checked={channel === key}
+                data-channel={key === 'all' ? undefined : key}
+                variant={channel === key ? 'secondary' : 'ghost'}
+                size="xs"
+                className="font-normal tabular-nums"
+                onClick={() => setChannel(key)}
+              >
+                {label} · {n}
+              </Button>
+            ))}
+          </div>
+        )}
         <FilterChips
           className="min-w-0 flex-1 flex-nowrap overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0"
           columns={filterColumns}

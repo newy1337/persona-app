@@ -10,13 +10,13 @@ describe('Manager and region attribution', () => {
         id: 1,
         username: 'first',
         regionCode: '0077',
-        accounts: [{ tgAccountId: 10 }],
+        accounts: [{ accountId: 10 }],
       },
       {
         id: 2,
         username: 'second',
         regionCode: '123',
-        accounts: [{ tgAccountId: 20 }],
+        accounts: [{ accountId: 20 }],
       },
     ]);
     const service = new ManagerAttributionService({
@@ -41,7 +41,7 @@ describe('Manager and region attribution', () => {
         id: 2,
         username: 'second',
         regionCode: '4567',
-        accounts: [{ tgAccountId: 10 }],
+        accounts: [{ accountId: 10 }],
       },
     ]);
     expect((await service.directory()).forAccount(10)).toEqual({

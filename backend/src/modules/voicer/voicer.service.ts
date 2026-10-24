@@ -17,14 +17,12 @@ import { createHash, randomBytes, randomUUID } from 'crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'fs/promises';
 import { join, resolve, relative, isAbsolute } from 'path';
 import { PrismaService } from 'src/prisma.service';
+import { isManagerRole } from 'src/enums/roles.enum';
 import { ClockService } from 'src/shared/clock.service';
 import { ScopeService } from 'src/shared/scope.service';
 import { appConfig } from 'src/config/app.config';
 import { VoiceEncoderService } from '../media/voice-encoder.service';
-import {
-  fillVariables,
-  variableValues,
-} from 'src/brain/nastya/config/variables';
+import { fillVariables, variableValues } from 'src/brain/config/variables';
 import { CreateVoiceTaskDto, VoiceTaskActionDto } from './voicer.dto';
 import { VoicerAutomationService } from './voicer-automation.service';
 import { voiceNotice } from './voicer-notice';
@@ -79,16 +77,40 @@ export class VoicerService {
     @Optional() private autoVoice?: VoicerAutomationService,
   ) {}
 
-  scopeWhere(user: DashboardUser): Prisma.VoiceTaskWhereInput {
+  /** Чьи задания видны: менеджеру — свои, тимлиду и хеду — своей команды, войсеру — назначенные. */
+  async scopeWhere(user: DashboardUser): Promise<Prisma.VoiceTaskWhereInput> {
     if (user.role === 'admin') return {};
     if (user.role === 'manager') return { managerId: user.id };
+    if (isManagerRole(user.role))
+      return {
+        managerId: { in: await this.scope.teamIds(user.id, user.regionCode) },
+      };
     if (user.role === 'voice') return { voicerId: user.id };
     throw new ForbiddenException();
   }
 
+  /**
+   * От чьего имени пользователь ставит задания и распоряжается ими: менеджер —
+   * от своего, тимлид — от менеджеров своей команды, админ — от любого (null).
+   * Хед заданий не ставит: у него нет войсера и прямых менеджеров в работе.
+   */
+  async actsFor(user: DashboardUser): Promise<number[] | null> {
+    if (user.role === 'admin') return null;
+    if (user.role !== 'teamlead') return [user.id];
+    const team = await this.scope.teamIds(user.id, user.regionCode);
+    const managers = await this.prisma.dashboardUser.findMany({
+      where: {
+        id: { in: team.filter((id) => id !== user.id) },
+        role: 'manager',
+      },
+      select: { id: true },
+    });
+    return managers.map((m) => m.id);
+  }
+
   async task(user: DashboardUser, id: number) {
     const task = await this.prisma.voiceTask.findFirst({
-      where: { id, ...this.scopeWhere(user) },
+      where: { id, ...(await this.scopeWhere(user)) },
       include: {
         deliveries: deliveryRelation,
         calls: {
@@ -161,7 +183,11 @@ export class VoicerService {
         ? []
         : await this.prisma.dashboardUser.findMany({
             where:
-              user.role === 'admin' ? { role: 'manager' } : { id: user.id },
+              user.role === 'admin'
+                ? { role: 'manager' }
+                : user.role === 'teamlead'
+                  ? { id: { in: (await this.actsFor(user)) ?? [] } }
+                  : { id: user.id },
             select: {
               id: true,
               username: true,
@@ -207,7 +233,7 @@ export class VoicerService {
 
   async list(user: DashboardUser, status: string, q = '', page = 1) {
     const where: Prisma.VoiceTaskWhereInput = {
-      ...this.scopeWhere(user),
+      ...(await this.scopeWhere(user)),
       ...(status === 'active'
         ? { status: { in: active } }
         : ['completed', 'ready'].includes(status)
@@ -248,8 +274,14 @@ export class VoicerService {
       throw new BadRequestException(
         'Для одноразового голосового выберите диалог получателя',
       );
-    const managerId = user.role === 'admin' ? dto.manager_id : user.id;
+    // Менеджер ставит только себе; тимлид и админ выбирают менеджера.
+    const managerId = user.role === 'manager' ? user.id : dto.manager_id;
     if (!managerId) throw new BadRequestException('Выберите менеджера');
+    const allowed = await this.actsFor(user);
+    if (allowed && !allowed.includes(managerId))
+      throw new ForbiddenException(
+        'Задание можно поставить только менеджеру своей команды',
+      );
     const manager = await this.prisma.dashboardUser.findUnique({
       where: { id: managerId },
       include: { voicer: true },
@@ -357,9 +389,10 @@ export class VoicerService {
     });
     if (!contact?.account) throw new NotFoundException('чат не найден');
     const owner = contact.account.manager;
+    const allowed = await this.actsFor(actor);
     if (
-      actor.role !== 'admin' &&
-      (actor.id !== managerId || owner?.userId !== managerId)
+      allowed &&
+      (!allowed.includes(managerId) || owner?.userId !== managerId)
     )
       throw new NotFoundException('чат не найден');
     if (owner && owner.userId !== managerId) {
@@ -405,9 +438,10 @@ export class VoicerService {
     if (task.revision !== dto.revision)
       throw new ConflictException('Задание обновилось. Откройте его заново');
     const isVoicer = user.role === 'voice' && task.voicerId === user.id;
+    const allowed = user.role === 'voice' ? [] : await this.actsFor(user);
     const isManager =
-      user.role === 'admin' ||
-      (user.role === 'manager' && task.managerId === user.id);
+      allowed === null ||
+      (task.managerId !== null && allowed.includes(task.managerId));
     if (dto.action === 'call_note') {
       if (!isVoicer && !isManager) throw new ForbiddenException();
       const call = task.calls[0];
@@ -776,7 +810,7 @@ export class VoicerService {
 
   async recordings(user: DashboardUser, q = '', page = 1) {
     const where: Prisma.VoiceRecordingWhereInput = {
-      task: { ...this.scopeWhere(user), voiceMode: 'library' },
+      task: { ...(await this.scopeWhere(user)), voiceMode: 'library' },
       ...(q ? { title: { contains: q } } : {}),
     };
     const [rows, total] = await Promise.all([
@@ -800,6 +834,8 @@ export class VoicerService {
           ...r
         }) => ({
           ...r,
+          kind: 'voice' as const,
+          call_id: null,
           task: this.publicTask(task),
           last_delivery: deliveryView(deliveries[0]),
           current:
@@ -814,7 +850,7 @@ export class VoicerService {
 
   async recording(user: DashboardUser, id: number) {
     const recording = await this.prisma.voiceRecording.findFirst({
-      where: { id, task: this.scopeWhere(user) },
+      where: { id, task: await this.scopeWhere(user) },
       include: { task: true },
     });
     if (!recording) throw new NotFoundException('Запись не найдена');
@@ -878,13 +914,14 @@ export class VoicerService {
     }
   }
 
-  private libraryTransaction(
+  private async libraryTransaction(
     requestKey: string,
     id: number,
     chatId: string,
     r: VoiceRecording & { task: VoiceTask },
     user: DashboardUser,
   ) {
+    const allowed = await this.actsFor(user);
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.voiceDelivery.findUnique({
         where: { requestKey },
@@ -909,9 +946,10 @@ export class VoicerService {
         where: { chatId: BigInt(chatId) },
         include: { account: { include: { manager: true } } },
       });
+      const owner = contact?.account?.manager?.userId ?? null;
       if (
         !contact?.account ||
-        (user.role !== 'admin' && contact.account.manager?.userId !== user.id)
+        (allowed && (owner === null || !allowed.includes(owner)))
       )
         throw new NotFoundException('Диалог недоступен для отправки');
       const unfinished = await tx.voiceDelivery.findFirst({
@@ -946,7 +984,7 @@ export class VoicerService {
 
   async notices(user: DashboardUser) {
     this.scope.requireManager(user);
-    const where = { userId: user.id, task: this.scopeWhere(user) };
+    const where = { userId: user.id, task: await this.scopeWhere(user) };
     const [items, unread] = await Promise.all([
       this.prisma.voiceNotice.findMany({
         where,
@@ -961,7 +999,7 @@ export class VoicerService {
   async readNotice(user: DashboardUser, id: number) {
     this.scope.requireManager(user);
     await this.prisma.voiceNotice.updateMany({
-      where: { id, userId: user.id, task: this.scopeWhere(user) },
+      where: { id, userId: user.id, task: await this.scopeWhere(user) },
       data: { readAt: this.clock.ts() },
     });
     return { ok: true };
@@ -969,7 +1007,7 @@ export class VoicerService {
 
   async deliveryDetail(user: DashboardUser, id: number) {
     const d = await this.prisma.voiceDelivery.findFirst({
-      where: { id, task: this.scopeWhere(user) },
+      where: { id, task: await this.scopeWhere(user) },
       include: { pendingReply: true },
     });
     if (!d) throw new NotFoundException('Отправка не найдена');

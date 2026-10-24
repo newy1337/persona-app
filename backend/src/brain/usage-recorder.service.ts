@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import { toChatId } from 'src/utils/ids';
-import type { UsageDb } from './nastya/memory/client';
-import type { UsageRow } from './nastya/llm/usage';
+import type { UsageDb } from './memory/client';
+import type { UsageRow } from './llm/usage';
 
 export interface UsageScope {
   chatId?: number | null;

@@ -8,7 +8,7 @@ process.env.TG_API_HASH = '';
 useTestDatabase('manual_delivery');
 import { PrismaService } from '../src/prisma.service';
 import { HistoryService } from '../src/shared/history.service';
-import { RelayWorker } from '../src/modules/telegram/relay.worker';
+import { RelayWorker } from '../src/channels/telegram/relay.worker';
 import { ReplyScheduleService } from '../src/brain/reply-schedule.service';
 import { PauseService } from '../src/shared/pause.service';
 
@@ -25,8 +25,14 @@ describe('manual outbox recovery against a migrated database', () => {
   beforeAll(async () => {
     db = new PrismaService();
     await db.onModuleInit();
-    await db.tgAccount.create({
-      data: { id: 1, personaId: 'test', phoneE164: '+10001', addedAt: 1 },
+    await db.channelAccount.create({
+      data: {
+        id: 1,
+        personaId: 'test',
+        phoneE164: '+10001',
+        login: '+10001',
+        addedAt: 1,
+      },
     });
   });
   afterAll(async () => {
@@ -137,7 +143,7 @@ describe('manual outbox recovery against a migrated database', () => {
       text: 'Message to react to',
       ts: 900,
       sourceMessageId: 444,
-      tgMsgId: 444,
+      peerMsgId: 444,
     });
     const realPause = new PauseService(
       history,

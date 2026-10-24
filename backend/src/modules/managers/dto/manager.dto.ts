@@ -9,6 +9,8 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  Max,
+  Min,
   MinLength,
   Matches,
   ValidateIf,
@@ -19,11 +21,60 @@ export class CreateManagerDto {
   @IsOptional()
   @IsInt()
   voicer_id?: number | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'руководитель: тимлид для менеджера, хед для тимлида',
+  })
+  @IsOptional()
+  @IsInt()
+  lead_id?: number | null;
   @ApiProperty()
   @IsString()
   @MinLength(1)
   @MaxLength(64)
   username: string;
+  @ApiPropertyOptional({ description: 'принимает входящих лидов' })
+  @IsOptional()
+  @IsBoolean()
+  online?: boolean;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'входящих лидов в сутки; null — без лимита',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  lead_quota?: number | null;
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'источники, которые принимает; пусто — любые',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  lead_sources?: string[];
+  @ApiPropertyOptional({
+    type: [Number],
+    description: 'доноры, которых принимает; пусто — любые',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsInt({ each: true })
+  donor_ids?: number[];
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'личности (slug), которые принимает; пусто — любые',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  lead_personas?: string[];
 
   @ApiPropertyOptional({
     description: 'Если не задан, создаётся случайный пароль',
@@ -37,7 +88,11 @@ export class CreateManagerDto {
   @ApiPropertyOptional({
     description: 'Код региона менеджера: 3–4 цифры, включая ведущие нули',
   })
-  @ValidateIf((o) => o.role === 'manager' || o.region_code !== undefined)
+  @ValidateIf(
+    (o) =>
+      ['manager', 'teamlead', 'head'].includes(o.role) ||
+      o.region_code !== undefined,
+  )
   @IsString()
   @Matches(/^\d{3,4}$/, { message: 'регион должен содержать 3 или 4 цифры' })
   region_code?: string;
@@ -48,16 +103,25 @@ export class CreateManagerDto {
 }
 
 export class UpdateManagerDto {
-  @IsOptional()
-  @IsInt()
-  voicer_id?: number | null;
-
-  @ApiPropertyOptional({ description: 'Новый логин учётки' })
+  @ApiPropertyOptional({ description: 'Новый логин; должен быть свободен' })
   @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(64)
   username?: string;
+  @ApiPropertyOptional({
+    description: 'Право менять общие образы: правка видна на всех их аккаунтах',
+  })
+  @IsOptional()
+  @IsBoolean()
+  can_edit_photo_sets?: boolean;
+  @IsOptional()
+  @IsInt()
+  voicer_id?: number | null;
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsInt()
+  lead_id?: number | null;
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
@@ -74,6 +138,54 @@ export class UpdateManagerDto {
   @IsArray()
   @IsInt({ each: true })
   account_ids?: number[];
+  @ApiPropertyOptional({ description: 'принимает входящих лидов' })
+  @IsOptional()
+  @IsBoolean()
+  online?: boolean;
+  @ApiPropertyOptional({
+    description: 'получает холодку (если её принимает регион)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  cold_leads?: boolean;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'входящих лидов в сутки; null — без лимита',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  lead_quota?: number | null;
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'источники, которые принимает; пусто — любые',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  lead_sources?: string[];
+  @ApiPropertyOptional({
+    type: [Number],
+    description: 'доноры, которых принимает; пусто — любые',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsInt({ each: true })
+  donor_ids?: number[];
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'личности (slug), которые принимает; пусто — любые',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  lead_personas?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -81,13 +193,6 @@ export class UpdateManagerDto {
   @MinLength(8)
   @MaxLength(256)
   password?: string;
-
-  @ApiPropertyOptional({
-    description: 'Создать случайный пароль. Нельзя вместе с password',
-  })
-  @IsOptional()
-  @IsBoolean()
-  regenerate_password?: boolean;
 }
 
 export class AccountOwnerDto {

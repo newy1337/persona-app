@@ -212,9 +212,21 @@ export default function RhythmEditor({ persona, onSaved, onError }) {
           help="Сначала отвечает быстро, дальше — как занятой человек."
         >
           <Num
+            label="Задержка первых"
+            unit="сообщений"
+            max={500}
+            help="с самого начала чата; 0 — выключено, разогрев сразу"
+            value={rd.first_messages}
+            onChange={(v) => set(['reply_delay', 'first_messages'], v)}
+          />
+          <Pair>
+            <Num label="Первые от" unit="мин" step={0.5} value={rd.first_min_minutes} onChange={(v) => set(['reply_delay', 'first_min_minutes'], v)} />
+            <Num label="до" unit="мин" step={0.5} value={rd.first_max_minutes} onChange={(v) => set(['reply_delay', 'first_max_minutes'], v)} />
+          </Pair>
+          <Num
             label="Разогрев"
             unit="мин"
-            help="от его первого сообщения"
+            help={Number(rd.first_messages) > 0 ? 'от первого сообщения после них' : 'от его первого сообщения'}
             value={rd.warmup_minutes}
             onChange={(v) => set(['reply_delay', 'warmup_minutes'], v)}
           />

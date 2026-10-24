@@ -174,3 +174,18 @@ test('renames a recording in a dialog and keeps the dialog with the typed title 
   expect(put).toHaveBeenCalledTimes(2);
   expect(host.querySelector('[role=dialog]')).toBeNull();
 });
+
+test('библиотека: запись звонка — метка «Звонок», без отправки в диалог, подписать может и войсер', async () => {
+  options.role = 'voice';
+  const call = { id: 'call-7', kind: 'call', call_id: 7, title: 'Звонок с Димой', titled: false, current: true, createdAt: 1792400000, duration: 95,
+    task: { id: 41, personaName: 'Настя', contactLabel: 'Дима', managerName: 'manager', voicerName: 'Оля' } };
+  vi.spyOn(api, 'get').mockImplementation(async path => path === '/api/voicer/options' ? options : path.includes('recordings') || path.includes('library') ? { items: [call], total: 1 } : result);
+  await render('/voice');
+  const tab = [...host.querySelectorAll('[role="tab"]')].find(b => b.textContent === 'Библиотека');
+  await act(async () => { tab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })); tab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+  await act(async () => { await Promise.resolve(); });
+  expect(host.querySelector('[data-testid="call-recording"]').textContent).toBe('Звонок');
+  expect(host.textContent).toContain('без подписи');
+  expect([...host.querySelectorAll('button')].some(b => b.textContent.includes('Отправить в диалог'))).toBe(false);
+  expect(host.querySelector('[aria-label="Подписать"]')).not.toBeNull();
+});

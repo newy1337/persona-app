@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import VoiceNotifications from './VoiceNotifications';
+import { isManagerRole } from '../../utils/roles';
+import { useMe } from '../AppLayout/me';
 
 const LIVE_POLL_MS = 30000;
 
@@ -66,13 +68,20 @@ const navClass = ({ isActive }) =>
     isActive && 'bg-accent text-foreground',
   );
 
+const STAFF = ['admin', 'manager', 'teamlead', 'head'];
+
+/** Пункты меню и кому они видны — как в рабочей панели (dev). */
 const NAV = [
-  { to: '/', end: true, label: 'Диалоги', roles: ['admin', 'manager'] },
-  { to: '/leads', label: 'Лиды', roles: ['admin', 'manager'] },
+  { to: '/', end: true, label: 'Диалоги', roles: STAFF },
+  { to: '/leads', label: 'Лиды', roles: STAFF },
   { to: '/voice', label: 'Войсер' },
   { to: '/personas', label: 'Личности', roles: ['admin'] },
-  { to: '/accounts', label: 'Аккаунты', roles: ['admin', 'manager'] },
-  { to: '/managers', label: 'Менеджеры', roles: ['admin'] },
+  { to: '/accounts', label: 'Аккаунты', roles: STAFF },
+  { to: '/photo-sets', label: 'Образы', roles: STAFF },
+  { to: '/buffer', label: 'Буфер', roles: ['admin', 'head', 'teamlead'] },
+  { to: '/managers', label: (role) => (role === 'admin' ? 'Менеджеры' : 'Команда'), roles: ['admin', 'head'] },
+  { to: '/users', label: 'LeadGet', roles: ['admin'] },
+  { to: '/catalogs', label: 'Справочники', roles: ['admin'] },
   { to: '/stats', label: 'Статистика', roles: ['admin'] },
   { to: '/settings', label: 'Настройки', roles: ['admin'] },
 ];
@@ -83,10 +92,13 @@ const NAV = [
  * перерисовывается и не меняет размеры. busy — страница под шапкой ждёт данные:
  * по нижней кромке бежит полоса загрузки.
  */
-function Header({ me, busy = false }) {
+function Header({ me: meProp, busy = false }) {
+  // Каркас передаёт пользователя пропом; вне его (тесты) берём из контекста.
+  const fromContext = useMe();
+  const me = meProp ?? fromContext;
   const [leaving, setLeaving] = useState(false);
   const role = me?.role;
-  const staff = role === 'manager' || role === 'admin';
+  const staff = role === 'admin' || isManagerRole(role);
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background">
@@ -104,13 +116,16 @@ function Header({ me, busy = false }) {
 
         <nav className="flex min-h-9 min-w-0 items-center gap-0.5 overflow-x-auto py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-[1180px]:order-10 max-[1180px]:-mx-1 max-[1180px]:basis-full">
           {NAV.filter((item) => !item.roles || item.roles.includes(role)).map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end} className={navClass}>{item.label}</NavLink>
+            <NavLink key={item.to} to={item.to} end={item.end} className={navClass}>
+              {typeof item.label === 'function' ? item.label(role) : item.label}
+            </NavLink>
           ))}
         </nav>
 
         <div className="ml-auto flex shrink-0 items-center gap-3 max-[479px]:gap-2">
           <Clock />
-          {staff && <VoiceNotifications key={me.id} userId={me.id} />}
+          {/* Уведомления о голосовых и очереди — менеджеру, как в рабочей панели. */}
+          {role === 'manager' && <VoiceNotifications key={me.id} userId={me.id} />}
           <div className="flex items-center gap-2.5">
             <div className="flex flex-col items-end max-[1279px]:hidden">
               <span className="text-[13px] leading-4 font-medium">{me?.username || '—'}</span>

@@ -27,10 +27,10 @@ import { CallMedia } from '../src/modules/voicer/voicer-call-media';
 import { VoicerCallService } from '../src/modules/voicer/voicer-call.service';
 import { VoicerCallOutcomeService } from '../src/modules/voicer/voicer-call-outcome.service';
 import { callContext } from '../src/shared/call-context';
-import { TelegramService } from '../src/modules/telegram/telegram.service';
+import { TelegramService } from '../src/channels/telegram/telegram.service';
 import { VoicerBotService } from '../src/modules/voicer/voicer-bot.service';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { RelayWorker } from '../src/modules/telegram/relay.worker';
+import { RelayWorker } from '../src/channels/telegram/relay.worker';
 import { PauseService } from '../src/shared/pause.service';
 import { TakeoverReason } from '../src/domain/pause';
 import { VoiceEncoderService } from '../src/modules/media/voice-encoder.service';
@@ -175,9 +175,10 @@ describe('Browser calls: authorization, MTProto flow and live socket lifecycle',
     ({ id: otherId } = await createUser('other', 'manager', {
       voicer_id: voiceId2,
     }));
-    const account = await prisma.tgAccount.create({
+    const account = await prisma.channelAccount.create({
       data: {
         phoneE164: '+10000000444',
+        login: '+10000000444',
         personaId: 'nastya',
         addedAt: 1,
         manager: { create: { userId: managerId } },
@@ -210,9 +211,10 @@ describe('Browser calls: authorization, MTProto flow and live socket lifecycle',
         facts: JSON.stringify({ name: 'Дима', city: 'Казань' }),
       },
     });
-    const foreign = await prisma.tgAccount.create({
+    const foreign = await prisma.channelAccount.create({
       data: {
         phoneE164: '+10000000555',
+        login: '+10000000555',
         personaId: 'nastya',
         addedAt: 1,
         manager: { create: { userId: otherId } },
@@ -261,7 +263,7 @@ describe('Browser calls: authorization, MTProto flow and live socket lifecycle',
     });
     client.invoke.mockClear();
     client.addEventHandler.mockClear();
-    await prisma.tgAccount.update({
+    await prisma.channelAccount.update({
       where: { id: chatAccountId },
       data: { status: 'active' },
     });
@@ -270,7 +272,7 @@ describe('Browser calls: authorization, MTProto flow and live socket lifecycle',
     for (const socket of sockets.splice(0)) socket.close();
     await until(async () => (calls as any).live.size === 0);
     await prisma.pendingReply.deleteMany();
-    await prisma.tgAccount.update({
+    await prisma.channelAccount.update({
       where: { id: chatAccountId },
       data: { status: 'unauthorized' },
     });
@@ -448,7 +450,7 @@ describe('Browser calls: authorization, MTProto flow and live socket lifecycle',
     const t = await callTask(),
       key = await ticket(t);
     await prisma.managerAccount.update({
-      where: { tgAccountId: chatAccountId },
+      where: { accountId: chatAccountId },
       data: { userId: otherId },
     });
     try {
@@ -457,7 +459,7 @@ describe('Browser calls: authorization, MTProto flow and live socket lifecycle',
       expect(requests(Api.phone.RequestCall)).toHaveLength(0);
     } finally {
       await prisma.managerAccount.update({
-        where: { tgAccountId: chatAccountId },
+        where: { accountId: chatAccountId },
         data: { userId: managerId },
       });
     }

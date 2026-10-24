@@ -178,9 +178,9 @@ export default function VariablesEditor({ persona, onSaved, onError }) {
         versions={versions}
         onReset={reset}
       >
-        <Button variant="outline" className="mr-1" onClick={() => addRow()}>
+        <Button type="button" variant="outline" className="mr-1" onClick={() => addRow()}>
           <Plus aria-hidden="true" />
-          Переменная
+          Добавить переменную
         </Button>
       </EditorBar>
 

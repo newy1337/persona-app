@@ -12,7 +12,8 @@ export class AccessControlService {
   private priority: number = 1;
 
   constructor() {
-    this.buildRoles([Role.MANAGER, Role.ADMIN]);
+    // Тимлид и хед выше менеджера: всё, что открыто менеджеру, открыто и им.
+    this.buildRoles([Role.MANAGER, Role.TEAMLEAD, Role.HEAD, Role.ADMIN]);
     this.buildRoles([Role.VOICE, Role.ADMIN]);
   }
 

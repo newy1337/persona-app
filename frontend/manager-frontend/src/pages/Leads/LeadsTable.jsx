@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { CircleAlert, ListPlus, ListX, MessageSquare, MoreHorizontal, RotateCcw, Shuffle, Trash2 } from 'lucide-react';
+import { CircleAlert, Info, ListPlus, ListX, MessageSquare, MoreHorizontal, RotateCcw, Shuffle, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PanelUX as ux } from '../../ui/PanelUX';
-import { useIsAdmin } from '../../components/AppLayout/me';
+import { useMe } from '../../components/AppLayout/me';
+import { genderLabel } from '../../utils/chat';
+import { httpHref } from '../../utils/safeUrl';
 import { ColumnFilter } from '../../components/ColumnFilter/ColumnFilter';
 import { ColumnPicker } from '../../components/ColumnPicker/ColumnPicker';
 import { tableMinWidth, useColumnPrefs } from '../../components/ColumnPicker/columnPrefs';
@@ -29,9 +31,11 @@ const SKELETON_ROWS = 8;
    сам — «Настроить поля» в заголовке колонки действий; чекбокс, лида и действия
    скрыть нельзя. Значение скрытой колонки остаётся в подсказке лида, сайт ещё
    и дописывается под имя. Уже минимальной ширины таблица прокручивается
-   внутри рамки. «Менеджер» (adminOnly) есть только у админа: остальным колонка
-   не рисуется и в настройке полей не предлагается. «Этап» — этап сделки
-   диалога лида (deal_stage), его ставит менеджер в диалоге. */
+   внутри рамки. «Менеджер» (с регионом) видят админ, хед и тимлид: у менеджера
+   там всегда он сам, колонка не рисуется и в настройке полей не предлагается.
+   «Источник» — откуда пришёл лид (API LeadGet, холодка, перезабив, донор),
+   подробности — в поповере. «Этап» — этап сделки диалога лида (deal_stage),
+   его ставит менеджер в диалоге. */
 const WIDE_QUERY = '(min-width: 1680px)';
 // Меньше этого «Лид» не сжимается.
 const FLEX_MIN_WIDTH = 180;
@@ -41,6 +45,7 @@ const COLUMNS = [
   { key: 'contact', label: 'Контакт', width: 160, bars: ['w-24'] },
   { key: 'telegram', label: 'Telegram', width: 168, show: 'wide', bars: ['w-20'] },
   { key: 'site', label: 'Сайт', width: 92, show: 'wide', bars: ['w-12'] },
+  { key: 'source', label: 'Источник', width: 150, bars: ['w-16', 'w-20'] },
   { key: 'persona', label: 'Личность', width: 168, bars: ['w-24'] },
   { key: 'manager', label: 'Менеджер', width: 116, adminOnly: true, bars: ['w-16'] },
   { key: 'account', label: 'Аккаунт', width: 152, bars: ['w-20'] },
@@ -75,6 +80,59 @@ function SelectAllCheckbox({ className, ...props }) {
       )}
       {...props}
     />
+  );
+}
+
+/** Сводка входящего лида — как в рабочей панели: источник, регион, личность, метки, донор, аккаунт, ID. */
+export function inboundSummary(row) {
+  return [
+    row.inbound_at ? `Источник: ${row.source_type}` : null,
+    row.requested_region ? `Регион: ${row.requested_region}` : null,
+    row.requested_persona ? `Личность: ${row.requested_persona}` : null,
+    row.reassigned ? 'Перезабив' : null,
+    row.cold ? 'Холодка' : null,
+    row.donor ? `Донор: ${row.donor}` : null,
+    row.account_label ? `Аккаунт: ${row.account_label}` : null,
+    row.external_id ? `ID: ${row.external_id}` : null,
+  ].filter(Boolean).join(' · ');
+}
+
+/* Подробности входящего лида (профиль, история от донора) открываются поверх
+   таблицы и не меняют высоту строки. Небезопасная ссылка на профиль — текстом. */
+function InboundDetails({ name, row }) {
+  const summary = inboundSummary(row);
+  const href = row.profile_url ? httpHref(row.profile_url) : null;
+  if (!summary && !row.profile_url && !row.last_messages) return null;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Подробнее о лиде: ${name}`}
+          title="Откуда лид, профиль, история"
+          className="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          <Info className="size-3.5" aria-hidden="true" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="max-h-72 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto text-xs leading-5">
+        {summary && <p className="text-muted-foreground [overflow-wrap:anywhere]" data-testid="lead-inbound">{summary}</p>}
+        {row.profile_url && (
+          <p className="mt-1 [overflow-wrap:anywhere]">
+            <span className="text-muted-foreground">Профиль: </span>
+            {href
+              ? <a className="text-primary underline-offset-4 hover:underline" href={href} target="_blank" rel="noreferrer">{row.profile_url.replace(/^https?:\/\//i, '').slice(0, 60)}</a>
+              : <span data-testid="profile-text">{String(row.profile_url).slice(0, 60)}</span>}
+          </p>
+        )}
+        {row.last_messages && (
+          <>
+            <p className="mt-2 font-medium">История общения от донора</p>
+            <p className="whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">{row.last_messages}</p>
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -122,7 +180,9 @@ function SkeletonRow({ columns }) {
 export function LeadsTable({ rows, query, filtered, filters, selected, onToggle, onSelectVisible, onChat, onQueue, onUnqueue, onReassign, onDelete, onPersonaChange, personas, helpers }) {
   const { PersonaSelect, statusLabels, statusBadges, date } = helpers;
   const busy = ux.useActions().pending.some(key => key.includes('/api/leads'));
-  const admin = useIsAdmin();
+  const me = useMe();
+  // Вне каркаса (тесты) — как у руководителя: колонка менеджера есть.
+  const admin = !me || me.role !== 'manager';
   const prefs = useColumnPrefs('leads', admin ? COLUMNS : PUBLIC_COLUMNS, { wide: WIDE_QUERY });
   const { columns, has } = prefs;
   const loading = rows == null;
@@ -197,7 +257,10 @@ export function LeadsTable({ rows, query, filtered, filters, selected, onToggle,
             const canReassign = !row.first_contact_at && senderId && ['pending', 'queued', 'assigned', 'dead'].includes(row.status);
             const isSelected = selected.has(row.id);
             const badge = statusBadges[row.status] ?? { variant: 'outline' };
-            const about = [row.age ? `${row.age} лет` : null, row.city].filter(Boolean).join(' · ');
+            const about = [row.age ? `${row.age} лет` : null, genderLabel(row.gender, true), row.city].filter(Boolean).join(' · ');
+            const inbound = inboundSummary(row);
+            const tags = [row.cold ? 'Холодка' : null, row.reassigned ? 'Перезабив' : null, row.donor ? `донор ${row.donor}` : null].filter(Boolean);
+            const firstMessage = row.first_message ? `${row.first_contact_at ? 'Первое сообщение' : 'Напишем'}: ${row.first_message}` : null;
             const telegram = row.telegram_username ? `@${row.telegram_username}` : row.telegram_user_id ? String(row.telegram_user_id) : null;
             const personaText = row.persona_name || row.persona_id || 'Не указана';
             const sender = senderId ? `${senderUsername ? `@${senderUsername} ` : ''}#${senderId}` : 'автоматически';
@@ -213,6 +276,8 @@ export function LeadsTable({ rows, query, filtered, filters, selected, onToggle,
               row.site ? `сайт: ${row.site}` : null,
               `лид #${row.id}`,
               telegram ? `Telegram: ${telegram}` : null,
+              firstMessage,
+              !has('source') && inbound,
               !has('contact') && [row.phone_e164, row.username ? `@${row.username}` : null].filter(Boolean).join(', '),
               !has('persona') && `Личность: ${personaText}`,
               admin && !has('manager') && ownerTitle,
@@ -275,6 +340,16 @@ export function LeadsTable({ rows, query, filtered, filters, selected, onToggle,
                   </TableCell>
                 )}
 
+                {has('source') && (
+                  <TableCell className={cell}>
+                    <div className={cn(line1, 'gap-1')} title={inbound || undefined}>
+                      <span className={cn('truncate text-sm', !row.inbound_at && 'text-muted-foreground')}>{row.inbound_at ? row.source_type : 'вручную'}</span>
+                      <InboundDetails name={name} row={row} />
+                    </div>
+                    {tags.length > 0 && <div className={line2}>{tags.join(' · ')}</div>}
+                  </TableCell>
+                )}
+
                 {has('persona') && (
                   <TableCell className={cell}>
                     <div className="flex h-8 min-w-0 items-center">
@@ -292,9 +367,10 @@ export function LeadsTable({ rows, query, filtered, filters, selected, onToggle,
 
                 {has('manager') && (
                   <TableCell className={cell}>
-                    <div className={one} title={ownerTitle}>
-                      <span className={cn('truncate', !row.manager_username && 'text-muted-foreground')}>{row.manager_username || 'не назначен'}</span>
+                    <div className={line1} title={ownerTitle} data-testid="manager-attribution">
+                      <span className={cn('truncate text-sm', !row.manager_username && 'text-muted-foreground')}>{row.manager_username || 'не назначен'}</span>
                     </div>
+                    <div className={line2}>{row.region_code ? `регион ${row.region_code}` : 'регион не задан'}</div>
                   </TableCell>
                 )}
 

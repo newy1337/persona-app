@@ -68,6 +68,12 @@ const BADGE = {
   dead: { variant: 'destructive' },
 };
 const SEARCH_DEBOUNCE_MS = 250;
+/* Бэкенд (как в рабочей панели) фильтрует по одному статусу и одному этапу и
+   отдаёт первые limit строк без total. Один выбранный статус/этап уходит в
+   запрос; несколько — отбираются здесь. Страницы листаются тоже здесь. */
+const FETCH_LIMIT = 1000;
+const onlyOne = (values) => (values.length === 1 ? values[0] : '');
+const stageOf = (row) => row.deal_stage || 'none';
 const PAGE_SIZES = [25, 50, 100];
 const DOT = {
   success: 'bg-success-foreground',
@@ -251,8 +257,8 @@ export default function Leads() {
   const [filterState, setFilter, resetFilters] = useColumnFilters('leads');
   const statuses = pick(filterState.status, STATUS_KEYS);
   const dealStages = pick(filterState.stage, STAGE_KEYS);
-  const status = statuses.join(',');
-  const dealStage = dealStages.join(',');
+  const status = onlyOne(statuses);
+  const dealStage = onlyOne(dealStages);
   const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
@@ -283,7 +289,7 @@ export default function Leads() {
   const load = useCallback(() => {
     const id = ++request.current;
     Promise.all([
-      getLeads({ status, deal_stage: dealStage || undefined, q, limit: pageSize, offset: (page - 1) * pageSize }),
+      getLeads({ status, deal_stage: dealStage || undefined, q, limit: FETCH_LIMIT }),
       getOutreachStatus().catch(() => null),
     ])
       .then(([d, o]) => {
@@ -292,7 +298,7 @@ export default function Leads() {
         if (o) setOutreach(o);
       })
       .catch((e) => { if (id === request.current) setError(e.detail || e.message); });
-  }, [status, dealStage, q, page, pageSize]);
+  }, [status, dealStage, q]);
 
   useEffect(() => {
     load();
@@ -324,9 +330,13 @@ export default function Leads() {
   const toggle = (id) => setSelected((v) => { const n = new Set(v); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const ids = [...selected];
   const counts = data.counts ?? {};
-  const items = data.items ?? [];
-  // Старый бэкенд total не присылает — тогда страница одна.
-  const total = data.total ?? items.length;
+  const stageCounts = data.stages ?? {};
+  // Несколько статусов или этапов сервер не фильтрует — отбираем здесь.
+  const matched = (data.items ?? []).filter((row) =>
+    (statuses.length < 2 || statuses.includes(row.status)) &&
+    (dealStages.length < 2 || dealStages.includes(stageOf(row))));
+  const total = matched.length;
+  const items = matched.slice((page - 1) * pageSize, page * pageSize);
   const loaded = data.items !== null;
 
   // Список стал короче (удаление, смена статуса) — возвращаемся на последнюю страницу.
@@ -343,7 +353,11 @@ export default function Leads() {
       label: 'Статус',
       filter: { type: 'options', options: STATUS_KEYS.map((key) => ({ value: key, label: LABEL[key], count: counts[key] })) },
     },
-    { key: 'stage', label: 'Этап', filter: { type: 'options', options: STAGE_OPTIONS } },
+    {
+      key: 'stage',
+      label: 'Этап',
+      filter: { type: 'options', options: STAGE_OPTIONS.map((o) => ({ ...o, count: stageCounts[o.value] })) },
+    },
   ];
   const filters = {
     defs: Object.fromEntries(filterColumns.map((col) => [col.key, col.filter])),
@@ -383,7 +397,7 @@ export default function Leads() {
         <div className="flex flex-col gap-4">
           <div className="flex min-h-4 flex-col gap-1 text-xs" aria-live="polite">
             <OutreachBar status={outreach} queued={counts.queued ?? 0} />
-            <StuckWarning items={items} personas={personas} />
+            <StuckWarning items={data.items ?? []} personas={personas} />
             {error && <p className="leading-4 text-destructive [overflow-wrap:anywhere]">{error}</p>}
           </div>
 
@@ -428,7 +442,7 @@ export default function Leads() {
             />
           </div>
 
-          <LeadsTable rows={data.items} query={q} filtered={filtered} filters={filters} selected={selected}
+          <LeadsTable rows={loaded ? items : null} query={q} filtered={filtered} filters={filters} selected={selected}
             onToggle={toggle} onSelectVisible={checked => setSelected(previous => {
               const next = new Set(previous);
               for (const row of items) { if (checked) next.add(row.id); else next.delete(row.id); }

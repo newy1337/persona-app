@@ -61,6 +61,17 @@ export class StatsController {
     return this.stats.dealStages({ from, to });
   }
 
+  @ApiOperation({
+    summary:
+      'Холодка: получено, написали, ответили, активные — всего и по менеджерам',
+  })
+  @ApiQuery({ name: 'from', required: false, example: '2026-09-01' })
+  @ApiQuery({ name: 'to', required: false, example: '2026-09-10' })
+  @Get('cold')
+  cold(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.stats.coldLeads({ from, to });
+  }
+
   @ApiOperation({ summary: 'Расход одного чата' })
   @Get('chat/:chatId')
   forChat(

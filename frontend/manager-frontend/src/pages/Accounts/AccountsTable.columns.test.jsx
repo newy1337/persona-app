@@ -73,11 +73,12 @@ describe('таблица аккаунтов: настройка полей', () 
     expect(host.querySelector('table').style.minWidth).toBe('1250px');
   });
 
-  it('на широком экране обе колонки видны, минимальная ширина та же', async () => {
+  it('на широком экране видны «Регион», «Пульс» и «Образ»; минимальная ширина та же', async () => {
     setWide(true);
     await draw();
     expect(cellOf('Регион').textContent).toBe('0077');
     expect(heads()).toContain('Пульс');
+    expect(cellOf('Образ').textContent).toBe('без образа');
     expect(host.querySelector('table').style.minWidth).toBe('1250px');
   });
 
@@ -116,7 +117,7 @@ describe('таблица аккаунтов: настройка полей', () 
     expect(heads().slice(0, 2)).toEqual(['Подробнее', 'Аккаунт']);
     expect(heads().at(-1)).toBe('Действия');
     await openPicker();
-    expect(boxes().map((item) => item.textContent)).toEqual(['Телефон', 'Личность', 'Менеджер', 'Регион', 'Диалоги', 'Прокси', 'Состояние', 'Пульс']);
+    expect(boxes().map((item) => item.textContent)).toEqual(['Телефон', 'Личность', 'Менеджер', 'Регион', 'Диалоги', 'Образ', 'Прокси', 'Состояние', 'Пульс']);
   });
 
   it('пустое состояние занимает все видимые колонки, настройка полей остаётся доступной', async () => {

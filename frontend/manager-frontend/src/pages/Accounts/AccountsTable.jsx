@@ -1,8 +1,9 @@
 import { Fragment, useState } from 'react';
-import { ChevronRight, Globe, LogIn, LogOut, Pause, Pencil, Play, TimerOff, Trash2 } from 'lucide-react';
+import { ChevronRight, Globe, Image, ImageOff, LogIn, LogOut, Pause, Pencil, Play, TimerOff, Trash2 } from 'lucide-react';
 import { PanelUX as ux } from '../../ui/PanelUX';
 import { cn } from '@/lib/utils';
-import { useIsAdmin } from '@/components/AppLayout/me';
+import { useMe } from '@/components/AppLayout/me';
+import { accountContact, channelBadge } from '../../utils/channel';
 import { ColumnFilter } from '@/components/ColumnFilter/ColumnFilter';
 import { FilterChips } from '@/components/ColumnFilter/FilterChips';
 import { applyFilters, isActive, optionsFrom } from '@/components/ColumnFilter/filters';
@@ -41,13 +42,15 @@ const COLUMNS = [
   { key: 'manager', label: 'Менеджер', width: 140, adminOnly: true },
   { key: 'region', label: 'Регион', width: 84, show: 'wide', adminOnly: true },
   { key: 'chats', label: 'Диалоги', width: 84 },
+  { key: 'photoSet', label: 'Образ', width: 150, show: 'wide' },
   { key: 'proxy', label: 'Прокси' },
   { key: 'state', label: 'Состояние', width: 176, filterAlign: 'end' },
   { key: 'pulse', label: 'Пульс', width: 120, show: 'wide', filterAlign: 'end' },
   { key: 'actions', label: 'Действия', width: 88, required: true, quiet: true },
 ];
-// «Менеджер» и «Регион» нужны только админу: остальным их нет нигде — ни в
-// сетке, ни в настройке полей, ни в фильтрах.
+// «Менеджер» и «Регион» нужны тем, кто видит чужие аккаунты (админ, хед,
+// тимлид). Менеджеру они всегда про него самого — их нет нигде: ни в сетке, ни
+// в настройке полей, ни в фильтрах.
 const PUBLIC_COLUMNS = COLUMNS.filter((col) => !col.adminOnly);
 
 /**
@@ -55,7 +58,9 @@ const PUBLIC_COLUMNS = COLUMNS.filter((col) => !col.adminOnly);
  * этому пользователю, columns — видимые сейчас.
  */
 function useAccountColumns() {
-  const admin = useIsAdmin();
+  const me = useMe();
+  // Вне каркаса (me нет) — всё, как и раньше.
+  const admin = !me || me.role !== 'manager';
   const all = admin ? COLUMNS : PUBLIC_COLUMNS;
   const prefs = useColumnPrefs('accounts', all, { wide: WIDE_QUERY });
   return { ...prefs, all, admin };
@@ -66,7 +71,7 @@ const ONLINE = 'В сети';
 const OFFLINE = 'Не в сети';
 const personaOf = (row) => row.persona_name || row.persona_id || '';
 const displayName = (row) =>
-  row.display_name || (row.username ? `@${row.username}` : row.phone_e164 || `Аккаунт #${row.id}`);
+  row.display_name || accountContact(row)?.display || row.login || row.phone_e164 || `Аккаунт #${row.id}`;
 const isOnline = (row, alive) => Boolean(alive?.[row.id] ?? row.online);
 
 /** Выбранное значение остаётся в списке, даже если строк с ним больше нет. */
@@ -91,11 +96,12 @@ function filterDefs(rows, alive, statusLabel, state) {
   const proxySet = (row) => !row.needs_proxy_setup;
   const online = (row) => isOnline(row, alive);
   return {
-    account: { type: 'text', placeholder: 'Имя или @ник', get: (row) => [displayName(row), row.username && `@${row.username}`] },
-    phone: { type: 'text', placeholder: 'Номер содержит…', get: (row) => row.phone_e164 },
+    account: { type: 'text', placeholder: 'Имя или @ник', get: (row) => [displayName(row), row.username && `@${row.username}`, row.login] },
+    phone: { type: 'text', placeholder: 'Номер или логин…', get: (row) => [row.phone_e164, row.login] },
     persona: fromRows('persona', personaOf, 'Без личности'),
     manager: fromRows('manager', (row) => row.manager_username || '', 'без менеджера'),
     region: fromRows('region', (row) => row.region_code || '', 'не задан'),
+    photoSet: fromRows('photoSet', (row) => row.photo_set_name || '', 'без образа'),
     proxy: {
       type: 'options',
       get: (row) => (proxySet(row) ? 'set' : 'unset'),
@@ -227,11 +233,11 @@ function Who({ avatar, title, sub }) {
 }
 
 /** Состояние: бейдж и строка под ограничение / причину потери сессии — место занято всегда. */
-function State({ badge, note }) {
+function State({ badge, note, noteId }) {
   return (
     <div className="flex min-w-0 flex-col items-start gap-0.5">
       {badge}
-      <div className={cn(LINE_2, 'max-w-full text-destructive')} title={note || undefined}>{note}</div>
+      <div className={cn(LINE_2, 'max-w-full text-destructive')} title={note || undefined} data-testid={note ? noteId : undefined}>{note}</div>
     </div>
   );
 }
@@ -270,6 +276,7 @@ export function AccountsTableSkeleton({ rows = 3 }) {
             manager: one('w-20'),
             region: one('w-10'),
             chats: one('w-6'),
+            photoSet: one('w-20'),
             proxy: one('w-28'),
             state: (
               <State badge={<Badge variant="outline" className="w-[72px] animate-pulse border-transparent bg-accent">{' '}</Badge>} />
@@ -299,7 +306,7 @@ function Count({ children }) {
   );
 }
 
-export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus, onClearFlood, onDelete, helpers }) {
+export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus, onClearFlood, onDelete, helpers, onPhotoAutoSend }) {
   const pending = ux.useActions().pending;
   // Раскрытые строки — по id аккаунта: несколько сразу, и опрос их не закрывает.
   const [expanded, setExpanded] = useState(() => new Set());
@@ -322,7 +329,7 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
   const defs = Object.fromEntries(filterColumns.map((col) => [col.key, col.filter]));
   const filtered = filterColumns.some((col) => isActive(filterState[col.key]));
   const shown = applyFilters(rows, defs, filterState);
-  const tableProps = { 'aria-label': 'Telegram-аккаунты' };
+  const tableProps = { 'aria-label': 'Аккаунты' };
 
   if (!rows.length) {
     return (
@@ -330,7 +337,7 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
         <Frame prefs={prefs} picker tableProps={tableProps}>
           <tr>
             <td colSpan={columns.length} className="px-3 py-10 text-center text-sm text-muted-foreground">
-              Аккаунтов нет. Добавьте номер, затем войдите — код придёт в Telegram.
+              Аккаунтов нет. Telegram: добавьте номер и войдите — код придёт в Telegram. ВКонтакте: добавьте логин, куки и прокси.
             </td>
           </tr>
         </Frame>
@@ -363,6 +370,9 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
           (key) => key.split(':').slice(1).join(':') === `/api/tg-accounts/${row.id}` || key.includes(`/api/tg-accounts/${row.id}/`),
         );
         const name = displayName(row);
+        const badge = channelBadge(row.channel);
+        const profile = accountContact(row);
+        const network = badge.title;
         const online = isOnline(row, alive);
         const presence = online ? ONLINE : OFFLINE;
         const open = expanded.has(row.id);
@@ -371,11 +381,13 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
         const lost = row.status === 'unauthorized' && row.lost_at;
         const proxy = row.needs_proxy_setup ? 'не задан' : row.proxy_label || row.proxy_geo || 'задан';
         const owner = `${row.manager_username || 'без менеджера'}${row.region_code ? ` · регион ${row.region_code}` : ''}`;
-        const note = row.flood_until ? `Ограничен до ${date(row.flood_until)}` : lost ? row.lost_reason || '' : '';
+        const offlineReason = !online && row.offline_reason ? row.offline_reason : '';
+        const note = row.flood_until ? `Ограничен до ${date(row.flood_until)}` : lost ? row.lost_reason || '' : offlineReason;
+        const photoSet = row.photo_set_name || 'без образа';
         // Значения скрытых колонок не пропадают: они добавляются в раскрытие строки.
         const facts = [
           { label: 'ID аккаунта', value: `#${row.id}`, mono: true },
-          !has('phone') && { label: 'Телефон', value: row.phone_e164 || '—', mono: Boolean(row.phone_e164) },
+          !has('phone') && { label: row.login && !row.phone_e164 ? 'Логин' : 'Телефон', value: row.phone_e164 || row.login || '—', mono: Boolean(row.phone_e164 || row.login) },
           !has('persona') && { label: 'Личность', value: row.persona_name || row.persona_id || 'Без личности' },
           admin && !has('manager') && { label: 'Менеджер', value: row.manager_username || 'без менеджера' },
           !has('state') && { label: 'Состояние', value: [statusLabel(row), note].filter(Boolean).join(' · ') },
@@ -386,6 +398,8 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
           { label: 'Последний вход', value: date(row.last_login_at) },
           { label: 'Пульс', value: date(row.last_heartbeat_at) },
           { label: 'Лимит сообщений в день', value: row.daily_msg_quota ?? 'Без лимита' },
+          { label: 'Образ', value: row.photo_set_name || 'Не назначен' },
+          { label: 'Автоотправка фото', value: row.photo_auto_send ? 'Разрешена' : 'Выключена для аккаунта' },
         ].filter(Boolean);
         return (
           <Fragment key={row.id}>
@@ -424,24 +438,35 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
                         />
                       </div>
                     )}
-                    title={<span title={name}>{name}</span>}
-                    sub={row.username ? (
+                    title={(
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate" title={name}>{name}</span>
+                        {badge.other && (
+                          <Badge variant="outline" className="h-4 shrink-0 px-1 text-[10px]" data-testid="channel-badge" data-channel={badge.key} title={badge.title}>
+                            {badge.label}
+                          </Badge>
+                        )}
+                      </span>
+                    )}
+                    sub={profile ? (
                       <a
                         className="text-primary hover:underline"
-                        href={`https://t.me/${row.username}`}
+                        href={profile.url}
                         target="_blank"
                         rel="noreferrer"
                         onClick={stop}
-                        aria-label={row.display_name ? undefined : `Профиль ${row.username}`}
+                        aria-label={row.display_name ? undefined : `Профиль ${profile.display}`}
                       >
-                        {row.display_name ? `@${row.username}` : 'Telegram'}
+                        {row.display_name ? profile.display : network}
                       </a>
                     ) : presence}
                   />
                 ),
                 phone: (
                   <div className={ONE}>
-                    {row.phone_e164 ? <span className="truncate font-mono text-xs tabular-nums">{row.phone_e164}</span> : <Empty />}
+                    {row.phone_e164 || row.login
+                      ? <span className="truncate font-mono text-xs tabular-nums">{row.phone_e164 || row.login}</span>
+                      : <Empty />}
                   </div>
                 ),
                 persona: (
@@ -464,7 +489,15 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
                     {row.region_code ? <span className="truncate tabular-nums">{row.region_code}</span> : <Empty />}
                   </div>
                 ),
-                chats: <div className={cn(ONE, 'tabular-nums')}>{row.chats ?? 0}</div>,
+                chats: <div className={cn(ONE, 'tabular-nums')} data-testid="account-chats">{row.chats ?? 0}</div>,
+                photoSet: (
+                  <div className={ONE} data-testid="account-photo-set" title={`Образ: ${photoSet}`}>
+                    <span className={cn('truncate', !row.photo_set_name && 'text-muted-foreground')}>{photoSet}</span>
+                    {row.photo_set_id && !row.photo_auto_send && (
+                      <span className="shrink-0 text-xs text-muted-foreground" title="Автоотправка фото выключена для аккаунта">без авто</span>
+                    )}
+                  </div>
+                ),
                 proxy: (
                   <div className={ONE} title={`Прокси: ${proxy}`}>
                     <span className={cn('truncate', row.needs_proxy_setup && 'text-muted-foreground')}>{proxy}</span>
@@ -478,6 +511,7 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
                       </Badge>
                     )}
                     note={note}
+                    noteId={note && note === offlineReason ? 'offline-reason' : undefined}
                   />
                 ),
                 pulse: <div className={cn(ONE, 'tabular-nums text-muted-foreground')}><span className="truncate">{date(row.last_heartbeat_at)}</span></div>,
@@ -520,16 +554,22 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
                     )}
                     {row.flood_until && (
                       <p className="mt-3 text-xs leading-4 text-destructive [overflow-wrap:anywhere]">
-                        {`${row.flood_reason || 'Ограничение Telegram'} · до ${date(row.flood_until)}`}
+                        {`${row.flood_reason || `Ограничение ${network}`} · до ${date(row.flood_until)}`}
                       </p>
                     )}
                     <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
                       <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onProxy(row)}>
                         <Globe aria-hidden="true" />Прокси
                       </Button>
+                      {onPhotoAutoSend && (
+                        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onPhotoAutoSend(row, !row.photo_auto_send)}>
+                          {row.photo_auto_send ? <ImageOff aria-hidden="true" /> : <Image aria-hidden="true" />}
+                          {row.photo_auto_send ? 'Выключить автофото' : 'Включить автофото'}
+                        </Button>
+                      )}
                       {!loginNeeded && row.status !== 'retired' && (
                         <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onLogin(row)}>
-                          <LogIn aria-hidden="true" />Перелогин
+                          <LogIn aria-hidden="true" />{badge.key === 'vk' ? 'Новые куки' : 'Перелогин'}
                         </Button>
                       )}
                       {row.flood_until && (

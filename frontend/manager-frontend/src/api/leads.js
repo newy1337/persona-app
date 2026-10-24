@@ -1,13 +1,12 @@
 import { api } from './client';
 
-// status и deal_stage — одно значение или несколько через запятую.
-export function getLeads({ status, deal_stage, q, limit, offset } = {}) {
+// status и deal_stage — одно значение (как принимает бэкенд dev); limit — сколько строк забрать.
+export function getLeads({ status, deal_stage, q, limit } = {}) {
   const p = new URLSearchParams();
   if (status) p.set('status', status);
   if (deal_stage) p.set('deal_stage', deal_stage);
   if (q) p.set('q', q);
   if (limit != null) p.set('limit', String(limit));
-  if (offset != null) p.set('offset', String(offset));
   const qs = p.toString();
   return api.get(`/api/leads${qs ? `?${qs}` : ''}`);
 }

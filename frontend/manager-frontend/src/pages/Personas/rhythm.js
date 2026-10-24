@@ -22,8 +22,9 @@ export function rhythmSummary(doc) {
   const rd = d.reply_delay || {};
   if (rd.enabled === false) parts.push('отвечает без задержки');
   else {
+    const firstN = Number(rd.first_messages) || 0;
     parts.push(
-      `первые ${rd.warmup_minutes ?? '?'} мин — ${range(rd.warmup_min_minutes, rd.warmup_max_minutes, 'мин')}, потом ${range(rd.min_minutes, rd.max_minutes, 'мин')}`,
+      `${firstN > 0 ? `первые ${firstN} сообщ. — ${range(rd.first_min_minutes, rd.first_max_minutes, 'мин')}, затем ` : ''}${firstN > 0 ? 'разогрев' : 'первые'} ${rd.warmup_minutes ?? '?'} мин — ${range(rd.warmup_min_minutes, rd.warmup_max_minutes, 'мин')}, потом ${range(rd.min_minutes, rd.max_minutes, 'мин')}`,
     );
   }
   const as = d.after_silence || {};

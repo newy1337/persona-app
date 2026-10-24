@@ -22,6 +22,10 @@ export const DEAL_STAGE_LABELS: Readonly<Record<DealStage, string>> = {
   archive: 'Архив',
 };
 
+/** Фильтр списков по этапу: конкретный этап или «без этапа». */
+export const DEAL_STAGE_FILTERS = [...DEAL_STAGES, 'none'] as const;
+export type DealStageFilter = (typeof DEAL_STAGE_FILTERS)[number];
+
 export const DEAL_STAGE_KEY = 'deal_stage';
 export const DEAL_NOTE_KEY = 'deal_note';
 export const DEAL_STAGE_TS_KEY = 'deal_stage_ts';

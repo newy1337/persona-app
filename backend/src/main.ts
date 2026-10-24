@@ -4,6 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json, raw } from 'express';
 import { AppModule } from './app.module';
 import { swaggerOptions } from './utils/swagger-options';
+import { startEventLoopWatchdog } from './shared/event-loop-watchdog';
 
 process.on('unhandledRejection', (reason) => {
   // eslint-disable-next-line no-console
@@ -19,6 +20,10 @@ async function bootstrap() {
   app.use(
     '/api/tg-accounts',
     raw({ type: ['application/octet-stream', 'image/*'], limit: '15mb' }),
+  );
+  app.use(
+    '/api/photo-sets',
+    raw({ type: ['application/octet-stream', 'image/*'], limit: '25mb' }),
   );
   app.use('/api/personas', json({ limit: '8mb' }));
   app.use(json({ limit: '2mb' }));
@@ -65,5 +70,7 @@ async function bootstrap() {
 
   app.enableShutdownHooks();
   await app.listen(Number(process.env.PORT ?? 8011));
+  // Завис основной поток дольше WATCHDOG_STALL_S — процесс убивается, Docker поднимает заново.
+  startEventLoopWatchdog(Number(process.env.WATCHDOG_STALL_S ?? 120) * 1000);
 }
 bootstrap();

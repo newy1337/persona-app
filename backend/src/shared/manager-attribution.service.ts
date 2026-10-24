@@ -33,7 +33,7 @@ export class ManagerAttributionService {
         id: true,
         username: true,
         regionCode: true,
-        accounts: { select: { tgAccountId: true } },
+        accounts: { select: { accountId: true } },
       },
     });
     const byAccount = new Map<number, ManagerAttribution>();
@@ -46,7 +46,7 @@ export class ManagerAttributionService {
       };
       byUser.set(user.id, view);
       for (const account of user.accounts)
-        byAccount.set(account.tgAccountId, view);
+        byAccount.set(account.accountId, view);
     }
     return {
       forAccount: (id) => byAccount.get(id) ?? { ...UNASSIGNED_MANAGER },

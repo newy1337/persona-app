@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from 'react';
-import { CirclePlay, Mic, Paperclip, Send, Smile, X } from 'lucide-react';
+import { CirclePlay, Mic, Paperclip, Send, Smile, X, Images } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -73,6 +73,7 @@ function InputArea({
   roundInput,
   send,
   sendGifLink,
+  openLibrary,
   pickFiles,
   sendVoiceFile,
   sendRoundFile,
@@ -276,6 +277,15 @@ function InputArea({
                 >
                   GIF
                 </Button>
+                {openLibrary && (
+                  <IconAction
+                    icon={Images}
+                    label="Фото из образа"
+                    hint="Отправить снимок из фотосета образа"
+                    disabled={busy}
+                    onClick={openLibrary}
+                  />
+                )}
                 <input
                   type="file"
                   ref={voiceInput}

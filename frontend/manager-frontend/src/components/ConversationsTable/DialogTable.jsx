@@ -9,17 +9,19 @@ import { ColumnFilter } from '../ColumnFilter/ColumnFilter';
 import { ColumnPicker } from '../ColumnPicker/ColumnPicker';
 import { IconAction } from '../IconAction/IconAction';
 import { CELL, HEAD_CELL, LINE_1, LINE_2, WAITS_TEXT, accountLabel, useDialogColumns } from './rowLayout';
+import { accountContact, channelBadge, clientContact } from '../../utils/channel';
 
-function TgLink({ username }) {
+/** Профиль ссылкой: адрес и подпись отдаёт бэк (t.me или vk.com), см. utils/channel. */
+function ContactLink({ contact }) {
   return (
     <a
       className="truncate text-primary hover:underline"
-      href={`https://t.me/${username}`}
+      href={contact.url}
       target="_blank"
       rel="noreferrer"
       onClick={(e) => e.stopPropagation()}
     >
-      @{username}
+      {contact.display}
     </a>
   );
 }
@@ -137,16 +139,25 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
             const online = presence(row.client_presence, undefined, { short: true });
             const next = nextAction(row.next_bot_action, undefined, { short: true });
             const nextFull = nextAction(row.next_bot_action)?.text;
+            // Как в рабочей панели: точный ЧС, почищенный диалог и вероятный ЧС подписаны по-разному.
             const warning = row.blocked_by_client_at
-              ? 'Заблокировал(а) нас'
+              ? 'ЧС: заблокировал(а) нас'
               : row.cleared_by_client_at
                 ? 'Почистил(а) диалог'
-                : null;
+                : row.likely_blocked_at
+                  ? 'Вероятно, ЧС'
+                  : null;
+            const warningTitle = row.likely_blocked_at && !row.blocked_by_client_at && !row.cleared_by_client_at
+              ? 'Статус собеседника вдруг скрылся — так бывает, когда кидают в ЧС (или скрыли статус приватностью)'
+              : undefined;
             const who = row.name || `Чат ${row.chat_id}`;
             const age = row.age ? `${row.age} лет` : null;
             const idLabel = `ID ${row.chat_id}`;
             const about = [age, row.city].filter(Boolean).join(' · ');
-            const contactTitle = [row.client_username ? `@${row.client_username}` : null, row.phone, idLabel]
+            const client = clientContact(row);
+            const accountLink = row.account_username ? accountContact(row) : null;
+            const channel = channelBadge(row.channel);
+            const contactTitle = [client?.display, row.phone, idLabel, channel.other ? channel.title : null]
               .filter(Boolean)
               .join(' · ');
             const LeadIcon = row.is_paused ? User : Bot;
@@ -212,7 +223,11 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                         )}
                       </div>
                       <div className={LINE_2}>
-                        <span className={cn('truncate', warning && !row.typing && 'text-destructive')}>
+                        <span
+                          className={cn('truncate', warning && !row.typing && 'text-destructive')}
+                          data-testid={warning && !row.typing ? 'blocked-mark' : undefined}
+                          title={row.typing ? undefined : warningTitle}
+                        >
                           {row.typing ? `${typingLabels[row.typing] || 'печатает'}…` : warning || about || '—'}
                         </span>
                       </div>
@@ -222,8 +237,13 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
 
                 {has('contact') && (
                   <Cell title={contactTitle}>
-                    {row.client_username ? (
-                      <TgLink username={row.client_username} />
+                    {channel.other && (
+                      <Badge variant="outline" className="h-4 shrink-0 px-1 text-[10px] font-normal" data-channel={channel.key} data-testid="channel-badge" title={channel.title}>
+                        {channel.label}
+                      </Badge>
+                    )}
+                    {client ? (
+                      <ContactLink contact={client} />
                     ) : (
                       <span className="truncate font-mono text-xs tabular-nums">{row.phone || idLabel}</span>
                     )}
@@ -317,8 +337,8 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                   <Cell title={accountTitle}>
                     {lost ? (
                       <span className="truncate text-destructive">{lost}</span>
-                    ) : row.account_username ? (
-                      <TgLink username={row.account_username} />
+                    ) : accountLink ? (
+                      <ContactLink contact={accountLink} />
                     ) : (
                       <span className="truncate text-muted-foreground">{account}</span>
                     )}

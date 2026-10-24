@@ -1,4 +1,4 @@
-import { TelegramModule } from '../telegram/telegram.module';
+import { TelegramModule } from '../../channels/telegram/telegram.module';
 import { VoicerCallService } from './voicer-call.service';
 import { Module } from '@nestjs/common';
 import { MediaModule } from '../media/media.module';
@@ -8,6 +8,7 @@ import { VoicerBotService } from './voicer-bot.service';
 import { VoicerChatService } from './voicer-chat.service';
 import { VoicerBriefService } from './voicer-brief.service';
 import { VoicerCallOutcomeService } from './voicer-call-outcome.service';
+import { VoicerCallRecordingService } from './voicer-call-recording.service';
 import { BrainModule } from 'src/brain/brain.module';
 
 @Module({
@@ -20,6 +21,7 @@ import { BrainModule } from 'src/brain/brain.module';
     VoicerCallService,
     VoicerBriefService,
     VoicerCallOutcomeService,
+    VoicerCallRecordingService,
   ],
 })
 export class VoicerModule {}

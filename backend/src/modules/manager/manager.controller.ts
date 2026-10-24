@@ -62,10 +62,18 @@ export class ManagerController {
     };
   }
 
-  @ApiOperation({ summary: 'Stat tiles over my accounts' })
+  @ApiOperation({
+    summary: 'Stat tiles over my accounts; from/to narrow them to a period',
+  })
+  @ApiQuery({ name: 'from', required: false, example: '2026-10-01' })
+  @ApiQuery({ name: 'to', required: false, example: '2026-10-07' })
   @Get('stats')
-  async stats(@CurrentUser() user: DashboardUser) {
+  async stats(
+    @CurrentUser() user: DashboardUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
     const accounts = await this.scope.accountsFilter(user);
-    return this.manager.stats(accounts);
+    return this.manager.stats(accounts, { from, to });
   }
 }

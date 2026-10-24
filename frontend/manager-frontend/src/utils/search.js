@@ -1,3 +1,4 @@
+import { moscowDay, moscowMidnight } from './panelTime';
 export function matchesQuery(row, query) {
   const q = String(query ?? '').trim().toLowerCase();
   if (!q) return true;
@@ -16,4 +17,35 @@ export function matchesHeadFilters(row, filters) {
   if (lead && (lead === 'manager' ? !row.is_paused : !!row.is_paused)) return false;
   if (account && String(row.account_id) !== account) return false;
   return true;
+}
+
+export function matchesDateFilter(row, dateFilter) {
+  if (!dateFilter) return true;
+  const ts = row.last_message_ts;
+  if (!ts) return false;
+  const DAY = 24 * 3600 * 1000;
+  const now = new Date();
+  const startToday = moscowMidnight(moscowDay(now));
+  const rowTs = ts * 1000;
+
+  if (dateFilter === 'today') return rowTs >= +startToday && rowTs < +startToday + DAY;
+  if (dateFilter === 'yesterday') return rowTs >= +startToday - DAY && rowTs < +startToday;
+  if (dateFilter === '7d') return rowTs >= Date.now() - 7 * DAY;
+  if (dateFilter === '30d') return rowTs >= Date.now() - 30 * DAY;
+  if (String(dateFilter).startsWith('date:')) {
+    const [y, m, d] = dateFilter.slice(5).split('-').map(Number);
+    if (!y || !m || !d) return true;
+    const start = moscowMidnight(dateFilter.slice(5));
+    return rowTs >= +start && rowTs < +start + DAY;
+  }
+  return true;
+}
+
+/** Основной список плюс архив без дублей: нужен только пока идёт поиск. */
+export function withArchive(rows, archive) {
+  if (!archive?.length) return rows;
+  const seen = new Set(rows.map((r) => r.chat_id));
+  const merged = [...rows, ...archive.filter((r) => !seen.has(r.chat_id)).map((r) => ({ ...r, hidden: true }))];
+  merged.total = rows.total ?? rows.length;
+  return merged;
 }

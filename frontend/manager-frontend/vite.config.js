@@ -23,6 +23,11 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(import.meta.dirname, 'src'),
       },
     },
+    // Тяжёлые страницы (лиды, диалоги) в общем параллельном прогоне не
+    // укладываются в 5 секунд по умолчанию, хотя по отдельности проходят быстро.
+    test: {
+      testTimeout: 20000,
+    },
     server: {
       proxy: {
         '/api': proxy,

@@ -11,14 +11,14 @@ describe('отметку о прочтении ставит менеджер, и
     const svc: any = Object.create(ConversationsService.prototype);
     Object.assign(svc, {
       pause: { status: async () => ({ status: paused ? 'paused' : 'active' }) },
-      telegram: {
+      channels: {
         markRead: async (chatId: number) => {
           read.push(chatId);
         },
       },
       history: {
-        telegramReadMarks: async () => ({ inbox, outbox: null }),
-        latestClientTgId: async () => latest,
+        readMarks: async () => ({ inbox, outbox: null }),
+        latestClientMsgId: async () => latest,
         markManagerSeen: async (chatId: number, ts: number) => {
           seen.push([chatId, ts]);
         },
@@ -61,7 +61,7 @@ describe('отметку о прочтении ставит менеджер, и
 
   it('упавший Telegram не ломает открытие переписки', async () => {
     const { svc, seen } = service({ inbox: 10, latest: 12 });
-    svc.telegram.markRead = async () => {
+    svc.channels.markRead = async () => {
       throw new Error('аккаунт не в сети');
     };
     await expect(svc.markSeen(42)).resolves.toBeUndefined();

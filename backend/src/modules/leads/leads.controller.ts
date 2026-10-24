@@ -44,8 +44,10 @@ export class LeadsController {
   ) {}
 
   private async leadScope(user: DashboardUser): Promise<LeadScope | null> {
-    const accounts = await this.scope.accountsFilter(user);
-    return accounts === null ? null : { userId: user.id, accounts };
+    const scope = await this.scope.scopeOf(user);
+    return scope.isAdmin
+      ? null
+      : { userId: user.id, userIds: scope.userIds, accounts: scope.accountIds };
   }
 
   @ApiOperation({ summary: 'Leads in scope with per-status counts' })
@@ -76,15 +78,31 @@ export class LeadsController {
     return this.outreach.status(await this.scope.accountsFilter(user));
   }
 
+  @ApiOperation({
+    summary:
+      'На кого можно записать лид: на себя и на сотрудников своей команды (админ — на любого)',
+  })
+  @Get('owners')
+  async owners(@CurrentUser() user: DashboardUser) {
+    const scope = await this.scope.scopeOf(user);
+    return this.leads.ownerChoices(user, scope.isAdmin ? null : scope.userIds);
+  }
+
   @ApiOperation({ summary: 'Add one lead' })
   @Post()
   @HttpCode(200)
   @UsePipes(ValidationPipe)
   async create(@Body() dto: CreateLeadDto, @CurrentUser() user: DashboardUser) {
     const scope = await this.leadScope(user);
+    const owner = await this.leads.ownerFor(user, scope, dto.owner_user_id);
     return this.audit.wrap(
-      { userId: user.id, action: 'lead.create', resource: dto.phone },
-      () => this.leads.create(dto, user.id, scope),
+      {
+        userId: user.id,
+        action: 'lead.create',
+        resource: dto.phone,
+        ...(owner !== user.id ? { payload: { owner_user_id: owner } } : {}),
+      },
+      () => this.leads.create(dto, owner, scope),
     );
   }
 

@@ -24,7 +24,7 @@ import { VoicerService } from '../src/modules/voicer/voicer.service';
 import { VoicerBotService } from '../src/modules/voicer/voicer-bot.service';
 import { randomUUID } from 'crypto';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { RelayWorker } from '../src/modules/telegram/relay.worker';
+import { RelayWorker } from '../src/channels/telegram/relay.worker';
 import { HistoryService } from '../src/shared/history.service';
 import { ClockService } from '../src/shared/clock.service';
 import { VoicerDeliveryService } from '../src/modules/voicer/voicer-delivery.service';
@@ -44,8 +44,13 @@ describe('Voicer workflow against a real migrated database', () => {
   let chatAccountId: number;
   const unassignedAccounts: number[] = [];
   async function unassignedChat() {
-    const account = await prisma.tgAccount.create({
-      data: { phoneE164: '+10000000666', personaId: 'nastya', addedAt: 1 },
+    const account = await prisma.channelAccount.create({
+      data: {
+        phoneE164: '+10000000666',
+        login: '+10000000666',
+        personaId: 'nastya',
+        addedAt: 1,
+      },
     });
     unassignedAccounts.push(account.id);
     await prisma.contact.createMany({
@@ -167,9 +172,10 @@ describe('Voicer workflow against a real migrated database', () => {
     ({ id: otherId, token: other } = await createUser('other', 'manager', {
       voicer_id: voiceId2,
     }));
-    const account = await prisma.tgAccount.create({
+    const account = await prisma.channelAccount.create({
       data: {
         phoneE164: '+10000000444',
+        login: '+10000000444',
         personaId: 'nastya',
         addedAt: 1,
         manager: { create: { userId: managerId } },
@@ -188,9 +194,10 @@ describe('Voicer workflow against a real migrated database', () => {
         facts: JSON.stringify({ name: 'Дима', city: 'Казань' }),
       },
     });
-    const foreign = await prisma.tgAccount.create({
+    const foreign = await prisma.channelAccount.create({
       data: {
         phoneE164: '+10000000555',
+        login: '+10000000555',
         personaId: 'nastya',
         addedAt: 1,
         manager: { create: { userId: otherId } },
@@ -202,7 +209,7 @@ describe('Voicer workflow against a real migrated database', () => {
   });
   afterEach(async () => {
     await prisma.pendingReply.deleteMany();
-    await prisma.tgAccount.update({
+    await prisma.channelAccount.update({
       where: { id: chatAccountId },
       data: { status: 'unauthorized' },
     });
@@ -211,7 +218,7 @@ describe('Voicer workflow against a real migrated database', () => {
     await prisma.contact.deleteMany({
       where: { accountId: { in: unassignedAccounts } },
     });
-    await prisma.tgAccount.deleteMany({
+    await prisma.channelAccount.deleteMany({
       where: { id: { in: unassignedAccounts } },
     });
     unassignedAccounts.length = 0;
@@ -634,6 +641,105 @@ describe('Voicer workflow against a real migrated database', () => {
     api.mockImplementation(async () => ({ message_id: ++seq }));
   });
 
+  it('тимлид ставит задания своим менеджерам и распоряжается ими; чужой менеджер, хед и чужие чаты — нет', async () => {
+    const { id: leadId, token: lead } = await createUser('lead', 'teamlead', {
+      region_code: '0077',
+    });
+    const { token: head } = await createUser('head', 'head', {
+      region_code: '0077',
+    });
+    await request(app.getHttpServer())
+      .put(`/api/managers/${managerId}`)
+      .set(auth(admin))
+      .send({ lead_id: leadId })
+      .expect(200);
+    try {
+      // в выборе менеджера — только своя команда
+      const options = await request(app.getHttpServer())
+        .get('/api/voicer/options')
+        .set(auth(lead))
+        .expect(200);
+      expect(options.body.managers.map((m) => m.id)).toEqual([managerId]);
+
+      // задание своему менеджеру: исполнитель — войсер менеджера
+      const t = await task(lead, { manager_id: managerId });
+      expect(t).toMatchObject({
+        managerId,
+        voicerId: voiceId,
+        status: 'queued',
+      });
+      // тимлид видит и отменяет его
+      await request(app.getHttpServer())
+        .get(`/api/voicer/tasks/${t.id}`)
+        .set(auth(lead))
+        .expect(200);
+      expect((await act(lead, t.id, 'cancel')).status).toBe(200);
+
+      // чужой менеджер — отказ; без менеджера — 400
+      await request(app.getHttpServer())
+        .post('/api/voicer/tasks')
+        .set(auth(lead))
+        .send(payload({ manager_id: otherId }))
+        .expect(403);
+      await request(app.getHttpServer())
+        .post('/api/voicer/tasks')
+        .set(auth(lead))
+        .send(payload())
+        .expect(400);
+
+      // диалоги: свой менеджер — 444 виден, чужой чат 555 — нет
+      const choices = await request(app.getHttpServer())
+        .get(`/api/voicer/conversations?manager_id=${managerId}&persona=nastya`)
+        .set(auth(lead))
+        .expect(200);
+      expect(choices.body.items.map((c) => c.chat_id)).toContain('444');
+      await request(app.getHttpServer())
+        .get(`/api/voicer/conversations?manager_id=${otherId}&persona=nastya`)
+        .set(auth(lead))
+        .expect(400);
+      const withChat = await task(lead, {
+        manager_id: managerId,
+        chat_id: '444',
+        voice_mode: 'once',
+      });
+      expect(withChat.chatId).toBe('444');
+      await request(app.getHttpServer())
+        .post('/api/voicer/tasks')
+        .set(auth(lead))
+        .send(
+          payload({
+            manager_id: managerId,
+            chat_id: '555',
+            voice_mode: 'once',
+          }),
+        )
+        .expect(404);
+      const targets = await request(app.getHttpServer())
+        .get('/api/voicer/send-targets')
+        .set(auth(lead))
+        .expect(200);
+      const ids = targets.body.items.map((c) => c.chat_id);
+      expect(ids).toContain('444');
+      expect(ids).not.toContain('555');
+
+      // хед заданий не ставит
+      await request(app.getHttpServer())
+        .post('/api/voicer/tasks')
+        .set(auth(head))
+        .send(payload({ manager_id: managerId }))
+        .expect(403);
+      // менеджер по-прежнему только себе: чужой manager_id игнорируется
+      const own = await task(manager, { manager_id: otherId });
+      expect(own.managerId).toBe(managerId);
+    } finally {
+      await request(app.getHttpServer())
+        .put(`/api/managers/${managerId}`)
+        .set(auth(admin))
+        .send({ lead_id: null })
+        .expect(200);
+    }
+  });
+
   it('exposes chat only for calls to the assigned voicer, without marking seen', async () => {
     await prisma.message.createMany({
       data: [
@@ -839,20 +945,20 @@ describe('Voicer workflow against a real migrated database', () => {
       }),
       url = `/api/voicer/tasks/${t.id}/conversation`;
     await prisma.managerAccount.update({
-      where: { tgAccountId: chatAccountId },
+      where: { accountId: chatAccountId },
       data: { userId: otherId },
     });
     await request(app.getHttpServer()).get(url).set(auth(voice)).expect(404);
     await prisma.managerAccount.update({
-      where: { tgAccountId: chatAccountId },
+      where: { accountId: chatAccountId },
       data: { userId: managerId },
     });
-    await prisma.tgAccount.update({
+    await prisma.channelAccount.update({
       where: { id: chatAccountId },
       data: { personaId: 'different-persona' },
     });
     await request(app.getHttpServer()).get(url).set(auth(voice)).expect(404);
-    await prisma.tgAccount.update({
+    await prisma.channelAccount.update({
       where: { id: chatAccountId },
       data: { personaId: 'nastya' },
     });
@@ -1141,7 +1247,7 @@ describe('Voicer workflow against a real migrated database', () => {
     }
     expect(
       await prisma.managerAccount.findUnique({
-        where: { tgAccountId: account.id },
+        where: { accountId: account.id },
       }),
     ).toBeNull();
   });
@@ -1201,7 +1307,7 @@ describe('Voicer workflow against a real migrated database', () => {
       .expect(200);
     await request(app.getHttpServer()).get(url).set(auth(voice)).expect(200);
     await prisma.managerAccount.create({
-      data: { userId: otherId, tgAccountId: account.id },
+      data: { userId: otherId, accountId: account.id },
     });
     await request(app.getHttpServer()).get(url).set(auth(voice)).expect(404);
     await request(app.getHttpServer()).get(url).set(auth(manager)).expect(404);
@@ -1216,7 +1322,7 @@ describe('Voicer workflow against a real migrated database', () => {
       chat_id: '444',
     });
     await prisma.managerAccount.delete({
-      where: { tgAccountId: chatAccountId },
+      where: { accountId: chatAccountId },
     });
     try {
       await request(app.getHttpServer())
@@ -1225,7 +1331,7 @@ describe('Voicer workflow against a real migrated database', () => {
         .expect(404);
     } finally {
       await prisma.managerAccount.create({
-        data: { userId: managerId, tgAccountId: chatAccountId },
+        data: { userId: managerId, accountId: chatAccountId },
       });
     }
   });
@@ -1365,7 +1471,7 @@ describe('Voicer workflow against a real migrated database', () => {
   });
 
   it('delivers one-time audio once, remembers its text without sending a caption, and confirms only after transport', async () => {
-    await prisma.tgAccount.update({
+    await prisma.channelAccount.update({
       where: { id: chatAccountId },
       data: { status: 'active' },
     });
@@ -1461,7 +1567,7 @@ describe('Voicer workflow against a real migrated database', () => {
         })
       ).text,
     ).toContain('не подключён');
-    await prisma.tgAccount.update({
+    await prisma.channelAccount.update({
       where: { id: chatAccountId },
       data: { status: 'active' },
     });
@@ -1478,7 +1584,7 @@ describe('Voicer workflow against a real migrated database', () => {
   });
 
   it('does not duplicate uncertain one-time audio after restart or manual retry', async () => {
-    await prisma.tgAccount.update({
+    await prisma.channelAccount.update({
       where: { id: chatAccountId },
       data: { status: 'active' },
     });
@@ -1530,7 +1636,7 @@ describe('Voicer workflow against a real migrated database', () => {
     expect((await send('444', randomUUID(), voice)).status).toBe(403);
     expect((await send('444', randomUUID(), other)).status).toBe(404);
     expect(await prisma.pendingReply.count()).toBe(2);
-    await prisma.tgAccount.update({
+    await prisma.channelAccount.update({
       where: { id: chatAccountId },
       data: { status: 'active' },
     });
@@ -1556,7 +1662,7 @@ describe('Voicer workflow against a real migrated database', () => {
 
   it('rechecks ownership at delivery time and restricts admin grants to their specific one-time task', async () => {
     const account = await unassignedChat();
-    await prisma.tgAccount.update({
+    await prisma.channelAccount.update({
       where: { id: account.id },
       data: { status: 'active' },
     });

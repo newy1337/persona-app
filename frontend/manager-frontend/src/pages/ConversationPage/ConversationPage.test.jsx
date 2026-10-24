@@ -68,6 +68,7 @@ vi.mock('../../api/client', () => ({
 }));
 
 import ConversationPage, { TOGGLE_COOLDOWN_MS } from './ConversationPage';
+import { PanelUX } from '../../ui/PanelUX';
 import { getConversationById, getConversations, getInboundMedia, getPauseStatus, sendAlbum, sendAttachment, getMediaGallery, setConversationHidden, setDealStage } from '../../api/conversations';
 
 let container = null;
@@ -95,6 +96,8 @@ function unmount() {
 const navButton = (name) => container.querySelector(`button[aria-label="${name}"]`);
 
 beforeEach(() => {
+  // Остальные проверки — с включённым блоком «Сценарий».
+  vi.stubEnv('VITE_SHOW_SCENARIO', '1');
   vi.useFakeTimers();
   navigateMock.mockClear();
   window.localStorage.clear();
@@ -110,17 +113,23 @@ afterEach(() => {
 describe('ConversationPage: «К дашборду» и каркас страницы', () => {
   const PAUSED = { chat_id: 111, is_paused: true, funnel_stage: 'rapport', pinned_facts: {}, first_seen: 1000, messages: [], funnel_events: [] };
 
-  it('перехода между чатами нет: ни стрелок, ни счётчика, ни номера чата; список чатов не запрашивается', async () => {
+  it('в строке действий стрелки по чатам дашборда, позиция 1 из 3 и номер чата', async () => {
     vi.mocked(getConversations).mockClear();
     await renderPage();
-    expect(navButton('Предыдущий чат')).toBeNull();
-    expect(navButton('Следующий чат')).toBeNull();
-    expect(container.querySelector('[class*="navCurrent"]')).toBeNull();
-    expect(container.querySelector('[class*="subNav"]')).toBeNull();
-    expect(container.querySelector('[class*="subHeader"]')).toBeNull();
-    // «Чат 111» остаётся только именем собеседника без имени — в карточке клиента.
-    expect(container.querySelector('[class*="chatColumn"]').textContent).not.toContain('Чат 111');
-    expect(getConversations).not.toHaveBeenCalled();
+    expect(getConversations).toHaveBeenCalledTimes(1);
+    expect(navButton('Предыдущий чат')).toBeTruthy();
+    expect(navButton('Следующий чат')).toBeTruthy();
+    const nav = container.querySelector('[data-testid="chat-nav"]');
+    expect(nav.textContent).toContain('1 / 3');
+    expect(navButton('Предыдущий чат').disabled).toBe(true);
+    expect(navButton('Следующий чат').disabled).toBe(false);
+    expect(container.querySelector('[class*="chatToolbar"]').textContent).toContain('чат 111');
+  });
+
+  it('стрелка «вправо» ведёт на следующий чат списка', async () => {
+    await renderPage();
+    await act(async () => navButton('Следующий чат').click());
+    expect(navigateMock).toHaveBeenCalledWith('/conversation/222');
   });
 
   it('«К дашборду»: на широком экране — первая строка колонки клиента, на узком — первая кнопка строки действий; видна всегда одна', async () => {
@@ -344,6 +353,16 @@ describe('ConversationPage: «К дашборду» и каркас страни
     expect(cls).toContain('text-muted-foreground');
     expect(cls).not.toContain('border');
     expect(cls).not.toContain('rounded-full');
+  });
+});
+
+describe('ConversationPage: блок «Сценарий» скрыт по умолчанию', () => {
+  it('без VITE_SHOW_SCENARIO блока нет и биты не запрашиваются', async () => {
+    vi.unstubAllEnvs();
+    await renderPage();
+    expect(container.textContent).not.toContain('Сценарий');
+    expect(getBeatsMock).not.toHaveBeenCalled();
+    vi.stubEnv('VITE_SHOW_SCENARIO', '1');
   });
 });
 
@@ -1128,6 +1147,38 @@ describe('left block: lead card folded into the top card', () => {
     expect(card.textContent).toMatch(/Контакт\s*—/);
   });
 
+  it('пол: из карточки лида', async () => {
+    withPins({ name: 'Андрей' }, { client_gender: 'm' });
+    await renderPage();
+    expect(container.querySelector('[data-testid="client-gender"]').textContent).toBe('Пол' + 'Мужской');
+  });
+
+  it('пол не указан — прочерк', async () => {
+    withPins({ name: 'Андрей' }, { client_gender: 'unknown' });
+    await renderPage();
+    expect(container.querySelector('[data-testid="client-gender"]').textContent).toBe('Пол' + '—');
+  });
+
+  it('вероятный ЧС: метка у имени и баннер над лентой', async () => {
+    withPins({ name: 'Андрей' }, { likely_blocked_at: 1000 });
+    await renderPage();
+    expect(container.querySelector('[data-testid="client-likely-blocked"]').textContent).toContain('вероятно, ЧС');
+    expect(container.querySelector('[data-testid="likely-blocked-banner"]')).not.toBeNull();
+  });
+
+  it('VK: контакт и аккаунт ссылками на vk.com, у аккаунта бейдж канала', async () => {
+    withPins({ name: 'Андрей' }, {
+      channel: 'vk',
+      contact: { display: 'id777', url: 'https://vk.com/id777' },
+      account: { display_name: 'Настя', channel: 'vk', contact: { display: 'nastya_vk', url: 'https://vk.com/nastya_vk' } },
+    });
+    await renderPage();
+    const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+    expect(hrefs).toContain('https://vk.com/id777');
+    expect(hrefs).toContain('https://vk.com/nastya_vk');
+    expect(container.querySelector('[data-testid="writing-account"] [data-channel="vk"]').textContent).toBe('VK');
+  });
+
   it('город: из БД (phone_numbers), когда в пинах его нет (D-125)', async () => {
     withPins({ name: 'Андрей' }, { client_city: 'Ростов-на-Дону' });
     await renderPage();
@@ -1371,7 +1422,8 @@ describe('несколько фото, «Медиа», архив и «вниз�
 
   it('«В архив» из чата спрашивает причину и ставит этап «Архив»', async () => {
     await renderPage();
-    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('  не отвечает ');
+    // Причину спрашивает окно панели, не window.prompt.
+    const prompt = vi.spyOn(PanelUX, 'prompt').mockResolvedValue('не отвечает');
     await act(async () => {
       container.querySelector('[data-testid="archive-toggle"]').click();
       await vi.advanceTimersByTimeAsync(10);
@@ -1386,7 +1438,7 @@ describe('несколько фото, «Медиа», архив и «вниз�
     vi.mocked(setDealStage).mockClear();
     vi.mocked(setConversationHidden).mockClear();
     await renderPage();
-    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('');
+    const prompt = vi.spyOn(PanelUX, 'prompt').mockResolvedValue(null);
     await act(async () => {
       container.querySelector('[data-testid="archive-toggle"]').click();
       await vi.advanceTimersByTimeAsync(10);

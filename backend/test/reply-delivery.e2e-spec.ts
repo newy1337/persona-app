@@ -11,23 +11,24 @@ import { PrismaService } from '../src/prisma.service';
 import { HistoryService } from '../src/shared/history.service';
 import { BrainStateService } from '../src/brain/brain-state.service';
 import { ReplyScheduleService } from '../src/brain/reply-schedule.service';
-import { NastyaBrainService } from '../src/brain/nastya-brain.service';
-import { TelegramService } from '../src/modules/telegram/telegram.service';
-import { DEFAULT_RHYTHM } from '../src/brain/nastya/config/rhythm';
-import { mergePrompts } from '../src/brain/nastya/config/prompts';
-import { cityPlace } from '../src/brain/nastya/kernel/location';
-import { historyMessage } from '../src/brain/nastya/memory/history';
-import { judgeDialogue } from '../src/brain/nastya/judge/plan';
-import { generateDraft } from '../src/brain/nastya/llm/generate';
-import { reviewReply } from '../src/brain/nastya/judge/review';
+import { PersonaBrainService } from '../src/brain/persona-brain.service';
+import { TelegramService } from '../src/channels/telegram/telegram.service';
+import { DEFAULT_RHYTHM } from '../src/brain/config/rhythm';
+import { mergePrompts } from '../src/brain/config/prompts';
+import { cityPlace } from '../src/brain/kernel/location';
+import { historyMessage } from '../src/brain/memory/history';
+import { judgeDialogue } from '../src/brain/judge/plan';
+import { generateDraft } from '../src/brain/llm/generate';
+import { reviewReply } from '../src/brain/judge/review';
 import { checkCancelled } from '../src/shared/cancellation';
-jest.mock('../src/brain/nastya/judge/plan', () => ({
+import { prepareDelivery } from '../src/brain/reply-delivery';
+jest.mock('../src/brain/judge/plan', () => ({
   judgeDialogue: jest.fn(),
 }));
-jest.mock('../src/brain/nastya/llm/generate', () => ({
+jest.mock('../src/brain/llm/generate', () => ({
   generateDraft: jest.fn(),
 }));
-jest.mock('../src/brain/nastya/judge/review', () => ({
+jest.mock('../src/brain/judge/review', () => ({
   reviewReply: jest.fn(),
 }));
 function deferred<T = void>() {
@@ -46,7 +47,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
     memory: BrainStateService,
     schedule: ReplyScheduleService;
   let now: number,
-    brain: NastyaBrainService,
+    brain: PersonaBrainService,
     persona: any,
     transport: any,
     pause: any;
@@ -69,7 +70,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
     ts: now - 60 + id,
   });
   const createBrain = () =>
-    new NastyaBrainService(
+    new PersonaBrainService(
       history,
       pause,
       clock,
@@ -95,8 +96,14 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.onModuleInit();
-    await prisma.tgAccount.create({
-      data: { id: 1, phoneE164: '+10000000001', personaId: 'test', addedAt: 1 },
+    await prisma.channelAccount.create({
+      data: {
+        id: 1,
+        phoneE164: '+10000000001',
+        login: '+10000000001',
+        personaId: 'test',
+        addedAt: 1,
+      },
     });
   });
   afterAll(async () => {
@@ -205,13 +212,13 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
       role: 'assistant',
       text: 'Old late import',
       ts: now - 10,
-      tgMsgId: 800,
+      peerMsgId: 800,
     });
     await history.appendMessage(chatId, {
       role: 'assistant',
       text: 'New introduction',
       ts: now,
-      tgMsgId: 801,
+      peerMsgId: 801,
     });
     await history.appendMessage(chatId, {
       role: 'user',
@@ -227,10 +234,13 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
     expect(
       (await history.unansweredMessages(chatId)).map((m) => m.text),
     ).toEqual(['New reply']);
+    // Счёт сообщений клиента тоже идёт только с перезапуска истории.
     expect(await history.rhythmMarks(chatId, now + 2)).toEqual({
       firstUserTs: now + 1,
       prevUserTs: now + 1,
       lastAssistantTs: now,
+      userIndex: 2,
+      warmupStartTs: null,
     });
     expect(
       await prisma.message.count({ where: { chatId: BigInt(chatId) } }),
@@ -247,6 +257,30 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
     expect((await history.rhythmMarks(chatId, now + 1)).firstUserTs).toBe(
       incoming(1).ts,
     );
+  });
+
+  it('the reply-queue slot is freed once the reply is written: typing runs outside the lane limit', async () => {
+    let seen: { generating: boolean; accountBusy: boolean } | null = null;
+    let sent!: () => void;
+    const delivered = new Promise<void>((resolve) => (sent = resolve));
+    const original = transport.sendText.getMockImplementation();
+    transport.sendText.mockImplementationOnce(async (chat, parts, opts) => {
+      const pump = brain as any;
+      seen = {
+        generating: pump.pumpGenerating.has(chatId),
+        accountBusy: pump.pumpChats.has(chatId),
+      };
+      const ids = await original(chat, parts, opts);
+      sent();
+      return ids;
+    });
+    // Фоновое восстановление входящих тут не нужно: оно пережило бы тест.
+    (brain as any).recovering = true;
+    expect(await (brain as any).pumpDueReplies()).toBe(1);
+    await delivered;
+    // Печатает: место в очереди уже отдано, но чат и аккаунт ещё заняты.
+    expect(seen).toEqual({ generating: false, accountBusy: true });
+    expect((await assistantRows()).length).toBeGreaterThan(0);
   });
 
   it('failed first send leaves no fictional memory/facts and retries the persisted draft', async () => {
@@ -310,7 +344,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
     });
     expect(await brain.runDueReplies()).toBe(1);
     expect(generateDraft).toHaveBeenCalledTimes(1);
-    expect((await assistantRows()).map((m) => m.tgMsgId)).toEqual([700, 701]);
+    expect((await assistantRows()).map((m) => m.peerMsgId)).toEqual([700, 701]);
     expect((await memory.load(chatId)).history).toHaveLength(3);
   });
 
@@ -342,7 +376,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
     });
     expect(await brain.runDueReplies()).toBe(1);
     expect((await memory.load(chatId)).character.open_questions).toEqual([]);
-    expect((await assistantRows()).map((m) => m.tgMsgId)).toEqual([700, 701]);
+    expect((await assistantRows()).map((m) => m.peerMsgId)).toEqual([700, 701]);
   });
 
   it('acknowledgment checkpoint rolls back panel/history/cursor together on database failure', async () => {
@@ -371,7 +405,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
     expect((await schedule.get(chatId)).delivery.sentCount).toBe(0);
     await forceDue();
     await brain.runDueReplies();
-    expect((await assistantRows()).map((m) => m.tgMsgId)).toEqual([700, 701]);
+    expect((await assistantRows()).map((m) => m.peerMsgId)).toEqual([700, 701]);
     expect((await memory.load(chatId)).history).toHaveLength(3);
   });
 
@@ -502,7 +536,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
     ack.resolve();
     await Promise.all([sending, receiving]);
     release();
-    expect((await assistantRows()).map((m) => m.tgMsgId)).toEqual([700]);
+    expect((await assistantRows()).map((m) => m.peerMsgId)).toEqual([700]);
     expect(
       (await memory.load(chatId)).history.filter((m) => m.role === 'assistant'),
     ).toHaveLength(1);
@@ -621,7 +655,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
       text: 'А я завтра на пилатес',
       ts: now,
       author: 'operator:web',
-      tgMsgId: 800,
+      peerMsgId: 800,
     });
     await brain.noteOperatorMessage(chatId);
     expect((await memory.load(chatId)).history.map((m) => m.content)).toEqual([
@@ -756,7 +790,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
   it('an edited unanswered message replaces the queued text and discards its prepared reply', async () => {
     transport.sendText.mockRejectedValueOnce(new Error('offline'));
     await brain.runDueReplies();
-    await history.editMessageText(chatId, { tgMsgId: 1 }, 'Я в Токио', now);
+    await history.editMessageText(chatId, { peerMsgId: 1 }, 'Я в Токио', now);
     await brain.noteEdited(chatId, 'user', incoming(1).text, 'Я в Токио');
     await forceDue();
     await brain.runDueReplies();
@@ -817,7 +851,7 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
       text: 'Завтра пойду на пилатес',
       ts: now - 200,
       author: 'operator:web',
-      tgMsgId: 801,
+      peerMsgId: 801,
     });
     await memory.reconcile(chatId);
     const own = (await memory.load(chatId)).history.find(
@@ -903,6 +937,77 @@ describe('reply delivery: real chat locks + a migrated database (no Telegram or 
       'Вчера погуляла у моря',
     ]);
     expect((await memory.load(chatId)).character.turns).toBe(1);
+  });
+
+  it('photo after the first bubble survives the continuation review: the caption goes out with the photo, not as «[ФОТО] …» text', async () => {
+    // Настоящий черновик готовится перед самой полуночью; первая попытка
+    // отправки падает до Telegram — черновик остаётся в расписании.
+    now = Date.parse('2026-09-24T16:59:30Z') / 1000;
+    await forceDue();
+    transport.sendText.mockRejectedValueOnce(new Error('network down'));
+    expect(await brain.runDueReplies()).toBe(0);
+    const pending = await schedule.get(chatId);
+    // В него добавляем фото после первой части — как готовит его generateReply.
+    const withPhoto = prepareDelivery(
+      {
+        ...pending.delivery,
+        reply: ['День прошёл спокойно', 'вот я дома'].join('\n'),
+        photo: {
+          photo_id: 1,
+          file_path: '/tmp/me.jpg',
+          note: '',
+          account_id: 1,
+          before: 'День прошёл спокойно',
+          caption: 'вот я дома',
+          after: '',
+        },
+      },
+      ['День прошёл спокойно', 'вот я дома'],
+      now,
+      1,
+    );
+    expect(await schedule.prepare(chatId, withPhoto)).toBeTruthy();
+    transport.sendPhoto = jest.fn(async (_chat: number, opts: any) => {
+      await opts.onDispatch?.();
+      return 900;
+    });
+    now = Date.parse('2026-09-24T16:59:45Z') / 1000;
+    await forceDue();
+    // Первая часть ушла, перед фото наступила полночь — остаток на перепроверку.
+    transport.sendText.mockImplementationOnce(async (_chat, _parts, opts) => {
+      await opts.beforePart();
+      await opts.onDispatch(0);
+      await opts.onPart(0, 700);
+      now += 20;
+      return [700];
+    });
+    const seen: string[] = [];
+    (reviewReply as jest.Mock).mockImplementation(async (x) => {
+      if (x.runtime.delivery_context?.kind === 'continuation')
+        seen.push(x.draft);
+      return {
+        approved: true,
+        should_send: true,
+        issues: [],
+        final_text: x.draft,
+      };
+    });
+    expect(await brain.runDueReplies()).toBe(0);
+    expect(transport.sendPhoto).not.toHaveBeenCalled();
+    expect(seen).toEqual(['[ФОТО] вот я дома']);
+    const after = await schedule.get(chatId);
+    expect(after.delivery.photo?.photo_id).toBe(1);
+    expect(after.delivery.parts.slice(after.delivery.sentCount)).toEqual([
+      expect.objectContaining({ text: 'вот я дома', photo: true }),
+    ]);
+    // Следующий проход отправляет именно фото с подписью, без метки текстом.
+    // (Сохранить отправку фото тестовая база не даст: снимка #1 в ней нет —
+    // поэтому проверяем сам вызов Telegram.)
+    await brain.runDueReplies().catch(() => 0);
+    expect(transport.sendPhoto).toHaveBeenCalledTimes(1);
+    expect(transport.sendPhoto.mock.calls[0][1].caption).toBe('вот я дома');
+    const texts = (await assistantRows()).map((m) => m.text);
+    expect(texts.some((t) => t.includes('[ФОТО]'))).toBe(false);
   });
 
   it('recovers a received but unfinished input on ordinary redelivery without a duplicate row', async () => {

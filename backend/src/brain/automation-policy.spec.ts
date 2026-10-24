@@ -1,9 +1,9 @@
-import { NastyaBrainService } from './nastya-brain.service';
+import { PersonaBrainService } from './persona-brain.service';
 import { PersonaService } from './persona.service';
 import { REFUSAL_LOCK_KEY } from 'src/domain/lead-facts';
 
 function brain() {
-  const b: any = Object.create(NastyaBrainService.prototype);
+  const b: any = Object.create(PersonaBrainService.prototype);
   Object.assign(b, {
     gate: { stopped: false },
     pause: { status: async () => ({ status: 'active' }), pause: jest.fn() },
@@ -35,7 +35,7 @@ it('missing binding stops automatic replies instead of borrowing another persona
   Object.assign(p, {
     chatVars: async () => ({}),
     prisma: {
-      tgAccount: { findUnique: async () => ({ personaId: 'deleted' }) },
+      channelAccount: { findUnique: async () => ({ personaId: 'deleted' }) },
       persona: { findUnique: async () => null },
     },
     defaultRow: jest.fn(),

@@ -5,15 +5,20 @@ import {
   forwardRef,
   NotFoundException,
 } from '@nestjs/common';
+import {
+  accountContact,
+  chatChannel,
+  clientContact,
+} from 'src/channels/contact';
 import { REPLY_BRAIN, ReplyBrain } from 'src/brain/reply-brain.port';
-import { fillVariables } from 'src/brain/nastya/config/variables';
+import { fillVariables } from 'src/brain/config/variables';
 import { PresenceService } from 'src/shared/presence.service';
 import { PrismaService } from 'src/prisma.service';
 import { HistoryService, StoredMessage } from 'src/shared/history.service';
 import { PauseService } from 'src/shared/pause.service';
 import { ClockService } from 'src/shared/clock.service';
 import { FunnelEventsService } from 'src/shared/funnel-events.service';
-import { TelegramService } from '../telegram/telegram.service';
+import { TelegramService } from '../../channels/telegram/telegram.service';
 import {
   DEFAULT_FUNNEL_STAGE,
   isFunnelStage,
@@ -35,7 +40,7 @@ import { toChatId } from 'src/utils/ids';
 import { PersonaService } from 'src/brain/persona.service';
 import { BrainStateService } from 'src/brain/brain-state.service';
 import { ReplyScheduleService } from 'src/brain/reply-schedule.service';
-import { goalProgress } from 'src/brain/nastya/character/progress';
+import { goalProgress } from 'src/brain/character/progress';
 import {
   isReactionEmoji,
   kindForFile,
@@ -43,7 +48,7 @@ import {
 } from 'src/domain/attachments';
 import { UploadsService } from '../media/uploads.service';
 import { SettingsService } from '../settings/settings.service';
-import { accountLostOf } from 'src/domain/tg-status';
+import { accountLostOf } from 'src/domain/client-status';
 import {
   DEAL_NOTE_KEY,
   DEAL_REACHED_EVENT,
@@ -56,6 +61,7 @@ import {
   stagesReachedBy,
 } from 'src/domain/deal-stage';
 import { ManagerAttributionService } from 'src/shared/manager-attribution.service';
+import { ChannelRegistry } from 'src/channels/registry';
 
 const DETAIL_LIMIT = 500;
 const LIST_LIMIT = 200;
@@ -93,6 +99,7 @@ export class ConversationsService {
     private clock: ClockService,
     private funnel: FunnelEventsService,
     private telegram: TelegramService,
+    private channels: ChannelRegistry,
     private settings: SettingsService,
     private persona: PersonaService,
     private brainState: BrainStateService,
@@ -110,7 +117,7 @@ export class ConversationsService {
 
   async revision(chatId: number) {
     const [marks, pause, scheduled, media, tail] = await Promise.all([
-      this.history.telegramReadMarks(chatId),
+      this.history.readMarks(chatId),
       this.history.getPause(chatId),
       this.replySchedule.get(chatId),
       this.prisma.inboundMedia.count({ where: { chatId: toChatId(chatId) } }),
@@ -154,20 +161,20 @@ export class ConversationsService {
       this.history.getLeadFacts(chatId),
       this.funnel.forChat(chatId),
       this.history.chatOwnerAccount(chatId),
-      this.prisma.phoneNumber.findFirst({
-        where: { telegramUserId: toChatId(chatId) },
+      this.prisma.lead.findFirst({
+        where: { chatId: toChatId(chatId) },
       }),
       this.persona.forChat(chatId),
       this.brainState.load(chatId),
     ]);
     const scheduled = await this.replySchedule.get(chatId);
-    const read = await this.history.telegramReadMarks(chatId);
+    const read = await this.history.readMarks(chatId);
     const nowTs = this.clock.ts();
     const [clientState, account, managers, contact] = await Promise.all([
-      this.history.clientTelegramState(chatId, nowTs),
+      this.history.clientState(chatId, nowTs),
       owner === null
         ? null
-        : this.prisma.tgAccount.findUnique({
+        : this.prisma.channelAccount.findUnique({
             where: { id: owner },
             select: {
               id: true,
@@ -175,6 +182,8 @@ export class ConversationsService {
               displayName: true,
               phoneE164: true,
               personaId: true,
+              channel: true,
+              peerId: true,
               status: true,
               bannedAt: true,
               banReason: true,
@@ -203,10 +212,17 @@ export class ConversationsService {
       ),
       ...managers.forAccount(owner),
       persona_name: persona.name,
-      // с какого Telegram-аккаунта личность пишет этому клиенту
+      channel: chatChannel(chatId),
+      // с какого аккаунта личность пишет этому клиенту
       account: account
         ? {
             id: account.id,
+            channel: account.channel,
+            contact: accountContact(
+              account.channel,
+              account.username,
+              account.peerId,
+            ),
             username: account.username ?? null,
             display_name: account.displayName ?? null,
             phone: account.phoneE164,
@@ -251,6 +267,7 @@ export class ConversationsService {
     profile: {
       phoneE164: string | null;
       city: string | null;
+      gender?: string | null;
       usernameKey?: string | null;
       telegramUsername?: string | null;
     } | null = null,
@@ -275,15 +292,26 @@ export class ConversationsService {
         profile?.telegramUsername ||
         profile?.usernameKey ||
         null,
+      client_contact: clientContact(
+        chatId,
+        (facts['tg_username'] as string) ||
+          (facts['vk_username'] as string) ||
+          profile?.telegramUsername ||
+          profile?.usernameKey ||
+          null,
+      ),
       client_avatar: this.presence.avatarUrl(chatId),
       client_typing: this.presence.activityOf(chatId),
       client_city: profile?.city ?? null,
+      /** пол из карточки лида: m / f / unknown; null — не указан */
+      client_gender: profile?.gender ?? null,
       is_paused: isPaused,
       archived: Boolean(facts[HIDDEN_FROM_DASHBOARD_KEY]),
       messages: messages.map((m) => ({
         id: m.id,
         tg_msg_id: m.tg_msg_id,
         media_kind: m.media_kind,
+        media_note: m.media_note ?? null,
         media_url:
           m.file_path && !/^https?:\/\//i.test(m.file_path)
             ? `/api/files/${m.id}`
@@ -316,7 +344,7 @@ export class ConversationsService {
   async markSeen(chatId: number): Promise<void> {
     const manual = (await this.pause.status(chatId)).status === 'paused';
     if (manual && (await this.hasUnreadFromClient(chatId)))
-      await this.telegram.markRead(chatId).catch(() => undefined);
+      await this.channels.markRead(chatId).catch(() => undefined);
     await this.history.markManagerSeen(chatId, this.clock.ts());
   }
 
@@ -329,8 +357,8 @@ export class ConversationsService {
    */
   private async hasUnreadFromClient(chatId: number): Promise<boolean> {
     const [marks, latest] = await Promise.all([
-      this.history.telegramReadMarks(chatId),
-      this.history.latestClientTgId(chatId),
+      this.history.readMarks(chatId),
+      this.history.latestClientMsgId(chatId),
     ]);
     return latest > 0 && latest > (marks.inbox ?? 0);
   }
@@ -354,7 +382,7 @@ export class ConversationsService {
              p.facts AS facts
       FROM contacts c LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
       ORDER BY last_ts DESC NULLS LAST LIMIT ${LIST_LIMIT}`;
-    const accounts = await this.prisma.tgAccount.findMany({
+    const accounts = await this.prisma.channelAccount.findMany({
       select: { id: true, personaId: true },
     });
     const personaByAccount = new Map(accounts.map((a) => [a.id, a.personaId]));
@@ -420,6 +448,34 @@ export class ConversationsService {
       ok: true,
       pending_reply_id: replyId,
       kind: dto.kind,
+      scheduled_ts: ts,
+    };
+  }
+
+  /** Снимок из образа вручную: через ту же очередь, что и вложения, с отметкой о показе. */
+  async sendLibraryPhoto(
+    chatId: number,
+    photo: { id: number; filePath: string },
+    dto: { caption?: string; reply_to?: number },
+  ) {
+    const ts = this.clock.ts();
+    const replyId = await this.history.enqueueManualReply(
+      chatId,
+      (dto.caption ?? '').trim(),
+      ts,
+      {
+        kind: 'photo',
+        filePath: photo.filePath,
+        replyTo: dto.reply_to,
+        photoId: photo.id,
+      },
+    );
+    await this.pauseForManager(chatId);
+    return {
+      ok: true,
+      pending_reply_id: replyId,
+      kind: 'photo',
+      photo_id: photo.id,
       scheduled_ts: ts,
     };
   }
@@ -501,7 +557,7 @@ export class ConversationsService {
         'Отмечать прослушанным можно только голосовое или кружок',
       );
     }
-    await this.telegram.markListened(chatId, [row.sourceMessageId]);
+    await this.channels.markListened(chatId, [row.sourceMessageId]);
     return { ok: true, message_id: messageId };
   }
 

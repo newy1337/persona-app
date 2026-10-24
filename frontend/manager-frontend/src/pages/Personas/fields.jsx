@@ -212,7 +212,7 @@ function ArrayEditor({ value, onChange }) {
           </div>
         ),
       )}
-      <Button variant="outline" className="self-start" onClick={addItem}><Plus aria-hidden="true" />
+      <Button type="button" variant="outline" className="self-start" onClick={addItem}><Plus aria-hidden="true" />
         Добавить
       </Button>
     </div>

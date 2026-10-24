@@ -46,11 +46,21 @@ export interface ReplyBrain {
   nextAction(
     chatId: number,
     maxAgeSeconds?: number,
-  ): Promise<import('./nastya/dialogue/forecast').NextBotAction>;
+  ): Promise<import('./dialogue/forecast').NextBotAction>;
+  /**
+   * Прогноз без ожидания: что есть в кеше (или null), пересчёт — в фоне.
+   * Для списков, где ждать расчёта по каждому чату нельзя.
+   */
+  peekNextAction?(
+    chatId: number,
+    maxAgeSeconds: number,
+  ): import('./dialogue/forecast').NextBotAction | null;
   answerAfterResume(chatId: number): Promise<boolean>;
   answerAfterCall?(callId: string): Promise<boolean>;
   runInitiative(): Promise<number>;
   runDueReplies(): Promise<number>;
+  /** Неблокирующий разбор очереди для крона; без него крон зовёт runDueReplies. */
+  pumpDueReplies?(): Promise<number>;
   runRituals(): Promise<number>;
   handleDeleted(accountId: number, messageIds: number[]): Promise<void>;
   noteOperatorFacts(
@@ -83,6 +93,8 @@ export interface LeadIntro {
   city?: string | null;
   age?: number | null;
   site?: string | null;
+  /** Первое сообщение, написанное менеджером; пусто — шаблон личности. */
+  opener?: string | null;
 }
 
 export interface OutboundTransport {
@@ -96,7 +108,7 @@ export interface OutboundTransport {
       beforePart?: () => Promise<void>;
       randomIds?: string[];
       onDispatch?: (index: number) => Promise<void>;
-      onPart?: (index: number, tgMsgId: number) => Promise<void>;
+      onPart?: (index: number, peerMsgId: number) => Promise<void>;
     },
   ): Promise<number[]>;
   sendReaction(chatId: number, messageId: number, emoji: string): Promise<void>;
@@ -106,8 +118,21 @@ export interface OutboundTransport {
     messageIds: number[],
     accountId?: number | null,
   ): Promise<void>;
+  /** Фото с подписью; random_id не даёт повтору после сбоя создать дубликат. */
+  sendPhoto?(
+    chatId: number,
+    opts: {
+      path: string;
+      caption: string;
+      randomId: string;
+      accountId?: number | null;
+      typing?: TypingStyle;
+      signal?: AbortSignal;
+      onDispatch?: () => Promise<void>;
+    },
+  ): Promise<number>;
   isOnline?(accountId: number): boolean;
-  editText?(chatId: number, tgMsgId: number, text: string): Promise<void>;
+  editText?(chatId: number, peerMsgId: number, text: string): Promise<void>;
 }
 
 export const OUTBOUND_TRANSPORT = Symbol('OUTBOUND_TRANSPORT');

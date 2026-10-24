@@ -50,8 +50,8 @@ function Dot({ className }) {
   return <span className={cn('size-1.5 shrink-0 rounded-full bg-warning-foreground', className)} aria-hidden="true" />;
 }
 
-async function audioBlob(id) {
-  const response = await fetch(`/api/voicer/recordings/${id}/file`, { headers: authHeaders() });
+async function audioBlob(id, callId = null) {
+  const response = await fetch(callId ? `/api/voicer/calls/${callId}/recording/file` : `/api/voicer/recordings/${id}/file`, { headers: authHeaders() });
   if (!response.ok) throw new Error(response.status === 404 ? 'Запись не найдена' : 'Не удалось загрузить аудио. Обновите страницу и попробуйте ещё раз');
   return response.blob();
 }
@@ -191,16 +191,17 @@ function TaskDetail({ task: initial, role, bot, initialView, onClose, onChange }
 
 /** Переименование записи — окно, а не форма внутри карточки: сетка под ним не сдвигается. */
 function RenameRecording({ item, onClose, onChange }) {
+  const isCall = item.kind === 'call';
   const [title, setTitle] = useState(item.title), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const lock = useRef(false);
   async function submit(event) {
     event.preventDefault();
     if (lock.current || !title.trim()) return;
     lock.current = true; setBusy(true); setError('');
-    try { await api.put(`/api/voicer/recordings/${item.id}`, { title }); onChange(); onClose(); }
+    try { await api.put(isCall ? `/api/voicer/calls/${item.call_id}/recording` : `/api/voicer/recordings/${item.id}`, { title }); onChange(); onClose(); }
     catch (e) { setError(errorText(e)); lock.current = false; setBusy(false); }
   }
-  return <PanelUX.Modal title="Переименовать запись" busy={busy} onClose={onClose} footer={<>
+  return <PanelUX.Modal title={isCall ? 'Подписать запись звонка' : 'Переименовать запись'} busy={busy} onClose={onClose} footer={<>
     <Button type="button" variant="outline" disabled={busy} onClick={onClose}>Отмена</Button>
     <Button type="submit" form="recording-rename" disabled={busy || !title.trim()}>Сохранить</Button>
   </>}>
@@ -221,15 +222,16 @@ function Recording({ item, role, context, onChange, onOpen }) {
     try { await fn(); } catch (e) { if (alive.current) setError(errorText(e)); }
     finally { actionLock.current = false; if (alive.current) setBusy(false); }
   }
-  async function listen() { const blob = await audioBlob(item.id); if (alive.current) setUrl(URL.createObjectURL(blob)); }
+  const isCall = item.kind === 'call';
+  async function listen() { const blob = await audioBlob(item.id, isCall ? item.call_id : null); if (alive.current) setUrl(URL.createObjectURL(blob)); }
   async function download() {
-    const fileUrl = URL.createObjectURL(await audioBlob(item.id)); const a = document.createElement('a');
+    const fileUrl = URL.createObjectURL(await audioBlob(item.id, isCall ? item.call_id : null)); const a = document.createElement('a');
     a.href = fileUrl; a.download = filename(item.title); a.click(); setTimeout(() => URL.revokeObjectURL(fileUrl), 10000);
   }
   const [sending, setSending] = useState(false);
   return <article className={cardClass}>
-    <div className="flex items-start justify-between gap-2"><h3 className="text-sm leading-5 font-medium">{item.title}</h3><Badge variant={item.current ? 'success' : 'outline'}>{item.current ? 'Актуальная' : 'Предыдущая'}</Badge></div>
-    <p className={cn(caption, 'leading-5')}>{item.task.personaName} · {item.task.contactLabel}<br />{item.task.managerName} → {item.task.voicerName}<br /><span className="tabular-nums">{date(item.createdAt)} · {item.duration} сек. · Версия {item.revision}</span></p>
+    <div className="flex items-start justify-between gap-2"><h3 className="text-sm leading-5 font-medium">{item.title}</h3><Badge variant={isCall ? 'secondary' : item.current ? 'success' : 'outline'} data-testid={isCall ? 'call-recording' : undefined}>{isCall ? 'Звонок' : item.current ? 'Актуальная' : 'Предыдущая'}</Badge></div>
+    <p className={cn(caption, 'leading-5')}>{item.task.personaName} · {item.task.contactLabel}<br />{item.task.managerName} → {item.task.voicerName}<br /><span className="tabular-nums">{date(item.createdAt)} · {item.duration} сек.{isCall ? (item.titled ? '' : ' · без подписи') : ` · Версия ${item.revision}`}</span></p>
     {/* Строка плеера занята всегда: до загрузки в ней кнопка той же высоты и с тем же кружком, что у плеера. */}
     <div className="flex h-[42px] items-center">{url ? <VoicePlayer src={url} /> : (
       <button type="button" disabled={busy} className="group flex h-[42px] items-center gap-2.5 rounded-md pr-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50" onClick={() => perform(listen)}>
@@ -240,10 +242,10 @@ function Recording({ item, role, context, onChange, onOpen }) {
     {item.last_delivery && <DeliveryStatus delivery={item.last_delivery} />}
     <div className={errorSlot}>{error && <p role="alert">{error}</p>}</div>
     <div className="mt-auto flex min-h-8 items-center justify-between gap-2">
-      {role !== 'voice' && item.current ? <Button type="button" variant="outline" disabled={busy} onClick={() => setSending(true)}><Send aria-hidden="true" />Отправить в диалог</Button> : <span />}
+      {role !== 'voice' && !isCall && item.current ? <Button type="button" variant="outline" disabled={busy} onClick={() => setSending(true)}><Send aria-hidden="true" />Отправить в диалог</Button> : <span />}
       <div className="flex items-center gap-0.5">
         <IconAction icon={Download} label="Скачать" disabled={busy} onClick={() => perform(download)} />
-        {role !== 'voice' && <IconAction icon={Pencil} label="Переименовать" disabled={busy} onClick={() => setEditing(true)} />}
+        {(role !== 'voice' || isCall) && <IconAction icon={Pencil} label={isCall ? 'Подписать' : 'Переименовать'} disabled={busy} onClick={() => setEditing(true)} />}
         <IconAction icon={FileText} label={`Задание #${item.task.id}`} disabled={busy} onClick={() => onOpen(item.task.id)} />
       </div>
     </div>
@@ -301,7 +303,9 @@ export default function VoiceWork() {
   shownRef.current = shown;
   const [detailError, setDetailError] = useState('');
   useRouteBusy(loading && items === null);
-  useEffect(() => { const timer = setTimeout(() => { setSearch(query); setPage(1); }, 250); return () => clearTimeout(timer); }, [query]);
+  // Поиск сбрасывает страницу только когда запрос правда изменился: иначе отложенный
+  // сброс после первого рендера возвращал на 1-ю страницу уже выбранную 2-ю.
+  useEffect(() => { if (query === search) return undefined; const timer = setTimeout(() => { setSearch(query); setPage(1); }, 250); return () => clearTimeout(timer); }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
   const load = useCallback(async () => {
     const current = ++sequence.current;
     try {
@@ -346,8 +350,8 @@ export default function VoiceWork() {
       {manager && <Button type="button" onClick={() => setCreating(true)}><Plus aria-hidden="true" />Новое задание</Button>}
     </PageHeader>
     {options?.role === 'voice' && <Alert role="note" className="mb-4"><AlertDescription className="flex w-full flex-row flex-wrap items-center justify-between gap-3 text-foreground"><span>{options.linked ? `Telegram подключён${options.telegram_username ? ': @' + options.telegram_username : ''}` : 'Подключите Telegram, чтобы получать задания и отправлять записи'}</span><VoiceBotLink userId={options.user_id} linked={options.linked} onChange={load} /></AlertDescription></Alert>}
-    {options?.bot.error && <Alert variant="warning" className="mb-4" role="status"><AlertDescription>{options.bot.error}</AlertDescription></Alert>}
-    {options && !options.bot.configured && <Alert variant="warning" role="note" className="mb-4"><AlertDescription>Бот не настроен. Задания сохраняются, но уведомления пока не отправляются.</AlertDescription></Alert>}
+    {options?.bot?.error && <Alert variant="warning" className="mb-4" role="status"><AlertDescription>{options.bot.error}</AlertDescription></Alert>}
+    {options && !options.bot?.configured && <Alert variant="warning" role="note" className="mb-4"><AlertDescription>Бот не настроен. Задания сохраняются, но уведомления пока не отправляются.</AlertDescription></Alert>}
     <div className="mb-4 flex min-h-8 flex-wrap items-center gap-2">
       <Tabs value={tab} onValueChange={changeTab} className="gap-0">
         <TabsList aria-label="Раздел озвучки">

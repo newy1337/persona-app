@@ -82,6 +82,11 @@ export function describe(def, value) {
       .map((v) => def.options?.find((o) => String(o.value) === String(v))?.label ?? String(v))
       .join(', ');
   }
-  if (def.type === 'period') return PERIODS.find((p) => p.value === value)?.label ?? '';
+  if (def.type === 'period') {
+    // Конкретный день из выбора периода на дашборде: «date:2026-10-24» → «24.10.2026».
+    const day = /^date:(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
+    if (day) return `${day[3]}.${day[2]}.${day[1]}`;
+    return PERIODS.find((p) => p.value === value)?.label ?? '';
+  }
   return `«${String(value).trim()}»`;
 }

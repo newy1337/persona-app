@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
@@ -9,19 +10,18 @@ import * as argon2 from 'argon2';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from 'src/prisma.service';
+import { mskDayStart } from 'src/domain/leads';
+import { dayKey, resolveRange } from 'src/modules/stats/range';
+import type { DashboardUser } from '@prisma/client';
 import { ClockService } from 'src/shared/clock.service';
 import { Role, ROLES } from 'src/enums/roles.enum';
 import { CreateManagerDto, UpdateManagerDto } from './dto/manager.dto';
 import { CryptoService } from 'src/shared/crypto.service';
 
-/** Нарушение уникальности именно логина: у других уникальных индексов своя причина и своя ошибка. */
-function isUsernameTaken(e: any): boolean {
-  if (String(e?.code) !== 'P2002') return false;
-  const target = e?.meta?.target;
-  if (Array.isArray(target))
-    return target.length === 1 && target[0] === 'username';
-  return target === 'username' || target === 'dashboard_users_username_key';
-}
+/** Источники: без пустых и дублей, обрезанные; сравнение при раздаче без учёта регистра. */
+const cleanSources = (list: string[] | undefined): string[] => [
+  ...new Set((list ?? []).map((s) => s.trim()).filter(Boolean)),
+];
 
 @Injectable()
 export class ManagersService {
@@ -31,31 +31,88 @@ export class ManagersService {
     private crypto: CryptoService,
   ) {}
 
-  async list() {
+  async list(
+    viewer: DashboardUser | null = null,
+    period: { from?: string; to?: string } = {},
+  ) {
     const users = await this.prisma.dashboardUser.findMany({
       orderBy: { id: 'asc' },
       include: {
         accounts: {
-          select: { tgAccountId: true },
-          orderBy: { tgAccountId: 'asc' },
+          select: { accountId: true },
+          orderBy: { accountId: 'asc' },
         },
         voicer: { select: { id: true, username: true } },
+        lead: { select: { id: true, username: true } },
         voiceProfile: { select: { telegramId: true, telegramUsername: true } },
+        donors: { select: { donor: { select: { id: true, name: true } } } },
       },
     });
+    // Сколько входящих лидов каждый получил: за сегодня (МСК) и за период,
+    // по умолчанию период — сегодня.
+    const now = this.clock.ts();
+    const todayKey = dayKey(now);
+    const range = resolveRange(
+      { from: period.from ?? todayKey, to: period.to ?? todayKey },
+      now,
+    );
+    const inbound = await this.prisma.lead.findMany({
+      where: {
+        ownerUserId: { not: null },
+        inboundAt: { gte: Math.min(range.start, mskDayStart(now)) },
+      },
+      select: { ownerUserId: true, inboundAt: true },
+    });
+    const leadsToday = new Map<number, number>();
+    const leadsCount = new Map<number, number>();
+    for (const row of inbound) {
+      if (row.ownerUserId === null || row.inboundAt === null) continue;
+      if (row.inboundAt >= mskDayStart(now))
+        leadsToday.set(
+          row.ownerUserId,
+          (leadsToday.get(row.ownerUserId) ?? 0) + 1,
+        );
+      if (row.inboundAt >= range.start && row.inboundAt < range.end)
+        leadsCount.set(
+          row.ownerUserId,
+          (leadsCount.get(row.ownerUserId) ?? 0) + 1,
+        );
+    }
+    // Хед видит только свой регион: людей, которыми руководит, и себя.
+    const visible =
+      viewer && viewer.role === Role.HEAD
+        ? users.filter(
+            (u) =>
+              u.regionCode === viewer.regionCode &&
+              [Role.MANAGER, Role.TEAMLEAD, Role.HEAD].includes(u.role as Role),
+          )
+        : users;
     return {
       roles: [...ROLES].sort(),
-      items: users.map((u) => ({
+      range: { from: range.from, to: range.to },
+      items: visible.map((u) => ({
         user_id: u.id,
         username: u.username,
         role: u.role,
         region_code: u.regionCode,
+        can_edit_photo_sets: u.canEditPhotoSets,
         voicer_id: u.voicerId ?? null,
         voicer_username: u.voicer?.username ?? null,
+        lead_id: u.leadId ?? null,
+        lead_username: u.lead?.username ?? null,
         telegram_linked: Boolean(u.voiceProfile?.telegramId),
         telegram_username: u.voiceProfile?.telegramUsername ?? null,
         password_available: Boolean(u.passwordEncrypted),
-        account_ids: u.accounts.map((a) => a.tgAccountId),
+        account_ids: u.accounts.map((a) => a.accountId),
+        online: u.online,
+        leads_today: leadsToday.get(u.id) ?? 0,
+        leads_count: leadsCount.get(u.id) ?? 0,
+        lead_quota: u.leadQuota ?? null,
+        lead_sources: u.leadSources ?? [],
+        lead_personas: u.leadPersonas ?? [],
+        cold_leads: u.coldLeads ?? false,
+        donor_ids: (u.donors ?? []).map((d) => d.donor.id),
+        donors: (u.donors ?? []).map((d) => d.donor.name),
       })),
     };
   }
@@ -74,8 +131,154 @@ export class ManagersService {
     }
   }
 
+  /** Личности менеджера — slug из справочника личностей; неизвестные — отказ. */
+  private async cleanPersonas(list: string[] | undefined): Promise<string[]> {
+    const wanted = cleanSources(list);
+    if (!wanted.length) return [];
+    const known = await this.prisma.persona.findMany({
+      where: { slug: { in: wanted } },
+      select: { slug: true },
+    });
+    if (known.length !== wanted.length)
+      throw new UnprocessableEntityException('неизвестная личность в списке');
+    return wanted;
+  }
+
+  /** Доноры менеджера целиком заменяются списком; неизвестные id — отказ. */
+  private async setDonors(
+    userId: number,
+    ids: number[],
+    tx: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const wanted = [...new Set(ids)];
+    if (wanted.length) {
+      const known = await tx.donor.count({ where: { id: { in: wanted } } });
+      if (known !== wanted.length)
+        throw new UnprocessableEntityException('неизвестный донор в списке');
+    }
+    await tx.managerDonor.deleteMany({ where: { userId } });
+    if (wanted.length)
+      await tx.managerDonor.createMany({
+        data: wanted.map((donorId) => ({ userId, donorId })),
+      });
+  }
+
+  /** Хед региона: один на регион, к нему автоматически цепляются тимлиды региона. */
+  private async regionHead(
+    region: string | null,
+    exceptId: number | null = null,
+  ) {
+    if (!region) return null;
+    return this.prisma.dashboardUser.findFirst({
+      where: {
+        role: Role.HEAD,
+        regionCode: region,
+        ...(exceptId ? { id: { not: exceptId } } : {}),
+      },
+      select: { id: true, username: true },
+    });
+  }
+
+  private async assertRegionFree(
+    region: string | null,
+    exceptId: number | null,
+  ) {
+    const other = await this.regionHead(region, exceptId);
+    if (other)
+      throw new UnprocessableEntityException(
+        `В регионе ${region} уже есть хед: ${other.username}`,
+      );
+  }
+
+  /**
+   * Руководитель менеджера — тимлид или хед того же региона; без выбора —
+   * хед региона. У тимлида руководитель не выбирается: это хед региона, он
+   * подставляется сам. У остальных его нет.
+   */
+  private async managerLead(
+    role: string,
+    region: string | null,
+    id: number | null | undefined,
+    selfId: number | null = null,
+  ): Promise<number | null> {
+    if (role === Role.TEAMLEAD)
+      return (await this.regionHead(region, selfId))?.id ?? null;
+    if (role !== Role.MANAGER) {
+      if (id != null)
+        throw new UnprocessableEntityException(
+          'Руководитель назначается только менеджеру',
+        );
+      return null;
+    }
+    // Менеджер без тимлида подчиняется хеду региона напрямую.
+    if (id == null) return (await this.regionHead(region, selfId))?.id ?? null;
+    if (id === selfId)
+      throw new UnprocessableEntityException(
+        'Нельзя быть руководителем самому себе',
+      );
+    const lead = await this.prisma.dashboardUser.findUnique({ where: { id } });
+    // Хед региона тоже годится напрямую: так панель сохраняет менеджера, у
+    // которого тимлида нет и руководитель уже подставлен автоматически.
+    if (lead?.role !== Role.TEAMLEAD && lead?.role !== Role.HEAD)
+      throw new UnprocessableEntityException(
+        'Руководителем менеджера может быть тимлид или хед региона',
+      );
+    if (!region || lead.regionCode !== region)
+      throw new UnprocessableEntityException(
+        'Руководитель должен быть из того же региона',
+      );
+    return id;
+  }
+
+  /**
+   * Хед региона получил регион: тимлиды региона и менеджеры без тимлида — его,
+   * подчинённые из других регионов отцепляются.
+   */
+  private async attachRegionToHead(headId: number, region: string | null) {
+    await this.prisma.dashboardUser.updateMany({
+      where: {
+        leadId: headId,
+        ...(region ? { regionCode: { not: region } } : {}),
+      },
+      data: { leadId: null },
+    });
+    if (region)
+      await this.prisma.dashboardUser.updateMany({
+        where: { role: Role.TEAMLEAD, regionCode: region },
+        data: { leadId: headId },
+      });
+    await this.attachOrphansToHead(region);
+  }
+
+  /** Менеджеры региона без руководителя подчиняются хеду региона. */
+  private async attachOrphansToHead(region: string | null) {
+    const head = await this.regionHead(region);
+    if (!head) return;
+    await this.prisma.dashboardUser.updateMany({
+      where: { role: Role.MANAGER, regionCode: region, leadId: null },
+      data: { leadId: head.id },
+    });
+  }
+
+  /** Тимлид сменил регион: его менеджеры из другого региона уходят к своему хеду. */
+  private async detachForeignManagers(leadId: number, region: string | null) {
+    const foreign = await this.prisma.dashboardUser.findMany({
+      where: { leadId, ...(region ? { regionCode: { not: region } } : {}) },
+      select: { regionCode: true },
+    });
+    await this.prisma.dashboardUser.updateMany({
+      where: { leadId, ...(region ? { regionCode: { not: region } } : {}) },
+      data: { leadId: null },
+    });
+    for (const code of new Set(foreign.map((u) => u.regionCode)))
+      await this.attachOrphansToHead(code);
+  }
+
   async create(dto: CreateManagerDto) {
     await this.validateVoicer(dto.role, dto.voicer_id);
+    const region = dto.region_code ?? null;
+    if (dto.role === Role.HEAD) await this.assertRegionFree(region, null);
+    const leadId = await this.managerLead(dto.role, region, dto.lead_id);
     const password = dto.password ?? randomBytes(12).toString('base64url');
     const passwordHash = await argon2.hash(password);
     const passwordEncrypted = this.crypto.encrypt(password);
@@ -86,150 +289,208 @@ export class ManagersService {
           username: dto.username,
           passwordHash,
           passwordEncrypted,
-          regionCode: dto.region_code ?? null,
+          regionCode: region,
           role: dto.role,
           voicerId: dto.voicer_id ?? null,
+          leadId,
           createdAt: this.clock.ts(),
+          online: dto.online ?? false,
+          leadQuota: dto.lead_quota ?? null,
+          leadSources: cleanSources(dto.lead_sources),
+          leadPersonas: await this.cleanPersonas(dto.lead_personas),
         },
       });
       createdId = created.id;
     } catch (e) {
-      // Чужой уникальный индекс — не «логин занят»: такая ошибка уходит как есть.
-      if (String(e?.code) === 'P2002' && !isUsernameTaken(e)) throw e;
+      const taken = String(e?.code) === 'P2002';
       throw new ConflictException(
-        isUsernameTaken(e)
+        taken
           ? `логин '${dto.username}' уже занят`
           : `не удалось создать пользователя (${e?.name})`,
       );
     }
+    if (dto.donor_ids?.length) await this.setDonors(createdId, dto.donor_ids);
+    if (dto.role === Role.HEAD)
+      await this.attachRegionToHead(createdId, region);
     return { ...(await this.list()), created_user_id: createdId };
   }
 
-  async update(userId: number, dto: UpdateManagerDto) {
+  async update(
+    userId: number,
+    dto: UpdateManagerDto,
+    viewer: DashboardUser | null = null,
+  ) {
     const user = await this.prisma.dashboardUser.findUnique({
       where: { id: userId },
     });
     if (!user) throw new NotFoundException('нет такой учётки');
-    if (dto.password !== undefined && dto.regenerate_password)
-      throw new BadRequestException(
-        'Задайте свой пароль или создайте случайный — одновременно нельзя',
-      );
+    // Хед правит только руководителя у менеджеров своего региона.
+    if (viewer && viewer.role !== Role.ADMIN) {
+      const allowed = ['lead_id'];
+      const extra = Object.keys(dto).filter((k) => !allowed.includes(k));
+      if (
+        viewer.role !== Role.HEAD ||
+        user.role !== Role.MANAGER ||
+        !viewer.regionCode ||
+        user.regionCode !== viewer.regionCode ||
+        extra.length
+      )
+        throw new ForbiddenException(
+          'Хед может только назначать тимлида менеджерам своего региона',
+        );
+    }
+    const nextRole = dto.role ?? user.role;
+    const nextRegion =
+      dto.region_code !== undefined ? dto.region_code : user.regionCode;
+    if (nextRole === Role.HEAD) await this.assertRegionFree(nextRegion, userId);
     await this.validateVoicer(dto.role ?? user.role, dto.voicer_id);
-    const username =
-      dto.username !== undefined && dto.username !== user.username
-        ? dto.username
-        : undefined;
-    const password = dto.regenerate_password
-      ? randomBytes(12).toString('base64url')
-      : dto.password;
     const data: {
       username?: string;
+      online?: boolean;
+      leadQuota?: number | null;
+      leadSources?: string[];
+      leadPersonas?: string[];
+      coldLeads?: boolean;
       role?: string;
       passwordHash?: string;
       passwordEncrypted?: string;
       regionCode?: string | null;
       voicerId?: number | null;
+      leadId?: number | null;
+      canEditPhotoSets?: boolean;
     } = {};
+    if (dto.can_edit_photo_sets !== undefined)
+      data.canEditPhotoSets = dto.can_edit_photo_sets;
     if (dto.voicer_id !== undefined) data.voicerId = dto.voicer_id;
+    // Руководитель считается от роли и региона: хед — никого, тимлид — хед
+    // региона, менеджер — тимлид своего региона (если задан и подходит).
+    const roleOrRegionChanged =
+      nextRole !== user.role || nextRegion !== user.regionCode;
+    if (dto.lead_id !== undefined || roleOrRegionChanged) {
+      const requested =
+        dto.lead_id !== undefined
+          ? dto.lead_id
+          : nextRole === user.role && nextRegion === user.regionCode
+            ? user.leadId
+            : null;
+      data.leadId = await this.managerLead(
+        nextRole,
+        nextRegion,
+        requested,
+        userId,
+      );
+    }
     if (dto.role !== undefined && dto.role !== Role.MANAGER)
       data.voicerId = null;
     if (dto.role !== undefined) data.role = dto.role;
     if (dto.region_code !== undefined) data.regionCode = dto.region_code;
-    if (username !== undefined) data.username = username;
-    if (password !== undefined) {
-      data.passwordHash = await argon2.hash(password);
-      data.passwordEncrypted = this.crypto.encrypt(password);
-    }
-    const taken = () => new ConflictException(`логин '${username}' уже занят`);
-    await this.prisma
-      .$transaction(async (tx) => {
-        // Логин отличается от своего, значит найденная учётка — чужая.
-        if (
-          username !== undefined &&
-          (await tx.dashboardUser.findUnique({ where: { username } }))
-        )
-          throw taken();
-        await this.applyUpdate(tx, user, dto, data);
-      })
-      .catch((e) => {
-        // Гонка двух переименований: уникальный индекс срабатывает уже при записи.
-        if (username !== undefined && isUsernameTaken(e)) throw taken();
-        throw e;
-      });
-    // Пароль возвращаем, только если этот запрос его сменил: в остальных случаях он уже есть у окна.
-    const { password: stored, ...editor } = await this.editor(userId);
-    return {
-      ...(await this.list()),
-      editor: password !== undefined ? { ...editor, password: stored } : editor,
-    };
-  }
-
-  private async applyUpdate(
-    tx: Prisma.TransactionClient,
-    user: { id: number; role: string },
-    dto: UpdateManagerDto,
-    data: Prisma.DashboardUserUncheckedUpdateInput,
-  ) {
-    const userId = user.id;
-    if (dto.role !== undefined && dto.role !== user.role)
-      await this.ensureNoActiveTasks(userId, tx);
-    if (dto.account_ids !== undefined) {
-      if ((dto.role ?? user.role) !== Role.MANAGER && dto.account_ids.length) {
-        throw new UnprocessableEntityException(
-          'Аккаунты закрепляются только за менеджером',
-        );
-      }
-      await this.requireAccounts(tx, dto.account_ids);
-    }
-    if (
-      user.role === Role.VOICE &&
-      dto.role !== undefined &&
-      dto.role !== Role.VOICE
-    ) {
-      await tx.dashboardUser.updateMany({
-        where: { voicerId: userId },
-        data: { voicerId: null },
-      });
-      await tx.voicerProfile.deleteMany({ where: { userId } });
-    }
-    if (Object.keys(data).length)
-      await tx.dashboardUser.update({ where: { id: userId }, data });
-    if (dto.role !== undefined && dto.role !== Role.MANAGER)
-      await tx.managerAccount.deleteMany({ where: { userId } });
-    if (dto.account_ids !== undefined) {
-      await tx.managerAccount.deleteMany({ where: { userId } });
-      for (const acc of new Set(dto.account_ids)) {
-        await tx.managerAccount.deleteMany({ where: { tgAccountId: acc } });
-        await tx.managerAccount.create({
-          data: { userId, tgAccountId: acc },
+    if (dto.online !== undefined) data.online = dto.online;
+    if (dto.cold_leads !== undefined) data.coldLeads = dto.cold_leads;
+    if (dto.lead_quota !== undefined) data.leadQuota = dto.lead_quota;
+    if (dto.lead_sources !== undefined)
+      data.leadSources = cleanSources(dto.lead_sources);
+    if (dto.lead_personas !== undefined)
+      data.leadPersonas = await this.cleanPersonas(dto.lead_personas);
+    if (dto.username !== undefined) {
+      const username = dto.username.trim();
+      if (!username)
+        throw new BadRequestException('логин не может быть пустым');
+      if (username !== user.username) {
+        const taken = await this.prisma.dashboardUser.findUnique({
+          where: { username },
+          select: { id: true },
         });
+        if (taken) throw new ConflictException(`логин '${username}' уже занят`);
+        data.username = username;
       }
     }
+    if (dto.password !== undefined) {
+      data.passwordHash = await argon2.hash(dto.password);
+      data.passwordEncrypted = this.crypto.encrypt(dto.password);
+    }
+    await this.prisma.$transaction(async (tx) => {
+      if (dto.role !== undefined && dto.role !== user.role)
+        await this.ensureNoActiveTasks(userId, tx);
+      if (dto.account_ids !== undefined) {
+        if (
+          (dto.role ?? user.role) !== Role.MANAGER &&
+          dto.account_ids.length
+        ) {
+          throw new UnprocessableEntityException(
+            'Аккаунты закрепляются только за менеджером',
+          );
+        }
+        await this.requireAccounts(tx, dto.account_ids);
+      }
+      if (
+        user.role === Role.VOICE &&
+        dto.role !== undefined &&
+        dto.role !== Role.VOICE
+      ) {
+        await tx.dashboardUser.updateMany({
+          where: { voicerId: userId },
+          data: { voicerId: null },
+        });
+        await tx.voicerProfile.deleteMany({ where: { userId } });
+      }
+      // Был тимлидом или хедом и роль сменилась — подчинённые остаются без руководителя.
+      if (
+        dto.role !== undefined &&
+        dto.role !== user.role &&
+        (user.role === Role.TEAMLEAD || user.role === Role.HEAD)
+      )
+        await tx.dashboardUser.updateMany({
+          where: { leadId: userId },
+          data: { leadId: null },
+        });
+      if (Object.keys(data).length)
+        await tx.dashboardUser.update({ where: { id: userId }, data });
+      if (dto.donor_ids !== undefined)
+        await this.setDonors(userId, dto.donor_ids, tx);
+      if (dto.role !== undefined && dto.role !== Role.MANAGER)
+        await tx.managerAccount.deleteMany({ where: { userId } });
+      if (dto.account_ids !== undefined) {
+        await tx.managerAccount.deleteMany({ where: { userId } });
+        for (const acc of new Set(dto.account_ids)) {
+          await tx.managerAccount.deleteMany({ where: { accountId: acc } });
+          await tx.managerAccount.create({
+            data: { userId, accountId: acc },
+          });
+        }
+      }
+    });
+    if (nextRole === Role.HEAD)
+      await this.attachRegionToHead(userId, nextRegion);
+    if (nextRole === Role.TEAMLEAD)
+      await this.detachForeignManagers(userId, nextRegion);
+    // Бывшие подчинённые (и сам пользователь после смены роли) без
+    // руководителя уходят к хеду своего региона.
+    for (const code of new Set([user.regionCode, nextRegion]))
+      await this.attachOrphansToHead(code);
+    // Ответ — тот же список, что видит автор правки: хеду — только его регион.
+    return this.list(viewer);
   }
 
-  /** Всё, что показывает окно «Изменить»: поля учётки, её аккаунты и сохранённый пароль. */
-  async editor(userId: number) {
+  async credentials(userId: number) {
     const user = await this.prisma.dashboardUser.findUnique({
       where: { id: userId },
-      include: {
-        accounts: {
-          select: { tgAccountId: true },
-          orderBy: { tgAccountId: 'asc' },
-        },
-      },
     });
     if (!user) throw new NotFoundException('нет такой учётки');
     return {
       user_id: user.id,
       username: user.username,
-      role: user.role,
       region_code: user.regionCode,
-      voicer_id: user.voicerId ?? null,
-      account_ids: user.accounts.map((a) => a.tgAccountId),
       password: user.passwordEncrypted
         ? this.crypto.decrypt(user.passwordEncrypted)
         : null,
     };
+  }
+
+  async regeneratePassword(userId: number) {
+    await this.update(userId, {
+      password: randomBytes(12).toString('base64url'),
+    });
+    return this.credentials(userId);
   }
 
   private async resolveOwner(userId: number | null | undefined) {
@@ -245,27 +506,21 @@ export class ManagersService {
     }
   }
 
-  async setAccountOwner(
-    tgAccountId: number,
-    userId: number | null | undefined,
-  ) {
-    return this.setOwnerBulk([tgAccountId], userId);
+  async setAccountOwner(accountId: number, userId: number | null | undefined) {
+    return this.setOwnerBulk([accountId], userId);
   }
 
-  async setOwnerBulk(
-    tgAccountIds: number[],
-    userId: number | null | undefined,
-  ) {
+  async setOwnerBulk(accountIds: number[], userId: number | null | undefined) {
     await this.resolveOwner(userId);
-    const ids = [...new Set(tgAccountIds)];
+    const ids = [...new Set(accountIds)];
     await this.prisma.$transaction(async (tx) => {
       await this.requireAccounts(tx, ids);
       await tx.managerAccount.deleteMany({
-        where: { tgAccountId: { in: ids } },
+        where: { accountId: { in: ids } },
       });
       if (userId != null)
         await tx.managerAccount.createMany({
-          data: ids.map((tgAccountId) => ({ userId, tgAccountId })),
+          data: ids.map((accountId) => ({ userId, accountId })),
         });
     });
     return this.list();
@@ -273,7 +528,7 @@ export class ManagersService {
 
   private async requireAccounts(tx: Prisma.TransactionClient, ids: number[]) {
     if (
-      (await tx.tgAccount.count({
+      (await tx.channelAccount.count({
         where: { id: { in: [...new Set(ids)] } },
       })) !== new Set(ids).size
     ) {
