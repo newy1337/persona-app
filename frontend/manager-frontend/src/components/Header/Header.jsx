@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import VoiceNotifications from './VoiceNotifications';
 import { isManagerRole } from '../../utils/roles';
 import { menuFor } from '../../navigation';
+import SettingsMenu from './SettingsMenu';
 import { useMe } from '../AppLayout/me';
 
 const LIVE_POLL_MS = 30000;
@@ -100,11 +101,15 @@ function Header({ me: meProp, busy = false }) {
         </div>
 
         <nav className="flex min-h-9 min-w-0 items-center gap-0.5 overflow-x-auto py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-[1180px]:order-10 max-[1180px]:-mx-1 max-[1180px]:basis-full">
-          {menuFor(role).top.map((item) => (
-            <NavLink key={item.key} to={item.to} end={item.end} className={navClass}>
-              {item.label}
-            </NavLink>
-          ))}
+          {menuFor(role).top.map((item) =>
+            item.key === 'settings' ? (
+              <SettingsMenu key={item.key} item={item} tabs={menuFor(role).settings} className={navClass} />
+            ) : (
+              <NavLink key={item.key} to={item.to} end={item.end} className={navClass}>
+                {item.label}
+              </NavLink>
+            ),
+          )}
         </nav>
 
         <div className="ml-auto flex shrink-0 items-center gap-3 max-[479px]:gap-2">

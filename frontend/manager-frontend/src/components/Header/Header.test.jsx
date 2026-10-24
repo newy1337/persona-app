@@ -25,3 +25,20 @@ test('уведомления видит менеджер, у админа их �
   await draw({ id: 1, username: 'admin', role: 'admin' });
   expect(host.querySelector('[data-testid="notifications"]')).toBeNull();
 });
+
+test('наведение на «Настройки» раскрывает подвкладки своей роли, у менеджера пункта нет', async () => {
+  const items = () => [...document.querySelectorAll('[role="menu"][aria-label="Разделы настроек"] [role="menuitem"]')].map((a) => a.textContent);
+  const hover = async () => {
+    const link = [...host.querySelectorAll('nav a')].find((a) => a.textContent.startsWith('Настройки'));
+    await act(async () => link.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    return link;
+  };
+  await draw({ id: 6, username: 'boss', role: 'head' });
+  const link = await hover();
+  expect(link.getAttribute('href')).toBe('/settings');
+  expect(items()).toEqual(['Команда', 'Буфер', 'Образы', 'Аккаунты']);
+  await draw({ id: 1, username: 'admin', role: 'admin' });
+  expect(items()).toEqual(['Аккаунты', 'Личности', 'Образы', 'LeadGet', 'Справочники', 'Буфер', 'Бот и API']);
+  await draw({ id: 2, username: 'm', role: 'manager' });
+  expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Диалоги', 'Лиды', 'Войсер', 'Аккаунты', 'Образы']);
+});
