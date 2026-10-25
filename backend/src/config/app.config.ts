@@ -33,6 +33,14 @@ export const appConfig = {
   llmGatewayApiKey: (process.env.LLM_GATEWAY_API_KEY || '').trim(),
   llmGatewayTimeoutMs:
     Math.max(5, Number(process.env.LLM_GATEWAY_TIMEOUT_S || 90)) * 1000,
+  // Ёмкость шлюза (одновременных запросов) и сколько ждать свободного слота,
+  // прежде чем отдать запрос платному провайдеру.
+  llmGatewayConcurrency: Math.max(
+    1,
+    Number(process.env.LLM_GATEWAY_CONCURRENCY || 5),
+  ),
+  llmGatewayWaitMs:
+    Math.max(0, Number(process.env.LLM_GATEWAY_WAIT_S ?? 15)) * 1000,
   anthropicWorkspaceId: process.env.ANTHROPIC_WORKSPACE_ID || '',
   generatorModel: process.env.GENERATOR_MODEL || 'claude-sonnet-5',
   judgeModel: (process.env.JUDGE_MODEL || '').trim(),
