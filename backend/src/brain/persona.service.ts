@@ -169,7 +169,11 @@ export class PersonaService implements OnModuleInit {
           maxRetries: 0,
         }),
         this.direct,
-        { log: this.log },
+        {
+          log: this.log,
+          maxConcurrent: appConfig.llmGatewayConcurrency,
+          waitMs: appConfig.llmGatewayWaitMs,
+        },
       )
     : this.direct;
 
@@ -262,7 +266,7 @@ export class PersonaService implements OnModuleInit {
     );
     if (appConfig.llmGatewayUrl)
       this.log.log(
-        `LLM: сначала шлюз ${gatewayBaseUrl(appConfig.llmGatewayUrl)}${appConfig.llmGatewayApiKey ? '' : ' — LLM_GATEWAY_API_KEY is empty'}, при ошибке — основной провайдер`,
+        `LLM: сначала шлюз ${gatewayBaseUrl(appConfig.llmGatewayUrl)} (до ${appConfig.llmGatewayConcurrency} запросов разом, слот ждём ${appConfig.llmGatewayWaitMs / 1000} с)${appConfig.llmGatewayApiKey ? '' : ' — LLM_GATEWAY_API_KEY is empty'}, при ошибке — основной провайдер`,
       );
     await this.seedFromFiles();
     await this.fillPrompts();
