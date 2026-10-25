@@ -1,3 +1,4 @@
+import { GATEWAY_ROUTE } from 'src/brain/llm/gateway';
 import {
   Injectable,
   Logger,
@@ -393,8 +394,13 @@ export class StatsService {
         cacheWrite1hTokens: true,
         elapsedMs: true,
         createdAt: true,
+        provider: true,
+        providerEstimatedCostUsd: true,
       },
-    })) as UsageRow[];
+    })) as (UsageRow & {
+      provider: string;
+      providerEstimatedCostUsd: number | null;
+    })[];
 
     const total = bucket();
     const byDay = new Map<string, Bucket>(range.days.map((d) => [d, bucket()]));
@@ -403,12 +409,21 @@ export class StatsService {
     const byPersona = new Map<string, Bucket>();
     const byChat = new Map<string, Bucket>();
     const unpriced = new Set<string>();
+    // Факт: сколько выставил OpenRouter. Шлюз (LLMR) бесплатный — его вызовы
+    // считаем по прайсу отдельно: столько они стоили бы в OpenRouter.
+    let paid = 0;
+    let llmCalls = 0;
+    const gateway = bucket();
 
     for (const u of rows) {
       u.model = normalizeModel(u.model);
       const p = price(u.model);
       if (!p) unpriced.add(u.model);
       add(total, u, p);
+      if (u.provider === 'openrouter') paid += u.providerEstimatedCostUsd ?? 0;
+      if (u.provider === GATEWAY_ROUTE) add(gateway, u, p);
+      if (u.provider === 'openrouter' || u.provider === GATEWAY_ROUTE)
+        llmCalls += 1;
       const day = byDay.get(dayKey(u.createdAt));
       if (day) add(day, u, p);
       for (const [map, key] of [
@@ -449,6 +464,14 @@ export class StatsService {
           : 0,
         chats: byChat.size,
         ...messages.totals,
+        /** Фактически заплачено OpenRouter за период. */
+        paid_usd: usd(paid),
+        /** Шлюз LLMR: сколько стоили бы его вызовы в OpenRouter — сэкономлено. */
+        gateway_saved_usd: usd(gateway.cost),
+        gateway_calls: gateway.calls,
+        gateway_share: llmCalls
+          ? Math.round((gateway.calls / llmCalls) * 1000) / 1000
+          : 0,
       },
       by_day: range.days.map((day) => ({
         day,
