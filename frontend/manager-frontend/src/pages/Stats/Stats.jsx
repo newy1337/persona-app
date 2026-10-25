@@ -225,11 +225,11 @@ export default function Stats() {
           ) : (
             <>
               <div className={p.kpis}>
-                <Kpi title="Расход" value={money(t.paid_usd ?? t.cost_usd)} hint="факт OpenRouter" />
+                <Kpi title="Расход" value={money(t.paid_usd ?? t.cost_usd)} hint={null} />
                 <Kpi
                   title="LLMR"
                   value={money(t.gateway_saved_usd ?? 0)}
-                  hint={`сэкономлено · ${num(t.gateway_calls ?? 0)} вызовов (${pct(t.gateway_share ?? 0)})`}
+                  hint={`${num(t.gateway_calls ?? 0)} вызовов`}
                 />
                 <Kpi
                   title="За ход клиента"
