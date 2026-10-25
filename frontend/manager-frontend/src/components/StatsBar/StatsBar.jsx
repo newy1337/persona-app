@@ -41,11 +41,14 @@ function StatsBar({ stats = [], dateFilter = '', onDateFilterChange }) {
       <div className={styles.stats}>
         {stats.map((stat) => (
           <div key={stat.id} className={styles.statItem}>
-            <span className={styles.label}>{stat.label}</span>
+            <span className={styles.label} title={stat.label}>{stat.label}</span>
             <span className={styles.value} style={{ '--stat-color': stat.color }}>{stat.value}</span>
           </div>
         ))}
-        <div className={styles.statItem}>
+      </div>
+      {/* Период — отдельный блок справа, а не ещё одна плитка: иначе при переносе
+          строк он растягивался вместе с плитками и ломал сетку. */}
+      <div className={styles.dateCell}>
           <div className={styles.dateWrap} ref={wrapRef}>
             <button
               className={`${styles.dateBtn} ${open ? styles.dateBtnActive : ''} ${dateFilter ? styles.dateBtnFiltered : ''}`}
@@ -83,7 +86,6 @@ function StatsBar({ stats = [], dateFilter = '', onDateFilterChange }) {
               </div>
             )}
           </div>
-        </div>
       </div>
     </div>
   );

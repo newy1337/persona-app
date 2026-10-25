@@ -4,61 +4,53 @@
 .bar {
   margin-top: 38px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: stretch;
+  overflow: hidden;
   border-radius: $radius-lg;
   border: 1px solid $border-subtle;
   background: $bg-main;
 }
 
+/* Плитки — сетка из одинаковых колонок: при переносе строки не растягиваются
+   на всю ширину. Разделители — правая и нижняя граница каждой плитки; внешние
+   края прячет отрицательный отступ под overflow: hidden у .bar. */
 .stats {
-  display: flex;
-  gap: 0;
   flex: 1;
-  flex-wrap: wrap;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  margin: 0 -1px -1px 0;
 }
 
 .statItem {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  flex: 1;
-  padding: 16px 20px;
+  min-width: 0;
+  padding: 16px;
   border-right: 1px solid $border-color;
-
-  &:last-child {
-    border-right: none;
-    justify-content: center;
-  }
+  border-bottom: 1px solid $border-color;
 }
 
-@media (max-width: #{$bp-lg}) {
-  .statItem {
-    flex: 1 1 33%;
-    border-bottom: 1px solid $border-color;
-
-    &:last-child {
-      border-bottom: none;
-    }
-  }
+.dateCell {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 12px 20px;
+  border-left: 1px solid $border-color;
 }
 
 @media (max-width: #{$bp-sm}) {
   .bar {
     flex-direction: column;
-    align-items: stretch;
   }
-  .statItem {
-    flex: 1 1 50%;
-    border-right: 1px solid $border-color;
-
-    &:nth-child(even) {
-      border-right: none;
-    }
-
-    &:last-child {
-      border-bottom: none;
-    }
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dateCell {
+    border-left: none;
+    border-top: 1px solid $border-color;
+    padding: 0;
   }
   .dateBtn {
     width: 100%;
@@ -78,6 +70,8 @@
 
 .label {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: $text-muted;
   font-size: 11px;
   font-style: normal;

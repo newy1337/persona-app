@@ -172,6 +172,8 @@ export class VoicerDeliveryService {
           'Привязка диалога к заданию изменилась. Отправка остановлена',
         );
     }
+    if (d.recording.deletedAt)
+      throw new BadRequestException('Запись удалена из библиотеки');
     if (
       d.task.status === 'cancelled' ||
       d.recording.revision !== d.task.revision ||
@@ -227,10 +229,12 @@ export class VoicerDeliveryService {
     return this.prisma.$transaction(async (tx) => {
       const d = await tx.voiceDelivery.findUnique({
         where: { id },
-        include: { pendingReply: true, task: true },
+        include: { pendingReply: true, task: true, recording: true },
       });
       if (d?.task.status === 'cancelled')
         throw new ConflictException('Задание отменено');
+      if (d?.recording.deletedAt)
+        throw new ConflictException('Запись удалена из библиотеки');
       const p = d?.pendingReply;
       if (
         !p ||

@@ -712,6 +712,8 @@ model VoiceRecording {
   createdAt         Int             @map("created_at")
   telegramMessageId Int             @map("telegram_message_id")
   telegramChatId    BigInt          @map("telegram_chat_id")
+  /// удалена из библиотеки: файл стёрт, строка нужна истории отправок
+  deletedAt         Int?            @map("deleted_at")
   task              VoiceTask       @relation(fields: [taskId], references: [id], onDelete: Cascade)
   deliveries        VoiceDelivery[]
 
@@ -800,6 +802,7 @@ model VoiceCallRecording {
   createdAt Int       @map("created_at")
   /// когда войсер подписал запись; пусто — стоит подпись по умолчанию
   titledAt  Int?      @map("titled_at")
+  deletedAt Int?      @map("deleted_at")
 
   @@index([taskId, id])
   @@map("voice_call_recordings")
