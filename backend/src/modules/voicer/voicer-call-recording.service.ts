@@ -15,7 +15,8 @@ import { appConfig } from 'src/config/app.config';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import { panelTime } from 'src/shared/panel-time';
-import { VoicerService } from './voicer.service';
+import { ScopeService } from 'src/shared/scope.service';
+import { removeVoicerFile, VoicerService } from './voicer.service';
 
 const run = promisify(execFile);
 const ENCODE_TIMEOUT_MS = 300_000;
@@ -119,6 +120,7 @@ export class VoicerCallRecordingService {
     private prisma: PrismaService,
     private clock: ClockService,
     private voicer: VoicerService,
+    private scope: ScopeService,
   ) {}
 
   private dir(): string {
@@ -201,7 +203,11 @@ export class VoicerCallRecordingService {
 
   async byCall(user: DashboardUser, callId: string) {
     const row = await this.prisma.voiceCallRecording.findFirst({
-      where: { callId, task: await this.voicer.scopeWhere(user) },
+      where: {
+        callId,
+        deletedAt: null,
+        task: await this.voicer.scopeWhere(user),
+      },
       include: { task: true },
     });
     if (!row) throw new NotFoundException('Запись звонка не найдена');
@@ -240,11 +246,25 @@ export class VoicerCallRecordingService {
         );
       throw new NotFoundException('У этого звонка нет записи');
     }
+    if (call.recording.deletedAt)
+      throw new NotFoundException('Запись звонка удалена');
     await this.prisma.voiceCallRecording.update({
       where: { callId },
       data: { title: clean, titledAt: this.clock.ts() },
     });
     return { ok: true, title: clean };
+  }
+
+  /** Удаление записи звонка из библиотеки — только менеджер задания. */
+  async remove(user: DashboardUser, callId: string) {
+    this.scope.requireManager(user);
+    const r = await this.byCall(user, callId);
+    const changed = await this.prisma.voiceCallRecording.updateMany({
+      where: { callId, deletedAt: null },
+      data: { deletedAt: this.clock.ts() },
+    });
+    if (changed.count) await removeVoicerFile(r.filePath);
+    return { ok: true };
   }
 
   /** Записи звонков для библиотеки, в общем виде с голосовыми. */
@@ -256,6 +276,7 @@ export class VoicerCallRecordingService {
     const rows = await this.prisma.voiceCallRecording.findMany({
       where: {
         task: await this.voicer.scopeWhere(user),
+        deletedAt: null,
         ...(q ? { title: { contains: q, mode: 'insensitive' } } : {}),
       },
       take,

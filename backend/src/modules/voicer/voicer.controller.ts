@@ -2,6 +2,7 @@ import { VoicerCallService } from './voicer-call.service';
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   HttpCode,
@@ -343,6 +344,22 @@ export class VoicerController {
     );
   }
 
+  @Delete('calls/:callId/recording')
+  @Roles(Role.MANAGER)
+  removeCallRecording(
+    @CurrentUser() user: DashboardUser,
+    @Param('callId') callId: string,
+  ) {
+    return this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'voicer.call_recording_delete',
+        resource: `voice_call:${callId}`,
+      },
+      () => this.callRecordings.remove(user, callId),
+    );
+  }
+
   @Get('recordings/:id/file')
   async file(
     @CurrentUser() user: DashboardUser,
@@ -373,6 +390,22 @@ export class VoicerController {
         resource: `voice_recording:${id}`,
       },
       () => this.voicer.rename(user, id, dto.title),
+    );
+  }
+
+  @Delete('recordings/:id')
+  @Roles(Role.MANAGER)
+  removeRecording(
+    @CurrentUser() user: DashboardUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'voicer.recording_delete',
+        resource: `voice_recording:${id}`,
+      },
+      () => this.voicer.removeRecording(user, id),
     );
   }
 }

@@ -12,7 +12,7 @@ const tokens = { input: 1000, output: 500, cache_read: 9000, cache_write: 0 };
 const usage = {
   range: { first_day: '2026-08-01' },
   totals: {
-    cost_usd: 12.5, calls: 400, messages_in: 120, messages_out: 150, chats: 14,
+    cost_usd: 12.5, paid_usd: 9.75, gateway_saved_usd: 2.75, gateway_calls: 90, calls: 400, messages_in: 120, messages_out: 150, chats: 14,
     cache_hit_rate: 0.9, manual_share: 0.2, avg_latency_ms: 2100, tokens,
   },
   by_day: [{ day: '2026-10-05', cost_usd: 12.5, calls: 400, messages_in: 120, messages_out: 150 }],
@@ -68,10 +68,13 @@ describe('страница статистики', () => {
   it('шапка страницы одна, показатели стоят одной полосой', () => {
     expect(host.querySelectorAll('h1')).toHaveLength(1);
     expect(host.querySelector('h1').textContent).toBe('Статистика');
-    for (const title of ['Расход', 'За ход клиента', 'Из кеша', 'Токенов', 'Сообщений', 'Чатов']) {
+    for (const title of ['Расход', 'LLMR', 'За ход клиента', 'Из кеша', 'Токенов', 'Сообщений', 'Чатов']) {
       expect(host.textContent).toContain(title);
     }
-    expect(host.textContent).toContain('$12.50');
+    // Расход — факт OpenRouter (paid_usd), а не расчётная стоимость; LLMR — экономия шлюза и число вызовов.
+    expect(host.textContent).toContain('$9.75');
+    expect(host.textContent).toContain('$2.75');
+    expect(host.textContent).toContain('90 вызовов');
     expect(host.textContent).toContain('120 ↓ / 150 ↑');
   });
 

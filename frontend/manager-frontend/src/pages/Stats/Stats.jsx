@@ -124,26 +124,31 @@ function SplitSkeleton() {
 
 // Колонка действий: кнопка 32px по центру строки, без своих вертикальных отступов.
 const ACTION = cn(TD, 'w-0 py-1 text-right align-middle');
-const KPI_TITLES = ['Расход', 'За ход клиента', 'Из кеша', 'Токенов', 'Сообщений', 'Чатов'];
+const KPI_TITLES = ['Расход', 'LLMR', 'За ход клиента', 'Из кеша', 'Токенов', 'Сообщений', 'Чатов'];
 const MODEL_SKELETON_ROWS = 3;
 const CHAT_SKELETON_ROWS = 5;
 
-const kpis = (t) => [
-  { title: KPI_TITLES[0], value: money(t.cost_usd), hint: `${num(t.calls)} вызовов модели` },
-  {
-    title: KPI_TITLES[1],
-    value: t.messages_in ? money(t.cost_usd / t.messages_in) : '—',
-    hint: `${num(t.messages_in)} входящих`,
-  },
-  { title: KPI_TITLES[2], value: pct(t.cache_hit_rate), hint: `${kilo(t.tokens.cache_read)} токенов дешёвых` },
-  {
-    title: KPI_TITLES[3],
-    value: kilo(t.tokens.input + t.tokens.cache_read + t.tokens.cache_write),
-    hint: `выход ${kilo(t.tokens.output)}`,
-  },
-  { title: KPI_TITLES[4], value: `${num(t.messages_in)} ↓ / ${num(t.messages_out)} ↑`, hint: `руками ${pct(t.manual_share)}` },
-  { title: KPI_TITLES[5], value: num(t.chats), hint: t.avg_latency_ms ? `ответ модели ~${(t.avg_latency_ms / 1000).toFixed(1)} с` : null },
-];
+// Расход — факт OpenRouter (paid_usd); LLMR — сколько сэкономил свой шлюз и сколько через него прошло вызовов.
+const kpis = (t) => {
+  const paid = t.paid_usd ?? t.cost_usd;
+  return [
+    { title: KPI_TITLES[0], value: money(paid), hint: null },
+    { title: KPI_TITLES[1], value: money(t.gateway_saved_usd ?? 0), hint: `${num(t.gateway_calls ?? 0)} вызовов` },
+    {
+      title: KPI_TITLES[2],
+      value: t.messages_in ? money(paid / t.messages_in) : '—',
+      hint: `${num(t.messages_in)} входящих`,
+    },
+    { title: KPI_TITLES[3], value: pct(t.cache_hit_rate), hint: `${kilo(t.tokens.cache_read)} токенов дешёвых` },
+    {
+      title: KPI_TITLES[4],
+      value: kilo(t.tokens.input + t.tokens.cache_read + t.tokens.cache_write),
+      hint: `выход ${kilo(t.tokens.output)}`,
+    },
+    { title: KPI_TITLES[5], value: `${num(t.messages_in)} ↓ / ${num(t.messages_out)} ↑`, hint: `руками ${pct(t.manual_share)}` },
+    { title: KPI_TITLES[6], value: num(t.chats), hint: t.avg_latency_ms ? `ответ модели ~${(t.avg_latency_ms / 1000).toFixed(1)} с` : null },
+  ];
+};
 
 export default function Stats() {
   const navigate = useNavigate();

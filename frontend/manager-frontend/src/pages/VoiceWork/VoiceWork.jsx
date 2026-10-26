@@ -3,7 +3,7 @@ import { CallPanel } from './CallPanel';
 import { CallBrief } from './CallBrief';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Download, ExternalLink, FileText, LoaderCircle, Pencil, Play, Plus, Send } from 'lucide-react';
+import { Download, ExternalLink, FileText, LoaderCircle, Pencil, Play, Plus, Send, Trash2 } from 'lucide-react';
 import VoicePlayer from '../../components/VoicePlayer/VoicePlayer';
 import { api, authHeaders } from '../../api/client';
 import { SendVoice, DeliveryStatus } from './SendVoice';
@@ -223,6 +223,11 @@ function Recording({ item, role, context, onChange, onOpen }) {
     finally { actionLock.current = false; if (alive.current) setBusy(false); }
   }
   const isCall = item.kind === 'call';
+  // Удаление записи из библиотеки (файл тоже стирается) — менеджеру и выше, не войсеру.
+  async function remove() {
+    if (!await PanelUX.confirm({ title: 'Удалить запись?', message: `«${item.title}» пропадёт из библиотеки, файл будет стёрт.`, confirmLabel: 'Удалить', danger: true })) return;
+    await perform(async () => { await api.delete(isCall ? `/api/voicer/calls/${item.call_id}/recording` : `/api/voicer/recordings/${item.id}`); onChange(); });
+  }
   async function listen() { const blob = await audioBlob(item.id, isCall ? item.call_id : null); if (alive.current) setUrl(URL.createObjectURL(blob)); }
   async function download() {
     const fileUrl = URL.createObjectURL(await audioBlob(item.id, isCall ? item.call_id : null)); const a = document.createElement('a');
@@ -247,6 +252,7 @@ function Recording({ item, role, context, onChange, onOpen }) {
         <IconAction icon={Download} label="Скачать" disabled={busy} onClick={() => perform(download)} />
         {(role !== 'voice' || isCall) && <IconAction icon={Pencil} label={isCall ? 'Подписать' : 'Переименовать'} disabled={busy} onClick={() => setEditing(true)} />}
         <IconAction icon={FileText} label={`Задание #${item.task.id}`} disabled={busy} onClick={() => onOpen(item.task.id)} />
+        {role !== 'voice' && <IconAction icon={Trash2} label="Удалить" tone="danger" disabled={busy} onClick={remove} />}
       </div>
     </div>
     {sending && <SendVoice item={item} initialChat={context.get('chat') || ''} onClose={() => setSending(false)} onChange={onChange} />}
