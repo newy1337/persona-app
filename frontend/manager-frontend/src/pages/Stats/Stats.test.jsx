@@ -65,6 +65,23 @@ afterEach(() => {
 });
 
 describe('страница статистики', () => {
+  it('«Куда уходят деньги»: список полосок по умолчанию, «Диаграмма» — кольцо; выбор запоминается', async () => {
+    localStorage.removeItem('stats_spend_view');
+    const list = host.querySelector('[data-testid="bar-list"]');
+    expect([...list.querySelectorAll('li')].map((li) => li.dataset.key)).toEqual(['generator', 'judge_plan']);
+    expect(list.textContent).toContain('Ответ');
+    expect(list.textContent).toContain('80%');
+    await act(async () => buttonByText(host.querySelector('[data-testid="spend-view"]'), 'Диаграмма').click());
+    expect(host.querySelector('[data-testid="bar-list"]')).toBeNull();
+    const donut = host.querySelector('[data-testid="donut"]');
+    expect(donut.textContent).toContain('$12.50');
+    expect([...donut.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Ответ$10.0080%', 'Судья: разбор$2.5020%']);
+    expect(localStorage.getItem('stats_spend_view')).toBe('chart');
+    await act(async () => buttonByText(host.querySelector('[data-testid="spend-view"]'), 'Список').click());
+    expect(host.querySelector('[data-testid="bar-list"]')).not.toBeNull();
+    localStorage.removeItem('stats_spend_view');
+  });
+
   it('шапка страницы одна, показатели стоят одной полосой', () => {
     expect(host.querySelectorAll('h1')).toHaveLength(1);
     expect(host.querySelector('h1').textContent).toBe('Статистика');

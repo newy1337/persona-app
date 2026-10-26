@@ -47,6 +47,12 @@
   --success-foreground: oklch(0.52 0.14 155);
   --warning: oklch(0.75 0.15 80 / 14%);
   --warning-foreground: oklch(0.58 0.13 70);
+  /* Категориальные цвета графиков (кольцо расхода): прошли валидатор палитры dataviz на светлом фоне. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
   --border: oklch(0.92 0.004 286.32);
   --input: oklch(0.92 0.004 286.32);
   --ring: oklch(0.705 0.015 286);
@@ -73,6 +79,12 @@
   --success-foreground: oklch(0.78 0.15 155);
   --warning: oklch(0.82 0.14 85 / 12%);
   --warning-foreground: oklch(0.83 0.13 85);
+  /* Категориальные цвета графиков (кольцо расхода): прошли валидатор палитры dataviz на тёмном фоне. */
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.552 0.016 286);

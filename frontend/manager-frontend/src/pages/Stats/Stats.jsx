@@ -28,6 +28,7 @@ import {
   stickyLastCol,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { EDGE, NUM, Section, SkeletonRows, TD, TH, kilo, money, num, pct } from './StatsUi';
 
 const STAGE_LABEL = {
@@ -121,6 +122,135 @@ function BarList({ rows, empty, unit = 'вызовов' }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+// Кольцо: доли одного целого, сумма в центре. Больше SERIES цветов не
+// придумываем — хвост сворачивается в «Остальное» нейтральным тоном.
+const SERIES = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)'];
+const OTHER = 'var(--muted-foreground)';
+
+function foldRows(rows) {
+  const sorted = [...rows].sort((a, b) => b.cost_usd - a.cost_usd);
+  if (sorted.length <= SERIES.length) return sorted.map((r, i) => ({ ...r, color: SERIES[i] }));
+  const head = sorted.slice(0, SERIES.length - 1).map((r, i) => ({ ...r, color: SERIES[i] }));
+  const tail = sorted.slice(SERIES.length - 1);
+  return [
+    ...head,
+    { key: '__other', label: 'Остальное', color: OTHER, cost_usd: tail.reduce((n, r) => n + r.cost_usd, 0), calls: tail.reduce((n, r) => n + r.calls, 0) },
+  ];
+}
+
+function DonutTip({ active, payload, total }) {
+  if (!active || !payload?.length) return null;
+  const r = payload[0].payload;
+  return (
+    <div className="rounded-md border bg-popover px-3 py-2 text-xs shadow-md">
+      <p className="flex items-center gap-1.5 font-medium"><i className="size-2 rounded-xs" style={{ background: r.color }} />{r.label}</p>
+      <p className="mt-0.5 text-muted-foreground tabular-nums">{`${money(r.cost_usd)} · ${total > 0 ? Math.round((r.cost_usd / total) * 100) : 0}% · ${num(r.calls)} вызовов`}</p>
+    </div>
+  );
+}
+
+function Donut({ title, rows, empty }) {
+  const data = foldRows(rows);
+  const total = data.reduce((n, r) => n + r.cost_usd, 0);
+  return (
+    <div className="flex min-w-0 flex-col gap-3" data-testid="donut">
+      <h3 className="text-sm font-medium">{title}</h3>
+      {data.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{empty}</p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="relative size-[180px] shrink-0" role="img" aria-label={`${title}: ${data.map((r) => `${r.label} ${money(r.cost_usd)}`).join(', ')}`}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Tooltip content={<DonutTip total={total} />} />
+                <Pie data={data} dataKey="cost_usd" nameKey="label" innerRadius={58} outerRadius={86} paddingAngle={2} cornerRadius={4} stroke="none" isAnimationActive>
+                  {/* Цвет — через style: атрибут fill в SVG не понимает var(--…). */}
+                  {data.map((r) => <Cell key={r.key} style={{ fill: r.color }} />)}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-lg font-semibold tabular-nums">{money(total)}</span>
+              <span className="text-xs text-muted-foreground">всего</span>
+            </div>
+          </div>
+          <ul className="flex min-w-[180px] flex-1 flex-col gap-1.5 text-sm">
+            {data.map((r) => (
+              <li key={r.key} className="grid grid-cols-[auto_minmax(0,1fr)_auto_2.75rem] items-center gap-2" data-key={r.key}>
+                <i className="size-2.5 rounded-xs" style={{ background: r.color }} />
+                <span className="truncate">{r.label}</span>
+                <span className="font-medium tabular-nums">{money(r.cost_usd)}</span>
+                <span className="text-right text-xs text-muted-foreground tabular-nums">{total > 0 ? `${Math.round((r.cost_usd / total) * 100)}%` : '—'}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const SPEND_VIEW_KEY = 'stats_spend_view';
+const readSpendView = () => {
+  try {
+    return localStorage.getItem(SPEND_VIEW_KEY) === 'chart' ? 'chart' : 'list';
+  } catch {
+    return 'list';
+  }
+};
+
+/** «Куда уходят деньги»: список полосок или кольца — переключатель в шапке, выбор запоминается. */
+function SpendSection({ data, personaNames }) {
+  const [view, setViewState] = useState(readSpendView);
+  const setView = (next) => {
+    setViewState(next);
+    try {
+      localStorage.setItem(SPEND_VIEW_KEY, next);
+    } catch {
+      // приватное окно — выбор просто не запомнится
+    }
+  };
+  const stages = data ? data.by_stage.map((r) => ({ key: r.stage, label: STAGE_LABEL[r.stage] ?? r.stage, cost_usd: r.cost_usd, calls: r.calls })) : [];
+  const personas = data ? data.by_persona.map((r) => ({ key: r.persona_id, label: personaNames[r.persona_id] ?? r.persona_id, cost_usd: r.cost_usd, calls: r.calls })) : [];
+  return (
+    <Section
+      title="Куда уходят деньги"
+      description={
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span>На что тратятся вызовы моделей; доля — от всего расхода за период</span>
+          <div className="flex items-center gap-0.5" role="radiogroup" aria-label="Вид" data-testid="spend-view">
+            {[['list', 'Список'], ['chart', 'Диаграмма']].map(([id, label]) => (
+              <Button key={id} type="button" role="radio" aria-checked={view === id} variant={view === id ? 'secondary' : 'ghost'} size="xs" onClick={() => setView(id)}>
+                {label}
+              </Button>
+            ))}
+          </div>
+        </div>
+      }
+      className="min-w-0"
+    >
+      {!data ? (
+        <BarListSkeleton />
+      ) : view === 'chart' ? (
+        <div className="grid gap-6 xl:grid-cols-2">
+          <Donut title="По статьям" rows={stages} empty="вызовов ещё не было" />
+          {personas.length > 1 && <Donut title="По личностям" rows={personas} empty="—" />}
+        </div>
+      ) : (
+        <>
+          <BarList empty="вызовов ещё не было" rows={stages} />
+          {personas.length > 1 && (
+            <>
+              <h3 className="mt-5 mb-2 text-sm font-medium">По личностям</h3>
+              <BarList empty="—" rows={personas} />
+            </>
+          )}
+        </>
+      )}
+    </Section>
   );
 }
 
@@ -407,25 +537,7 @@ export default function Stats() {
                 {data ? <DailyChart days={data.by_day} /> : <DailyChartSkeleton />}
 
                 <div className="grid gap-4 lg:grid-cols-[minmax(280px,1fr)_minmax(320px,1.4fr)]">
-                  <Section title="Куда уходят деньги" description="На что тратятся вызовы моделей; доля — от всего расхода за период" className="min-w-0">
-                    {data ? (
-                      <BarList
-                        empty="вызовов ещё не было"
-                        rows={data.by_stage.map((r) => ({ key: r.stage, label: STAGE_LABEL[r.stage] ?? r.stage, cost_usd: r.cost_usd, calls: r.calls }))}
-                      />
-                    ) : (
-                      <BarListSkeleton />
-                    )}
-                    {data?.by_persona.length > 1 && (
-                      <>
-                        <h3 className="mt-5 mb-2 text-sm font-medium">По личностям</h3>
-                        <BarList
-                          empty="—"
-                          rows={data.by_persona.map((r) => ({ key: r.persona_id, label: personaNames[r.persona_id] ?? r.persona_id, cost_usd: r.cost_usd, calls: r.calls }))}
-                        />
-                      </>
-                    )}
-                  </Section>
+                  <SpendSection data={data} personaNames={personaNames} />
 
                   <Section title="Модели" description={modelsDescription} flush className="min-w-0">
                     <Table className={EDGE}>
