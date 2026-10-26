@@ -72,6 +72,17 @@ export class StatsController {
     return this.stats.coldLeads({ from, to });
   }
 
+  @ApiOperation({
+    summary:
+      'Срезы: воронка лидов и разрезы, стоимость результата, аккаунты, тепловая карта, скорость ответов',
+  })
+  @ApiQuery({ name: 'from', required: false, example: '2026-09-01' })
+  @ApiQuery({ name: 'to', required: false, example: '2026-09-10' })
+  @Get('insights')
+  insights(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.stats.insights({ from, to });
+  }
+
   @ApiOperation({ summary: 'Расход одного чата' })
   @Get('chat/:chatId')
   forChat(
