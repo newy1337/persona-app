@@ -9,6 +9,7 @@ import StagesTable, { StagesTableSkeleton } from './StagesTable';
 import Balance, { BalanceSkeleton } from './Balance';
 import ColdTable from './ColdTable';
 import { AccountsTab, ActivityTab, FunnelTab, InsightsSkeleton } from './Insights';
+import { getPersonas } from '../../api/personas';
 import { ArrowUpRight, Tags } from 'lucide-react';
 import { useRouteBusy } from '@/components/AppLayout/routeBusy';
 import { IconAction } from '@/components/IconAction/IconAction';
@@ -32,20 +33,16 @@ import { EDGE, NUM, Section, SkeletonRows, TD, TH, kilo, money, num, pct } from 
 const STAGE_LABEL = {
   judge_plan: 'Судья: разбор',
   judge_review: 'Судья: проверка',
+  judge: 'Судья',
+  review: 'Проверка ответа',
+  draft: 'Черновик ответа',
   generator: 'Ответ',
   media_photo: 'Просмотр фото',
   media_reaction: 'Реакция',
+  transcribe: 'Расшифровка голосовых',
+  time_location: 'Время и место',
+  pain: 'Боли клиента',
 };
-
-// Доли одной величины (расход): главная доля — акцентом, остальные — ступенями
-// нейтрального тона.
-const SPLIT_COLORS = [
-  'bg-primary',
-  'bg-muted-foreground/70',
-  'bg-muted-foreground/45',
-  'bg-muted-foreground/30',
-  'bg-muted-foreground/15',
-];
 
 const TABS = [
   ['overview', 'Обзор'],
@@ -94,42 +91,44 @@ function Kpi({ title, value, hint, loading = false }) {
   );
 }
 
-function Split({ rows, label }) {
-  const total = rows.reduce((n, r) => n + r.cost_usd, 0) || 1;
+/**
+ * Расход списком полосок (BarList): строка на статью, название лежит на
+ * полоске, длина — доля от самой дорогой статьи, справа сумма и доля от
+ * всего. Один тон: сравниваются величины, а не категории.
+ */
+function BarList({ rows, empty, unit = 'вызовов' }) {
+  const sorted = [...rows].sort((a, b) => b.cost_usd - a.cost_usd);
+  const total = sorted.reduce((n, r) => n + r.cost_usd, 0);
+  const max = sorted[0]?.cost_usd || 1;
+  if (sorted.length === 0) return <p className="py-2 text-sm text-muted-foreground">{empty}</p>;
   return (
-    <div className="flex flex-col gap-2.5">
-      <div className="flex h-2 overflow-hidden rounded-full bg-muted">
-        {rows.map((r, i) => (
-          <span
-            key={r.key}
-            className={cn('block h-full', SPLIT_COLORS[i % SPLIT_COLORS.length])}
-            style={{ width: `${(r.cost_usd / total) * 100}%` }}
-            title={`${r.label}: ${money(r.cost_usd)}`}
-          />
-        ))}
-      </div>
-      <div className="flex flex-col gap-1.5 text-xs">
-        {rows.map((r, i) => (
-          <span key={r.key} className="inline-flex items-center gap-2">
-            <i className={cn('size-2 shrink-0 rounded-xs', SPLIT_COLORS[i % SPLIT_COLORS.length])} />
-            {r.label} <span className="text-muted-foreground tabular-nums">{money(r.cost_usd)} · {num(r.calls)}</span>
-          </span>
-        ))}
-        {rows.length === 0 && <span className="text-muted-foreground">{label}</span>}
-      </div>
-    </div>
+    <ul className="flex flex-col gap-1.5" data-testid="bar-list">
+      {sorted.map((r, i) => (
+        <li key={r.key} className="grid grid-cols-[minmax(0,1fr)_auto_3.5rem] items-center gap-3 text-sm" data-key={r.key}>
+          <div className="relative flex h-8 min-w-0 items-center overflow-hidden rounded-md bg-muted/40">
+            <span
+              aria-hidden="true"
+              className={cn('absolute inset-y-0 left-0 rounded-md transition-[width] duration-500', i === 0 ? 'bg-primary/35' : 'bg-primary/20')}
+              style={{ width: `${Math.max((r.cost_usd / max) * 100, 2)}%` }}
+            />
+            <span className="relative truncate px-2.5" title={`${r.label} · ${num(r.calls)} ${unit}`}>
+              {r.label}
+              <span className="ml-2 text-xs text-muted-foreground tabular-nums">{num(r.calls)} {unit}</span>
+            </span>
+          </div>
+          <span className="font-medium tabular-nums">{money(r.cost_usd)}</span>
+          <span className="text-right text-xs text-muted-foreground tabular-nums">{total > 0 ? `${Math.round((r.cost_usd / total) * 100)}%` : '—'}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
-// Та же полоса h-2 и те же строки легенды по h-4 (строка text-xs), что у Split;
-// строк столько, сколько этапов расхода знает панель.
-function SplitSkeleton() {
+// Те же строки h-8 с тем же шагом, что у BarList: высота блока не прыгает.
+function BarListSkeleton({ rows = 3 }) {
   return (
-    <div className="flex flex-col gap-2.5">
-      <Skeleton className="h-2 rounded-full" />
-      <div className="flex flex-col gap-1.5">
-        {Object.keys(STAGE_LABEL).map((key) => <Skeleton key={key} className="h-4 w-44 max-w-full" />)}
-      </div>
+    <div className="flex flex-col gap-1.5">
+      {Array.from({ length: rows }, (_, i) => <Skeleton key={i} className="h-8 w-full rounded-md" />)}
     </div>
   );
 }
@@ -176,6 +175,13 @@ export default function Stats() {
   const [stages, setStages] = useState(null);
   const [cold, setCold] = useState(null);
   const [insights, setInsights] = useState(null);
+  // Имена личностей для «По личностям»: статистика отдаёт slug.
+  const [personaNames, setPersonaNames] = useState({});
+  useEffect(() => {
+    getPersonas()
+      .then((r) => setPersonaNames(Object.fromEntries((r.items ?? []).map((p) => [p.slug, p.name]))))
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(() => {
     getUsage({ from: range.from, to: range.to })
@@ -401,21 +407,21 @@ export default function Stats() {
                 {data ? <DailyChart days={data.by_day} /> : <DailyChartSkeleton />}
 
                 <div className="grid gap-4 lg:grid-cols-[minmax(280px,1fr)_minmax(320px,1.4fr)]">
-                  <Section title="Куда уходят деньги" className="min-w-0">
+                  <Section title="Куда уходят деньги" description="На что тратятся вызовы моделей; доля — от всего расхода за период" className="min-w-0">
                     {data ? (
-                      <Split
-                        label="вызовов ещё не было"
+                      <BarList
+                        empty="вызовов ещё не было"
                         rows={data.by_stage.map((r) => ({ key: r.stage, label: STAGE_LABEL[r.stage] ?? r.stage, cost_usd: r.cost_usd, calls: r.calls }))}
                       />
                     ) : (
-                      <SplitSkeleton />
+                      <BarListSkeleton />
                     )}
                     {data?.by_persona.length > 1 && (
                       <>
-                        <h3 className="mt-4 mb-2.5 text-sm font-medium">По личностям</h3>
-                        <Split
-                          label="—"
-                          rows={data.by_persona.map((r) => ({ key: r.persona_id, label: r.persona_id, cost_usd: r.cost_usd, calls: r.calls }))}
+                        <h3 className="mt-5 mb-2 text-sm font-medium">По личностям</h3>
+                        <BarList
+                          empty="—"
+                          rows={data.by_persona.map((r) => ({ key: r.persona_id, label: personaNames[r.persona_id] ?? r.persona_id, cost_usd: r.cost_usd, calls: r.calls }))}
                         />
                       </>
                     )}
