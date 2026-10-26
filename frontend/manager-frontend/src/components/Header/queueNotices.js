@@ -94,3 +94,44 @@ export function saveVoiceSeen(userId, id, storage = globalThis.localStorage) {
     // приватный режим: баннер может всплыть ещё раз после перезагрузки, не страшно
   }
 }
+
+/** Звук на новый чат в очереди: выбор менеджера в этом браузере, по умолчанию включён. */
+export const SOUND_KEY = 'queue_sound';
+export function loadSound(storage = globalThis.localStorage) {
+  try {
+    return storage?.getItem(SOUND_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+export function saveSound(on, storage = globalThis.localStorage) {
+  try {
+    storage?.setItem(SOUND_KEY, on ? 'on' : 'off');
+  } catch {
+    // приватный режим — выбор не переживёт перезагрузку
+  }
+}
+
+/** Короткий двойной сигнал без файла: два тона через WebAudio. Браузер без звука — молча. */
+export function beep() {
+  try {
+    const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    [[880, 0], [1175, 0.16]].forEach(([freq, at]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime + at);
+      gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + 0.14);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + at);
+      osc.stop(ctx.currentTime + at + 0.15);
+    });
+    setTimeout(() => ctx.close?.(), 600);
+  } catch {
+    // автозапуск звука запрещён до первого клика по странице — остаётся баннер
+  }
+}

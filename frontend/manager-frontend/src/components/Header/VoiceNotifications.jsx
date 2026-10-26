@@ -5,7 +5,7 @@ import { api } from '../../api/client';
 import { PanelUX } from '../../ui/PanelUX';
 import { cn } from '@/lib/utils';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { BANNER_MS, loadDismissed, loadShown, loadVoiceSeen, normalizeQueue, pruneDismissed, queueKey, queueText, saveDismissed, saveShown, saveVoiceSeen } from './queueNotices';
+import { BANNER_MS, beep, loadDismissed, loadShown, loadSound, loadVoiceSeen, normalizeQueue, pruneDismissed, queueKey, queueText, saveDismissed, saveShown, saveSound, saveVoiceSeen } from './queueNotices';
 
 const normalize = data => ({ items: Array.isArray(data?.items) ? data.items : [], unread: Number(data?.unread) || 0 });
 const waitingLabel = since => {
@@ -36,6 +36,9 @@ export default function VoiceNotifications({ userId }) {
   const [closed, setClosed] = useState(() => loadDismissed());
   const [shown, setShown] = useState(() => loadShown());
   const [permission, setPermission] = useState(() => (pushSupported() ? Notification.permission : 'unsupported'));
+  const [sound, setSound] = useState(loadSound);
+  const soundRef = useRef(sound);
+  soundRef.current = sound;
   const seen = useRef(null);
   const locked = useRef(false);
   const navigate = useNavigate();
@@ -74,6 +77,7 @@ export default function VoiceNotifications({ userId }) {
     if (!seen.current) { seen.current = new Set(items.map(queueKey)); return; }
     const fresh = items.filter(i => !seen.current.has(queueKey(i)));
     for (const item of items) seen.current.add(queueKey(item));
+    if (fresh.length && soundRef.current) beep();
     if (!fresh.length || !pushSupported() || Notification.permission !== 'granted' || document.visibilityState === 'visible') return;
     for (const item of fresh) {
       try {
@@ -87,16 +91,19 @@ export default function VoiceNotifications({ userId }) {
 
   useEffect(() => {
     let active = true, pending = false;
+    // Свёрнутая вкладка опрашивает только очередь: иначе push «ждут менеджера»
+    // не приходил никогда — он нужен как раз когда вкладка не видна.
     const pull = async () => {
-      if (pending || document.visibilityState !== 'visible') return;
+      if (pending) return;
+      const visible = document.visibilityState === 'visible';
       pending = true;
       try {
         const [notices, queued] = await Promise.all([
-          api.get('/api/voicer/notices'),
+          visible ? api.get('/api/voicer/notices') : null,
           api.get('/api/manager/queue').then(normalizeQueue).catch(() => null),
         ]);
         if (!active) return;
-        setData(normalize(notices)); setError('');
+        if (notices) { setData(normalize(notices)); setError(''); }
         if (queued) {
           setQueue(queued);
           setClosed(prev => { const next = pruneDismissed(prev, queued); if (Object.keys(next).length !== Object.keys(prev).length) saveDismissed(next); return next; });
@@ -195,6 +202,16 @@ export default function VoiceNotifications({ userId }) {
           <Button type="button" variant="outline" onClick={askPush}>Включить push</Button>
         </div>}
         {permission === 'denied' && <p className="text-xs text-muted-foreground">Push в браузере запрещён — разрешите уведомления для этого сайта в настройках браузера.</p>}
+        <label className="flex items-center justify-between gap-3 rounded-md bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+          <span>Звук, когда чат попадает в «Ждут менеджера»</span>
+          <input
+            type="checkbox"
+            className="size-4 accent-primary"
+            checked={sound}
+            data-testid="queue-sound"
+            onChange={(e) => { setSound(e.target.checked); saveSound(e.target.checked); if (e.target.checked) beep(); }}
+          />
+        </label>
         {!data.items.length && !pendingQueue.length && <p className="text-muted-foreground">Новых уведомлений пока нет. Здесь появятся чаты, которые ждут менеджера, и готовые голосовые.</p>}
         {pendingQueue.length > 0 && <section>
           <h4 className={GROUP_TITLE_CLASS}>Ждут менеджера</h4>
