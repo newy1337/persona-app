@@ -309,6 +309,82 @@ describe('Manager panel API (e2e)', () => {
       .expect(200);
   });
 
+  it('строка диалога: тип (холодка / хот / входящий) и личность аккаунта', async () => {
+    const h = { Authorization: `Bearer ${token}` };
+    const prisma = app.get(PrismaService);
+    const acc = await request(app.getHttpServer())
+      .post('/api/tg-accounts')
+      .set(h)
+      .send({ phone_e164: '+79001230077', persona_id: 'nastya' })
+      .expect(200);
+    const now = Math.floor(Date.now() / 1000);
+    const chats = { cold: 778001, hot: 778002, inbound: 778003 };
+    for (const [i, chatId] of Object.values(chats).entries()) {
+      await prisma.contact.create({
+        data: {
+          chatId: BigInt(chatId),
+          accountId: acc.body.id,
+          createdAt: now,
+        },
+      });
+      await prisma.message.create({
+        data: {
+          chatId: BigInt(chatId),
+          ts: now + i,
+          role: 'user',
+          text: 'привет',
+          author: 'client',
+          sourceMessageId: 1,
+        },
+      });
+    }
+    const leads = await Promise.all([
+      prisma.lead.create({
+        data: {
+          usernameKey: 'type_cold',
+          chatId: BigInt(chats.cold),
+          cold: true,
+          insertedAt: now,
+        },
+      }),
+      prisma.lead.create({
+        data: {
+          usernameKey: 'type_hot',
+          chatId: BigInt(chats.hot),
+          insertedAt: now,
+        },
+      }),
+    ]);
+    const rows = (
+      await request(app.getHttpServer())
+        .get('/api/manager/conversations')
+        .set(h)
+        .expect(200)
+    ).body.items;
+    const row = (chatId: number) => rows.find((r: any) => r.chat_id === chatId);
+    expect(row(chats.cold)).toMatchObject({
+      lead_type: 'cold',
+      persona_id: 'nastya',
+      persona_name: 'Настя',
+    });
+    expect(row(chats.hot).lead_type).toBe('hot');
+    expect(row(chats.inbound).lead_type).toBe('inbound');
+
+    await prisma.lead.deleteMany({
+      where: { id: { in: leads.map((l) => l.id) } },
+    });
+    await prisma.message.deleteMany({
+      where: { chatId: { in: Object.values(chats).map(BigInt) } },
+    });
+    await prisma.contact.deleteMany({
+      where: { chatId: { in: Object.values(chats).map(BigInt) } },
+    });
+    await request(app.getHttpServer())
+      .delete(`/api/tg-accounts/${acc.body.id}`)
+      .set(h)
+      .expect(200);
+  });
+
   it('stage tiles count reached stages and archive in one pass', async () => {
     const h = { Authorization: `Bearer ${token}` };
     const prisma = app.get(PrismaService);
