@@ -6333,6 +6333,14 @@ describe('Manager panel API (e2e)', () => {
         (await post({ username: 'durov_tg', channel: 'vk' }).expect(200)).body
           .channel,
       ).toBe('vk');
+      const byId = await post({ phone: '123456789', channel: 'vk' }).expect(
+        200,
+      );
+      expect(byId.body).toMatchObject({
+        channel: 'vk',
+        username: 'id123456789',
+        phone_e164: null,
+      });
       await post({ phone: '+79005550111' }).expect(200);
       await post({ phone: '+79005550111', channel: 'vk' }).expect(200);
       await post({ phone: '+79005550111', channel: 'vk' }).expect(422);

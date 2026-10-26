@@ -125,7 +125,7 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
     hasVk && h('label', { className: s.label }, 'Мессенджер',
       h('select', { className: s.select, value: channel, disabled: busy, 'aria-label': 'Мессенджер', onChange: e => change({ channel: e.target.value, preferred_account_id: '' }) },
         h('option', { value: 'telegram' }, 'Telegram'), h('option', { value: 'vk' }, 'ВКонтакте'))),
-    input('phone', channel === 'vk' ? 'Телефон или страница VK' : 'Телефон или @username', { autoFocus: true, placeholder: channel === 'vk' ? '+7 900 123-45-67, vk.com/id123 или ник' : '+7 900 123-45-67 или @name', maxLength: 64 }),
+    input('phone', channel === 'vk' ? 'Телефон, VK ID или ссылка на профиль' : 'Телефон или @username', { autoFocus: true, placeholder: channel === 'vk' ? '+7 900 123-45-67, 123456789 или vk.com/…' : '+7 900 123-45-67 или @name', maxLength: 64 }),
     owners.length > 1 && h('label', { className: s.label }, 'Чей лид',
       h('select', { className: s.select, value: draft.owner_user_id, disabled: busy, 'aria-label': 'Чей лид', onChange: e => change({ owner_user_id: e.target.value, preferred_account_id: '' }) },
         owners.map(o => h('option', { key: o.user_id, value: o.self ? '' : String(o.user_id) }, o.self ? `Себе (${o.username})` : [o.username, ROLE_LABELS[o.role] || o.role, o.region_code ? `регион ${o.region_code}` : null].filter(Boolean).join(' · '))))),

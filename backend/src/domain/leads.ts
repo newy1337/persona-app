@@ -125,6 +125,10 @@ export function parseLeadContact(
       channel === 'vk' ? normalizeVkUsername(text) : normalizeUsername(text);
     return username ? { username, phone_e164: null, channel } : null;
   }
+  // Голые цифры в VK: до 9 знаков или 10 с первой «1» — это VK ID, не телефон
+  // (телефон — 11 цифр с 7/8, 10 с 9 или с плюсом).
+  if (channel === 'vk' && /^(\d{1,9}|1\d{9})$/.test(text))
+    return { username: `id${text}`, phone_e164: null, channel };
   const phone = normalizePhone(text);
   return phone ? { phone_e164: phone, username: null, channel } : null;
 }

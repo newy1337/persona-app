@@ -54,6 +54,15 @@ describe('leads domain', () => {
     });
     expect(parseLeadContact('ivan.petrov', 'vk')?.username).toBe('ivan.petrov');
     expect(parseLeadContact('ivan.petrov', 'telegram')).toBeNull();
+    expect(parseLeadContact('123456789', 'vk')?.username).toBe('id123456789');
+    expect(parseLeadContact('1012345678', 'vk')?.username).toBe('id1012345678');
+    expect(parseLeadContact('9001234567', 'vk')?.phone_e164).toBe(
+      '+79001234567',
+    );
+    expect(parseLeadContact('89001234567', 'vk')?.phone_e164).toBe(
+      '+79001234567',
+    );
+    expect(parseLeadContact('123456789', 'telegram')).toBeNull();
     expect(parseLeadContact('+7 900 123-45-67', 'vk')).toEqual({
       phone_e164: '+79001234567',
       username: null,

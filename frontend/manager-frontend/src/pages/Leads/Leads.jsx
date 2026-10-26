@@ -86,8 +86,8 @@ function ImportDialog({ personas, onClose }) {
         <h3 className={s.modalTitle}>Импорт номеров</h3>
         <p className={s.modalText}>
           По одному лиду в строке: <span className={s.mono}>контакт;имя;город;возраст;сайт</span>, где контакт —
-          телефон, <span className={s.mono}>@username</span> или ссылка <span className={s.mono}>t.me/…</span> (для VK — ник,{' '}
-          <span className={s.mono}>id123</span> или <span className={s.mono}>vk.com/…</span>). Имя, город,
+          телефон, <span className={s.mono}>@username</span> или ссылка <span className={s.mono}>t.me/…</span> (для VK — VK ID{' '}
+          <span className={s.mono}>123456789</span>, ник или ссылка <span className={s.mono}>vk.com/…</span>). Имя, город,
           возраст и сайт необязательны — город и сайт идут в <span className={s.mono}>{'{city}'}</span> и{' '}
           <span className={s.mono}>{'{site}'}</span> диалога. Разделитель — <span className={s.mono}>;</span>, запятая или таб.
           Дубли пропускаются.

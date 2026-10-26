@@ -171,6 +171,10 @@ test('лид VK: ссылка vk.com сама выбирает ВКонтакт�
   expect(options()).toEqual(['', '9']);
   await act(async () => host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
   expect(post).toHaveBeenCalledWith('/api/leads', expect.objectContaining({ phone: 'https://vk.com/ivan.petrov', channel: 'vk' }));
+  await act(async () => { messenger.value = 'vk'; messenger.dispatchEvent(new Event('change', { bubbles: true })); });
+  await input(host.querySelector('input[maxlength="64"]'), '123456789');
+  expect(host.textContent).toContain('Телефон, VK ID или ссылка на профиль');
+  expect(host.querySelector('button[type=submit]').disabled).toBe(false);
 });
 
 test('строка лида VK: метка VK, ссылки на vk.com с бэка', async () => {
