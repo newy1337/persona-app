@@ -77,6 +77,20 @@ export function freeSlot(list, view = { width: window.innerWidth, height: window
   return first({ x: WATCH_W / 2, y: WATCH_H / 2 }) ?? first({ x: 16, y: 16 }) ?? nextSlot(shown.length, view);
 }
 
+/**
+ * Развернуть окно поверх остальных. Пока оно было свёрнуто, его место могло
+ * занять новое окно — тогда разворачиваемое переезжает на свободное, а не
+ * ложится сверху.
+ */
+export function restoreWatch(list, chatId, patch = {}, view = { width: window.innerWidth, height: window.innerHeight }) {
+  const found = list.find((w) => w.chatId === chatId);
+  if (!found) return list;
+  const others = list.filter((w) => w !== found);
+  const blocked = found.minimized && others.some((w) => !w.minimized && Math.abs(w.x - found.x) < WATCH_W / 2 && Math.abs(w.y - found.y) < WATCH_H / 2);
+  const place = blocked ? freeSlot(others, view) : {};
+  return list.map((w) => (w === found ? { ...w, ...patch, ...place, z: topZ(list), minimized: false } : w));
+}
+
 export function useChatWatchState() {
   const [windows, setWindows] = useState(load);
 
@@ -93,7 +107,7 @@ export function useChatWatchState() {
   const open = useCallback((chat) => {
     setWindows((list) => {
       const found = list.find((w) => w.chatId === chat.chatId);
-      if (found) return list.map((w) => (w === found ? { ...w, ...chat, z: topZ(list), minimized: false } : w));
+      if (found) return restoreWatch(list, chat.chatId, chat);
       // Больше MAX_WATCH не держим: уходит самое старое окно.
       const kept = list.slice(-(MAX_WATCH - 1));
       const slot = freeSlot(kept);
@@ -103,6 +117,10 @@ export function useChatWatchState() {
 
   const update = useCallback((chatId, patch) => {
     setWindows((list) => list.map((w) => (w.chatId === chatId ? { ...w, ...patch } : w)));
+  }, []);
+
+  const restore = useCallback((chatId) => {
+    setWindows((list) => restoreWatch(list, chatId));
   }, []);
 
   const focus = useCallback((chatId) => {
@@ -121,7 +139,7 @@ export function useChatWatchState() {
   const isOpen = useCallback((chatId) => windows.some((w) => w.chatId === chatId), [windows]);
 
   return useMemo(
-    () => ({ windows, open, update, focus, close, isOpen }),
-    [windows, open, update, focus, close, isOpen],
+    () => ({ windows, open, update, restore, focus, close, isOpen }),
+    [windows, open, update, restore, focus, close, isOpen],
   );
 }

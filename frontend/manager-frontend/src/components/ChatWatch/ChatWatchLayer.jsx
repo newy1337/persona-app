@@ -10,7 +10,7 @@ const WatchWindow = lazy(() => import('./WatchWindow'));
 export default function ChatWatchLayer() {
   const watch = useChatWatch();
   if (!watch || watch.windows.length === 0) return null;
-  const { windows, update, focus, close } = watch;
+  const { windows, update, restore, focus, close } = watch;
   const shown = windows.filter((w) => !w.minimized);
   const folded = windows.filter((w) => w.minimized);
   // Порядок наложения: 41…46 — над шапкой (z-40), под меню и диалогами (z-50).
@@ -36,10 +36,7 @@ export default function ChatWatchLayer() {
                   type="button"
                   className="flex h-8 items-center gap-1.5 rounded-full pr-1 pl-1 text-xs hover:bg-muted"
                   title={`Развернуть: ${name}`}
-                  onClick={() => {
-                    update(w.chatId, { minimized: false });
-                    focus(w.chatId);
-                  }}
+                  onClick={() => restore(w.chatId)}
                 >
                   <ClientAvatar
                     className="size-6 rounded-full bg-muted text-[9px] font-medium text-muted-foreground"

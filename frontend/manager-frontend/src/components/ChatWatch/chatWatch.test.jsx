@@ -25,7 +25,7 @@ import { sendMessage, setAiMode } from '../../api/conversations';
 
 import ConversationsTable from '../ConversationsTable/ConversationsTable';
 import ChatWatchLayer from './ChatWatchLayer';
-import { ChatWatchContext, MAX_WATCH, WATCH_H, WATCH_W, clampWatch, freeSlot, nextSlot, useChatWatchState } from './chatWatch';
+import { ChatWatchContext, MAX_WATCH, WATCH_H, WATCH_W, clampWatch, freeSlot, nextSlot, restoreWatch, useChatWatchState } from './chatWatch';
 
 const now = Math.floor(Date.now() / 1000);
 const ROWS = [1, 2].map((chat_id) => ({
@@ -144,6 +144,24 @@ describe('окна наблюдения за диалогами', () => {
     await settle();
     expect(sendMessage).toHaveBeenLastCalledWith(2, 'да', { replyTo: 501 });
     expect(win.querySelector('[data-testid="watch-reply"]')).toBeNull();
+  });
+
+  it('свернули, открыли другое на его месте, развернули — окна не ложатся друг на друга', () => {
+    const view = { width: 1920, height: 1000 };
+    const slot0 = nextSlot(0, view);
+    // Остап свёрнут, Глеб открыт на освободившемся месте 0.
+    const list = [
+      { chatId: 1, ...slot0, z: 1, minimized: true },
+      { chatId: 2, ...slot0, z: 2, minimized: false },
+    ];
+    const restored = restoreWatch(list, 1, {}, view);
+    const ostap = restored.find((w) => w.chatId === 1);
+    expect(ostap.minimized).toBe(false);
+    expect({ x: ostap.x, y: ostap.y }).toEqual(nextSlot(1, view));
+    expect(ostap.z).toBe(3);
+    // Место свободно — окно встаёт туда же, где было.
+    const alone = restoreWatch([{ chatId: 1, x: 100, y: 100, minimized: true }], 1, {}, view);
+    expect([alone[0].x, alone[0].y]).toEqual([100, 100]);
   });
 
   it('окно не уезжает за край экрана, новые встают справа налево', () => {
