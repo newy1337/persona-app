@@ -632,6 +632,88 @@ describe('Manager panel API (e2e)', () => {
     });
   });
 
+  it('шаблоны ответов: читает менеджер, правит админ; правка видна в журнале действий', async () => {
+    const h = { Authorization: `Bearer ${token}` };
+    await request(app.getHttpServer())
+      .post('/api/managers')
+      .set(h)
+      .send({
+        username: 'qr_manager',
+        password: 'qr_manager12345',
+        role: 'manager',
+        region_code: '0077',
+      })
+      .expect(200);
+    const login = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ username: 'qr_manager', password: 'qr_manager12345' })
+      .expect(200);
+    const mh = { Authorization: `Bearer ${login.body.tokens.accessToken}` };
+
+    expect(
+      (
+        await request(app.getHttpServer())
+          .get('/api/quick-replies')
+          .set(mh)
+          .expect(200)
+      ).body,
+    ).toEqual({ items: [] });
+    await request(app.getHttpServer())
+      .put('/api/quick-replies')
+      .set(mh)
+      .send({ items: [{ title: 'привет', text: 'привет' }] })
+      .expect(403);
+    await request(app.getHttpServer())
+      .put('/api/quick-replies')
+      .set(h)
+      .send({ items: [{ title: '  ' + 'x'.repeat(61), text: 'длинное' }] })
+      .expect(400);
+    const put = await request(app.getHttpServer())
+      .put('/api/quick-replies')
+      .set(h)
+      .send({
+        items: [
+          { title: ' Привет ', text: ' Привет, {name}! ' },
+          { title: 'Позже', text: 'Напишу чуть позже' },
+        ],
+      })
+      .expect(200);
+    expect(put.body.items[0]).toEqual({
+      title: 'Привет',
+      text: 'Привет, {name}!',
+    });
+    expect(
+      (
+        await request(app.getHttpServer())
+          .get('/api/quick-replies')
+          .set(mh)
+          .expect(200)
+      ).body.items,
+    ).toHaveLength(2);
+
+    // Журнал: только админу; свежая правка шаблонов — сверху.
+    await request(app.getHttpServer()).get('/api/audit').set(mh).expect(403);
+    const log = await request(app.getHttpServer())
+      .get('/api/audit?action=quick_replies')
+      .set(h)
+      .expect(200);
+    expect(log.body.items[0]).toMatchObject({
+      action: 'quick_replies.update',
+      username: 'admin',
+      result: 'success',
+    });
+    expect(log.body.users.map((u: any) => u.username)).toEqual(
+      expect.arrayContaining(['admin', 'qr_manager']),
+    );
+    const failed = await request(app.getHttpServer())
+      .get('/api/audit?failed=1')
+      .set(h)
+      .expect(200);
+    expect(failed.body.items.every((i: any) => i.result === 'failure')).toBe(
+      true,
+    );
+  });
+
   it('срезы статистики: воронка когорты по донору, стоимость, тепловая карта, скорость', async () => {
     const h = { Authorization: `Bearer ${token}` };
     const prisma = app.get(PrismaService);
