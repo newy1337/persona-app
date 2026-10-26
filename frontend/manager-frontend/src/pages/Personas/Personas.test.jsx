@@ -76,10 +76,23 @@ describe('страница личностей', () => {
     for (const hidden of ['Выгрузить всё', 'Загрузить всё', 'Удалить']) expect(texts).not.toContain(hidden);
   });
 
-  it('вкладки секций — список вкладок, выбранная одна', () => {
-    const tabs = [...host.querySelectorAll('[role="tab"]')];
-    expect(tabs.map((t) => t.textContent)).toEqual(['Промпты', 'Ритм', 'Карточка', 'Цели', 'Сюжеты', 'День', 'Биты', 'Переменные']);
-    expect(tabs.filter((t) => t.getAttribute('aria-selected') === 'true').map((t) => t.textContent)).toEqual(['Промпты']);
+  it('разделы личности — меню по группам с пояснениями и пометками, выбран один', async () => {
+    const nav = host.querySelector('[role="tablist"][aria-label="Разделы личности"]');
+    const tabs = [...nav.querySelectorAll('[role="tab"]')];
+    expect(tabs.map((t) => t.dataset.section)).toEqual(['prompts', 'persona', 'variables', 'goals', 'storylines', 'beats', 'dayConfig', 'rhythm', 'models']);
+    expect(nav.textContent).toContain('Как говорит');
+    expect(nav.textContent).toContain('Поведение');
+    expect(tabs.filter((t) => t.getAttribute('aria-selected') === 'true').map((t) => t.dataset.section)).toEqual(['prompts']);
+    // Пустой документ помечен «пусто», у ритма без своих цифр — «по умолчанию».
+    expect(nav.querySelector('[data-section="variables"]').textContent).toContain('пусто');
+    expect(nav.querySelector('[data-section="rhythm"]').textContent).toContain('по умолчанию');
+    // У раздела — заголовок и пояснение над редактором.
+    expect(host.querySelector('[role="tabpanel"] h3').textContent).toBe('Промпты');
+
+    // Модели — отдельный раздел, а не ряд в шапке.
+    await act(async () => nav.querySelector('[data-section="models"]').click());
+    // В тесте список моделей не отдаётся — раздел говорит об этом словами.
+    expect(host.querySelector('[role="tabpanel"]').textContent).toContain('Список моделей недоступен');
   });
 
   it('история версий раскрывается и сворачивается одной кнопкой, «Вернуть» восстанавливает версию', async () => {
@@ -132,7 +145,7 @@ describe('страница личностей', () => {
 
 describe('страница личностей без описаний полей', () => {
   const openTab = async (name) => {
-    const tab = [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent === name);
+    const tab = [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent.startsWith(name));
     await act(async () => {
       tab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
     });

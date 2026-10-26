@@ -13,7 +13,7 @@ import {
   setDefaultPersona,
   updatePersona,
 } from '../../api/personas';
-import { Copy, MoreHorizontal, Pencil, Plus } from 'lucide-react';
+import { BookOpen, Braces, CalendarDays, Cpu, Copy, Flag, IdCard, ListChecks, MessageSquareText, MoreHorizontal, Pencil, Plus, Timer } from 'lucide-react';
 import { useRouteBusy } from '@/components/AppLayout/routeBusy';
 import { IconAction } from '@/components/IconAction/IconAction';
 import { PageHeader } from '@/components/PageHeader/PageHeader';
@@ -38,7 +38,6 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import PromptsEditor from './PromptsEditor';
 import RhythmEditor from './RhythmEditor';
@@ -48,16 +47,34 @@ import { personaFileName, readPersonaFile } from './personaFile';
 import { saveJsonFile } from './files';
 import { drafts } from './drafts';
 
+// Разделы личности — меню слева, по группам, с пояснением «что здесь».
+// «Модели» — не документ: выбор нейросетей личности (раньше стоял в шапке).
 const TABS = [
-  { key: 'prompts', label: 'Промпты' },
-  { key: 'rhythm', label: 'Ритм' },
-  { key: 'persona', label: 'Карточка' },
-  { key: 'goals', label: 'Цели' },
-  { key: 'storylines', label: 'Сюжеты' },
-  { key: 'dayConfig', label: 'День' },
-  { key: 'beats', label: 'Биты' },
-  { key: 'variables', label: 'Переменные' },
+  { key: 'prompts', icon: MessageSquareText, label: 'Промпты', about: 'Инструкции: как отвечать, утро, прощание, вброс', group: 'Как говорит' },
+  { key: 'persona', icon: IdCard, label: 'Карточка', about: 'Кто она: имя, возраст, город, характер', group: 'Как говорит' },
+  { key: 'variables', icon: Braces, label: 'Переменные', about: 'Подстановки в промптах — {name}, {city}…', group: 'Как говорит' },
+  { key: 'goals', icon: Flag, label: 'Цели', about: 'Что узнать у собеседника и к какому дню', group: 'Как ведёт разговор' },
+  { key: 'storylines', icon: BookOpen, label: 'Сюжеты', about: 'Её жизнь по линиям: что рассказывать и когда', group: 'Как ведёт разговор' },
+  { key: 'beats', icon: ListChecks, label: 'Биты', about: 'Ключевые шаги сценария по дням', group: 'Как ведёт разговор' },
+  { key: 'dayConfig', icon: CalendarDays, label: 'День', about: 'Из чего собирается её день и настроение', group: 'Как ведёт разговор' },
+  { key: 'rhythm', icon: Timer, label: 'Ритм', about: 'Как быстро отвечает и когда пишет сама', group: 'Поведение' },
+  { key: 'models', icon: Cpu, label: 'Модели', about: 'Какие нейросети пишут ответы и проверяют их', group: 'Поведение' },
 ];
+const GROUPS = [...new Set(TABS.map((t) => t.group))];
+
+/** Раздел пуст: документа нет или в нём только служебные ключи (_заметки). */
+const isEmptyDoc = (doc) =>
+  doc == null || (typeof doc === 'object' && Object.keys(doc).filter((k) => !k.startsWith('_')).length === 0);
+
+/** Короткая пометка у раздела в меню: сколько заполнено или «пусто». */
+function sectionMeta(persona, key) {
+  if (key === 'models') return persona.generator_model || persona.judge_model ? 'свои' : 'по умолчанию';
+  if (key === 'prompts') return persona.edited_prompts ? `изменено ${persona.edited_prompts}` : 'по умолчанию';
+  if (key === 'persona' && persona.card_lines) return `${persona.card_lines} строк`;
+  if (key === 'storylines' && persona.storylines) return `${persona.storylines}`;
+  if (key === 'rhythm') return isEmptyDoc(persona.sections?.rhythm) ? 'по умолчанию' : 'свой';
+  return isEmptyDoc(persona.sections?.[key]) ? 'пусто' : null;
+}
 
 function CreateDialog({ open, personas, onDone, onCancel }) {
   return (
@@ -121,7 +138,8 @@ function CreateForm({ personas, onDone, onCancel }) {
   );
 }
 
-const SECTION_KEYS = TABS.map((t) => t.key);
+// Документы личности (их черновики, выгрузка и загрузка); «Модели» — не документ.
+const SECTION_KEYS = TABS.map((t) => t.key).filter((k) => k !== 'models');
 
 // Каркас списка и карточки личности общий для скелета и для данных: одни и
 // те же классы задают отступы и высоты строк, поэтому при появлении данных
@@ -493,51 +511,93 @@ export default function Personas() {
                   </div>
                 </div>
 
-                {models === undefined ? (
-                  <ModelsSkeleton />
-                ) : models ? (
-                  <div className={MODELS_BOX}>
-                    {MODEL_FIELDS.map((m) => (
-                      <ModelSelect
-                        key={m.key}
-                        label={m.label}
-                        value={persona[m.column]}
-                        options={models[m.key]}
-                        fallback={models.defaults[m.key]}
-                        onChange={(v) => run(() => updatePersona(persona.id, { [m.column]: v }))}
-                      />
+                <div className="grid items-start gap-6 xl:grid-cols-[208px_minmax(0,1fr)]">
+                  {/* Пункт — одна строка: иконка, название, пометка. Что в разделе — в шапке справа. */}
+                  <nav
+                    role="tablist"
+                    aria-orientation="vertical"
+                    aria-label="Разделы личности"
+                    className="flex gap-1 max-xl:overflow-x-auto max-xl:pb-1 xl:sticky xl:top-[calc(var(--header-h)+12px)] xl:flex-col xl:gap-0"
+                  >
+                    {GROUPS.map((group, gi) => (
+                      <div key={group} className={cn('contents xl:flex xl:flex-col xl:gap-0.5', gi > 0 && 'xl:mt-3 xl:border-t xl:pt-3')}>
+                        <p className="hidden px-3 pb-1 text-[11px] text-muted-foreground/80 xl:block">{group}</p>
+                        {TABS.filter((t) => t.group === group).map((t) => {
+                          const active = tab === t.key;
+                          const hasDraft = draftSections(persona.id).includes(t.key);
+                          const meta = sectionMeta(persona, t.key);
+                          const Icon = t.icon;
+                          return (
+                            <button
+                              key={t.key}
+                              type="button"
+                              role="tab"
+                              aria-selected={active}
+                              data-section={t.key}
+                              title={t.about}
+                              onMouseDown={(e) => { if (e.button === 0) setTab(t.key); }}
+                              onClick={() => setTab(t.key)}
+                              className={cn(
+                                'relative flex h-9 shrink-0 items-center gap-2.5 rounded-md px-3 text-sm whitespace-nowrap outline-none hover:bg-accent/70 focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                                active ? 'bg-accent font-medium text-foreground' : 'text-foreground/80',
+                              )}
+                            >
+                              {active && <span aria-hidden="true" className="absolute inset-y-1.5 left-0 hidden w-0.5 rounded-full bg-primary xl:block" />}
+                              <Icon aria-hidden="true" className={cn('size-4 shrink-0', active ? 'text-primary' : 'text-muted-foreground')} />
+                              <span>{t.label}</span>
+                              <span className={cn(TAB_DOT, hasDraft && 'bg-warning-foreground')} title={hasDraft ? 'есть несохранённые правки' : undefined} aria-hidden="true" />
+                              {meta && (
+                                <span className={cn('ml-auto hidden text-[11px] font-normal tabular-nums xl:inline', meta === 'пусто' ? 'text-warning-foreground' : 'text-muted-foreground')}>{meta}</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     ))}
+                  </nav>
+
+                  <div className="flex min-w-0 flex-col gap-3" role="tabpanel" aria-label={TABS.find((t) => t.key === tab)?.label}>
+                    <header className="flex flex-col gap-0.5 border-b pb-3">
+                      <h3 className="text-base font-semibold">{TABS.find((t) => t.key === tab)?.label}</h3>
+                      <p className="text-sm text-muted-foreground">{TABS.find((t) => t.key === tab)?.about}</p>
+                    </header>
+                    <div className={BODY_BOX}>
+                      {tab === 'models' ? (
+                        models === undefined ? (
+                          <ModelsSkeleton />
+                        ) : models ? (
+                          <div className="flex flex-col gap-4">
+                            <div className={MODELS_BOX}>
+                              {MODEL_FIELDS.map((m) => (
+                                <ModelSelect
+                                  key={m.key}
+                                  label={m.label}
+                                  value={persona[m.column]}
+                                  options={models[m.key]}
+                                  fallback={models.defaults[m.key]}
+                                  onChange={(v) => run(() => updatePersona(persona.id, { [m.column]: v }))}
+                                />
+                              ))}
+                            </div>
+                            <p className="max-w-2xl text-sm text-muted-foreground">
+                              Модель ответов пишет сообщения от лица личности. Модель судей проверяет черновик и разбирает разговор перед ответом.
+                              «По умолчанию» — модель из общих настроек; выбор сохраняется сразу.
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">Список моделей недоступен.</p>
+                        )
+                      ) : tab === 'prompts' ? (
+                        <PromptsEditor persona={persona} defaults={defaults} onSaved={refresh} onError={setError} />
+                      ) : tab === 'rhythm' ? (
+                        <RhythmEditor persona={persona} onSaved={refresh} onError={setError} />
+                      ) : tab === 'variables' ? (
+                        <VariablesEditor persona={persona} onSaved={refresh} onError={setError} />
+                      ) : (
+                        <SectionEditor persona={persona} section={tab} onSaved={refresh} onError={setError} />
+                      )}
+                    </div>
                   </div>
-                ) : null}
-
-                <Tabs value={tab} onValueChange={setTab}>
-                  <TabsList className={TABS_LIST}>
-                    {TABS.map((t) => {
-                      const hasDraft = draftSections(persona.id).includes(t.key);
-                      return (
-                        <TabsTrigger key={t.key} value={t.key} className={TAB}>
-                          {t.label}
-                          <span
-                            className={cn(TAB_DOT, hasDraft && 'bg-warning-foreground')}
-                            title={hasDraft ? 'есть несохранённые правки' : undefined}
-                            aria-hidden="true"
-                          />
-                        </TabsTrigger>
-                      );
-                    })}
-                  </TabsList>
-                </Tabs>
-
-                <div className={BODY_BOX}>
-                  {tab === 'prompts' ? (
-                    <PromptsEditor persona={persona} defaults={defaults} onSaved={refresh} onError={setError} />
-                  ) : tab === 'rhythm' ? (
-                    <RhythmEditor persona={persona} onSaved={refresh} onError={setError} />
-                  ) : tab === 'variables' ? (
-                    <VariablesEditor persona={persona} onSaved={refresh} onError={setError} />
-                  ) : (
-                    <SectionEditor persona={persona} section={tab} onSaved={refresh} onError={setError} />
-                  )}
                 </div>
               </>
             )}
