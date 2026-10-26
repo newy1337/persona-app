@@ -7,6 +7,8 @@ import ErrorBoundary from './ErrorBoundary';
 import { HeaderToolsContext } from './headerTools';
 import { RouteBusyContext, useRouteBusy } from './routeBusy';
 import { MeContext } from './me';
+import ChatWatchLayer from '../ChatWatch/ChatWatchLayer';
+import { ChatWatchContext, useChatWatchState } from '../ChatWatch/chatWatch';
 
 /** Пока грузится код страницы: шапка на месте, под ней — каркас контента. */
 function PageFallback() {
@@ -42,6 +44,7 @@ export default function AppLayout({ me }) {
     };
   }, []);
   const fixed = Boolean(useMatch('/conversation/:id'));
+  const watch = useChatWatchState();
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -51,6 +54,7 @@ export default function AppLayout({ me }) {
     <MeContext.Provider value={me}>
       <HeaderToolsContext.Provider value={{ tools, setTools }}>
         <RouteBusyContext.Provider value={hold}>
+          <ChatWatchContext.Provider value={watch}>
           <div className={cn('app', fixed && 'h-dvh overflow-hidden')}>
             <Header me={me} busy={waiting > 0} {...(tools ?? {})} />
             <main className={cn('main', fixed && 'min-h-0')}>
@@ -61,6 +65,9 @@ export default function AppLayout({ me }) {
               </ErrorBoundary>
             </main>
           </div>
+          {/* Окна наблюдения — поверх любой страницы и переживают переходы. */}
+          <ChatWatchLayer />
+          </ChatWatchContext.Provider>
         </RouteBusyContext.Provider>
       </HeaderToolsContext.Provider>
     </MeContext.Provider>

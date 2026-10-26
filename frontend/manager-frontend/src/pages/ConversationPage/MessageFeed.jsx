@@ -61,7 +61,7 @@ const ROW_TOOL = 'h-4 rounded-sm px-1 text-[11px] font-normal text-muted-foregro
 const TG_MARK = 'pr-0.5 tracking-tighter';
 const DOT = 'size-1.5 rounded-full bg-muted-foreground animate-[typingDot_1.2s_ease-in-out_infinite]';
 
-function fmtTime(ts) {
+export function fmtTime(ts) {
   if (!ts) return '';
   return new Date(ts * 1000).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' });
 }
@@ -75,7 +75,7 @@ function markListened(chatId, msg) {
   });
 }
 
-function MediaContent({ chatId, msg, inbound = null }) {
+export function MediaContent({ chatId, msg, inbound = null }) {
   if (msg.media_kind && msg.media_url) {
     const raw = String(msg.content || '');
     const caption = raw.startsWith('[') ? raw.split('\n').slice(1).join('\n').trim() : raw;

@@ -22,7 +22,7 @@ import { presenceLabel } from '../../utils/telegramStatus';
 //
 // В заголовке рядом с названием стоит воронка фильтра (24px), поэтому ширина
 // колонки — это ещё и «название + стрелка сортировки + воронка»: «Последнее» —
-// 136px, «Регион» — 92px. «Действия» — 88px: 12 + две кнопки по 32 + 12.
+// 136px, «Регион» — 92px. «Действия» — 120px: 12 + три кнопки по 32 + 12.
 export const COLUMNS = [
   { key: 'who', label: 'Собеседник', sort: 'name', width: 184, required: true, bars: ['w-24', 'w-28'] },
   { key: 'contact', label: 'Контакт', width: 140, bars: ['w-24'] },
@@ -43,7 +43,7 @@ export const COLUMNS = [
   { key: 'region', label: 'Регион', width: 92, show: 'wide', adminOnly: true, bars: ['w-8'] },
   { key: 'account', label: 'Аккаунт', width: 120, bars: ['w-20'] },
   { key: 'last', label: 'Последнее', sort: 'time', width: 136, bars: ['w-20'] },
-  { key: 'actions', label: 'Действия', width: 88, required: true, quiet: true, bars: [] },
+  { key: 'actions', label: 'Действия', width: 120, required: true, quiet: true, bars: [] },
 ];
 // Описание колонок для всех, кроме админа. Отбирается один раз: дальше им
 // пользуются и настройка полей, и фильтры, и заглушка.

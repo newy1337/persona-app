@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Bot, User } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Bot, Eye, EyeOff, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { DEAL_STAGES, dealStageLabel } from '../../data/dealStages';
 import { ColumnFilter } from '../ColumnFilter/ColumnFilter';
 import { ColumnPicker } from '../ColumnPicker/ColumnPicker';
 import { IconAction } from '../IconAction/IconAction';
+import { useChatWatch } from '../ChatWatch/chatWatch';
 import { CELL, HEAD_CELL, LINE_1, LINE_2, WAITS_TEXT, accountLabel, leadTypeLabel, presenceText, useDialogColumns } from './rowLayout';
 import { accountContact, channelBadge, clientContact } from '../../utils/channel';
 
@@ -73,6 +74,7 @@ function lastSeen(ts) {
 export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, onHide, onDealStage = null, filters = null, helpers }) {
   const { Avatar, Stage, isNew, unreadLabel, presence, nextAction, accountLost, typingLabels } = helpers;
   const prefs = useDialogColumns();
+  const watch = useChatWatch();
   const { columns, has, admin } = prefs;
 
   return (
@@ -423,6 +425,25 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
 
                 <TableCell className={CELL} onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-end">
+                    {watch &&
+                      (watch.isOpen(row.chat_id) ? (
+                        <IconAction
+                          icon={EyeOff}
+                          label="Не следить"
+                          hint="Закрыть окно наблюдения"
+                          className="text-foreground"
+                          onClick={() => watch.close(row.chat_id)}
+                        />
+                      ) : (
+                        <IconAction
+                          icon={Eye}
+                          label="Следить"
+                          hint="Открыть диалог в окне поверх панели: можно держать несколько, двигать и сворачивать"
+                          onClick={() =>
+                            watch.open({ chatId: row.chat_id, name: who, avatar: row.avatar_url || null, account: accountLink?.display || account })
+                          }
+                        />
+                      ))}
                     {onHide && (
                       <IconAction
                         icon={row.hidden ? ArchiveRestore : Archive}
