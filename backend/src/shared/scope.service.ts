@@ -2,11 +2,16 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { DashboardUser } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { Role, isManagerRole } from '../enums/roles.enum';
 import { HistoryService } from './history.service';
+import { MemoService, inReadRequest } from './memo.service';
+
+/** Сколько живёт область видимости в кеше чтений. */
+const SCOPE_TTL_MS = 15_000;
 
 export interface ManagerScope {
   user: DashboardUser;
@@ -22,6 +27,7 @@ export class ScopeService {
   constructor(
     private prisma: PrismaService,
     private history: HistoryService,
+    @Optional() private memo?: MemoService,
   ) {}
 
   /**
@@ -30,6 +36,25 @@ export class ScopeService {
    * по полю «руководитель», глубина не ограничена жёстко, но циклы не зацикливают.
    */
   async scopeOf(user: DashboardUser): Promise<ManagerScope> {
+    // Права пересчитываются на каждый запрос (3+ похода в базу). Чтениям
+    // хватает недавних; меняющий запрос всегда считает заново, а после
+    // него кеш сбрасывается целиком.
+    if (!this.memo || !inReadRequest() || user.role === Role.ADMIN)
+      return this.loadScope(user);
+    const key = `scope:${user.id}:${user.role}:${user.regionCode ?? ''}`;
+    const scope = await this.memo.get(key, SCOPE_TTL_MS, () =>
+      this.loadScope(user),
+    );
+    // Копии: вызывающий может дописать в массивы, а запись в кеше общая.
+    return {
+      ...scope,
+      user,
+      userIds: [...scope.userIds],
+      accountIds: [...scope.accountIds],
+    };
+  }
+
+  private async loadScope(user: DashboardUser): Promise<ManagerScope> {
     const isAdmin = user.role === Role.ADMIN;
     if (isAdmin)
       return {

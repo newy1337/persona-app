@@ -26,10 +26,12 @@ export function setTokens(tokens) {
   const s = storage();
   if (!s) return;
   if (!tokens) {
+    forgetShared();
     s.removeItem(TOKEN_KEY);
     s.removeItem(REFRESH_KEY);
     return;
   }
+  forgetShared();
   s.setItem(TOKEN_KEY, tokens.accessToken);
   if (tokens.refreshToken) s.setItem(REFRESH_KEY, tokens.refreshToken);
 }
@@ -96,9 +98,39 @@ async function request(path, { method = 'GET', body, headers, retry = true } = {
   return res.json();
 }
 
+// Одни и те же чтения опрашивают сразу несколько мест панели: очередь —
+// дашборд и колокольчик, плитки — дашборд и шапка. Пока ответ свежий, повторный
+// запрос не уходит, а одновременные ждут один. Любое действие сбрасывает всё:
+// после него панель видит свежие данные.
+const SHARED_TTL_MS = 8000;
+const shared = new Map();
+
+export function forgetShared() {
+  shared.clear();
+}
+
+function sharedGet(path, ttl) {
+  const hit = shared.get(path);
+  if (hit && hit.until > Date.now()) return hit.value;
+  const entry = { until: Infinity, value: request(path) };
+  shared.set(path, entry);
+  entry.value.then(
+    () => { if (shared.get(path) === entry) entry.until = Date.now() + ttl; },
+    () => { if (shared.get(path) === entry) shared.delete(path); },
+  );
+  return entry.value;
+}
+
+function change(path, options) {
+  forgetShared();
+  return request(path, options).finally(forgetShared);
+}
+
 export const api = {
   get: (path) => request(path),
-  post: (path, body) => request(path, { method: 'POST', body }),
-  put: (path, body) => request(path, { method: 'PUT', body }),
-  delete: (path) => request(path, { method: 'DELETE' }),
+  /** Чтение, общее для всех мест панели, которые его опрашивают. */
+  shared: (path, ttl = SHARED_TTL_MS) => sharedGet(path, ttl),
+  post: (path, body) => change(path, { method: 'POST', body }),
+  put: (path, body) => change(path, { method: 'PUT', body }),
+  delete: (path) => change(path, { method: 'DELETE' }),
 };

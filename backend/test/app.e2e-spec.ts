@@ -24,6 +24,7 @@ useTestDatabase('app');
 import { AppModule } from './../src/app.module';
 import { PrismaService } from './../src/prisma.service';
 import { HistoryService } from './../src/shared/history.service';
+import { MemoService } from './../src/shared/memo.service';
 import { PROMPT_KEYS } from '../src/brain/config/prompts';
 import { DEFAULT_RHYTHM } from '../src/brain/config/rhythm';
 import {
@@ -483,6 +484,35 @@ describe('Manager panel API (e2e)', () => {
       .delete(`/api/tg-accounts/${acc.body.id}`)
       .set(h)
       .expect(200);
+  });
+
+  it('кеш чтений: повторный GET отдаёт запомненное, любой POST его сбрасывает', async () => {
+    const h = { Authorization: `Bearer ${token}` };
+    const prisma = app.get(PrismaService);
+    const memo = app.get(MemoService);
+    const archived = async () =>
+      (await request(app.getHttpServer()).get('/api/manager/stats').set(h)).body
+        .stage_archive as number;
+    memo.keep = true;
+    try {
+      const before = await archived();
+      expect(Number.isInteger(before)).toBe(true);
+      await prisma.leadFacts.create({
+        data: {
+          chatId: BigInt(9300101),
+          facts: JSON.stringify({ deal_stage: 'archive' }),
+        },
+      });
+      // Бот поменял данные в обход панели — до конца срока виден прежний ответ.
+      expect(await archived()).toBe(before);
+      // Действие в панели (даже отклонённое) сбрасывает кеш.
+      await request(app.getHttpServer()).post('/api/managers').set(h).send({});
+      expect(await archived()).toBe(before + 1);
+    } finally {
+      memo.keep = false;
+      memo.reset();
+      await prisma.leadFacts.deleteMany({ where: { chatId: BigInt(9300101) } });
+    }
   });
 
   it('stage tiles count reached stages and archive in one pass', async () => {

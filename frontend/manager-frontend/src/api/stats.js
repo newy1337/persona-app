@@ -5,5 +5,5 @@ export function getStats({ from, to } = {}) {
   if (from) p.set('from', from);
   if (to) p.set('to', to);
   const qs = p.toString();
-  return api.get(`/api/manager/stats${qs ? `?${qs}` : ''}`);
+  return api.shared(`/api/manager/stats${qs ? `?${qs}` : ''}`);
 }

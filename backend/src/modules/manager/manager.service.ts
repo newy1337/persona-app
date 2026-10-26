@@ -11,10 +11,12 @@ import type { NextBotAction } from 'src/brain/dialogue/forecast';
 import { Prisma } from '@prisma/client';
 import { resolveRange, type DayRange } from '../stats/range';
 import {
+  chatStagesEver,
+  countStagesReached,
   stageMovesInRange,
-  stagesReachedEver,
   zeroStages,
 } from 'src/shared/deal-stage-stats';
+import { MemoService } from 'src/shared/memo.service';
 import { PrismaService } from 'src/prisma.service';
 import { PersonaService } from 'src/brain/persona.service';
 import { ClockService } from 'src/shared/clock.service';
@@ -49,6 +51,18 @@ export const ACTIVE_WINDOW_S = 24 * 3600;
 
 /** Предел выдачи списка: панель фильтрует и листает на своей стороне. */
 const CONVERSATIONS_LIMIT = 1000;
+
+/**
+ * Сколько живут ответы в кеше: списки и плитки — пока их опрашивают разом
+ * несколько окон и вкладок; справочники (этапы личностей, «дошли всего») —
+ * дольше, они меняются редко. Действие в панели сбрасывает всё сразу.
+ */
+const LIVE_TTL_MS = 5_000;
+const SLOW_TTL_MS = 30_000;
+
+/** Ключ кеша по области видимости: у разных людей — разные записи. */
+const scopeKey = (accounts: number[] | null): string =>
+  accounts === null ? 'all' : accounts.join(',');
 
 export interface StageView {
   id: string;
@@ -153,6 +167,7 @@ export class ManagerService {
     private presence: PresenceService,
     @Inject(REPLY_BRAIN) private brain: ReplyBrain,
     private attribution: ManagerAttributionService,
+    private memo: MemoService,
   ) {}
 
   /**
@@ -199,7 +214,15 @@ export class ManagerService {
     }));
   }
 
-  private async stageResolver(): Promise<
+  private stageResolver(): Promise<
+    (accountId: number | null, facts: LeadFacts) => StageView | null
+  > {
+    return this.memo.get('stage-resolver', SLOW_TTL_MS, () =>
+      this.loadStageResolver(),
+    );
+  }
+
+  private async loadStageResolver(): Promise<
     (accountId: number | null, facts: LeadFacts) => StageView | null
   > {
     const accounts = await this.prisma.channelAccount.findMany({
@@ -319,7 +342,13 @@ export class ManagerService {
   }
 
   /** Сколько диалогов всего: срез в списке не должен выглядеть как весь список. */
-  async conversationsTotal(accounts: number[] | null): Promise<number> {
+  conversationsTotal(accounts: number[] | null): Promise<number> {
+    return this.memo.get(`total:${scopeKey(accounts)}`, LIVE_TTL_MS, () =>
+      this.countConversations(accounts),
+    );
+  }
+
+  private async countConversations(accounts: number[] | null): Promise<number> {
     const rows = await this.prisma.$queryRaw<{ n: bigint | number }[]>(
       Prisma.sql`SELECT COUNT(*) AS n FROM contacts c
         LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
@@ -333,7 +362,23 @@ export class ManagerService {
     opts: { limit?: number; includeHidden?: boolean } = {},
   ): Promise<ManagerChatRow[]> {
     const limit = opts.limit ?? CONVERSATIONS_LIMIT;
-    const visible = opts.includeHidden
+    const includeHidden = Boolean(opts.includeHidden);
+    const listed = await this.memo.get(
+      `conversations:${scopeKey(accounts)}:${limit}:${includeHidden}`,
+      LIVE_TTL_MS,
+      () => this.listConversations(accounts, limit, includeHidden),
+    );
+    // В архиве бот молчит: прогноз там не нужен, а стоил он десяток запросов на чат.
+    // Прогнозы берутся из памяти движка на каждый запрос — они свежее кеша.
+    return includeHidden ? listed : this.withNextActions(listed);
+  }
+
+  private async listConversations(
+    accounts: number[] | null,
+    limit: number,
+    includeHidden: boolean,
+  ): Promise<ManagerChatRow[]> {
+    const visible = includeHidden
       ? HAS_CLIENT_SQL
       : Prisma.sql`${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL}`;
     const rows = await this.prisma.$queryRaw<RawRow[]>`
@@ -357,7 +402,7 @@ export class ManagerService {
       WHERE 1 = 1 ${this.scopeSql(accounts)} ${visible}
       ORDER BY last_ts DESC NULLS LAST LIMIT ${limit}`;
     const stageOf = await this.stageResolver();
-    const listed = await this.withManagers(
+    return this.withManagers(
       rows.map((r) => {
         const facts = parseLeadFacts(r.facts);
         return this.row(
@@ -367,8 +412,6 @@ export class ManagerService {
         );
       }),
     );
-    // В архиве бот молчит: прогноз там не нужен, а стоил он десяток запросов на чат.
-    return opts.includeHidden ? listed : this.withNextActions(listed);
   }
 
   /** Этапы для плиток: за период — пройденные в эти дни, без периода — дошли всего. */
@@ -387,7 +430,13 @@ export class ManagerService {
               })
             ).map((c) => String(c.chatId)),
           );
-    if (!range) return stagesReachedEver(this.prisma, mine);
+    if (!range)
+      return countStagesReached(
+        await this.memo.get('stages-ever', SLOW_TTL_MS, () =>
+          chatStagesEver(this.prisma),
+        ),
+        mine,
+      );
     const out = zeroStages();
     for (const m of await stageMovesInRange(
       this.prisma,
@@ -398,7 +447,16 @@ export class ManagerService {
     return out;
   }
 
-  private async readAttentionQueue(
+  /** Очередь опрашивают дашборд, колокольчик и плитки — одна выборка на всех. */
+  private readAttentionQueue(
+    accounts: number[] | null,
+  ): Promise<ManagerChatRow[]> {
+    return this.memo.get(`queue:${scopeKey(accounts)}`, LIVE_TTL_MS, () =>
+      this.loadAttentionQueue(accounts),
+    );
+  }
+
+  private async loadAttentionQueue(
     accounts: number[] | null,
   ): Promise<ManagerChatRow[]> {
     const rows = await this.prisma.$queryRaw<RawRow[]>`
@@ -487,9 +545,20 @@ export class ManagerService {
    * в эти дни. «Ждут менеджера», «активны сейчас» и аккаунты от периода не
    * зависят: это состояние на сейчас.
    */
-  async stats(
+  stats(
     accounts: number[] | null,
     period: { from?: string; to?: string } = {},
+  ) {
+    return this.memo.get(
+      `stats:${scopeKey(accounts)}:${period.from ?? ''}:${period.to ?? ''}`,
+      LIVE_TTL_MS,
+      () => this.loadStats(accounts, period),
+    );
+  }
+
+  private async loadStats(
+    accounts: number[] | null,
+    period: { from?: string; to?: string },
   ) {
     const nowTs = this.clock.ts();
     const activeSince = nowTs - ACTIVE_WINDOW_S;

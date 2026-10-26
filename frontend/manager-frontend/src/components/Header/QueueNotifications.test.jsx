@@ -14,7 +14,9 @@ beforeEach(() => {
   localStorage.removeItem(STORAGE_KEY);
   sessionStorage.removeItem(SHOWN_KEY);
   queue = { items: [{ chat_id: 555, name: 'Олег', queue_reason: 'media_photo', waiting_since: Math.floor(Date.now() / 1000) - 600, manager_name: 'manager1' }] };
-  vi.spyOn(api, 'get').mockImplementation(async (url) => (url.includes('/manager/queue') ? queue : notices));
+  const reply = async (url) => (url.includes('/manager/queue') ? queue : notices);
+  vi.spyOn(api, 'get').mockImplementation(reply);
+  vi.spyOn(api, 'shared').mockImplementation(reply);
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.useRealTimers(); });
 const render = () => act(async () => root.render(<MemoryRouter><VoiceNotifications userId={2} /></MemoryRouter>));

@@ -81,7 +81,7 @@ export default function VoiceNotifications({ userId }) {
       try {
         const [notices, queued] = await Promise.all([
           visible ? api.get('/api/voicer/notices') : null,
-          api.get('/api/manager/queue').then(normalizeQueue).catch(() => null),
+          api.shared('/api/manager/queue').then(normalizeQueue).catch(() => null),
         ]);
         if (!active) return;
         if (notices) { setData(normalize(notices)); setError(''); }

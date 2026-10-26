@@ -81,4 +81,29 @@ describe('api client', () => {
     await api.get('/api/conversations/5/media/inbound/list');
     expect(f.mock.calls[0][0]).toBe('/api/conversations/5/media/inbound/list');
   });
+
+  it('общее чтение: одновременные и свежие запросы — один поход, действие сбрасывает', async () => {
+    const f = mockFetch(200, { items: [1] });
+    const [a, b] = await Promise.all([api.shared('/api/manager/queue'), api.shared('/api/manager/queue')]);
+    expect(a).toBe(b);
+    await api.shared('/api/manager/queue');
+    expect(f).toHaveBeenCalledTimes(1);
+    await api.shared('/api/manager/stats');
+    expect(f).toHaveBeenCalledTimes(2);
+
+    await api.post('/api/conversations/1/pause');
+    await api.shared('/api/manager/queue');
+    expect(f).toHaveBeenCalledTimes(4);
+  });
+
+  it('общее чтение: срок вышел или ошибка — запрос уходит снова', async () => {
+    const f = mockFetch(500, {});
+    await expect(api.shared('/api/manager/queue')).rejects.toBeInstanceOf(ApiError);
+    mockFetch(200, { items: [] });
+    await api.shared('/api/manager/queue', 0);
+    await new Promise((r) => setTimeout(r, 5));
+    await api.shared('/api/manager/queue', 0);
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
 });

@@ -22,6 +22,10 @@ import { Roles } from 'src/decorators/roles.decorator';
 import { Role } from 'src/enums/roles.enum';
 import { CurrentUser } from 'src/decorators/user.decorator';
 import { AuditService } from 'src/shared/audit.service';
+import { MemoService } from 'src/shared/memo.service';
+
+/** Сводки тяжёлые, а открывают их несколько админов и вкладок разом. */
+const STATS_TTL_MS = 15_000;
 
 @ApiTags('Stats')
 @ApiBearerAuth()
@@ -33,14 +37,31 @@ export class StatsController {
     private readonly stats: StatsService,
     private readonly balance: BalanceService,
     private readonly audit: AuditService,
+    private readonly memo: MemoService,
   ) {}
+
+  /** Одна сводка на всех админов: склеивает одинаковые запросы на 15 секунд. */
+  private shared<T>(
+    name: string,
+    from: string | undefined,
+    to: string | undefined,
+    load: () => Promise<T>,
+  ): Promise<T> {
+    return this.memo.get(
+      `admin-stats:${name}:${from ?? ''}:${to ?? ''}`,
+      STATS_TTL_MS,
+      load,
+    );
+  }
 
   @ApiOperation({ summary: 'Сводка за период: расход, токены, кеш, сообщения' })
   @ApiQuery({ name: 'from', required: false, example: '2026-09-01' })
   @ApiQuery({ name: 'to', required: false, example: '2026-09-10' })
   @Get()
   overview(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.stats.overview({ from, to });
+    return this.shared('overview', from, to, () =>
+      this.stats.overview({ from, to }),
+    );
   }
 
   @ApiOperation({
@@ -50,7 +71,9 @@ export class StatsController {
   @ApiQuery({ name: 'to', required: false, example: '2026-09-10' })
   @Get('managers')
   managers(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.stats.byManager({ from, to });
+    return this.shared('managers', from, to, () =>
+      this.stats.byManager({ from, to }),
+    );
   }
 
   @ApiOperation({ summary: 'Этапы сделки по дням: сколько чатов вошло в этап' })
@@ -58,7 +81,9 @@ export class StatsController {
   @ApiQuery({ name: 'to', required: false, example: '2026-09-10' })
   @Get('stages')
   stages(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.stats.dealStages({ from, to });
+    return this.shared('stages', from, to, () =>
+      this.stats.dealStages({ from, to }),
+    );
   }
 
   @ApiOperation({
@@ -69,7 +94,9 @@ export class StatsController {
   @ApiQuery({ name: 'to', required: false, example: '2026-09-10' })
   @Get('cold')
   cold(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.stats.coldLeads({ from, to });
+    return this.shared('cold', from, to, () =>
+      this.stats.coldLeads({ from, to }),
+    );
   }
 
   @ApiOperation({
@@ -80,7 +107,9 @@ export class StatsController {
   @ApiQuery({ name: 'to', required: false, example: '2026-09-10' })
   @Get('insights')
   insights(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.stats.insights({ from, to });
+    return this.shared('insights', from, to, () =>
+      this.stats.insights({ from, to }),
+    );
   }
 
   @ApiOperation({ summary: 'Расход одного чата' })

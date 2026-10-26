@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { AccessControlService } from './access-control.service';
 import { PrismaService } from '../prisma.service';
@@ -14,6 +14,7 @@ import { PresenceService } from './presence.service';
 import { ManagerAttributionService } from './manager-attribution.service';
 import { PhotoLibraryService } from './photo-library.service';
 import { RegionGateService } from './region-gate.service';
+import { MemoMiddleware, MemoService } from './memo.service';
 import { VoicerAutomationService } from 'src/modules/voicer/voicer-automation.service';
 import { VoicerDeliveryService } from 'src/modules/voicer/voicer-delivery.service';
 
@@ -33,6 +34,7 @@ const providers = [
   ManagerAttributionService,
   PhotoLibraryService,
   RegionGateService,
+  MemoService,
   VoicerDeliveryService,
   VoicerAutomationService,
 ];
@@ -42,4 +44,8 @@ const providers = [
   providers,
   exports: providers,
 })
-export class SharedModule {}
+export class SharedModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(MemoMiddleware).forRoutes('*path');
+  }
+}

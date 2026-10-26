@@ -23,7 +23,7 @@ export function getLiveConversations() {
 }
 
 export function getNeedManagerAssist() {
-  return api.get('/api/manager/queue').then((r) => r.items ?? []);
+  return api.shared('/api/manager/queue').then((r) => r.items ?? []);
 }
 
 export function getConversationById(chatId) {

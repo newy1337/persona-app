@@ -59,21 +59,32 @@ export async function stageMovesInRange(
   return out;
 }
 
-/** Сколько чатов за всё время дошло до каждого этапа; архив — сколько в архиве сейчас. */
-export async function stagesReachedEver(
-  prisma: PrismaService,
-  chatIds: Set<string> | null = null,
-): Promise<Record<string, number>> {
-  // Дашборд опрашивает это раз в 10 секунд: один проход по таблице, и JSON
-  // разбирается только у чатов, где этапы вообще были.
-  const rows = await prisma.$queryRaw<
-    { chat_id: bigint; stages: string[]; archived: boolean }[]
-  >`
+export interface ChatStages {
+  chat_id: bigint;
+  stages: string[];
+  archived: boolean;
+}
+
+/**
+ * Этапы каждого чата, где они вообще были: один проход по pinned_facts с
+ * разбором JSON (~100 мс на проде). Результат общий для всех — область
+ * видимости накладывается потом, в countStagesReached, — поэтому его можно
+ * кешировать одной записью на всех.
+ */
+export function chatStagesEver(prisma: PrismaService): Promise<ChatStages[]> {
+  return prisma.$queryRaw<ChatStages[]>`
     SELECT p.chat_id,
       ARRAY(SELECT jsonb_object_keys(COALESCE(j.v->'deal_reached', '{}'::jsonb))) AS stages,
       COALESCE(j.v->>'deal_stage' = 'archive', false) AS archived
     FROM pinned_facts p, LATERAL (SELECT p.facts::jsonb AS v) j
     WHERE p.facts LIKE '%"deal_%'`;
+}
+
+/** Сколько чатов за всё время дошло до каждого этапа; архив — сколько в архиве сейчас. */
+export function countStagesReached(
+  rows: ChatStages[],
+  chatIds: Set<string> | null = null,
+): Record<string, number> {
   const out = zeroStages();
   let archive = 0;
   for (const r of rows) {
@@ -83,4 +94,11 @@ export async function stagesReachedEver(
   }
   out.archive = archive;
   return out;
+}
+
+export async function stagesReachedEver(
+  prisma: PrismaService,
+  chatIds: Set<string> | null = null,
+): Promise<Record<string, number>> {
+  return countStagesReached(await chatStagesEver(prisma), chatIds);
 }

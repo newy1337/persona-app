@@ -7,6 +7,7 @@ import {
 import { PrismaService } from 'src/prisma.service';
 import { Role } from 'src/enums/roles.enum';
 import { ClockService } from 'src/shared/clock.service';
+import { MemoService } from 'src/shared/memo.service';
 import { fromChatId } from 'src/utils/ids';
 import {
   DEFAULT_PRICES,
@@ -36,7 +37,8 @@ import { normalizeModel } from './prices';
 import { DEAL_STAGES, DEAL_STAGE_LABELS } from 'src/domain/deal-stage';
 import {
   stageMovesInRange,
-  stagesReachedEver,
+  chatStagesEver,
+  countStagesReached,
   zeroStages,
 } from 'src/shared/deal-stage-stats';
 
@@ -287,6 +289,7 @@ export class StatsService {
   constructor(
     private prisma: PrismaService,
     private clock: ClockService,
+    private memo: MemoService,
   ) {}
 
   /**
@@ -639,7 +642,12 @@ export class StatsService {
       row[m.stage] += 1;
       totals[m.stage] += 1;
     }
-    const reached = await stagesReachedEver(this.prisma);
+    // Та же выборка, что у плиток дашборда: одна запись кеша на обоих.
+    const reached = countStagesReached(
+      await this.memo.get('stages-ever', 30_000, () =>
+        chatStagesEver(this.prisma),
+      ),
+    );
     return {
       range: { from: range.from, to: range.to },
       stages: DEAL_STAGES.map((id) => ({ id, label: DEAL_STAGE_LABELS[id] })),

@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { Role } from '../enums/roles.enum';
+import { MemoService } from './memo.service';
 
 export interface ManagerAttribution {
   manager_id: number | null;
@@ -24,9 +25,19 @@ export interface ManagerDirectory {
 
 @Injectable()
 export class ManagerAttributionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional() private memo?: MemoService,
+  ) {}
 
-  async directory(): Promise<ManagerDirectory> {
+  /** Кто за каким аккаунтом: общий для всех справочник, живёт полминуты. */
+  directory(): Promise<ManagerDirectory> {
+    return this.memo
+      ? this.memo.get('manager-directory', 30_000, () => this.load())
+      : this.load();
+  }
+
+  private async load(): Promise<ManagerDirectory> {
     const users = await this.prisma.dashboardUser.findMany({
       where: { role: Role.MANAGER },
       select: {
