@@ -68,6 +68,11 @@ export interface ManagerChatRow extends ManagerAttribution {
   /** собеседник ссылкой в его мессенджере */
   contact: ContactLink | null;
   name: string | null;
+  /** откуда диалог: cold — холодка, hot — обычный лид, inbound — написал сам */
+  lead_type: LeadType;
+  /** личность аккаунта, с которого идёт диалог */
+  persona_id: string | null;
+  persona_name: string | null;
   /** этап сделки, выставленный менеджером; null — не задан */
   deal_stage: string | null;
   deal_note: string | null;
@@ -121,7 +126,17 @@ interface RawRow {
   likely_blocked_at?: number | bigint | null;
   cleared_by_client_at?: number | bigint | null;
   unread_count?: number | bigint | null;
+  /** лида у чата нет — null; есть — холодный ли (хоть один из лидов чата) */
+  lead_cold?: boolean | null;
+  persona_id?: string | null;
+  persona_name?: string | null;
 }
+
+/** Откуда диалог: холодка, обычный лид (LeadGet, руками, импорт) или человек написал сам. */
+export type LeadType = 'cold' | 'hot' | 'inbound';
+
+const leadType = (cold: boolean | null | undefined): LeadType =>
+  cold === null || cold === undefined ? 'inbound' : cold ? 'cold' : 'hot';
 
 const n = (v: unknown): number | null =>
   v === null || v === undefined ? null : Number(v);
@@ -258,6 +273,9 @@ export class ManagerService {
           null,
       ),
       name: (facts['name'] as string) ?? null,
+      lead_type: leadType(r.lead_cold),
+      persona_id: r.persona_id ?? null,
+      persona_name: r.persona_name ?? r.persona_id ?? null,
       deal_stage: (facts['deal_stage'] as string) ?? null,
       deal_note: (facts['deal_note'] as string) ?? null,
       age: intOrNull(facts['age']),
@@ -330,9 +348,12 @@ export class ManagerService {
              p.facts AS facts,
              (SELECT pn.city FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_city,
              (SELECT pn.phone_e164 FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_phone,
-             (SELECT COALESCE(pn.peer_username, pn.username_key) FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_username
+             (SELECT COALESCE(pn.peer_username, pn.username_key) FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_username,
+             (SELECT bool_or(pn.cold) FROM leads pn WHERE pn.chat_id = c.chat_id) AS lead_cold,
+             a.persona_id AS persona_id, pe.name AS persona_name
       FROM contacts c LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
       LEFT JOIN channel_accounts a ON a.id = c.account_id
+      LEFT JOIN personas pe ON pe.slug = a.persona_id
       WHERE 1 = 1 ${this.scopeSql(accounts)} ${visible}
       ORDER BY last_ts DESC NULLS LAST LIMIT ${limit}`;
     const stageOf = await this.stageResolver();
@@ -394,11 +415,14 @@ export class ManagerService {
              p.facts AS facts,
              (SELECT pn.city FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_city,
              (SELECT pn.phone_e164 FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_phone,
-             (SELECT COALESCE(pn.peer_username, pn.username_key) FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_username
+             (SELECT COALESCE(pn.peer_username, pn.username_key) FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_username,
+             (SELECT bool_or(pn.cold) FROM leads pn WHERE pn.chat_id = c.chat_id) AS lead_cold,
+             a.persona_id AS persona_id, pe.name AS persona_name
       FROM contacts c
       LEFT JOIN lead_handoff h ON h.chat_id = c.chat_id
       LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
       LEFT JOIN channel_accounts a ON a.id = c.account_id
+      LEFT JOIN personas pe ON pe.slug = a.persona_id
       WHERE 1 = 1 ${this.scopeSql(accounts)} ${NOT_HIDDEN_SQL}`;
 
     const out: ManagerChatRow[] = [];
