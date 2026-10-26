@@ -470,11 +470,14 @@ describe('лиды: выделение и действия', () => {
     expect(host.textContent).toContain('Удалить лид +79000000057?');
   });
 
-  it('текст ошибки открывается в поповере, строка таблицы его не содержит', async () => {
+  it('лид с ошибкой — красная строка, ошибка под статусом; полный текст — в поповере', async () => {
     rowExtra = (id) => (id === 60 ? { status: 'dead', last_error: 'PEER_FLOOD: слишком много запросов' } : {});
     await mount();
     const row = host.querySelector('[data-lead-id="60"]');
-    expect(row.textContent).not.toContain('PEER_FLOOD');
+    expect(row.dataset.problem).toBe('true');
+    expect(row.querySelector('[data-testid="lead-problem"]').textContent).toBe('Ошибка: PEER_FLOOD: слишком много запросов');
+    expect(host.querySelector('[data-lead-id="59"]').dataset.problem).toBeUndefined();
+    expect(host.querySelector('[data-testid="lead-problems"]').textContent).toContain('1 лид с проблемами');
     expect(host.querySelector('details')).toBeNull();
     expect(byLabel('Подробнее об ошибке: Лид 59', host)).toBeNull();
     await click(byLabel('Подробнее об ошибке: Лид 60', row));

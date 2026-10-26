@@ -7,7 +7,7 @@ import { CreateLeadForm } from './CreateLeadForm';
 import { LeadsTable } from './LeadsTable';
 import { LeadCard } from './LeadCard';
 import { LeadsBoard } from './LeadsBoard';
-import { LEADS_BY_FILTER, NEXT_FILTER, TYPE_FILTER, leadsBy, matchesType, nextStepState } from './leadInfo';
+import { LEADS_BY_FILTER, NEXT_FILTER, PROBLEM_FILTER, TYPE_FILTER, leadProblems, leadsBy, matchesType, nextStepState } from './leadInfo';
 import { setDealStage } from '../../api/conversations';
 import {
   deleteLead,
@@ -288,6 +288,7 @@ export default function Leads() {
   const nexts = pick(filterState.next, keysOf(NEXT_FILTER));
   const unreads = pick(filterState.unread, keysOf(UNREAD_FILTER));
   const bys = pick(filterState.leads, keysOf(LEADS_BY_FILTER));
+  const problemsPicked = pick(filterState.problem, keysOf(PROBLEM_FILTER));
   const [view, setViewState] = useState(readView);
   const setView = (next) => {
     setViewState(next);
@@ -372,6 +373,9 @@ export default function Leads() {
   const counts = data.counts ?? {};
   const stageCounts = data.stages ?? {};
   // Несколько статусов или этапов сервер не фильтрует — отбираем здесь.
+  // Личности без аккаунтов в сети: их очередь некому разбирать — это проблема лида.
+  const idlePersonas = personas.filter((p) => !p.accounts_ready).map((p) => p.slug);
+  const hasProblem = (row) => leadProblems(row, idlePersonas).length > 0;
   const matched = (data.items ?? []).filter((row) =>
     (statuses.length < 2 || statuses.includes(row.status)) &&
     (dealStages.length < 2 || dealStages.includes(stageOf(row))) &&
@@ -379,7 +383,9 @@ export default function Leads() {
     (genders.length === 0 || genders.includes(genderOf(row))) &&
     (nexts.length === 0 || nexts.includes(nextStepState(row))) &&
     (unreads.length === 0 || unreads.includes(row.unread_count > 0 ? 'yes' : 'no')) &&
-    (bys.length === 0 || bys.includes(leadsBy(row))));
+    (bys.length === 0 || bys.includes(leadsBy(row))) &&
+    (problemsPicked.length === 0 || problemsPicked.includes(hasProblem(row) ? 'yes' : 'no')));
+  const problemCount = (data.items ?? []).filter(hasProblem).length;
   const overdue = (data.items ?? []).filter((row) => nextStepState(row) === 'overdue').length;
   const openLead = openId === null ? null : (data.items ?? []).find((row) => row.id === openId) ?? null;
   const total = matched.length;
@@ -410,13 +416,14 @@ export default function Leads() {
     { key: 'next', label: 'Следующий шаг', filter: { type: 'options', options: NEXT_FILTER } },
     { key: 'unread', label: 'Непрочитанные', filter: { type: 'options', options: UNREAD_FILTER } },
     { key: 'leads', label: 'Ведёт', filter: { type: 'options', options: LEADS_BY_FILTER } },
+    { key: 'problem', label: 'Проблемы', filter: { type: 'options', options: PROBLEM_FILTER } },
   ];
   const filters = {
     defs: Object.fromEntries(filterColumns.map((col) => [col.key, col.filter])),
-    state: { status: statuses, stage: dealStages, type: types, gender: genders, next: nexts, unread: unreads, leads: bys },
+    state: { status: statuses, stage: dealStages, type: types, gender: genders, next: nexts, unread: unreads, leads: bys, problem: problemsPicked },
     onChange: changeFilter,
   };
-  const filtered = Boolean(status || dealStage || types.length || genders.length || nexts.length || unreads.length || bys.length);
+  const filtered = Boolean(status || dealStage || types.length || genders.length || nexts.length || unreads.length || bys.length || problemsPicked.length);
 
   // Воронка: перенос карточки меняет этап диалога лида; в архив — с причиной.
   async function moveToStage(lead, stage) {
@@ -466,6 +473,14 @@ export default function Leads() {
           <div className="flex min-h-4 flex-col gap-1 text-xs" aria-live="polite">
             <OutreachBar status={outreach} queued={counts.queued ?? 0} />
             <StuckWarning items={data.items ?? []} personas={personas} />
+            {problemCount > 0 && (
+              <StatusLine tone="destructive" data-testid="lead-problems">
+                {`${problemCount} ${problemCount === 1 ? 'лид' : problemCount < 5 ? 'лида' : 'лидов'} с проблемами: ошибки, недоступные, застрявшие в очереди, просроченные шаги. `}
+                <button type="button" className="text-primary underline-offset-4 hover:underline" onClick={() => changeFilter('problem', ['yes'])}>
+                  Показать
+                </button>
+              </StatusLine>
+            )}
             {overdue > 0 && (
               <StatusLine tone="destructive" data-testid="overdue-steps">
                 {`Просрочен следующий шаг у ${overdue} ${overdue === 1 ? 'лида' : 'лидов'}. `}
@@ -531,9 +546,9 @@ export default function Leads() {
           </div>
 
           {view === 'board' && loaded ? (
-            <LeadsBoard rows={matched} onOpen={(row) => setOpenId(row.id)} onMove={moveToStage} />
+            <LeadsBoard rows={matched} idlePersonas={idlePersonas} onOpen={(row) => setOpenId(row.id)} onMove={moveToStage} />
           ) : (
-          <LeadsTable rows={loaded ? items : null} query={q} filtered={filtered} filters={filters} selected={selected}
+          <LeadsTable rows={loaded ? items : null} query={q} filtered={filtered} filters={filters} selected={selected} idlePersonas={idlePersonas}
             onToggle={toggle} onSelectVisible={checked => setSelected(previous => {
               const next = new Set(previous);
               for (const row of items) { if (checked) next.add(row.id); else next.delete(row.id); }

@@ -11,7 +11,7 @@ import { updateLead } from '../../api/leads';
 import { setDealStage } from '../../api/conversations';
 import { LeadsBoard } from './LeadsBoard';
 import { LeadCard } from './LeadCard';
-import { fromLocalInput, leadTypeLabel, matchesType, nextStepState, nextStepWhen, toLocalInput } from './leadInfo';
+import { fromLocalInput, leadProblems, leadTypeLabel, matchesType, nextStepState, nextStepWhen, toLocalInput } from './leadInfo';
 
 const NOW = Date.parse('2026-10-27T12:00:00+03:00') / 1000;
 const lead = (extra = {}) => ({ id: 1, first_name: 'Ира', status: 'contacted', attempts: 1, inserted_at: NOW - 86400, ...extra });
@@ -33,6 +33,15 @@ describe('тип лида и срок следующего шага', () => {
     expect(nextStepState(lead({ next_step_at: NOW + 3 * 86400 }), NOW)).toBe('later');
     expect(nextStepWhen(lead({ next_step_at: NOW + 3600 }), NOW)).toBe('сегодня 13:00');
     expect(nextStepWhen(lead({ next_step_at: NOW - 86400 }), NOW)).toBe('просрочен · 26.10, 12:00');
+  });
+
+  it('проблемы лида: ошибка, недоступен, очередь без аккаунтов, просроченный шаг', () => {
+    expect(leadProblems(lead(), [], NOW)).toEqual([]);
+    expect(leadProblems(lead({ status: 'dead' }), [], NOW)).toEqual(['Недоступен']);
+    expect(leadProblems(lead({ status: 'dead', last_error: 'PEER_FLOOD' }), [], NOW)).toEqual(['Ошибка: PEER_FLOOD']);
+    expect(leadProblems(lead({ status: 'queued', persona_id: 'nastya' }), ['nastya'], NOW)).toEqual(['Личности некому писать: нет аккаунтов в сети']);
+    expect(leadProblems(lead({ status: 'queued', persona_id: 'nastya' }), [], NOW)).toEqual([]);
+    expect(leadProblems(lead({ next_step: 'позвонить', next_step_at: NOW - 60 }), [], NOW)).toEqual(['Просрочен следующий шаг']);
   });
 
   it('поле даты — московское время туда и обратно', () => {
@@ -70,6 +79,8 @@ describe('воронка лидов', () => {
     expect(ids('vbros')).toEqual([1]);
     expect(ids('deposit')).toEqual([4]);
     expect(column('deposit').querySelector('[data-testid="tile-next"]').dataset.state).toBe('overdue');
+    expect(column('deposit').querySelector('[data-lead-id="4"]').dataset.problem).toBe('true');
+    expect(column('vbros').querySelector('[data-lead-id="1"]').dataset.problem).toBeUndefined();
     expect(column('none').querySelector('[data-lead-id="3"]').getAttribute('draggable')).toBe('false');
   });
 

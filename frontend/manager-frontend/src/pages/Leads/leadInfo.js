@@ -86,3 +86,24 @@ export const LEADS_BY_FILTER = [
   { value: 'manager', label: 'менеджер' },
   { value: 'none', label: 'чата нет' },
 ];
+
+/**
+ * Что с лидом не так — всё, из-за чего строка красная: ошибка отправки,
+ * «Недоступен», очередь, которую некому разобрать (у личности нет аккаунтов
+ * в сети), просроченный следующий шаг. idlePersonas — slug личностей без
+ * аккаунтов в сети.
+ */
+export function leadProblems(row, idlePersonas = [], now) {
+  const out = [];
+  if (row.last_error) out.push(`Ошибка: ${row.last_error}`);
+  else if (row.status === 'dead') out.push('Недоступен');
+  if (row.status === 'queued' && row.persona_id && idlePersonas.includes(row.persona_id))
+    out.push('Личности некому писать: нет аккаунтов в сети');
+  if (nextStepState(row, now) === 'overdue') out.push('Просрочен следующий шаг');
+  return out;
+}
+
+export const PROBLEM_FILTER = [
+  { value: 'yes', label: 'есть' },
+  { value: 'no', label: 'нет' },
+];

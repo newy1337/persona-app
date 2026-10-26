@@ -10,7 +10,7 @@ import { ColumnPicker } from '../../components/ColumnPicker/ColumnPicker';
 import { tableMinWidth, useColumnPrefs } from '../../components/ColumnPicker/columnPrefs';
 import { IconAction } from '../../components/IconAction/IconAction';
 import { dealStageLabel } from '../../data/dealStages';
-import { NEXT_TONE, leadTypeLabel, leadsBy, nextStepState, nextStepWhen, shortDate } from './leadInfo';
+import { NEXT_TONE, leadProblems, leadTypeLabel, leadsBy, nextStepState, nextStepWhen, shortDate } from './leadInfo';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -195,7 +195,7 @@ function SkeletonRow({ columns }) {
 
 /* filters — фильтры колонок: { defs: { ключ колонки: описание }, state, onChange(key, value) };
    список листается на сервере, поэтому сами строки здесь не отбираются. */
-export function LeadsTable({ rows, query, filtered, filters, selected, onToggle, onSelectVisible, onOpen, onChat, onQueue, onUnqueue, onReassign, onDelete, onPersonaChange, personas, helpers }) {
+export function LeadsTable({ rows, query, filtered, filters, selected, idlePersonas = [], onToggle, onSelectVisible, onOpen, onChat, onQueue, onUnqueue, onReassign, onDelete, onPersonaChange, personas, helpers }) {
   const { PersonaSelect, statusLabels, statusBadges, date } = helpers;
   const busy = ux.useActions().pending.some(key => key.includes('/api/leads'));
   const me = useMe();
@@ -291,10 +291,13 @@ export function LeadsTable({ rows, query, filtered, filters, selected, onToggle,
             const nextWhen = nextStepWhen(row);
             const nextTitle = next === 'none' ? 'Следующий шаг не задан' : [row.next_step || 'Шаг без описания', nextWhen].filter(Boolean).join(' · ');
             const by = leadsBy(row);
+            // Красная строка: всё, что мешает работе с лидом. Причина — под статусом.
+            const problems = leadProblems(row, idlePersonas);
             const attemptsTitle = [`Попыток: ${row.attempts ?? 0}`, row.next_attempt_at ? `следующая: ${shortDate(row.next_attempt_at)}` : null].filter(Boolean).join(' · ');
             // Значения скрытых колонок не пропадают: они дописываются в подсказку лида.
             const leadTitle = [
               row.first_name || `Лид #${row.id}`,
+              problems.length > 0 && `Проблемы: ${problems.join('; ')}`,
               about,
               row.site ? `сайт: ${row.site}` : null,
               `лид #${row.id}`,
@@ -317,7 +320,12 @@ export function LeadsTable({ rows, query, filtered, filters, selected, onToggle,
                 data-state={isSelected ? 'selected' : undefined}
                 data-lead-id={row.id}
                 data-lead-status={row.status}
-                className={cn(onOpen && 'cursor-pointer')}
+                data-problem={problems.length ? 'true' : undefined}
+                className={cn(
+                  onOpen && 'cursor-pointer',
+                  problems.length > 0 &&
+                    'bg-destructive/15 hover:bg-destructive/20 data-[state=selected]:bg-destructive/25 [&>td:first-child]:shadow-[inset_3px_0_0_var(--destructive)]',
+                )}
                 onClick={(e) => {
                   // Щелчки по ссылкам, кнопкам и селектам — их собственные; из портала (меню) — не наши.
                   if (!onOpen || !e.currentTarget.contains(e.target)) return;
@@ -466,13 +474,18 @@ export function LeadsTable({ rows, query, filtered, filters, selected, onToggle,
                 )}
 
                 {has('status') && (
-                  <TableCell className={cell}>
-                    <div className={cn(one, 'gap-1')}>
+                  <TableCell className={cell} title={problems.length ? problems.join('\n') : undefined}>
+                    <div className={cn(line1, 'gap-1')}>
                       <Badge variant={badge.variant} className={cn('h-5 min-w-0 shrink', badge.className)}>
                         <span className="truncate">{statusText}</span>
                       </Badge>
                       {row.last_error && <ErrorDetails name={name} text={row.last_error} />}
                     </div>
+                    {problems.length > 0 && (
+                      <div className={cn(line2, 'font-medium text-destructive')} data-testid="lead-problem">
+                        {problems.length > 1 ? `${problems[0]} · ещё ${problems.length - 1}` : problems[0]}
+                      </div>
+                    )}
                   </TableCell>
                 )}
 
