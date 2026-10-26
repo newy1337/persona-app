@@ -141,10 +141,14 @@ function ScalarField({ value, onChange }) {
   return <Input value={value} onChange={(e) => onChange(e.target.value)} />;
 }
 
-function itemTitle(item, index) {
+// Подпись свёрнутого пункта: id — коротко, рядом то, что о нём говорит
+// человеку (название, тема, текст), и день, если он есть: «B2 · Рассказ про Луну · день 1».
+export function itemTitle(item, index) {
   if (isPlain(item)) return String(item ?? '').slice(0, 80) || `— ${index + 1}`;
-  const named = item.id ?? item.title ?? item.name ?? item.topic ?? item.text ?? item.story;
-  return named ? String(named).slice(0, 80) : `${index + 1}`;
+  const words = item.title ?? item.name ?? item.topic ?? item.text ?? item.story;
+  const parts = [item.id, words !== item.id ? words : null].filter((x) => x !== undefined && x !== null && String(x).trim() !== '');
+  if (item.day !== undefined && item.day !== null && item.day !== '') parts.push(`день ${item.day}`);
+  return parts.length ? parts.map((p) => String(p)).join(' · ').slice(0, 100) : `${index + 1}`;
 }
 
 function RowTools({ index, total, onMove, onRemove }) {

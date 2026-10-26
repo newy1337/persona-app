@@ -457,11 +457,21 @@ export default function Personas() {
                       {persona.is_default && <Badge variant="secondary" className="h-5 font-normal">основная</Badge>}
                       {!persona.enabled && <Badge variant="outline" className="h-5 font-normal text-muted-foreground">выключена</Badge>}
                     </h2>
-                    <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-                      {persona.card_lines} строк карточки · {persona.examples} примеров тона ·{' '}
-                      {persona.storylines} сюжетов · промптов изменено {persona.edited_prompts} ·{' '}
-                      {persona.accounts} аккаунт(ов)
-                    </p>
+                    {/* Итог личности — плашками: число крупнее подписи, пустое приглушено. */}
+                    <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Что заполнено" data-testid="persona-stats">
+                      {[
+                        [persona.card_lines, 'строк карточки'],
+                        [persona.examples, 'примеров тона'],
+                        [persona.storylines, 'сюжетов'],
+                        [persona.edited_prompts, 'промптов изменено'],
+                        [persona.accounts, 'аккаунтов'],
+                      ].map(([n, label]) => (
+                        <li key={label} className={cn('inline-flex h-6 items-center gap-1 rounded-md border px-2 text-xs', !n && 'text-muted-foreground/70')}>
+                          <span className="font-medium tabular-nums">{n ?? 0}</span>
+                          <span className="text-muted-foreground">{label}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                   <div className={HEAD_ACTIONS}>
                     <IconAction icon={Pencil} label="Переименовать" disabled={renaming} onClick={rename} />

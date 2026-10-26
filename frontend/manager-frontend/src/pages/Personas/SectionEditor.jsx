@@ -8,6 +8,7 @@ import VersionsTable, { useVersions } from './Versions';
 import { EditorBar, SaveBar } from './EditorBar';
 import DocEditor from './DocEditor';
 import { drafts } from './drafts';
+import { validateSection } from './validate';
 
 const DRAFT_DELAY_MS = 600;
 const pretty = (value) => JSON.stringify(value ?? {}, null, 2);
@@ -119,6 +120,7 @@ export default function SectionEditor({ persona, section, about = null, personas
   }, [text]);
 
   const dirty = text !== server;
+  const warnings = useMemo(() => (parsed.ok ? validateSection(section, parsed.doc) : []), [parsed, section]);
 
   const edit = useCallback(
     (next) => {
@@ -239,6 +241,16 @@ export default function SectionEditor({ persona, section, about = null, personas
         </div>
       ) : (
         <DocEditor doc={parsed.doc} onChange={(next) => edit(pretty(next))} />
+      )}
+
+      {parsed.ok && warnings.length > 0 && (
+        <div className="rounded-md border border-warning-foreground/40 bg-warning px-3 py-2 text-xs" role="status" data-testid="section-warnings">
+          <p className="mb-1 font-medium">Проверьте перед сохранением — {warnings.length}</p>
+          <ul className="flex list-disc flex-col gap-0.5 pl-4 text-muted-foreground">
+            {warnings.slice(0, 8).map((w) => <li key={w}>{w}</li>)}
+            {warnings.length > 8 && <li>и ещё {warnings.length - 8}</li>}
+          </ul>
+        </div>
       )}
 
       <SaveBar
