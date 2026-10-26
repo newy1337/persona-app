@@ -13,6 +13,15 @@ import { getQuickReplies, putQuickReplies } from '../../api/quickReplies';
 // Список правится целиком и сохраняется одной кнопкой; {name} — имя собеседника.
 const blank = () => ({ title: '', text: '' });
 
+function AddButton({ onClick, disabled, variant = 'outline' }) {
+  return (
+    <Button variant={variant} onClick={onClick} disabled={disabled}>
+      <Plus aria-hidden="true" />
+      Добавить шаблон
+    </Button>
+  );
+}
+
 export default function QuickReplies() {
   const [items, setItems] = useState(null);
   const [saved, setSaved] = useState('[]');
@@ -30,6 +39,14 @@ export default function QuickReplies() {
       .catch((e) => setError(e.detail || e.message));
   }, []);
 
+  // Новый шаблон — в конец списка, курсор сразу в его название.
+  const add = () => {
+    setItems((cur) => [...(cur ?? []), blank()]);
+    requestAnimationFrame(() => {
+      const fields = document.querySelectorAll('input[aria-label^="Название шаблона"]');
+      fields[fields.length - 1]?.focus();
+    });
+  };
   const dirty = items !== null && JSON.stringify(items) !== saved;
   const invalid = (items ?? []).some((i) => !i.title.trim() || !i.text.trim());
   const set = (i, patch) => {
@@ -60,19 +77,15 @@ export default function QuickReplies() {
 
   return (
     <div className="container pb-8">
-      <PageHeader title="Шаблоны ответов" description="Готовые фразы для менеджеров: вставляются в чат кнопкой у поля ответа. {name} заменится именем собеседника.">
-        <Button variant="outline" onClick={() => setItems((cur) => [...(cur ?? []), blank()])} disabled={items === null}>
-          <Plus aria-hidden="true" />
-          Добавить шаблон
-        </Button>
-      </PageHeader>
+      <PageHeader title="Шаблоны ответов" description="Готовые фразы для менеджеров: вставляются в чат кнопкой у поля ответа. {name} заменится именем собеседника." />
 
       <div className="flex max-w-3xl flex-col gap-3">
         {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
         {items === null && !error && [0, 1, 2].map((i) => <Skeleton key={i} className="h-28 w-full rounded-lg" />)}
         {items?.length === 0 && (
-          <div className="rounded-lg border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">
             Шаблонов пока нет. Добавьте первый — например, «Напишу чуть позже» или «Привет, {'{name}'}!».
+            <AddButton variant="default" onClick={add} />
           </div>
         )}
         {items?.map((it, i) => (
@@ -101,13 +114,16 @@ export default function QuickReplies() {
             />
           </section>
         ))}
-        <div className="flex items-center justify-end gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {items?.length > 0 ? <AddButton onClick={add} /> : <span />}
+          <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground" role="status">
             {invalid ? 'У каждого шаблона нужны название и текст' : flash}
           </span>
           <Button onClick={save} disabled={!dirty || invalid || busy}>
             {busy ? 'Сохраняю…' : 'Сохранить шаблоны'}
           </Button>
+          </div>
         </div>
       </div>
     </div>
