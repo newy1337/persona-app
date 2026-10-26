@@ -478,6 +478,14 @@ describe('лиды: выделение и действия', () => {
     expect(row.querySelector('[data-testid="lead-problem"]').textContent).toBe('Ошибка: PEER_FLOOD: слишком много запросов');
     expect(host.querySelector('[data-lead-id="59"]').dataset.problem).toBeUndefined();
     expect(host.querySelector('[data-testid="lead-problems"]').textContent).toContain('1 лид с проблемами');
+    // «Показать» включает фильтр, та же ссылка («Показать всех») его снимает.
+    const link = () => host.querySelector('[data-testid="lead-problems"] button');
+    await click(link());
+    expect(link().textContent).toBe('Показать всех');
+    expect(host.querySelector('[data-lead-id="59"]')).toBeNull();
+    await click(link());
+    expect(link().textContent).toBe('Показать');
+    expect(host.querySelector('[data-lead-id="59"]')).not.toBeNull();
     expect(host.querySelector('details')).toBeNull();
     expect(byLabel('Подробнее об ошибке: Лид 59', host)).toBeNull();
     await click(byLabel('Подробнее об ошибке: Лид 60', row));

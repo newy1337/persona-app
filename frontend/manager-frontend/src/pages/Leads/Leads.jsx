@@ -477,16 +477,25 @@ export default function Leads() {
             {problemCount > 0 && (
               <StatusLine tone="destructive" data-testid="lead-problems">
                 {`${problemCount} ${problemCount === 1 ? 'лид' : problemCount < 5 ? 'лида' : 'лидов'} с проблемами: ошибки, недоступные, застрявшие в очереди, просроченные шаги. `}
-                <button type="button" className="text-primary underline-offset-4 hover:underline" onClick={() => changeFilter('problem', ['yes'])}>
-                  Показать
+                {/* Тот же переключатель и снимает фильтр: «Показать» → «Показать всех». */}
+                <button
+                  type="button"
+                  className="text-primary underline-offset-4 hover:underline"
+                  onClick={() => changeFilter('problem', problemsPicked.includes('yes') ? [] : ['yes'])}
+                >
+                  {problemsPicked.includes('yes') ? 'Показать всех' : 'Показать'}
                 </button>
               </StatusLine>
             )}
             {overdue > 0 && (
               <StatusLine tone="destructive" data-testid="overdue-steps">
                 {`Просрочен следующий шаг у ${overdue} ${overdue === 1 ? 'лида' : 'лидов'}. `}
-                <button type="button" className="text-primary underline-offset-4 hover:underline" onClick={() => changeFilter('next', ['overdue'])}>
-                  Показать
+                <button
+                  type="button"
+                  className="text-primary underline-offset-4 hover:underline"
+                  onClick={() => changeFilter('next', nexts.includes('overdue') ? [] : ['overdue'])}
+                >
+                  {nexts.includes('overdue') ? 'Показать всех' : 'Показать'}
                 </button>
               </StatusLine>
             )}
