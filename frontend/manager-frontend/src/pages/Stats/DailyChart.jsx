@@ -1,126 +1,179 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { money } from './StatsUi';
+import { money, num } from './StatsUi';
 
-// Подпись оси — «месяц.день», не как shortDay из StatsUi («день.месяц»).
-const shortDay = (day) => day.slice(5).replace('-', '.');
+// График по дням — «Area Chart — Interactive» из ui.shadcn.com/charts: плавные
+// области с градиентом, подсказка по наведению, переключатель в углу. Одна
+// величина на одной оси: «Сообщения» — входящие и исходящие стопкой (одна
+// единица), «Расход» и «Вызовы» — по одной области. Деньги и сообщения на
+// одном графике (две шкалы) читались плохо — поэтому переключатель.
+//
+// Цвета прошли валидатор палитры (dataviz) на светлом и тёмном фоне: синий —
+// входящие и единичные величины, бирюзовый — исходящие. Два оттенка синего в
+// тёмной теме проверку не проходят.
+const COLOR = { in: '#3b6fe0', out: '#26a69a' };
 
-// Один тон на график: расход — акцентом, сообщения — нейтральной отметкой (её видно и поверх столбца).
-function Legend() {
+const METRICS = {
+  messages: {
+    label: 'Сообщения',
+    describe: (t) => `Входящие и исходящие · всего ${num(t.in + t.out)}`,
+    series: [
+      { key: 'messages_out', name: 'Исходящие', color: COLOR.out },
+      { key: 'messages_in', name: 'Входящие', color: COLOR.in },
+    ],
+  },
+  cost: {
+    label: 'Расход',
+    describe: (t) => `Деньги на модели · всего ${money(t.cost)}`,
+    series: [{ key: 'cost_usd', name: 'Расход', color: COLOR.in, money: true }],
+  },
+  calls: {
+    label: 'Вызовы',
+    describe: (t) => `Обращения к моделям · всего ${num(t.calls)}`,
+    series: [{ key: 'calls', name: 'Вызовы', color: COLOR.in }],
+  },
+};
+
+const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const WEEKDAYS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+const parts = (day) => {
+  const [y, m, d] = String(day).split('-').map(Number);
+  return { m, d, wd: new Date(Date.UTC(y, m - 1, d)).getUTCDay() };
+};
+export const dayLabel = (day) => `${parts(day).d} ${MONTHS[parts(day).m - 1]}`;
+const dayFull = (day) => `${WEEKDAYS[parts(day).wd]}, ${dayLabel(day)}`;
+
+const HEIGHT = 'h-[260px]';
+
+function Frame({ metric, onMetric, description, children, footer = null }) {
   return (
-    <span className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
-      <span className="inline-flex items-center gap-1.5"><i className="size-2 rounded-xs bg-primary" /> деньги</span>
-      <span className="inline-flex items-center gap-1.5"><i className="h-0.5 w-2.5 rounded-full bg-foreground/70" /> сообщения</span>
-    </span>
-  );
-}
-
-// Одна рамка на график, пустое состояние и заглушку первой загрузки: шапка min-h-5
-// и тело ровно BODY высотой — блок не меняет высоту при смене состояния.
-const BODY = 'h-[170px] w-full';
-
-function Frame({ caption = null, children }) {
-  return (
-    <section className="flex min-h-[230px] flex-col gap-2 rounded-lg border bg-card p-4">
-      <div className="flex min-h-5 items-center gap-3">
-        <h2 className="shrink-0 text-sm font-medium">Расход по дням</h2>
-        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground tabular-nums">{caption}</span>
-        <Legend />
-      </div>
-      {children}
+    <section className="overflow-hidden rounded-lg border bg-card" aria-label="По дням">
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-3 sm:px-5">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <h2 className="text-sm font-medium">По дням</h2>
+          <p className="min-h-4 truncate text-xs text-muted-foreground tabular-nums" data-testid="daily-summary">{description}</p>
+        </div>
+        <Select value={metric} onValueChange={onMetric} disabled={!onMetric}>
+          <SelectTrigger className="w-[150px]" aria-label="Что показывать" data-testid="daily-metric">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            {Object.entries(METRICS).map(([id, m]) => (
+              <SelectItem key={id} value={id}>{m.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </header>
+      <div className="px-2 pt-4 pb-2 sm:px-4">{children}</div>
+      {footer}
     </section>
   );
 }
 
 export function DailyChartSkeleton() {
   return (
-    <Frame>
-      <Skeleton className={BODY} />
+    <Frame metric="messages" description={null}>
+      <Skeleton className={HEIGHT} />
     </Frame>
   );
 }
 
+function TooltipBox({ active, payload, label, series }) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0].payload;
+  return (
+    <div className="min-w-40 rounded-md border bg-popover px-3 py-2 text-xs shadow-md" data-testid="daily-tooltip">
+      <p className="mb-1 font-medium">{dayFull(label)}</p>
+      {[...series].reverse().map((s) => (
+        <p key={s.key} className="flex items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+            <i className="size-2 rounded-xs" style={{ background: s.color }} />
+            {s.name}
+          </span>
+          <span className="font-medium tabular-nums">{s.money ? money(row[s.key]) : num(row[s.key])}</span>
+        </p>
+      ))}
+      <p className="mt-1 border-t pt-1 text-muted-foreground tabular-nums">
+        {`${money(row.cost_usd)} · ${num(row.calls)} вызовов`}
+      </p>
+    </div>
+  );
+}
+
 export default function DailyChart({ days }) {
-  const [hover, setHover] = useState(null);
-
-  if (!days.length) {
-    return (
-      <Frame>
-        <p className={`${BODY} flex items-center justify-center text-sm text-muted-foreground`}>За период вызовов не было</p>
-      </Frame>
-    );
-  }
-
-  const maxCost = Math.max(...days.map((d) => d.cost_usd), 0.000001);
-  const maxMsg = Math.max(...days.map((d) => d.messages_in + d.messages_out), 1);
-  const W = 1000;
-  const H = 180;
-  const pad = { left: 4, right: 4, top: 10, bottom: 18 };
-  const inner = W - pad.left - pad.right;
-  const step = inner / days.length;
-  const barW = Math.max(2, Math.min(28, step * 0.62));
-  const plotH = H - pad.top - pad.bottom;
-
-  const labelEvery = Math.ceil(days.length / 12);
-  const current = hover === null ? null : days[hover];
+  const [metric, setMetric] = useState('messages');
+  const uid = useId().replace(/:/g, '');
+  const m = METRICS[metric];
+  const totals = days.reduce(
+    (t, d) => ({ in: t.in + d.messages_in, out: t.out + d.messages_out, cost: t.cost + d.cost_usd, calls: t.calls + d.calls }),
+    { in: 0, out: 0, cost: 0, calls: 0 },
+  );
+  const empty = days.every((d) => m.series.every((s) => !d[s.key]));
 
   return (
     <Frame
-      caption={
-        current
-          ? `${current.day}: ${money(current.cost_usd)} · ${current.calls} вызовов · ${current.messages_in}↓ ${current.messages_out}↑`
-          : `максимум за день ${money(maxCost)}`
+      metric={metric}
+      onMetric={setMetric}
+      description={m.describe(totals)}
+      footer={
+        m.series.length > 1 && !empty ? (
+          <div className="flex items-center justify-center gap-4 pb-3 text-xs" data-testid="daily-legend">
+            {[...m.series].reverse().map((s) => (
+              <span key={s.key} className="inline-flex items-center gap-1.5">
+                <i className="size-2 rounded-xs" style={{ background: s.color }} />
+                {s.name}
+              </span>
+            ))}
+          </div>
+        ) : null
       }
     >
-      <svg
-        className={BODY}
-        viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="none"
-        role="img"
-        aria-label="Расход по дням"
-      >
-        {[0, 0.5, 1].map((share) => (
-          <line
-            key={share}
-            x1={pad.left}
-            x2={W - pad.right}
-            y1={pad.top + plotH * share}
-            y2={pad.top + plotH * share}
-            className="stroke-border"
-            strokeWidth="1"
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-        {days.map((d, i) => {
-          const x = pad.left + i * step + (step - barW) / 2;
-          const h = (d.cost_usd / maxCost) * plotH;
-          const msgH = ((d.messages_in + d.messages_out) / maxMsg) * plotH;
-          return (
-            <g key={d.day} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
-              <rect x={pad.left + i * step} y={pad.top} width={step} height={plotH} fill="transparent" />
-              <rect
-                x={x}
-                y={pad.top + plotH - h}
-                width={barW}
-                height={Math.max(h, d.cost_usd > 0 ? 1.5 : 0)}
-                rx="2"
-                className={hover === i ? 'fill-primary' : 'fill-primary/75'}
+      {empty ? (
+        <p className={`${HEIGHT} flex items-center justify-center text-sm text-muted-foreground`}>
+          {metric === 'messages' ? 'За период сообщений не было' : 'За период вызовов не было'}
+        </p>
+      ) : (
+        <div className={HEIGHT} role="img" aria-label={`По дням: ${m.label}`}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={days} margin={{ left: 12, right: 12, top: 8, bottom: 0 }}>
+              <defs>
+                {m.series.map((s) => (
+                  <linearGradient key={s.key} id={`${uid}-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={s.color} stopOpacity={0.55} />
+                    <stop offset="95%" stopColor={s.color} stopOpacity={0.04} />
+                  </linearGradient>
+                ))}
+              </defs>
+              <CartesianGrid vertical={false} stroke="var(--border)" />
+              <XAxis
+                dataKey="day"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                minTickGap={32}
+                tickFormatter={dayLabel}
+                tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
               />
-              <rect x={x} y={pad.top + plotH - msgH} width={barW} height="1.5" className="fill-foreground/70" />
-              {i % labelEvery === 0 && (
-                <text
-                  x={pad.left + i * step + step / 2}
-                  y={H - 5}
-                  className="fill-muted-foreground text-xs"
-                  textAnchor="middle"
-                >
-                  {shortDay(d.day)}
-                </text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
+              <Tooltip cursor={{ stroke: 'var(--border)', strokeWidth: 1 }} content={<TooltipBox series={m.series} />} />
+              {m.series.map((s) => (
+                <Area
+                  key={s.key}
+                  dataKey={s.key}
+                  name={s.name}
+                  type="natural"
+                  stackId="a"
+                  stroke={s.color}
+                  strokeWidth={2}
+                  fill={`url(#${uid}-${s.key})`}
+                  activeDot={{ r: 4, strokeWidth: 2, stroke: 'var(--card)' }}
+                />
+              ))}
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </Frame>
   );
 }
