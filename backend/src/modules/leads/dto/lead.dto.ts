@@ -153,6 +153,19 @@ export class UpdateLeadDto {
   @IsString()
   @MaxLength(1000)
   first_message?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'что сделать по лиду' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  next_step?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'когда (unix ts, секунды)',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  next_step_at?: number | null;
 }
 
 export class LeadIdsDto {
