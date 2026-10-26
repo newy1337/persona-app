@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DialogTable } from './DialogTable';
+import { useChatWatch } from '../ChatWatch/chatWatch';
+import { useHotkeys } from '../Hotkeys/hotkeys';
 import TableSkeleton from '../TableSkeleton/TableSkeleton';
 import ClientAvatar, { ACTIVITY_LABEL } from '../ClientAvatar/ClientAvatar';
 import { Pager } from '../Pager/Pager';
@@ -158,10 +160,41 @@ function ConversationsTable({
     // списка страницу не сбрасывает.
   }, [filterKey, showHidden, pageSize, channel, byDay]);
   const current = Math.min(page, pages);
+  // Курсор горячих клавиш: J/K двигают, Enter открывает, W — окно наблюдения.
+  const [cursor, setCursor] = useState(-1);
+  const watch = useChatWatch();
+  const visibleRef = useRef([]);
+  const moveCursor = (delta) =>
+    setCursor((cur) => {
+      const list = visibleRef.current;
+      if (!list.length) return -1;
+      const next = Math.max(0, Math.min(list.length - 1, (cur < 0 ? (delta > 0 ? -1 : list.length) : cur) + delta));
+      const id = list[next]?.chat_id;
+      requestAnimationFrame(() => document.querySelector(`tr[data-chat-id="${id}"]`)?.scrollIntoView?.({ block: 'nearest' }));
+      return next;
+    });
+  const atCursor = () => visibleRef.current[cursor];
+  useHotkeys({
+    j: () => moveCursor(1),
+    k: () => moveCursor(-1),
+    Enter: () => atCursor() && navigate(`/conversation/${atCursor().chat_id}`),
+    w: () => {
+      const row = atCursor();
+      if (!row || !watch) return;
+      if (watch.isOpen(row.chat_id)) watch.close(row.chat_id);
+      else watch.open({ chatId: row.chat_id, name: row.name || `Чат ${row.chat_id}`, avatar: row.avatar_url || null });
+    },
+  });
+
   const visible = useMemo(
     () => sorted.slice((current - 1) * pageSize, current * pageSize),
     [sorted, current, pageSize],
   );
+  visibleRef.current = visible;
+  // Страница сменилась или строк стало меньше — курсор не указывает в пустоту.
+  useEffect(() => {
+    setCursor((cur) => (cur >= visible.length ? visible.length - 1 : cur));
+  }, [visible.length]);
 
   const loading = !ready && rows.length === 0;
 
@@ -225,6 +258,7 @@ function ConversationsTable({
           sort={sort}
           onSort={handleSort}
           onOpen={(id) => navigate(`/conversation/${id}`)}
+          cursorId={visible[cursor]?.chat_id ?? null}
           onHide={onHide}
           onDealStage={onDealStage}
           urgent={urgent}

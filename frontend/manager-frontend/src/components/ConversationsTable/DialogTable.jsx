@@ -72,7 +72,7 @@ function lastSeen(ts) {
  * в заголовке действий; значение скрытой колонки остаётся в подсказке собеседника.
  * Рядом с названием колонки — воронка её фильтра: filters = { defs, state, onChange }.
  */
-export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, onHide, onDealStage = null, urgent = null, filters = null, helpers }) {
+export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, onHide, onDealStage = null, urgent = null, cursorId = null, filters = null, helpers }) {
   const { Avatar, Stage, isNew, unreadLabel, presence, nextAction, accountLost, typingLabels } = helpers;
   const prefs = useDialogColumns();
   const watch = useChatWatch();
@@ -202,9 +202,12 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                 data-chat-id={row.chat_id}
                 onClick={() => onOpen(row.chat_id)}
                 data-urgent={urgentReason ? 'true' : undefined}
+                data-cursor={cursorId === row.chat_id ? 'true' : undefined}
                 data-no-stage={noStage || undefined}
                 className={cn(
                   'cursor-pointer focus-within:bg-muted/50',
+                  // Строка под курсором горячих клавиш (J/K) — рамка поверх любой заливки.
+                  cursorId === row.chat_id && 'outline-2 -outline-offset-2 outline-primary',
                   // Срочное заметно сразу: заливка плюс красная полоска у края строки.
                   urgentReason &&
                     'bg-destructive/15 hover:bg-destructive/20 focus-within:bg-destructive/20 [&>td:first-child]:shadow-[inset_3px_0_0_var(--destructive)]',

@@ -12,6 +12,7 @@ import MessageFeed from './MessageFeed';
 import InputArea, { InputAreaSkeleton } from './InputArea';
 import LibraryPicker from '../PhotoSets/LibraryPicker';
 import { showScenario } from './scenarioFlag';
+import { useHotkeys } from '../../components/Hotkeys/hotkeys';
 import {
   goalRows,
   goalNow,
@@ -435,6 +436,24 @@ function ConversationPage() {
       setBusy(false);
     }
   }
+
+  // Горячие клавиши чата: J/K — соседний чат в порядке списка диалогов, E — тумблер
+  // бота, R — к полю ответа, Esc — назад к диалогам. В полях ввода не срабатывают.
+  const goSibling = (delta) => {
+    const ids = (chats ?? []).map((c) => c.chat_id);
+    const idx = ids.indexOf(Number(id));
+    const next = ids[idx + delta];
+    if (idx !== -1 && next !== undefined) navigate(`/conversation/${next}`);
+  };
+  useHotkeys({
+    j: () => goSibling(1),
+    k: () => goSibling(-1),
+    e: () => void toggleAi(),
+    r: () => document.querySelector('textarea[aria-label="Сообщение"]')?.focus(),
+    Escape: () => {
+      if (!sidebarOpen) navigate('/');
+    },
+  });
 
   async function pickFiles(fileList) {
     const files = [...(fileList ?? [])].filter(Boolean);

@@ -8,6 +8,7 @@ import { HeaderToolsContext } from './headerTools';
 import { RouteBusyContext, useRouteBusy } from './routeBusy';
 import { MeContext } from './me';
 import ChatWatchLayer from '../ChatWatch/ChatWatchLayer';
+import HotkeysHelp from '../Hotkeys/HotkeysHelp';
 import { ChatWatchContext, useChatWatchState } from '../ChatWatch/chatWatch';
 
 /** Пока грузится код страницы: шапка на месте, под ней — каркас контента. */
@@ -67,6 +68,7 @@ export default function AppLayout({ me }) {
           </div>
           {/* Окна наблюдения — поверх любой страницы и переживают переходы. */}
           <ChatWatchLayer />
+          <HotkeysHelp />
           </ChatWatchContext.Provider>
         </RouteBusyContext.Provider>
       </HeaderToolsContext.Provider>
