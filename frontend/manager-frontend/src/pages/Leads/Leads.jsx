@@ -22,6 +22,7 @@ import {
 } from '../../api/leads';
 import { useRouteBusy } from '../../components/AppLayout/routeBusy';
 import { FilterChips } from '../../components/ColumnFilter/FilterChips';
+import { SavedFilters } from '../../components/ColumnFilter/SavedFilters';
 import { useColumnFilters } from '../../components/ColumnFilter/useColumnFilters';
 import { PageHeader } from '../../components/PageHeader/PageHeader';
 import { Pager } from '../../components/Pager/Pager';
@@ -278,7 +279,7 @@ export default function Leads() {
   const [data, setData] = useState({ items: null, counts: {} });
   // Фильтры колонок («Статус», «Этап») живут в sessionStorage; воронка над
   // таблицей — то же самое состояние, что и фильтр «Статус».
-  const [filterState, setFilter, resetFilters] = useColumnFilters('leads');
+  const [filterState, setFilter, resetFilters, replaceFilters] = useColumnFilters('leads');
   const statuses = pick(filterState.status, STATUS_KEYS);
   const dealStages = pick(filterState.stage, STAGE_KEYS);
   const status = onlyOne(statuses);
@@ -513,6 +514,7 @@ export default function Leads() {
           />
 
           <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-2">
+            <SavedFilters tableId="leads" state={filters.state} onApply={(state) => { replaceFilters(state); setPage(1); }} />
             <FilterChips
               columns={filterColumns}
               state={filters.state}

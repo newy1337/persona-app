@@ -263,8 +263,10 @@ describe('шапка списка: счётчик и плашки фильтро
     const order = [...host.querySelector('h2').parentElement.children];
     expect(order[0].tagName).toBe('H2');
     expect(order[1]).toBe(counter());
-    expect(order[2]).toBe(chips());
-    expect(order[3].querySelector('[data-testid="extra"]')).not.toBeNull();
+    // «Мои фильтры» — сохранённые наборы — между счётчиком и плашками.
+    expect(order[2].dataset.testid).toBe('saved-filters');
+    expect(order[3]).toBe(chips());
+    expect(order[4].querySelector('[data-testid="extra"]')).not.toBeNull();
     expect(chips().textContent).toContain('Стадия: Разговорились');
   });
 

@@ -9,6 +9,7 @@ import TableSkeleton from '../TableSkeleton/TableSkeleton';
 import ClientAvatar, { ACTIVITY_LABEL } from '../ClientAvatar/ClientAvatar';
 import { Pager } from '../Pager/Pager';
 import { FilterChips } from '../ColumnFilter/FilterChips';
+import { SavedFilters } from '../ColumnFilter/SavedFilters';
 import { applyFilters, isActive } from '../ColumnFilter/filters';
 import { useColumnFilters } from '../ColumnFilter/useColumnFilters';
 import { stageColors } from '../../data/stages';
@@ -76,7 +77,7 @@ function ConversationsTable({
   filters = null,
 }) {
   const own = useColumnFilters('dialogs');
-  const [filterState, setFilter, resetFilters] = filters ?? own;
+  const [filterState, setFilter, resetFilters, replaceFilters] = filters ?? own;
   const [channel, setChannel] = useState('all');
   // Фильтр канала — когда в списке больше одного мессенджера (или он уже выбран).
   const channelCounts = CHANNEL_FILTERS.map(([key, label]) => [
@@ -238,6 +239,7 @@ function ConversationsTable({
             ))}
           </div>
         )}
+        {replaceFilters && <SavedFilters tableId={showHidden ? 'dialogs_archive' : 'dialogs'} state={filterState} onApply={replaceFilters} />}
         <FilterChips
           className="min-w-0 flex-1 flex-nowrap overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0"
           columns={filterColumns}

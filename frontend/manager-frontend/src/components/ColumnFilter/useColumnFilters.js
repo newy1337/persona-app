@@ -45,5 +45,15 @@ export function useColumnFilters(tableId) {
     setState({});
   }, [tableId]);
 
-  return [state, setFilter, reset];
+  // Заменить фильтры целиком — так применяется сохранённый набор.
+  const replace = useCallback(
+    (next) => {
+      const clean = Object.fromEntries(Object.entries(next ?? {}).filter(([, v]) => isActive(v)));
+      write(tableId, clean);
+      setState(clean);
+    },
+    [tableId],
+  );
+
+  return [state, setFilter, reset, replace];
 }
