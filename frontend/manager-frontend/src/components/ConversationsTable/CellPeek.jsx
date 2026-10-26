@@ -12,8 +12,12 @@ import { cn } from '@/lib/utils';
 const PEEK_MAX = 360;
 const INTERACTIVE = 'a, button, select, input, textarea, [role="combobox"]';
 
+// Обрезка многоточием (truncate) — по ширине, по числу строк (line-clamp) — по высоте.
 const isClipped = (el) =>
-  Boolean(el) && [el, ...el.querySelectorAll('.truncate')].some((n) => n.scrollWidth > n.clientWidth + 1);
+  Boolean(el) &&
+  [el, ...el.querySelectorAll('.truncate, [class*="line-clamp-"]')].some(
+    (n) => n.scrollWidth > n.clientWidth + 1 || (n.className.includes?.('line-clamp-') && n.scrollHeight > n.clientHeight + 1),
+  );
 
 /** Раскрытие обрезанной ячейки: обработчики для её содержимого и сама плашка. */
 export function useCellPeek() {
@@ -59,7 +63,7 @@ export function useCellPeek() {
       <div
         data-cell-peek=""
         role="tooltip"
-        className="fixed z-50 flex items-center gap-1.5 rounded-md border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg [&_.h-4]:h-auto [&_.h-5]:h-auto [&_.truncate]:overflow-visible [&_.truncate]:whitespace-normal [&_.truncate]:[overflow-wrap:anywhere]"
+        className="fixed z-50 flex items-center gap-1.5 rounded-md border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg [&_.h-4]:h-auto [&_.h-5]:h-auto [&_.truncate]:overflow-visible [&_.truncate]:whitespace-normal [&_[class*=line-clamp-]]:line-clamp-none [&_.truncate]:[overflow-wrap:anywhere]"
         style={{
           left: Math.max(8, Math.min(rect.left, window.innerWidth - PEEK_MAX - 8)),
           top: rect.top,

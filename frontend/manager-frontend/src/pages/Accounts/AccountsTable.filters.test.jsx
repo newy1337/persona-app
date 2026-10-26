@@ -223,7 +223,7 @@ describe('таблица аккаунтов: колонки только для 
     seed({ manager: ['ivan'], region: ['0078'] });
     await as(manager, table());
     // matchMedia в jsdom нет — экран считается широким, «Пульс» виден.
-    expect(heads()).toEqual(['Подробнее', 'Аккаунт', 'Телефон', 'Личность', 'Диалоги', 'Образ', 'Прокси', 'Состояние', 'Пульс', 'Действия']);
+    expect(heads()).toEqual(['Подробнее', 'Аккаунт', 'Соцсеть', 'Телефон', 'Личность', 'Диалоги', 'Образ', 'Прокси', 'Состояние', 'Пульс', 'Действия']);
     expect(host.querySelector('tbody tr').children.length).toBe(heads().length);
     expect(host.querySelector('[data-testid="account-owner"]')).toBeNull();
     // Сохранённые фильтры по этим колонкам не действуют и не видны.
@@ -231,7 +231,7 @@ describe('таблица аккаунтов: колонки только для 
     expect(chips()).toBeNull();
     expect(count()).toBe('Аккаунтов: 4');
     expect(funnel('Менеджер')).toBeNull();
-    expect(host.querySelector('table').style.minWidth).toBe('1110px');
+    expect(host.querySelector('table').style.minWidth).toBe('1248px');
 
     await click(host.querySelector('tr[data-account-id="1"]'));
     const facts = [...host.querySelectorAll('[role="region"] dt')].map((dt) => dt.textContent);
@@ -245,7 +245,7 @@ describe('таблица аккаунтов: колонки только для 
         .dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 })),
     );
     expect([...document.querySelectorAll('[role="menuitemcheckbox"]')].map((item) => item.textContent)).toEqual(
-      ['Телефон', 'Личность', 'Диалоги', 'Образ', 'Прокси', 'Состояние', 'Пульс'],
+      ['Соцсеть', 'Телефон', 'Личность', 'Диалоги', 'Образ', 'Прокси', 'Состояние', 'Пульс'],
     );
   });
 

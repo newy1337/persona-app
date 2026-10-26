@@ -68,9 +68,9 @@ const facts = () =>
 describe('таблица аккаунтов: настройка полей', () => {
   it('по умолчанию на узком экране нет «Региона» и «Пульса»', async () => {
     await draw();
-    expect(heads()).toEqual(['Подробнее', 'Аккаунт', 'Телефон', 'Личность', 'Менеджер', 'Диалоги', 'Прокси', 'Состояние', 'Действия']);
+    expect(heads()).toEqual(['Подробнее', 'Аккаунт', 'Соцсеть', 'Телефон', 'Личность', 'Менеджер', 'Диалоги', 'Прокси', 'Состояние', 'Действия']);
     expect(firstRow().length).toBe(heads().length);
-    expect(host.querySelector('table').style.minWidth).toBe('1250px');
+    expect(host.querySelector('table').style.minWidth).toBe('1388px');
   });
 
   it('на широком экране видны «Регион», «Пульс» и «Образ»; минимальная ширина та же', async () => {
@@ -79,7 +79,7 @@ describe('таблица аккаунтов: настройка полей', () 
     expect(cellOf('Регион').textContent).toBe('0077');
     expect(heads()).toContain('Пульс');
     expect(cellOf('Образ').textContent).toBe('без образа');
-    expect(host.querySelector('table').style.minWidth).toBe('1250px');
+    expect(host.querySelector('table').style.minWidth).toBe('1388px');
   });
 
   it('явное включение показывает «Регион» на узком экране', async () => {
@@ -88,7 +88,7 @@ describe('таблица аккаунтов: настройка полей', () 
     await click(box('Регион'));
     expect(cellOf('Регион').textContent).toBe('0077');
     expect(JSON.parse(localStorage.getItem(KEY))).toEqual({ region: true });
-    expect(host.querySelector('table').style.minWidth).toBe('1334px');
+    expect(host.querySelector('table').style.minWidth).toBe('1472px');
   });
 
   it('скрытая колонка пропадает из заголовка и строк, значение переезжает в раскрытие строки', async () => {
@@ -98,17 +98,17 @@ describe('таблица аккаунтов: настройка полей', () 
     await openPicker();
     await click(box('Телефон'));
     await click(box('Состояние'));
-    expect(heads()).toEqual(['Подробнее', 'Аккаунт', 'Личность', 'Менеджер', 'Диалоги', 'Прокси', 'Действия']);
+    expect(heads()).toEqual(['Подробнее', 'Аккаунт', 'Соцсеть', 'Личность', 'Менеджер', 'Диалоги', 'Прокси', 'Действия']);
     expect(firstRow().length).toBe(heads().length);
     expect(facts()).toMatchObject({ Телефон: '+70000000000', Состояние: 'активен' });
     expect(host.querySelector('[role="region"]').closest('td').colSpan).toBe(heads().length);
   });
 
-  it('без гибкой «Прокси» минимальная ширина — сумма оставшихся колонок', async () => {
+  it('без «Прокси» минимальная ширина — сумма оставшихся колонок', async () => {
     localStorage.setItem(KEY, JSON.stringify({ proxy: false }));
     await draw();
     expect(heads()).not.toContain('Прокси');
-    expect(host.querySelector('table').style.minWidth).toBe('1080px');
+    expect(host.querySelector('table').style.minWidth).toBe('1208px');
   });
 
   it('раскрытие, аккаунт и действия обязательны: в меню их нет, запись в хранилище их не прячет', async () => {
@@ -117,7 +117,7 @@ describe('таблица аккаунтов: настройка полей', () 
     expect(heads().slice(0, 2)).toEqual(['Подробнее', 'Аккаунт']);
     expect(heads().at(-1)).toBe('Действия');
     await openPicker();
-    expect(boxes().map((item) => item.textContent)).toEqual(['Телефон', 'Личность', 'Менеджер', 'Регион', 'Диалоги', 'Образ', 'Прокси', 'Состояние', 'Пульс']);
+    expect(boxes().map((item) => item.textContent)).toEqual(['Соцсеть', 'Телефон', 'Личность', 'Менеджер', 'Регион', 'Диалоги', 'Образ', 'Прокси', 'Состояние', 'Пульс']);
   });
 
   it('пустое состояние занимает все видимые колонки, настройка полей остаётся доступной', async () => {
@@ -131,7 +131,7 @@ describe('таблица аккаунтов: настройка полей', () 
     localStorage.setItem(KEY, JSON.stringify({ phone: false, pulse: true }));
     await act(async () => root.render(<AccountsTableSkeleton rows={2} />));
     const head = host.querySelectorAll('[role="status"] thead th');
-    expect([...head].map((th) => th.textContent)).toEqual(['Подробнее', 'Аккаунт', 'Личность', 'Менеджер', 'Диалоги', 'Прокси', 'Состояние', 'Пульс', 'Действия']);
+    expect([...head].map((th) => th.textContent)).toEqual(['Подробнее', 'Аккаунт', 'Соцсеть', 'Личность', 'Менеджер', 'Диалоги', 'Прокси', 'Состояние', 'Пульс', 'Действия']);
     for (const row of host.querySelectorAll('[role="status"] tbody tr')) expect(row.children.length).toBe(head.length);
     expect(host.querySelector('button')).toBeNull();
   });

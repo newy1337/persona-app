@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from '../../api/client';
 import { AccountsTable, AccountsTableSkeleton } from './AccountsTable';
 import { MeContext } from '../../components/AppLayout/me';
@@ -118,8 +118,10 @@ test('VK-аккаунт: бейдж канала, ссылка на профил
       onLogin={onLogin}
     />,
   );
-  expect(rowOf(5).querySelector('[data-testid="channel-badge"]').textContent).toBe('VK');
-  expect(rowOf(6).querySelector('[data-testid="channel-badge"]')).toBeNull();
+  // Колонка «Соцсеть» есть у каждой строки — и у Telegram, чтобы в «Все» было видно, где какой.
+  expect(rowOf(5).querySelector('[data-testid="channel-cell"]').textContent).toBe('VK');
+  expect(rowOf(6).querySelector('[data-testid="channel-cell"]').textContent).toBe('TG');
+  expect(rowOf(5).querySelector('[data-testid="channel-badge"]')).toBeNull();
   expect(rowOf(5).querySelector('a').getAttribute('href')).toBe('https://vk.com/id123');
   expect(rowOf(6).querySelector('a').getAttribute('href')).toBe('https://t.me/tg_user');
   expect(rowOf(5).textContent).toContain('vk@mail.ru');
@@ -151,4 +153,19 @@ test('хед видит «Менеджер» своей команды, мене
   expect(host.querySelector('[data-testid="account-owner"]').textContent).toBe('anna');
   await render(<MeContext.Provider value={{ id: 2, role: 'manager' }}><AccountsTable rows={rows} alive={{}} helpers={helpers} /></MeContext.Provider>);
   expect(host.querySelector('[data-testid="account-owner"]')).toBeNull();
+});
+
+describe('проблемные аккаунты', () => {
+  test('бан, нет сессии, включён но не в сети, ограничение, нет прокси — проблемы; пауза и выведенный — нет', async () => {
+    const { accountProblems } = await import('./AccountsTable');
+    const now = 1_800_000_000;
+    expect(accountProblems({ status: 'active' }, true, now)).toEqual([]);
+    expect(accountProblems({ status: 'paused' }, false, now)).toEqual([]);
+    expect(accountProblems({ status: 'retired', needs_proxy_setup: true }, false, now)).toEqual([]);
+    expect(accountProblems({ status: 'banned' }, false, now)).toEqual(['бан']);
+    expect(accountProblems({ status: 'unauthorized' }, false, now)).toEqual(['нет сессии']);
+    expect(accountProblems({ status: 'unauthorized', lost_at: 1, lost_reason: 'вышли с другого устройства' }, false, now)).toEqual(['сессия завершена: вышли с другого устройства']);
+    expect(accountProblems({ status: 'active', offline_reason: 'прокси не отвечает' }, false, now)).toEqual(['не в сети: прокси не отвечает']);
+    expect(accountProblems({ status: 'active', flood_until: now + 60, needs_proxy_setup: true }, true, now)).toEqual(['ограничен мессенджером', 'прокси не задан']);
+  });
 });

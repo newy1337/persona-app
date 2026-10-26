@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableCell, TableHead, TableHeader } from '@/components/ui/table';
+import { Peek } from '../../components/ConversationsTable/CellPeek';
 
 /** Статус -> вариант Badge (цветная точка). Всё, чего здесь нет, — нейтральный outline. */
 export const STATUS_VARIANT = {
@@ -26,25 +27,28 @@ export const STATUS_VARIANT = {
 
 /* Сетка аккаунтов: одно значение в ячейке (у аккаунта под именем — ник, у
    состояния — строка под ограничение). Ширины (px) заданы у всех колонок, кроме
-   «Прокси» — она забирает остаток (адрес прокси длинный). «Регион» и «Пульс»
+   «Состояния» — оно забирает остаток: под бейджем идёт причина (почему не в
+   сети, чем ограничен), и ей нужно место. Раньше остаток забирал «Прокси», а
+   причина обрезалась на 176px. Обрезанная причина раскрывается щелчком. «Регион» и «Пульс»
    по умолчанию видны с 1536px. Какие колонки показывать, пользователь выбирает
    сам — «Настроить поля» в заголовке колонки действий; раскрытие, аккаунт и
    действия скрыть нельзя. Значение скрытой колонки остаётся в раскрытии
    строки. Уже минимальной ширины таблица прокручивается внутри рамки. */
 const WIDE_QUERY = '(min-width: 96rem)';
-// Меньше этого «Прокси» не сжимается.
-const FLEX_MIN_WIDTH = 170;
+// Меньше этого «Состояние» не сжимается.
+const FLEX_MIN_WIDTH = 200;
 const COLUMNS = [
   { key: 'toggle', label: 'Подробнее', width: 44, required: true, quiet: true },
   { key: 'account', label: 'Аккаунт', width: 260, required: true },
+  { key: 'channel', label: 'Соцсеть', width: 104 },
   { key: 'phone', label: 'Телефон', width: 148 },
   { key: 'persona', label: 'Личность', width: 140 },
   { key: 'manager', label: 'Менеджер', width: 140, adminOnly: true },
   { key: 'region', label: 'Регион', width: 84, show: 'wide', adminOnly: true },
   { key: 'chats', label: 'Диалоги', width: 84 },
   { key: 'photoSet', label: 'Образ', width: 150, show: 'wide' },
-  { key: 'proxy', label: 'Прокси' },
-  { key: 'state', label: 'Состояние', width: 176, filterAlign: 'end' },
+  { key: 'proxy', label: 'Прокси', width: 180 },
+  { key: 'state', label: 'Состояние', filterAlign: 'end' },
   { key: 'pulse', label: 'Пульс', width: 120, show: 'wide', filterAlign: 'end' },
   { key: 'actions', label: 'Действия', width: 88, required: true, quiet: true },
 ];
@@ -74,6 +78,22 @@ const displayName = (row) =>
   row.display_name || accountContact(row)?.display || row.login || row.phone_e164 || `Аккаунт #${row.id}`;
 const isOnline = (row, alive) => Boolean(alive?.[row.id] ?? row.online);
 
+/**
+ * Что с аккаунтом не так — из-за этого строка красная: бан, нет сессии
+ * (отвалился), включён, но не в сети, ограничение мессенджера, нет прокси.
+ * Пауза и выведенные — решение человека, не проблема.
+ */
+export function accountProblems(row, online, now = Math.floor(Date.now() / 1000)) {
+  if (row.status === 'retired') return [];
+  const out = [];
+  if (row.status === 'banned') out.push('бан');
+  if (row.status === 'unauthorized') out.push(row.lost_at ? `сессия завершена${row.lost_reason ? `: ${row.lost_reason}` : ''}` : 'нет сессии');
+  if (row.status === 'active' && !online) out.push(`не в сети${row.offline_reason ? `: ${row.offline_reason}` : ''}`);
+  if (row.flood_until && row.flood_until > now) out.push('ограничен мессенджером');
+  if (row.needs_proxy_setup) out.push('прокси не задан');
+  return out;
+}
+
 /** Выбранное значение остаётся в списке, даже если строк с ним больше нет. */
 function keepPicked(options, value, empty = '—') {
   if (!Array.isArray(value)) return options;
@@ -97,6 +117,18 @@ function filterDefs(rows, alive, statusLabel, state) {
   const online = (row) => isOnline(row, alive);
   return {
     account: { type: 'text', placeholder: 'Имя или @ник', get: (row) => [displayName(row), row.username && `@${row.username}`, row.login] },
+    channel: {
+      type: 'options',
+      get: (row) => channelBadge(row.channel).key,
+      options: keepPicked(
+        [...new Set(rows.map((row) => channelBadge(row.channel).key))].map((key) => ({
+          value: key,
+          label: channelBadge(key).title,
+          count: count((row) => channelBadge(row.channel).key === key),
+        })),
+        state.channel,
+      ),
+    },
     phone: { type: 'text', placeholder: 'Номер или логин…', get: (row) => [row.phone_e164, row.login] },
     persona: fromRows('persona', personaOf, 'Без личности'),
     manager: fromRows('manager', (row) => row.manager_username || '', 'без менеджера'),
@@ -233,11 +265,12 @@ function Who({ avatar, title, sub }) {
 }
 
 /** Состояние: бейдж и строка под ограничение / причину потери сессии — место занято всегда. */
-function State({ badge, note, noteId }) {
+function State({ badge, note, noteId, problem = true }) {
   return (
     <div className="flex min-w-0 flex-col items-start gap-0.5">
       {badge}
-      <div className={cn(LINE_2, 'max-w-full text-destructive')} title={note || undefined} data-testid={note ? noteId : undefined}>{note}</div>
+      {/* Причина — до двух строк: строка с проблемой чуть выше, зато текст читается. */}
+      <div className={cn('line-clamp-2 min-h-4 max-w-full text-xs leading-4 whitespace-normal [overflow-wrap:anywhere]', problem ? 'text-destructive' : 'text-muted-foreground')} title={note || undefined} data-testid={note ? noteId : undefined}>{note}</div>
     </div>
   );
 }
@@ -271,6 +304,7 @@ export function AccountsTableSkeleton({ rows = 3 }) {
                 sub={<Bar className="h-2.5 w-24 max-w-full" />}
               />
             ),
+            channel: one('w-8'),
             phone: one('w-24'),
             persona: one('w-20'),
             manager: one('w-20'),
@@ -374,6 +408,7 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
         const profile = accountContact(row);
         const network = badge.title;
         const online = isOnline(row, alive);
+        const problems = accountProblems(row, online);
         const presence = online ? ONLINE : OFFLINE;
         const open = expanded.has(row.id);
         const loginNeeded = row.status === 'unauthorized' || row.status === 'banned';
@@ -386,6 +421,7 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
         const photoSet = row.photo_set_name || 'без образа';
         // Значения скрытых колонок не пропадают: они добавляются в раскрытие строки.
         const facts = [
+          problems.length > 0 && { label: 'Проблемы', value: problems.join('; ') },
           { label: 'ID аккаунта', value: `#${row.id}`, mono: true },
           !has('phone') && { label: row.login && !row.phone_e164 ? 'Логин' : 'Телефон', value: row.phone_e164 || row.login || '—', mono: Boolean(row.phone_e164 || row.login) },
           !has('persona') && { label: 'Личность', value: row.persona_name || row.persona_id || 'Без личности' },
@@ -406,7 +442,15 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
             <RowShell
               columns={columns}
               data-account-id={row.id}
-              className={cn('cursor-pointer transition-colors hover:bg-muted/50', open && 'border-b-0 bg-muted/30')}
+              data-problem={problems.length ? 'true' : undefined}
+              title={problems.length ? `Проблемы: ${problems.join('; ')}` : undefined}
+              className={cn(
+                'cursor-pointer transition-colors hover:bg-muted/50',
+                open && 'border-b-0 bg-muted/30',
+                // Аккаунт отвалился, в бане, не в сети и т.п. — строка красная, как срочные диалоги.
+                problems.length > 0 &&
+                  'bg-destructive/15 hover:bg-destructive/20 [&>td:first-child]:shadow-[inset_3px_0_0_var(--destructive)]',
+              )}
               // Клик по строке раскрывает её; выделение текста мышью раскрытием не считается.
               onClick={() => !window.getSelection?.()?.toString() && toggle(row.id)}
               cellProps={{ actions: { onClick: stop } }}
@@ -441,7 +485,8 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
                     title={(
                       <span className="flex min-w-0 items-center gap-1.5">
                         <span className="truncate" title={name}>{name}</span>
-                        {badge.other && (
+                        {/* Колонку «Соцсеть» скрыли — метка канала у имени, у всех, и у Telegram тоже. */}
+                        {!has('channel') && (
                           <Badge variant="outline" className="h-4 shrink-0 px-1 text-[10px]" data-testid="channel-badge" data-channel={badge.key} title={badge.title}>
                             {badge.label}
                           </Badge>
@@ -461,6 +506,13 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
                       </a>
                     ) : presence}
                   />
+                ),
+                channel: (
+                  <div className={ONE}>
+                    <Badge variant="outline" className="h-5" data-testid="channel-cell" data-channel={badge.key} title={badge.title}>
+                      {badge.label}
+                    </Badge>
+                  </div>
                 ),
                 phone: (
                   <div className={ONE}>
@@ -503,7 +555,9 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
                     <span className={cn('truncate', row.needs_proxy_setup && 'text-muted-foreground')}>{proxy}</span>
                   </div>
                 ),
+                // Причина обрезана многоточием — щелчок по ней раскрывает полный текст (строка при этом не раскрывается).
                 state: (
+                  <Peek className="min-w-0">
                   <State
                     badge={(
                       <Badge variant={lost ? 'destructive' : STATUS_VARIANT[row.status] || 'outline'} title={row.lost_reason || undefined}>
@@ -512,7 +566,10 @@ export function AccountsTable({ rows, alive, onEdit, onLogin, onProxy, onStatus,
                     )}
                     note={note}
                     noteId={note && note === offlineReason ? 'offline-reason' : undefined}
+                    // На паузе «не в сети» — норма: причина серая, красная — только у проблемных.
+                    problem={problems.length > 0}
                   />
+                  </Peek>
                 ),
                 pulse: <div className={cn(ONE, 'tabular-nums text-muted-foreground')}><span className="truncate">{date(row.last_heartbeat_at)}</span></div>,
                 actions: (
