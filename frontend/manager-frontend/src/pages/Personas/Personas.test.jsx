@@ -157,24 +157,39 @@ describe('страница личностей без описаний полей
     expect(tooltip().textContent).toContain('с чего начинает');
   });
 
-  it('ритм: единица измерения в подписи, пояснения — за значками', async () => {
+  it('ритм: карточки с выключателями, поля внутри предложений, «от» больше «до» подсвечено', async () => {
     await openTab('Ритм');
-    const labels = [...host.querySelectorAll('[data-slot="field"]')].map((f) => f.textContent);
-    expect(labels).toContain('Разогрев, мин');
-    expect(labels).toContain('Пауза в потоке, сек');
-    for (const name of ['Ритм', 'Задержка ответа', 'Разогрев', 'Пауза в потоке', 'Утреннее сообщение']) {
+    const cards = [...host.querySelectorAll('[data-rhythm-card]')].map((c) => c.dataset.rhythmCard);
+    expect(cards).toEqual(['Скорость ответа', 'После молчания', '«Печатает…»', 'Утро и прощание', 'Старые сообщения', 'Сама пишет первой']);
+    expect(host.querySelector('[data-testid="rhythm-phases"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="rhythm-day"]')).not.toBeNull();
+    for (const name of ['Ритм', 'Скорость ответа', 'После молчания', 'Утро и прощание']) {
       expect(byLabel(`Пояснение: ${name}`)).not.toBeNull();
     }
-    expect(host.querySelector('[data-slot="field-message"]')).toBeNull();
-    expect(host.textContent).not.toContain('от его первого сообщения');
+    // Поле — с понятным именем, подпись — частью предложения.
+    const warm = byLabel('Разогрев, мин');
+    expect(warm.tagName).toBe('INPUT');
+    expect(warm.closest('p').textContent).toContain('мин от его первого сообщения');
 
-    await act(async () => byLabel('Пояснение: Разогрев').focus());
-    expect(tooltip().textContent).toContain('от его первого сообщения');
+    // «от» больше «до» — оба поля помечены, рядом пояснение.
+    const type = (el, value) =>
+      act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    const lo = byLabel('Дальше: от');
+    await type(byLabel('Дальше: до'), '20');
+    expect(lo.getAttribute('aria-invalid')).toBeNull();
+    await type(lo, '30');
+    expect(lo.getAttribute('aria-invalid')).toBe('true');
+    expect(byLabel('Дальше: до').getAttribute('aria-invalid')).toBe('true');
+    expect(lo.closest('p').textContent).toContain('«от» больше «до»');
 
-    // Значок стоит внутри подписи, но подпись по-прежнему относится к полю, а не к нему.
-    const warm = [...host.querySelectorAll('[data-slot="field"]')].find((f) => f.textContent === 'Разогрев, мин');
-    expect(warm.control?.tagName).toBe('INPUT');
-    expect(byLabel('Пояснение: Разогрев').tagName).toBe('SPAN');
+    // Выключатель карточки приглушает её и выключает поля.
+    const card = host.querySelector('[data-rhythm-card="После молчания"]');
+    await act(async () => card.querySelector('button[role="switch"]').click());
+    expect(card.querySelector('fieldset').disabled).toBe(true);
+    expect(card.textContent).toContain('выключено');
   });
 
   it('карточка: заметка автора к полю — за значком, ключ документа — в title подписи', async () => {
