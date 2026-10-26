@@ -13,7 +13,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-import { LEAD_GENDERS, LEAD_STATUSES } from 'src/domain/leads';
+import { LEAD_CHANNELS, LEAD_GENDERS, LEAD_STATUSES } from 'src/domain/leads';
 import { DEAL_STAGE_FILTERS, DealStageFilter } from 'src/domain/deal-stage';
 
 export class CreateLeadDto {
@@ -27,9 +27,18 @@ export class CreateLeadDto {
   @ApiPropertyOptional({ example: '@durov' })
   @IsOptional()
   @IsString()
-  @MinLength(4)
+  @MinLength(3)
   @MaxLength(64)
   username?: string;
+
+  @ApiPropertyOptional({
+    enum: LEAD_CHANNELS,
+    description:
+      'куда писать; по умолчанию Telegram, ссылка vk.com/… — сразу VK, выбранный аккаунт — его канал',
+  })
+  @IsOptional()
+  @IsIn(LEAD_CHANNELS)
+  channel?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -98,6 +107,11 @@ export class ImportLeadsDto {
   @ValidateNested({ each: true })
   @Type(() => CreateLeadDto)
   items?: CreateLeadDto[];
+
+  @ApiPropertyOptional({ enum: LEAD_CHANNELS, default: 'telegram' })
+  @IsOptional()
+  @IsIn(LEAD_CHANNELS)
+  channel?: string;
 
   @ApiPropertyOptional({ default: 'import' })
   @IsOptional()

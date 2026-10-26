@@ -175,6 +175,7 @@ export class InboundService {
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('inbound_leads'))`;
           const existing = await tx.lead.findFirst({
             where: {
+              channel: 'telegram',
               OR: [
                 ...(phone ? [{ phoneE164: phone }] : []),
                 ...(username ? [{ usernameKey: username }] : []),
@@ -273,6 +274,7 @@ export class InboundService {
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('inbound_leads'))`;
           const existing = await tx.lead.findFirst({
             where: {
+              channel: 'telegram',
               OR: [
                 ...(phone ? [{ phoneE164: phone }] : []),
                 ...(username ? [{ usernameKey: username }] : []),

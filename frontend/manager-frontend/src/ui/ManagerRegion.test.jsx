@@ -154,3 +154,34 @@ test('строка лида: имя вместо номера, пол рядом
   expect(host.querySelector('.mr-lead-name').textContent).toBe('Олег');
   expect(host.textContent).toContain('48 лет · муж. · Москва');
 });
+
+test('лид VK: ссылка vk.com сама выбирает ВКонтакте, в списке отправителей только аккаунты VK, channel уходит в запрос', async () => {
+  api.get.mockImplementation(async path => path === '/api/tg-accounts'
+    ? [...accounts, { id: 9, channel: 'vk', username: 'vk_sender', status: 'active', persona_id: 'nastya' }]
+    : path === '/api/leads/owners' ? { items: [] } : { user_id: 1, role: 'admin' });
+  const post = vi.spyOn(api, 'post').mockResolvedValue({ ok: true });
+  await render(<CreateLeadForm personas={[{ slug: 'nastya', name: 'Настя' }]} PersonaSelect={() => null} onDone={() => {}} onCancel={() => {}} />);
+  const messenger = host.querySelector('select[aria-label="Мессенджер"]');
+  expect(messenger.value).toBe('telegram');
+  const options = () => [...host.querySelectorAll('.mr-lead-sender option')].map(o => o.value);
+  expect(options()).toEqual(['', '7']);
+  await input(host.querySelector('input[maxlength="64"]'), 'https://vk.com/ivan.petrov');
+  expect(messenger.value).toBe('vk');
+  expect(host.textContent).toContain('Аккаунт VK для первого сообщения');
+  expect(options()).toEqual(['', '9']);
+  await act(async () => host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  expect(post).toHaveBeenCalledWith('/api/leads', expect.objectContaining({ phone: 'https://vk.com/ivan.petrov', channel: 'vk' }));
+});
+
+test('строка лида VK: метка VK, ссылки на vk.com с бэка', async () => {
+  await render(<LeadsTable rows={[{ id: 90, status: 'contacted', channel: 'vk', username: 'ivan.petrov', contact: { display: 'ivan.petrov', url: 'https://vk.com/ivan.petrov' },
+    telegram_user_id: 2000000123, peer_contact: { display: 'id123', url: 'https://vk.com/id123' }, assigned_account_id: 9, sender_contact: { display: 'vk_sender', url: 'https://vk.com/vk_sender' }, first_contact_at: 1 }]}
+    selected={new Set()} personas={[]} onToggle={() => {}} onSelectVisible={() => {}} onClearSelection={() => {}} onChat={() => {}} onQueue={() => {}} onUnqueue={() => {}} onReassign={() => {}} onDelete={() => {}} onPersonaChange={() => {}}
+    helpers={{ PersonaSelect: () => null, statusLabels: {}, statusClasses: {}, date: () => '' }} />);
+  expect(host.querySelector('[data-testid="lead-channel"]').textContent).toBe('VK');
+  expect(host.querySelector('.mr-lead-name').textContent).toBe('ivan.petrov');
+  const hrefs = [...host.querySelectorAll('a')].map(a => a.getAttribute('href'));
+  expect(hrefs).toEqual(expect.arrayContaining(['https://vk.com/ivan.petrov', 'https://vk.com/id123', 'https://vk.com/vk_sender']));
+  expect(hrefs.some(h => h.includes('t.me'))).toBe(false);
+  expect(host.textContent).toContain('ВКонтакте: id123');
+});

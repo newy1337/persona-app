@@ -329,6 +329,7 @@ export class OutreachWorker implements OnModuleInit {
       // Номер или ник — одного из наших аккаунтов: писать самим себе не нужно.
       const ownAccount = await this.prisma.channelAccount.findFirst({
         where: {
+          channel: candidate.channel,
           OR: [
             ...(candidate.phoneE164
               ? [{ phoneE164: candidate.phoneE164 }]
@@ -380,13 +381,19 @@ export class OutreachWorker implements OnModuleInit {
           data: {
             status: 'dead',
             lastError:
-              resolved.kind === 'found'
-                ? 'аккаунт Telegram удалён'
-                : candidate.phoneE164 && candidate.usernameKey
-                  ? 'ни номера, ни @username нет в Telegram (номер мог быть скрыт приватностью)'
-                  : candidate.phoneE164
-                    ? 'номера нет в Telegram или он скрыт приватностью («кто видит мой номер»)'
-                    : 'такого @username нет (или это канал/группа)',
+              candidate.channel === 'vk'
+                ? resolved.kind === 'found'
+                  ? 'страница VK удалена или заблокирована'
+                  : candidate.usernameKey
+                    ? 'такой страницы VK нет или личка закрыта'
+                    : 'по номеру в VK не нашли'
+                : resolved.kind === 'found'
+                  ? 'аккаунт Telegram удалён'
+                  : candidate.phoneE164 && candidate.usernameKey
+                    ? 'ни номера, ни @username нет в Telegram (номер мог быть скрыт приватностью)'
+                    : candidate.phoneE164
+                      ? 'номера нет в Telegram или он скрыт приватностью («кто видит мой номер»)'
+                      : 'такого @username нет (или это канал/группа)',
             attempts: { increment: 1 },
           },
         });

@@ -19,6 +19,10 @@ export const isLeadStatus = (v: unknown): v is LeadStatus =>
 
 export const LEAD_GENDERS = ['m', 'f', 'unknown'] as const;
 
+/** Куда писать лиду: Telegram или VK. Один номер может быть лидом в обоих. */
+export const LEAD_CHANNELS = ['telegram', 'vk'] as const;
+export type LeadChannel = (typeof LEAD_CHANNELS)[number];
+
 export const MAX_OUTREACH_ATTEMPTS = 3;
 export const RETRY_BACKOFF_S = 3600;
 export const PEER_FLOOD_BACKOFF_S = 6 * 3600;
@@ -39,6 +43,7 @@ export function normalizePhone(raw: string): string | null {
 export interface LeadDraft {
   phone_e164?: string | null;
   username?: string | null;
+  channel?: LeadChannel;
   first_name?: string | null;
   city?: string | null;
   age?: number | null;
@@ -49,7 +54,8 @@ export interface LeadDraft {
 export const leadKey = (d: {
   phone_e164?: string | null;
   username?: string | null;
-}) => d.phone_e164 ?? `@${d.username}`;
+  channel?: string | null;
+}) => (d.channel === 'vk' ? 'VK ' : '') + (d.phone_e164 ?? `@${d.username}`);
 
 const USERNAME_RE = /^[a-z][a-z0-9_]{3,31}$/;
 
@@ -63,21 +69,50 @@ export function normalizeUsername(raw: string): string | null {
   return v;
 }
 
+const VK_LINK_RE = /^(https?:\/\/)?((www|m)\.)?vk\.(com|ru)\//i;
+const VK_USERNAME_RE = /^(id\d+|[a-z0-9_.]{3,32})$/;
+
+/** Ник VK: короткий адрес или idN; ссылка vk.com/… тоже подходит. */
+export function normalizeVkUsername(raw: string): string | null {
+  let v = String(raw ?? '')
+    .trim()
+    .replace(VK_LINK_RE, '');
+  v = v
+    .replace(/[/?#].*$/, '')
+    .replace(/^@/, '')
+    .toLowerCase();
+  if (/^\d+$/.test(v)) v = `id${v}`;
+  if (!VK_USERNAME_RE.test(v) || /^[\d_.]+$/.test(v) || v.startsWith('.'))
+    return null;
+  return v;
+}
+
+export const isVkLink = (raw: string) =>
+  VK_LINK_RE.test(String(raw ?? '').trim());
+
+/**
+ * Телефон или ник. Ссылка vk.com/… сама делает лид VK, t.me/… — Telegram;
+ * иначе канал задаёт форма.
+ */
 export function parseLeadContact(
   raw: string,
-): Pick<LeadDraft, 'phone_e164' | 'username'> | null {
+  channel: LeadChannel = 'telegram',
+): Pick<LeadDraft, 'phone_e164' | 'username' | 'channel'> | null {
   const text = String(raw ?? '').trim();
   if (!text) return null;
+  if (isVkLink(text)) channel = 'vk';
+  else if (/t\.me\/|telegram\.(me|dog)\//i.test(text)) channel = 'telegram';
   const looksLikeUsername =
     /^@/.test(text) ||
-    /t\.me\/|telegram\.(me|dog)\//i.test(text) ||
+    /t\.me\/|telegram\.(me|dog)\/|vk\.(com|ru)\//i.test(text) ||
     /[a-z_]/i.test(text.replace(/^\+/, ''));
   if (looksLikeUsername) {
-    const username = normalizeUsername(text);
-    return username ? { username, phone_e164: null } : null;
+    const username =
+      channel === 'vk' ? normalizeVkUsername(text) : normalizeUsername(text);
+    return username ? { username, phone_e164: null, channel } : null;
   }
   const phone = normalizePhone(text);
-  return phone ? { phone_e164: phone, username: null } : null;
+  return phone ? { phone_e164: phone, username: null, channel } : null;
 }
 
 export interface ParsedLeads {
@@ -86,7 +121,10 @@ export interface ParsedLeads {
   duplicates: number;
 }
 
-export function parseLeadLines(text: string): ParsedLeads {
+export function parseLeadLines(
+  text: string,
+  channel: LeadChannel = 'telegram',
+): ParsedLeads {
   const items: LeadDraft[] = [];
   const errors: string[] = [];
   const seen = new Set<string>();
@@ -96,10 +134,10 @@ export function parseLeadLines(text: string): ParsedLeads {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) return;
     const parts = trimmed.split(/[;,\t|]/).map((p) => p.trim());
-    const contact = parseLeadContact(parts[0]);
+    const contact = parseLeadContact(parts[0], channel);
     if (!contact) {
       errors.push(
-        `строка ${i + 1}: не похоже на телефон или @username — «${parts[0]}»`,
+        `строка ${i + 1}: не похоже на телефон или ${channel === 'vk' ? 'ник VK' : '@username'} — «${parts[0]}»`,
       );
       return;
     }

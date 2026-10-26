@@ -87,7 +87,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, 
 }
 
 export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
-  const [draft, setDraft] = useState({ phone: '', first_name: '', city: '', age: '', site: '', first_message: '', persona_id: '', preferred_account_id: '', owner_user_id: '' });
+  const [draft, setDraft] = useState({ phone: '', channel: 'telegram', first_name: '', city: '', age: '', site: '', first_message: '', persona_id: '', preferred_account_id: '', owner_user_id: '' });
   const [accounts, setAccounts] = useState([]);
   // Тимлид, хед и админ записывают лид на себя или на сотрудника команды; у менеджера выбора нет.
   const [owners, setOwners] = useState([]);
@@ -105,21 +105,27 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
   }, [reload]);
   const owner = owners.find(o => String(o.user_id) === draft.owner_user_id && !o.self) || null;
   const change = patch => setDraft(previous => ({ ...previous, ...patch }));
-  const valid = draft.phone.replace(/\D/g, '').length >= 10 || /^@?[a-zA-Z][\w]{3,}$|t\.me\//.test(draft.phone.trim());
-  const available = accounts.filter(a => a.status === 'active' && personas.some(p => p.slug === a.persona_id) && (!draft.persona_id || a.persona_id === draft.persona_id) && (!owner || owner.account_ids.includes(a.id)));
+  // Ссылка vk.com/… или t.me/… сама выбирает мессенджер; иначе — переключатель формы.
+  const channel = /vk\.(com|ru)\//i.test(draft.phone) ? 'vk' : /t\.me\//i.test(draft.phone) ? 'telegram' : draft.channel;
+  const hasVk = accounts.some(a => a.channel === 'vk');
+  const valid = draft.phone.replace(/\D/g, '').length >= 10 || (channel === 'vk' ? /^@?[a-zA-Z0-9_.]{3,}$|vk\.(com|ru)\//i : /^@?[a-zA-Z][\w]{3,}$|t\.me\//).test(draft.phone.trim());
+  const available = accounts.filter(a => a.status === 'active' && (a.channel === 'vk' ? 'vk' : 'telegram') === channel && personas.some(p => p.slug === a.persona_id) && (!draft.persona_id || a.persona_id === draft.persona_id) && (!owner || owner.account_ids.includes(a.id)));
   async function submit(e) {
     e.preventDefault();
     if (busy || !valid) return;
     setBusy(true); setError('');
     try {
-      await api.post('/api/leads', { phone: draft.phone, first_name: draft.first_name || undefined, city: draft.city || undefined, age: draft.age ? Number(draft.age) : undefined, site: draft.site.trim() || undefined, first_message: draft.first_message.trim() || undefined, persona_id: draft.persona_id || undefined, preferred_account_id: draft.preferred_account_id ? Number(draft.preferred_account_id) : undefined, owner_user_id: owner ? owner.user_id : undefined });
+      await api.post('/api/leads', { phone: draft.phone, channel, first_name: draft.first_name || undefined, city: draft.city || undefined, age: draft.age ? Number(draft.age) : undefined, site: draft.site.trim() || undefined, first_message: draft.first_message.trim() || undefined, persona_id: draft.persona_id || undefined, preferred_account_id: draft.preferred_account_id ? Number(draft.preferred_account_id) : undefined, owner_user_id: owner ? owner.user_id : undefined });
       onDone();
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
   const input = (key, title, props = {}) => h('label', { className: s.label }, title, h('input', { className: s.field, value: draft[key], disabled: busy, onChange: e => change({ [key]: e.target.value }), ...props }));
   return h('form', { className: s.form, onSubmit: submit, 'aria-label': 'Добавление лида' },
-    input('phone', 'Телефон или @username', { autoFocus: true, placeholder: '+7 900 123-45-67 или @name', maxLength: 64 }),
+    hasVk && h('label', { className: s.label }, 'Мессенджер',
+      h('select', { className: s.select, value: channel, disabled: busy, 'aria-label': 'Мессенджер', onChange: e => change({ channel: e.target.value, preferred_account_id: '' }) },
+        h('option', { value: 'telegram' }, 'Telegram'), h('option', { value: 'vk' }, 'ВКонтакте'))),
+    input('phone', channel === 'vk' ? 'Телефон или страница VK' : 'Телефон или @username', { autoFocus: true, placeholder: channel === 'vk' ? '+7 900 123-45-67, vk.com/id123 или ник' : '+7 900 123-45-67 или @name', maxLength: 64 }),
     owners.length > 1 && h('label', { className: s.label }, 'Чей лид',
       h('select', { className: s.select, value: draft.owner_user_id, disabled: busy, 'aria-label': 'Чей лид', onChange: e => change({ owner_user_id: e.target.value, preferred_account_id: '' }) },
         owners.map(o => h('option', { key: o.user_id, value: o.self ? '' : String(o.user_id) }, o.self ? `Себе (${o.username})` : [o.username, ROLE_LABELS[o.role] || o.role, o.region_code ? `регион ${o.region_code}` : null].filter(Boolean).join(' · '))))),
@@ -127,11 +133,11 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
     input('age', 'Возраст', { inputMode: 'numeric' }), input('site', 'Сайт знакомств', { placeholder: 'beboo', maxLength: 64 }),
     h('label', { className: s.label }, 'С какой личности писать', draft.preferred_account_id ? h('select', { className: s.select, disabled: true, value: draft.persona_id, title: 'Личность выбранного аккаунта' }, h('option', { value: draft.persona_id }, personas.find(p => p.slug === draft.persona_id)?.name || draft.persona_id)) : h(PersonaSelect, { personas, value: draft.persona_id, onChange: value => change({ persona_id: value }) })),
     h('div', { className: `${s.formFull} mr-lead-sender` },
-      h('label', { className: s.label }, 'Telegram-аккаунт для первого сообщения',
+      h('label', { className: s.label }, channel === 'vk' ? 'Аккаунт VK для первого сообщения' : 'Telegram-аккаунт для первого сообщения',
         h('select', { className: s.select, value: draft.preferred_account_id, disabled: busy || loading, onChange: e => {
           const chosen = accounts.find(a => a.id === Number(e.target.value));
           change({ preferred_account_id: e.target.value, ...(chosen ? { persona_id: chosen.persona_id } : {}) });
-        } }, h('option', { value: '' }, loading ? 'Загружаем аккаунты…' : 'Автоматически'), available.map(a => h('option', { key: a.id, value: String(a.id) }, [a.username ? `@${a.username}` : a.first_name || a.phone_e164 || `Аккаунт #${a.id}`, a.username ? a.phone_e164 : null, personas.find(p => p.slug === a.persona_id)?.name].filter(Boolean).join(' · '))))),
+        } }, h('option', { value: '' }, loading ? 'Загружаем аккаунты…' : 'Автоматически'), available.map(a => h('option', { key: a.id, value: String(a.id) }, [a.username ? (a.channel === 'vk' ? a.username : `@${a.username}`) : a.first_name || a.phone_e164 || `Аккаунт #${a.id}`, a.username ? a.phone_e164 : null, personas.find(p => p.slug === a.persona_id)?.name].filter(Boolean).join(' · '))))),
       h('p', { className: 'mr-caption' }, draft.preferred_account_id ? 'Напишет только выбранный аккаунт. Если он временно недоступен, лид останется в очереди.' : 'Без выбора аккаунт подбирается автоматически, как раньше.'),
       !loading && !loadError && available.length === 0 && h('p', { className: 'mr-caption' }, owner ? `У ${owner.username} нет включённых аккаунтов${draft.persona_id ? ' этой личности' : ''} — лид будет ждать в очереди.` : 'Нет включённых аккаунтов для этой личности.'),
       loadError && h('div', { role: 'alert' }, h('p', { className: s.error }, `Не удалось загрузить аккаунты: ${loadError}`), button('Повторить', () => setReload(n => n + 1)))),
@@ -149,6 +155,8 @@ export function LeadsTable({ ready = true, rows, query, status, selected, onTogg
   const allSelected = rows.length > 0 && rows.every(row => selected.has(row.id));
   const someSelected = rows.some(row => selected.has(row.id));
   const telegramLink = username => h('a', { href: `https://t.me/${username}`, target: '_blank', rel: 'noreferrer' }, `@${username}`);
+  // Ссылки лида отдаёт бэк (t.me или vk.com); у старых ответов их нет — тогда @ник Telegram.
+  const link = (contact, username) => contact !== undefined ? (contact?.url ? h('a', { href: contact.url, target: '_blank', rel: 'noreferrer' }, contact.display) : contact?.display ?? null) : username && telegramLink(username);
   const action = (text, onClick, className = 'mr-lead-action', props = {}) => h('button', { type: 'button', className: `${className === 'mr-lead-delete' ? s.btnSmDanger : s.btnSm} ${className}`, onClick, disabled: busy, ...props }, text);
   return h('div', { className: 'mr-dialogs mr-leads-list', 'data-testid': 'leads-list' },
     (rows.length > 0 || selected.size > 0) && h('div', { className: 'mr-lead-selection' },
@@ -159,24 +167,25 @@ export function LeadsTable({ ready = true, rows, query, status, selected, onTogg
       h('table', { className: 'mr-dialog-table mr-leads-table', 'aria-label': 'Лиды' },
         h('thead', null, h('tr', null, ['Лид и контакт', 'Менеджер / регион', 'Личность', 'Статус', 'Действия'].map((title, i) => h('th', { key: title, scope: 'col', style: { width: ['27%', '22%', '18%', '19%', '14%'][i] } }, title)))),
         h('tbody', null, rows.map(row => {
-          const name = row.first_name || row.phone_e164 || (row.username ? `@${row.username}` : `Лид #${row.id}`);
+          const name = row.first_name || row.phone_e164 || (row.username ? (row.contact?.display ?? `@${row.username}`) : `Лид #${row.id}`);
+          const badge = channelBadge(row.channel);
           const canChat = row.telegram_user_id && ['contacted', 'replied', 'assigned'].includes(row.status);
           const senderId = row.assigned_account_id || row.preferred_account_id;
           const senderUsername = row.assigned_account_id ? row.assigned_account_username : row.preferred_account_username;
           return h('tr', { key: row.id, className: `mr-lead-row ${selected.has(row.id) ? 'mr-lead-selected' : ''}`, 'data-lead-id': row.id, 'data-lead-status': row.status },
             h('td', { className: 'mr-lead-person' },
-              h('label', { className: 'mr-lead-identity' }, h('input', { type: 'checkbox', checked: selected.has(row.id), 'aria-label': `Выбрать лид: ${name}`, onChange: () => onToggle(row.id) }), h('span', { className: 'mr-lead-name' }, name)),
+              h('label', { className: 'mr-lead-identity' }, h('input', { type: 'checkbox', checked: selected.has(row.id), 'aria-label': `Выбрать лид: ${name}`, onChange: () => onToggle(row.id) }), h('span', { className: 'mr-lead-name' }, name), badge.other && h('span', { className: 'mr-channel-badge', 'data-channel': badge.key, 'data-testid': 'lead-channel', title: badge.title }, badge.label)),
               h('div', { className: 'mr-dialog-muted' }, [row.age ? `${row.age} лет` : null, genderLabel(row.gender, true), row.city].filter(Boolean).join(' · ') || 'Возраст и город не указаны'),
-              h('div', { className: 'mr-dialog-contact' }, row.phone_e164 || null, row.username && telegramLink(row.username)),
+              h('div', { className: 'mr-dialog-contact' }, row.phone_e164 || null, row.username && link(row.contact, row.username)),
               h('div', { className: 'mr-dialog-muted' }, `#${row.id}`, row.site ? ` · Сайт: ${row.site}` : ''),
               row.first_message && h('div', { className: 'mr-dialog-muted', title: row.first_message }, h('span', { className: 'mr-caption' }, row.first_contact_at ? 'Первое сообщение: ' : 'Напишем: '), row.first_message.length > 80 ? `${row.first_message.slice(0, 80)}…` : row.first_message),
-              (row.telegram_username || row.telegram_user_id) && h('div', { className: 'mr-lead-telegram' }, h('span', { className: 'mr-caption' }, 'Telegram: '), row.telegram_username ? telegramLink(row.telegram_username) : String(row.telegram_user_id)),
+              (row.telegram_username || row.telegram_user_id) && h('div', { className: 'mr-lead-telegram' }, h('span', { className: 'mr-caption' }, `${badge.title}: `), (row.peer_contact !== undefined ? link(row.peer_contact) : row.telegram_username && telegramLink(row.telegram_username)) || String(row.telegram_user_id)),
               (row.donor || row.inbound_at || row.account_label || row.external_id) && h('div', { className: 'mr-dialog-muted mr-lead-inbound', 'data-testid': 'lead-inbound' },
                 [row.inbound_at ? `Источник: ${row.source_type}` : null, row.requested_region ? `Регион: ${row.requested_region}` : null, row.requested_persona ? `Личность: ${row.requested_persona}` : null, row.reassigned ? 'Перезабив' : null, row.cold ? 'Холодка' : null, row.donor ? `Донор: ${row.donor}` : null, row.account_label ? `Аккаунт: ${row.account_label}` : null, row.external_id ? `ID: ${row.external_id}` : null].filter(Boolean).join(' · ')),
               row.profile_url && h('div', { className: 'mr-dialog-muted' }, h('span', { className: 'mr-caption' }, 'Профиль: '), httpHref(row.profile_url) ? h('a', { href: httpHref(row.profile_url), target: '_blank', rel: 'noreferrer' }, row.profile_url.replace(/^https?:\/\//i, '').slice(0, 60)) : h('span', { 'data-testid': 'profile-text' }, String(row.profile_url).slice(0, 60))),
               row.last_messages && h('details', { className: 'mr-lead-error mr-lead-history' }, h('summary', null, 'История общения от донора'), h('p', null, row.last_messages))),
             h('td', { className: 'mr-lead-owner' }, h(Attribution, { value: row }),
-              h('div', { className: 'mr-dialog-account' }, h('span', { className: 'mr-caption' }, row.preferred_account_id && !row.first_contact_at ? 'Выбран: ' : 'Аккаунт: '), senderId ? h(React.Fragment, null, senderUsername && telegramLink(senderUsername), ` #${senderId}`) : 'автоматически')),
+              h('div', { className: 'mr-dialog-account' }, h('span', { className: 'mr-caption' }, row.preferred_account_id && !row.first_contact_at ? 'Выбран: ' : 'Аккаунт: '), senderId ? h(React.Fragment, null, row.sender_contact !== undefined ? link(row.sender_contact) : senderUsername && telegramLink(senderUsername), ` #${senderId}`) : 'автоматически')),
             h('td', { className: 'mr-lead-persona', 'data-label': 'Личность' }, row.first_contact_at || row.preferred_account_id ? h('span', { className: 'mr-lead-persona-name', title: row.preferred_account_id ? 'Личность выбранного аккаунта' : undefined }, row.persona_name || row.persona_id || 'Не указана') :
               h('label', { className: 'mr-lead-persona-field' }, h('span', { className: 'mr-sr-only' }, `Личность лида: ${name}`), h(PersonaSelect, { personas, value: row.persona_id, className: `${s.select} mr-lead-persona-select`, onChange: persona => onPersonaChange(row.id, persona) }))),
             h('td', { className: 'mr-lead-status', 'data-label': 'Статус' },

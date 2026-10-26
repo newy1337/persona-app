@@ -2494,7 +2494,12 @@ describe('Manager panel API (e2e)', () => {
         .expect(200);
       expect(imported.body.created).toBe(1);
       const leadLena = await prisma.lead.findUnique({
-        where: { usernameKey: 'lena_lead' },
+        where: {
+          channel_usernameKey: {
+            channel: 'telegram',
+            usernameKey: 'lena_lead',
+          },
+        },
       });
       expect(leadLena!.ownerUserId).toBe(lena.id);
 
@@ -6306,6 +6311,77 @@ describe('Manager panel API (e2e)', () => {
           .delete(`/api/leads/${l.id}`)
           .set(h)
           .expect(200);
+      }
+    });
+
+    it('VK leads: vk.com link, channel field, same contact in both channels, account channel must match', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      const prisma = app.get(PrismaService);
+      const post = (body: object) =>
+        request(app.getHttpServer()).post('/api/leads').set(h).send(body);
+      const vk = await post({ phone: 'https://vk.com/Ivan.Petrov' }).expect(
+        200,
+      );
+      expect(vk.body).toMatchObject({ channel: 'vk', username: 'ivan.petrov' });
+      const dup = await post({ username: 'ivan.petrov', channel: 'vk' }).expect(
+        422,
+      );
+      expect(dup.body.message).toContain('VK @ivan.petrov');
+      const tg = await post({ username: '@durov_tg' }).expect(200);
+      expect(tg.body.channel).toBe('telegram');
+      expect(
+        (await post({ username: 'durov_tg', channel: 'vk' }).expect(200)).body
+          .channel,
+      ).toBe('vk');
+      await post({ phone: '+79005550111' }).expect(200);
+      await post({ phone: '+79005550111', channel: 'vk' }).expect(200);
+      await post({ phone: '+79005550111', channel: 'vk' }).expect(422);
+      const imp = await request(app.getHttpServer())
+        .post('/api/leads/import')
+        .set(h)
+        .send({
+          text: 'petr.ivanov;Пётр\nvk.com/id777\nt.me/tg_from_vk_list',
+          channel: 'vk',
+        })
+        .expect(200);
+      expect(imp.body).toMatchObject({ created: 3, duplicates: 0, errors: [] });
+      const account = await prisma.channelAccount.create({
+        data: {
+          channel: 'vk',
+          login: 'vk-lead-test',
+          personaId: 'nastya',
+          status: 'active',
+          addedAt: 1,
+        },
+      });
+      try {
+        const byAccount = await post({
+          username: 'olga.k',
+          preferred_account_id: account.id,
+        }).expect(200);
+        expect(byAccount.body).toMatchObject({
+          channel: 'vk',
+          preferred_account_id: account.id,
+        });
+        const mismatch = await post({
+          phone: 't.me/some_tg_user',
+          preferred_account_id: account.id,
+        }).expect(422);
+        expect(mismatch.body.message).toContain('Telegram-аккаунт');
+        const rows = await prisma.lead.findMany({ orderBy: { id: 'asc' } });
+        expect(
+          rows.map((r) => `${r.channel}:${r.usernameKey ?? r.phoneE164}`),
+        ).toEqual(
+          expect.arrayContaining([
+            'vk:petr.ivanov',
+            'vk:id777',
+            'telegram:tg_from_vk_list',
+            'vk:olga.k',
+          ]),
+        );
+      } finally {
+        await prisma.lead.deleteMany({});
+        await prisma.channelAccount.delete({ where: { id: account.id } });
       }
     });
 

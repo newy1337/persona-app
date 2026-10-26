@@ -60,6 +60,7 @@ function ImportDialog({ personas, onClose }) {
   const [text, setText] = useState('');
   const [queue, setQueue] = useState(false);
   const [personaId, setPersonaId] = useState('');
+  const [channel, setChannel] = useState('telegram');
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -71,7 +72,7 @@ function ImportDialog({ personas, onClose }) {
     setBusy(true);
     setError(null);
     try {
-      setResult(await importLeads({ text, queue, persona_id: personaId }));
+      setResult(await importLeads({ text, queue, persona_id: personaId, channel }));
     } catch (err) {
       setError(err.detail || err.message);
     } finally {
@@ -85,7 +86,8 @@ function ImportDialog({ personas, onClose }) {
         <h3 className={s.modalTitle}>Импорт номеров</h3>
         <p className={s.modalText}>
           По одному лиду в строке: <span className={s.mono}>контакт;имя;город;возраст;сайт</span>, где контакт —
-          телефон, <span className={s.mono}>@username</span> или ссылка <span className={s.mono}>t.me/…</span>. Имя, город,
+          телефон, <span className={s.mono}>@username</span> или ссылка <span className={s.mono}>t.me/…</span> (для VK — ник,{' '}
+          <span className={s.mono}>id123</span> или <span className={s.mono}>vk.com/…</span>). Имя, город,
           возраст и сайт необязательны — город и сайт идут в <span className={s.mono}>{'{city}'}</span> и{' '}
           <span className={s.mono}>{'{site}'}</span> диалога. Разделитель — <span className={s.mono}>;</span>, запятая или таб.
           Дубли пропускаются.
@@ -113,6 +115,13 @@ function ImportDialog({ personas, onClose }) {
               onChange={(e) => setText(e.target.value)}
               style={{ fontFamily: 'monospace', resize: 'vertical' }}
             />
+            <label className={s.label}>
+              Мессенджер
+              <select className={s.select} aria-label="Мессенджер" value={channel} onChange={(e) => setChannel(e.target.value)}>
+                <option value="telegram">Telegram</option>
+                <option value="vk">ВКонтакте</option>
+              </select>
+            </label>
             <label className={s.label}>
               С какой личности писать всем из списка
               <PersonaSelect personas={personas} value={personaId} onChange={setPersonaId} />

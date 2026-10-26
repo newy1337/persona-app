@@ -487,8 +487,8 @@ model InboundMedia {
 /// Лид: кому писать первым или кто пришёл по API.
 model Lead {
   id                 Int     @id @default(autoincrement())
-  phoneE164          String? @unique @map("phone_e164")
-  usernameKey        String? @unique @map("username_key")
+  phoneE164          String? @map("phone_e164")
+  usernameKey        String? @map("username_key")
   firstName          String? @map("first_name")
   city               String?
   age                Int?
@@ -538,6 +538,8 @@ model Lead {
   /// когда лид попал в буфер (только ник, без телефона); статус 'buffer'
   bufferedAt         Int?    @map("buffered_at")
 
+  @@unique([channel, phoneE164], map: "leads_channel_phone_key")
+  @@unique([channel, usernameKey], map: "leads_channel_username_key")
   @@index([chatId], map: "idx_leads_chat")
   @@index([ownerUserId], map: "idx_leads_owner")
   @@index([status, nextAttemptAt], map: "idx_leads_status_next")

@@ -20,13 +20,21 @@ import { ClockService } from 'src/shared/clock.service';
 import {
   BUFFER_STATUS,
   LEAD_STATUSES,
+  LeadChannel,
   LeadDraft,
   leadKey,
   normalizeUsername,
+  normalizeVkUsername,
+  isVkLink,
   parseLeadContact,
   parseLeadLines,
 } from 'src/domain/leads';
 import { fromChatId } from 'src/utils/ids';
+import {
+  accountContact,
+  clientContact,
+  ContactLink,
+} from 'src/channels/contact';
 import { allowedOwners } from 'src/domain/lead-owners';
 import {
   DEAL_STAGE_FILTERS,
@@ -53,6 +61,12 @@ export interface LeadView extends ManagerAttribution {
   gender: string | null;
   source_type: string;
   status: string;
+  /** telegram | vk — куда пишем лиду */
+  channel: string;
+  /** ссылки панели: ник лида, найденный собеседник, аккаунт-отправитель */
+  contact: ContactLink | null;
+  peer_contact: ContactLink | null;
+  sender_contact: ContactLink | null;
   telegram_user_id: number | null;
   telegram_username: string | null;
   assigned_account_id: number | null;
@@ -290,13 +304,14 @@ export class LeadsService {
     dto: CreateLeadDto,
     scope: LeadScope | null,
     ownerUserId: number | null = null,
+    channel: LeadChannel = 'telegram',
   ) {
     const personaId = await this.personaOf(dto.persona_id);
     const preferredAccountId = dto.preferred_account_id ?? null;
     if (preferredAccountId === null) return { personaId, preferredAccountId };
     if (scope !== null && !scope.accounts.includes(preferredAccountId)) {
       throw new UnprocessableEntityException(
-        'можно выбрать только свой Telegram-аккаунт',
+        'можно выбрать только свой аккаунт',
       );
     }
     // Прозвон отдаёт лид только аккаунтам владельца и его подчинённых: чужой
@@ -310,13 +325,19 @@ export class LeadsService {
       );
     const account = await this.prisma.channelAccount.findUnique({
       where: { id: preferredAccountId },
-      select: { status: true, personaId: true },
+      select: { status: true, personaId: true, channel: true },
     });
     if (!account || account.status !== 'active') {
       throw new UnprocessableEntityException(
-        'выбранный Telegram-аккаунт недоступен — включите его или выберите другой',
+        'выбранный аккаунт недоступен — включите его или выберите другой',
       );
     }
+    if (account.channel !== channel)
+      throw new UnprocessableEntityException(
+        channel === 'vk'
+          ? 'лиду VK пишет только аккаунт VK — выберите его или «Автоматически»'
+          : 'лиду Telegram пишет только Telegram-аккаунт — выберите его или «Автоматически»',
+      );
     const accountPersona = await this.personaOf(account.personaId);
     if (personaId && personaId !== accountPersona) {
       throw new UnprocessableEntityException(
@@ -348,6 +369,18 @@ export class LeadsService {
       gender: row.gender,
       source_type: row.sourceType,
       status: row.status,
+      channel: row.channel,
+      contact: row.usernameKey
+        ? accountContact(row.channel, row.usernameKey)
+        : null,
+      peer_contact:
+        row.chatId === null
+          ? null
+          : clientContact(row.chatId, row.peerUsername),
+      sender_contact: accountContact(
+        row.channel,
+        names.get(row.assignedAccountId ?? row.preferredAccountId ?? -1),
+      ),
       telegram_user_id: fromChatId(row.chatId),
       telegram_username: row.peerUsername,
       assigned_account_id: row.assignedAccountId,
@@ -529,26 +562,50 @@ export class LeadsService {
     return row;
   }
 
-  private contactOf(dto: {
-    phone?: string;
-    username?: string;
-  }): Pick<LeadDraft, 'phone_e164' | 'username'> {
+  /**
+   * Контакт и канал лида. Канал — из формы; ссылка vk.com/… или t.me/… задаёт
+   * его сама, а без того и другого — канал выбранного аккаунта.
+   */
+  private contactOf(
+    dto: { phone?: string; username?: string; channel?: string },
+    accountChannel: string | null = null,
+  ): Pick<LeadDraft, 'phone_e164' | 'username'> & { channel: LeadChannel } {
+    const raw = dto.username || dto.phone || '';
+    const channel: LeadChannel = isVkLink(raw)
+      ? 'vk'
+      : /t\.me\/|telegram\.(me|dog)\//i.test(raw)
+        ? 'telegram'
+        : ((dto.channel ?? accountChannel ?? 'telegram') as LeadChannel);
+    const nick = channel === 'vk' ? 'ник VK' : '@username';
     if (dto.username) {
-      const username = normalizeUsername(dto.username);
+      const username =
+        channel === 'vk'
+          ? normalizeVkUsername(dto.username)
+          : normalizeUsername(dto.username);
       if (!username)
         throw new UnprocessableEntityException(
-          `не похоже на @username: «${dto.username}»`,
+          `не похоже на ${nick}: «${dto.username}»`,
         );
-      return { username, phone_e164: null };
+      return { username, phone_e164: null, channel };
     }
     if (!dto.phone)
-      throw new UnprocessableEntityException('нужен телефон или @username');
-    const contact = parseLeadContact(dto.phone);
+      throw new UnprocessableEntityException(`нужен телефон или ${nick}`);
+    const contact = parseLeadContact(dto.phone, channel);
     if (!contact)
       throw new UnprocessableEntityException(
-        `не похоже на телефон или @username: «${dto.phone}»`,
+        `не похоже на телефон или ${nick}: «${dto.phone}»`,
       );
-    return contact;
+    return { ...contact, channel };
+  }
+
+  /** Канал выбранного аккаунта: лид и аккаунт должны быть из одного мессенджера. */
+  private async accountChannel(id: number | null | undefined) {
+    if (!id) return null;
+    const row = await this.prisma.channelAccount.findUnique({
+      where: { id },
+      select: { channel: true },
+    });
+    return row?.channel ?? null;
   }
 
   async create(
@@ -556,15 +613,24 @@ export class LeadsService {
     ownerUserId: number | null = null,
     scope: LeadScope | null = null,
   ): Promise<LeadView> {
-    const contact = this.contactOf(dto);
-    const sender = await this.senderOf(dto, scope, ownerUserId);
-    const existing = contact.phone_e164
-      ? await this.prisma.lead.findUnique({
-          where: { phoneE164: contact.phone_e164 },
-        })
-      : await this.prisma.lead.findUnique({
-          where: { usernameKey: contact.username },
-        });
+    const contact = this.contactOf(
+      dto,
+      await this.accountChannel(dto.preferred_account_id),
+    );
+    const sender = await this.senderOf(
+      dto,
+      scope,
+      ownerUserId,
+      contact.channel,
+    );
+    const existing = await this.prisma.lead.findFirst({
+      where: {
+        channel: contact.channel,
+        ...(contact.phone_e164
+          ? { phoneE164: contact.phone_e164 }
+          : { usernameKey: contact.username }),
+      },
+    });
     if (existing) {
       const foreign =
         scope !== null &&
@@ -583,6 +649,7 @@ export class LeadsService {
       data: {
         phoneE164: contact.phone_e164 ?? null,
         usernameKey: contact.username ?? null,
+        channel: contact.channel,
         firstName: dto.first_name?.trim() || null,
         city: dto.city?.trim() || null,
         age: dto.age ?? null,
@@ -614,16 +681,20 @@ export class LeadsService {
       [];
     const errors: string[] = [];
     let duplicates = 0;
+    const batchChannel = (dto.channel ?? 'telegram') as LeadChannel;
     if (dto.text) {
-      const parsed = parseLeadLines(dto.text);
+      const parsed = parseLeadLines(dto.text, batchChannel);
       drafts.push(...parsed.items);
       errors.push(...parsed.errors);
       duplicates += parsed.duplicates;
     }
     for (const item of dto.items ?? []) {
-      let contact: Pick<LeadDraft, 'phone_e164' | 'username'>;
+      let contact: ReturnType<LeadsService['contactOf']>;
       try {
-        contact = this.contactOf(item);
+        contact = this.contactOf(
+          { ...item, channel: item.channel ?? batchChannel },
+          await this.accountChannel(item.preferred_account_id),
+        );
       } catch (e) {
         errors.push(String(e?.message ?? e));
         continue;
@@ -631,6 +702,8 @@ export class LeadsService {
       const sender = await this.senderOf(
         { ...item, persona_id: item.persona_id || batchPersona },
         scope,
+        null,
+        contact.channel,
       );
       drafts.push({
         ...contact,
@@ -655,11 +728,15 @@ export class LeadsService {
         where: {
           OR: [{ phoneE164: { in: phones } }, { usernameKey: { in: names } }],
         },
-        select: { phoneE164: true, usernameKey: true },
+        select: { phoneE164: true, usernameKey: true, channel: true },
       });
       rows.forEach((r) =>
         known.add(
-          leadKey({ phone_e164: r.phoneE164, username: r.usernameKey }),
+          leadKey({
+            phone_e164: r.phoneE164,
+            username: r.usernameKey,
+            channel: r.channel,
+          }),
         ),
       );
     }
@@ -670,6 +747,7 @@ export class LeadsService {
         data: fresh.map((d) => ({
           phoneE164: d.phone_e164 ?? null,
           usernameKey: d.username ?? null,
+          channel: d.channel ?? batchChannel,
           firstName: d.first_name?.trim() || null,
           city: d.city?.trim() || null,
           age: d.age ?? null,
