@@ -309,6 +309,99 @@ describe('Manager panel API (e2e)', () => {
       .expect(200);
   });
 
+  it('лид: следующий шаг с датой и активность чата', async () => {
+    const h = { Authorization: `Bearer ${token}` };
+    const prisma = app.get(PrismaService);
+    const now = Math.floor(Date.now() / 1000);
+    const chatId = 778101;
+    await prisma.contact.create({
+      data: { chatId: BigInt(chatId), createdAt: now, pauseState: 'paused' },
+    });
+    await prisma.message.createMany({
+      data: [
+        {
+          chatId: BigInt(chatId),
+          ts: now - 30,
+          role: 'assistant',
+          text: 'привет',
+          author: 'bot',
+          sourceMessageId: 1,
+        },
+        {
+          chatId: BigInt(chatId),
+          ts: now - 20,
+          role: 'user',
+          text: 'ау',
+          author: 'client',
+          sourceMessageId: 2,
+        },
+        {
+          chatId: BigInt(chatId),
+          ts: now - 10,
+          role: 'user',
+          text: 'ты тут?',
+          author: 'client',
+          sourceMessageId: 3,
+        },
+      ],
+    });
+    const withChat = await prisma.lead.create({
+      data: {
+        usernameKey: 'next_step_chat',
+        chatId: BigInt(chatId),
+        insertedAt: now,
+      },
+    });
+    const bare = await prisma.lead.create({
+      data: { usernameKey: 'next_step_bare', insertedAt: now },
+    });
+
+    const due = now + 3600;
+    const put = await request(app.getHttpServer())
+      .put(`/api/leads/${withChat.id}`)
+      .set(h)
+      .send({ next_step: '  позвонить вечером ', next_step_at: due })
+      .expect(200);
+    expect(put.body).toMatchObject({
+      next_step: 'позвонить вечером',
+      next_step_at: due,
+      last_message_ts: now - 10,
+      last_client_ts: now - 10,
+      unread_count: 2,
+      is_paused: true,
+    });
+
+    const items = (
+      await request(app.getHttpServer()).get('/api/leads').set(h).expect(200)
+    ).body.items;
+    const byId = (id: number) => items.find((l: any) => l.id === id);
+    expect(byId(withChat.id)).toMatchObject({
+      next_step: 'позвонить вечером',
+      unread_count: 2,
+    });
+    expect(byId(bare.id)).toMatchObject({
+      next_step: null,
+      next_step_at: null,
+      last_message_ts: null,
+      unread_count: 0,
+      is_paused: false,
+    });
+
+    // Пустой шаг и null снимают напоминание.
+    const cleared = await request(app.getHttpServer())
+      .put(`/api/leads/${withChat.id}`)
+      .set(h)
+      .send({ next_step: '', next_step_at: null })
+      .expect(200);
+    expect(cleared.body).toMatchObject({ next_step: null, next_step_at: null });
+
+    await prisma.lead.deleteMany({
+      where: { id: { in: [withChat.id, bare.id] } },
+    });
+    await prisma.message.deleteMany({ where: { chatId: BigInt(chatId) } });
+    await prisma.contact.deleteMany({ where: { chatId: BigInt(chatId) } });
+  });
+
   it('строка диалога: тип (холодка / хот / входящий) и личность аккаунта', async () => {
     const h = { Authorization: `Bearer ${token}` };
     const prisma = app.get(PrismaService);
