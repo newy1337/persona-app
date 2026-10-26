@@ -52,4 +52,26 @@ describe('закрытие клиента Telegram', () => {
     await jest.advanceTimersByTimeAsync(120_000);
     expect(client.destroy).toHaveBeenCalledTimes(2);
   });
+
+  it('закрывает соединения с другими DC и их таймеры: destroy GramJS их не трогает', async () => {
+    jest.useFakeTimers();
+    const fired = jest.fn();
+    const sender = {
+      _autoReconnect: true,
+      _pendingState: { clear: jest.fn() },
+      disconnect: jest.fn(async () => undefined),
+    };
+    const client = {
+      ...fake(),
+      _exportedSenderReleaseTimeouts: new Map([[2, setTimeout(fired, 30_000)]]),
+      _exportedSenderPromises: new Map([[2, Promise.resolve(sender)]]),
+    };
+    await closeClient(client as any);
+    await jest.advanceTimersByTimeAsync(60_000);
+    expect(fired).not.toHaveBeenCalled();
+    expect(sender._autoReconnect).toBe(false);
+    expect(sender._pendingState.clear).toHaveBeenCalled();
+    expect(sender.disconnect).toHaveBeenCalled();
+    expect(client._exportedSenderPromises.size).toBe(0);
+  });
 });

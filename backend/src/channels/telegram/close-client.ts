@@ -19,6 +19,47 @@ type Closable = Pick<TelegramClient, 'destroy' | 'connected'>;
  * закрывается ещё раз. И на всякий случай через пару минут проверяем, не
  * поднял ли соединение сам транспорт, — тогда рвём его снова.
  */
+/**
+ * Соединения GramJS с другими дата-центрами (через них качаются аватарки и
+ * медиа). GramJS 2.x закрывает их в disconnect() через Object.values(Map) —
+ * это всегда пустой список, так что они и их таймеры переживают destroy().
+ * Таймер освобождения видит незавершённые запросы, переподключает соединение
+ * и ставит себя снова: зомби крутится вечно («sender already has some hanging
+ * states. reconnecting»). Каждый неудачный вход аккаунта добавлял таких, пока
+ * процесс не съедал весь CPU (прод 26.10). Закрываем их сами.
+ */
+export function releaseExportedSenders(client: unknown): void {
+  const c = client as {
+    _exportedSenderReleaseTimeouts?: Map<
+      unknown,
+      ReturnType<typeof setTimeout>
+    >;
+    _exportedSenderPromises?: Map<unknown, Promise<unknown> | undefined>;
+  };
+  const timers = c._exportedSenderReleaseTimeouts;
+  if (timers instanceof Map) {
+    for (const t of timers.values()) clearTimeout(t);
+    timers.clear();
+  }
+  const senders = c._exportedSenderPromises;
+  if (!(senders instanceof Map)) return;
+  for (const promise of senders.values())
+    void Promise.resolve(promise)
+      .then((sender) => {
+        const s = sender as {
+          _autoReconnect?: boolean;
+          _pendingState?: { clear?: () => void };
+          disconnect?: () => unknown;
+        } | null;
+        if (!s) return;
+        s._autoReconnect = false;
+        s._pendingState?.clear?.();
+        return s.disconnect?.();
+      })
+      .catch(() => undefined);
+  senders.clear();
+}
+
 export async function closeClient(
   client: Closable,
   {
@@ -28,7 +69,10 @@ export async function closeClient(
 ): Promise<void> {
   const close = () =>
     withTimeout(
-      new Promise<void>((done) => done(client.destroy())),
+      new Promise<void>((done) => {
+        releaseExportedSenders(client);
+        done(client.destroy());
+      }),
       timeoutMs,
       () => new Error('disconnect timeout'),
     ).catch(() => undefined);
