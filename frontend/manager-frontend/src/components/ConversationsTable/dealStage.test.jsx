@@ -116,3 +116,21 @@ test('диалоги без этапа подсвечены жёлтым — т�
   expect(tr(2).className).not.toContain('bg-warning');
   if (tr(3)) expect(tr(3).className).not.toContain('bg-warning');
 });
+
+test('срочные (ждут менеджера) — красные с причиной в подсказке; красный важнее жёлтого', async () => {
+  const rows = [
+    row({ chat_id: 1, id: 1, name: 'Срочный' }),
+    row({ chat_id: 2, id: 2, name: 'Без этапа' }),
+    row({ chat_id: 3, id: 3, name: 'Обычный', deal_stage: 'vbros' }),
+  ];
+  const urgent = new Map([['1', 'просит созвон']]);
+  await act(async () => root.render(<ConversationsTable rows={rows} urgent={urgent} />));
+  const tr = (id) => host.querySelector(`tbody tr[data-chat-id="${id}"]`);
+  expect(tr(1).dataset.urgent).toBe('true');
+  expect(tr(1).className).toContain('bg-destructive/15');
+  expect(tr(1).className).not.toContain('bg-warning');
+  expect(tr(1).querySelector('[title*="Ждёт менеджера: просит созвон"]')).not.toBeNull();
+  expect(tr(2).className).toContain('bg-warning');
+  expect(tr(3).dataset.urgent).toBeUndefined();
+  expect(tr(3).className).not.toContain('bg-destructive');
+});

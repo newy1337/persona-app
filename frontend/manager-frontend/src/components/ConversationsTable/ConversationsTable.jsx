@@ -67,6 +67,8 @@ function ConversationsTable({
   onHide = null,
   onDealStage = null,
   headerExtra = null,
+  // Диалоги, где срочно нужен менеджер: chat_id → причина. Строки красные.
+  urgent = null,
   // Состояние фильтров колонок может держать страница (ей нужны поиск и период
   // для архива и плиток); без него таблица хранит его сама.
   filters = null,
@@ -225,6 +227,7 @@ function ConversationsTable({
           onOpen={(id) => navigate(`/conversation/${id}`)}
           onHide={onHide}
           onDealStage={onDealStage}
+          urgent={urgent}
           filters={{ defs: filterDefs, state: filterState, onChange: setFilter }}
           helpers={{
             Avatar: ClientAvatar,

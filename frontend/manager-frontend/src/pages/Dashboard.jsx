@@ -8,6 +8,7 @@ import { useRouteBusy } from '../components/AppLayout/routeBusy';
 import { usePublishHeaderTools } from '../components/AppLayout/headerTools';
 import { PageHeader } from '../components/PageHeader/PageHeader';
 import NeedManagerAssist from '../components/NeedManagerAssist/NeedManagerAssist';
+import { REASON_LABEL } from '../components/AgentCard/AgentCard';
 import StatsBar from '../components/StatsBar/StatsBar';
 import ConversationsTable from '../components/ConversationsTable/ConversationsTable';
 import { useColumnFilters } from '../components/ColumnFilter/useColumnFilters';
@@ -115,6 +116,17 @@ function PeriodPicker({ value, onChange }) {
 
 function Dashboard() {
   const [managerAgents, setManagerAgents] = useState([]);
+  // Красные строки таблицы — та же очередь, что в «Ждут менеджера», кроме ручного
+  // режима: там менеджер уже ведёт диалог.
+  const urgent = useMemo(
+    () =>
+      new Map(
+        managerAgents
+          .filter((a) => a.queue_reason !== 'manual_mode')
+          .map((a) => [String(a.chat_id), REASON_LABEL[a.queue_reason] || 'нужен менеджер']),
+      ),
+    [managerAgents],
+  );
   const [liveAgents, setLiveAgents] = useState([]);
   const [rows, setRows] = useState([]);
   const [archiveRows, setArchiveRows] = useState([]);
@@ -280,6 +292,7 @@ function Dashboard() {
           onHide={toggleHidden}
           onDealStage={changeDealStage}
           filters={filters}
+          urgent={urgent}
           headerExtra={reminder && <StageReminder count={reminder.count} onDismiss={dismissReminder} />}
         />
       </div>

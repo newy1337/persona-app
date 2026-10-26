@@ -71,7 +71,7 @@ function lastSeen(ts) {
  * в заголовке действий; значение скрытой колонки остаётся в подсказке собеседника.
  * Рядом с названием колонки — воронка её фильтра: filters = { defs, state, onChange }.
  */
-export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, onHide, onDealStage = null, filters = null, helpers }) {
+export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, onHide, onDealStage = null, urgent = null, filters = null, helpers }) {
   const { Avatar, Stage, isNew, unreadLabel, presence, nextAction, accountLost, typingLabels } = helpers;
   const prefs = useDialogColumns();
   const watch = useChatWatch();
@@ -153,7 +153,10 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
               ? 'Статус собеседника вдруг скрылся — так бывает, когда кидают в ЧС (или скрыли статус приватностью)'
               : undefined;
             const who = row.name || `Чат ${row.chat_id}`;
-            const noStage = !archived && !row.hidden && !row.deal_stage;
+            // Красный — срочно нужен менеджер (очередь «Ждут менеджера»), жёлтый —
+            // не указан этап (те же диалоги, что в напоминании над таблицей).
+            const urgentReason = urgent?.get(String(row.chat_id)) ?? null;
+            const noStage = !urgentReason && !archived && !row.hidden && !row.deal_stage;
             const age = row.age ? `${row.age} лет` : null;
             const idLabel = `ID ${row.chat_id}`;
             const about = [age, row.city].filter(Boolean).join(' · ');
@@ -172,6 +175,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
             // Значения скрытых колонок не пропадают: они дописываются в подсказку собеседника.
             const whoTitle = [
               who,
+              urgentReason && `Ждёт менеджера: ${urgentReason}`,
               warning,
               about,
               online?.text,
@@ -196,10 +200,13 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                 key={row.chat_id}
                 data-chat-id={row.chat_id}
                 onClick={() => onOpen(row.chat_id)}
+                data-urgent={urgentReason ? 'true' : undefined}
                 data-no-stage={noStage || undefined}
                 className={cn(
                   'cursor-pointer focus-within:bg-muted/50',
-                  // Этап не указан — те же диалоги, что в напоминании над таблицей.
+                  // Срочное заметно сразу: заливка плюс красная полоска у края строки.
+                  urgentReason &&
+                    'bg-destructive/15 hover:bg-destructive/20 focus-within:bg-destructive/20 [&>td:first-child]:shadow-[inset_3px_0_0_var(--destructive)]',
                   noStage && 'bg-warning hover:bg-warning focus-within:bg-warning',
                 )}
               >
