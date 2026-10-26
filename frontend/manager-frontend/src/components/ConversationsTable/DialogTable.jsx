@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Bot, Eye, EyeOff, User } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Bot, Eye, EyeOff, TriangleAlert, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { ColumnFilter } from '../ColumnFilter/ColumnFilter';
 import { ColumnPicker } from '../ColumnPicker/ColumnPicker';
 import { IconAction } from '../IconAction/IconAction';
 import { useChatWatch } from '../ChatWatch/chatWatch';
+import { Peek } from './CellPeek';
 import { CELL, HEAD_CELL, LINE_1, LINE_2, WAITS_TEXT, accountLabel, leadTypeLabel, presenceText, useDialogColumns } from './rowLayout';
 import { accountContact, channelBadge, clientContact } from '../../utils/channel';
 
@@ -38,9 +39,9 @@ const Empty = () => <span className="text-muted-foreground">—</span>;
 function Cell({ title, className, children, ...props }) {
   return (
     <TableCell className={cn(CELL, className)} {...props}>
-      <div className="flex min-w-0 items-center gap-1.5 text-sm" title={title}>
+      <Peek className="flex min-w-0 items-center gap-1.5 text-sm" title={title}>
         {children}
-      </div>
+      </Peek>
     </TableCell>
   );
 }
@@ -211,7 +212,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                 )}
               >
                 <TableCell className={CELL}>
-                  <div className="flex min-w-0 items-center gap-2.5" title={whoTitle}>
+                  <Peek className="flex min-w-0 items-center gap-2.5" title={whoTitle}>
                     <span className="relative shrink-0">
                       <Avatar
                         className="size-8 rounded-full bg-muted text-xs font-medium text-muted-foreground"
@@ -250,7 +251,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                         </span>
                       </div>
                     </div>
-                  </div>
+                  </Peek>
                 </TableCell>
 
                 {has('contact') && (
@@ -354,8 +355,22 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                 )}
 
                 {has('next') && (
-                  <Cell title={fresh ? 'Клиент написал — ждёт ответа менеджера' : nextFull}>
-                    {fresh ? (
+                  <Cell
+                    title={
+                      urgentReason
+                        ? `Ждёт менеджера: ${urgentReason}`
+                        : fresh
+                          ? 'Клиент написал — ждёт ответа менеджера'
+                          : nextFull
+                    }
+                  >
+                    {/* Почему строка красная: причина из очереди «Ждут менеджера». */}
+                    {urgentReason ? (
+                      <span className="flex min-w-0 items-center gap-1.5 font-medium text-destructive" data-testid="urgent-reason">
+                        <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
+                        <span className="truncate">{urgentReason}</span>
+                      </span>
+                    ) : fresh ? (
                       <>
                         <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning-foreground" />
                         <span className="truncate">{WAITS_TEXT}</span>

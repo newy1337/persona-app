@@ -130,6 +130,8 @@ test('срочные (ждут менеджера) — красные с при�
   expect(tr(1).className).toContain('bg-destructive/15');
   expect(tr(1).className).not.toContain('bg-warning');
   expect(tr(1).querySelector('[title*="Ждёт менеджера: просит созвон"]')).not.toBeNull();
+  expect(tr(1).querySelector('[data-testid="urgent-reason"]').textContent).toBe('просит созвон');
+  expect(tr(2).querySelector('[data-testid="urgent-reason"]')).toBeNull();
   expect(tr(2).className).toContain('bg-warning');
   expect(tr(3).dataset.urgent).toBeUndefined();
   expect(tr(3).className).not.toContain('bg-destructive');
