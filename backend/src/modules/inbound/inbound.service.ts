@@ -136,14 +136,25 @@ export class InboundService {
     return row?.slug ?? null;
   }
 
-  /** Личности для отправителей лидов: какие slug можно слать в persona / person. */
-  async personas(): Promise<{ items: { name: string; slug: string }[] }> {
+  /**
+   * Личности для отправителей лидов: какие slug можно слать в persona / person
+   * и тип трафика (cold — холодка, hot — горячий, null — не проставлен).
+   */
+  async personas(): Promise<{
+    items: { name: string; slug: string; traffic_type: string | null }[];
+  }> {
     const rows = await this.prisma.persona.findMany({
       where: { enabled: true },
-      select: { name: true, slug: true },
+      select: { name: true, slug: true, trafficType: true },
       orderBy: { name: 'asc' },
     });
-    return { items: rows };
+    return {
+      items: rows.map((p) => ({
+        name: p.name,
+        slug: p.slug,
+        traffic_type: p.trafficType,
+      })),
+    };
   }
 
   /**

@@ -136,11 +136,12 @@ export class InboundController {
 
   @ApiOperation({
     summary:
-      'Включённые личности: name и slug — slug передавайте в persona (холодка) или person (входящие)',
+      'Включённые личности: name, slug и тип трафика — slug передавайте в persona (холодка) или person (входящие)',
   })
   @ApiResponse({
     status: 200,
-    description: '{ items: [{ name, slug }] } — по имени, выключенных нет',
+    description:
+      '{ items: [{ name, slug, traffic_type }] } — по имени, выключенных нет; traffic_type: cold, hot или null',
   })
   @ApiResponse({
     status: 401,

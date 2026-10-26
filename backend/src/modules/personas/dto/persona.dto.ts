@@ -3,6 +3,7 @@ import {
   Allow,
   IsBoolean,
   IsDefined,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -14,6 +15,9 @@ import {
 import { PERSONA_SECTIONS } from 'src/brain/persona.service';
 
 export const SECTION_VALUES = PERSONA_SECTIONS;
+
+/** Тип трафика личности: холодка или горячий; проставляет админ. */
+export const PERSONA_TRAFFIC_TYPES = ['cold', 'hot'] as const;
 
 export class CreatePersonaDto {
   @ApiProperty({ example: 'Лена' })
@@ -56,6 +60,16 @@ export class UpdatePersonaDto {
   @IsString()
   @MaxLength(4000)
   notes?: string | null;
+
+  @ApiPropertyOptional({
+    enum: PERSONA_TRAFFIC_TYPES,
+    nullable: true,
+    description: 'тип трафика: cold — холодка, hot — горячий; null — не указан',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsIn(PERSONA_TRAFFIC_TYPES, { message: 'тип трафика — cold или hot' })
+  traffic_type?: string | null;
 
   @ApiPropertyOptional({
     nullable: true,

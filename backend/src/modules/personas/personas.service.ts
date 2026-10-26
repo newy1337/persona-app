@@ -122,6 +122,7 @@ function summary(row: Persona, accounts = 0) {
     notes: row.notes,
     generator_model: row.generatorModel ?? null,
     judge_model: row.judgeModel ?? null,
+    traffic_type: row.trafficType ?? null,
     accounts,
     card_lines: Array.isArray(card.card) ? card.card.length : 0,
     examples: Array.isArray(card.chat_examples) ? card.chat_examples.length : 0,
@@ -248,6 +249,7 @@ export class PersonasService {
           timezone_mode: 'bio',
         }),
         variables: src?.variables ?? '{}',
+        trafficType: src?.trafficType ?? null,
         createdAt: now,
         updatedAt: now,
       },
@@ -264,11 +266,13 @@ export class PersonasService {
       notes?: string | null;
       generator_model?: string | null;
       judge_model?: string | null;
+      traffic_type?: string | null;
     },
   ) {
     const row = await this.mustExist(id);
-    const { generator_model, judge_model, ...rest } = dto;
+    const { generator_model, judge_model, traffic_type, ...rest } = dto;
     const data: Record<string, unknown> = { ...rest };
+    if (traffic_type !== undefined) data.trafficType = traffic_type;
     if (generator_model !== undefined) {
       if (generator_model !== null && !isGeneratorModel(generator_model))
         throw new UnprocessableEntityException(

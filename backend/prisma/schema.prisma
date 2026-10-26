@@ -93,6 +93,8 @@ model Persona {
   notes          String?
   generatorModel String? @map("generator_model")
   judgeModel     String? @map("judge_model")
+  /// тип трафика: cold — холодка, hot — горячий; null — не проставлен
+  trafficType    String? @map("traffic_type")
   createdAt      Int     @map("created_at")
   updatedAt      Int     @map("updated_at")
 

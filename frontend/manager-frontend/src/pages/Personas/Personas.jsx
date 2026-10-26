@@ -87,6 +87,10 @@ function CreateForm({ personas, onDone, onCancel }) {
 
 const SECTION_KEYS = TABS.map((t) => t.key);
 
+/** Тип трафика личности: проставляет админ, отдаётся отправителям лидов в /api/post/personas. */
+const TRAFFIC_TYPES = [{ id: 'cold', label: 'Холодка' }, { id: 'hot', label: 'Hot' }];
+const trafficLabel = (id) => TRAFFIC_TYPES.find((t) => t.id === id)?.label ?? null;
+
 function ModelSelect({ label, hint, value, options, fallback, onChange }) {
   const fallbackLabel = options.find((o) => o.id === fallback)?.label ?? fallback;
   return (
@@ -268,6 +272,7 @@ export default function Personas() {
                     <span className={s.mono}>{x.slug}</span>
                     {x.is_default && <span className={s.badgeActive}>основная</span>}
                     {!x.enabled && <span className={s.badgeRetired}>выключена</span>}
+                    {trafficLabel(x.traffic_type) && <span className={s.muted} data-testid="persona-traffic">{trafficLabel(x.traffic_type)}</span>}
                     {x.accounts > 0 && <span className={s.muted}>{x.accounts} акк.</span>}
                     {(drafted.find((d) => d.id === x.id)?.sections.length ?? 0) > 0 && (
                       <span className={p.draftMark} title="есть несохранённые правки">● черновик</span>
@@ -319,6 +324,22 @@ export default function Personas() {
                         }}
                       />
                     </div>
+                  </div>
+
+                  <div className={p.modelRow}>
+                    <label className={p.modelField}>
+                      <span className={p.modelLabel}>Тип трафика</span>
+                      <select
+                        className={s.select}
+                        aria-label="Тип трафика"
+                        value={persona.traffic_type ?? ''}
+                        onChange={(e) => run(() => updatePersona(persona.id, { traffic_type: e.target.value || null }))}
+                      >
+                        <option value="">не указан</option>
+                        {TRAFFIC_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                      </select>
+                      <span className={p.modelHint}>видят отправители лидов в списке личностей API</span>
+                    </label>
                   </div>
 
                   {models && (
