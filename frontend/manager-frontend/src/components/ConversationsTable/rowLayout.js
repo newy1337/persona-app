@@ -12,7 +12,9 @@ import { presenceLabel } from '../../utils/telegramStatus';
 // таблица и заглушка первой загрузки: одни и те же видимые колонки и высота
 // ячейки, поэтому появление данных ничего не сдвигает.
 //
-// Ширины (px) заданы у всех колонок, кроме «Что дальше» — она забирает остаток.
+// Ширины (px) заданы у всех колонок. Таблица во всю ширину, поэтому лишнее место
+// браузер делит между колонками пропорционально ширинам — раньше его целиком
+// забирала «Что дальше» и на широком экране растягивалась на полтаблицы.
 // «Регион» по умолчанию виден с 1536px. Какие колонки показывать, пользователь
 // выбирает сам — «Настроить поля» в заголовке колонки действий; собеседника и
 // действия скрыть нельзя. «Менеджер» и «Регион» (adminOnly) есть только у
@@ -29,7 +31,7 @@ export const COLUMNS = [
   { key: 'stage', label: 'Стадия', sort: 'status', width: 160, bars: ['w-28'] },
   { key: 'deal', label: 'Этап', width: 136, bars: ['w-20'] },
   { key: 'lead', label: 'Ведёт', width: 112, bars: ['w-14'] },
-  { key: 'next', label: 'Что дальше', bars: ['w-24'] },
+  { key: 'next', label: 'Что дальше', width: 144, bars: ['w-24'] },
   // Дополнительные — по умолчанию скрыты, включаются в «Настроить поля»: показанные сразу,
   // они на 1920px сжимали «Что дальше» почти до нуля.
   { key: 'unread', label: 'Непрочитанные', sort: 'unread', width: 148, show: false, bars: ['w-6'] },
@@ -49,8 +51,6 @@ const COMMON_COLUMNS = COLUMNS.filter((col) => !col.adminOnly);
 
 // То же, что брейкпоинт 2xl.
 const WIDE_QUERY = '(min-width: 96rem)';
-// Меньше этого «Что дальше» не сжимается — дальше таблица прокручивается.
-const FLEX_MIN_WIDTH = 112;
 
 /** Все колонки, доступные вошедшему пользователю (видимые и скрытые им). */
 export function useDialogColumnList() {
@@ -61,7 +61,7 @@ export function useDialogColumnList() {
 export function useDialogColumns() {
   const admin = useIsAdmin();
   const prefs = useColumnPrefs('dialogs', admin ? COLUMNS : COMMON_COLUMNS, { wide: WIDE_QUERY });
-  return { ...prefs, admin, minWidth: tableMinWidth(prefs.columns, FLEX_MIN_WIDTH) };
+  return { ...prefs, admin, minWidth: tableMinWidth(prefs.columns) };
 }
 
 export const HEAD_CELL = 'h-9 px-3 text-xs font-medium text-muted-foreground';

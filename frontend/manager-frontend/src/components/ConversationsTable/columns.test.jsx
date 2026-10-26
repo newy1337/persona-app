@@ -100,7 +100,7 @@ describe('таблица диалогов: настройка полей', () =>
     await draw();
     expect(heads()).toEqual(['Собеседник', 'Контакт', 'Соцсеть', 'Тип', 'Стадия', 'Этап', 'Ведёт', 'Что дальше', 'Менеджер', 'Аккаунт', 'Последнее', 'Действия']);
     expect(cells().length).toBe(heads().length);
-    expect(host.querySelector('table').style.minWidth).toBe('1512px');
+    expect(host.querySelector('table').style.minWidth).toBe('1544px');
   });
 
   it('на широком экране «Регион» виден и минимальную ширину не увеличивает', async () => {
@@ -108,7 +108,7 @@ describe('таблица диалогов: настройка полей', () =>
     await draw();
     expect(heads()).toContain('Регион');
     expect(heads()).not.toContain('В сети');
-    expect(host.querySelector('table').style.minWidth).toBe('1512px');
+    expect(host.querySelector('table').style.minWidth).toBe('1544px');
   });
 
   it('в меню нет обязательных колонок: собеседника и действия скрыть нельзя', async () => {
@@ -132,7 +132,7 @@ describe('таблица диалогов: настройка полей', () =>
     expect(host.textContent).not.toContain('@anna_t');
     expect(cellOf('Собеседник').querySelector('[title]').getAttribute('title')).toContain('@anna_t');
     expect(JSON.parse(localStorage.getItem(KEY))).toEqual({ contact: false });
-    expect(host.querySelector('table').style.minWidth).toBe('1372px');
+    expect(host.querySelector('table').style.minWidth).toBe('1404px');
   });
 
   it('явное включение показывает «Регион» и на узком экране', async () => {
@@ -141,10 +141,10 @@ describe('таблица диалогов: настройка полей', () =>
     expect(box('Регион').getAttribute('aria-checked')).toBe('false');
     await click(box('Регион'));
     expect(cellOf('Регион').textContent).toBe('0077');
-    expect(host.querySelector('table').style.minWidth).toBe('1604px');
+    expect(host.querySelector('table').style.minWidth).toBe('1636px');
   });
 
-  it('без гибкой «Что дальше» минимальная ширина — сумма оставшихся колонок', async () => {
+  it('без «Что дальше» минимальная ширина — сумма оставшихся колонок', async () => {
     localStorage.setItem(KEY, JSON.stringify({ next: false }));
     await draw();
     expect(heads()).not.toContain('Что дальше');
@@ -168,7 +168,7 @@ describe('заглушка списка диалогов', () => {
     expect(rows.length).toBe(3);
     expect([...head.children].map((el) => el.textContent)).toEqual(['Собеседник', 'Соцсеть', 'Тип', 'Стадия', 'Этап', 'Ведёт', 'Что дальше', 'Менеджер', 'Регион', 'Аккаунт', 'Последнее', '']);
     for (const row of rows) expect(row.children.length).toBe(head.children.length);
-    expect(head.style.minWidth).toBe('1464px');
+    expect(head.style.minWidth).toBe('1496px');
   });
 
   it('те же колонки, что у таблицы после загрузки', async () => {
@@ -194,7 +194,7 @@ describe('«Менеджер» и «Регион» — только у адми�
     expect(host.textContent).not.toContain('0077');
     expect(host.querySelector('button[aria-label="Фильтр: Менеджер"]')).toBeNull();
     expect(host.querySelector('button[aria-label="Фильтр: Регион"]')).toBeNull();
-    expect(host.querySelector('table').style.minWidth).toBe('1404px');
+    expect(host.querySelector('table').style.minWidth).toBe('1436px');
     await openPicker();
     expect(boxes().map((item) => item.textContent)).toEqual([
       'Контакт', 'Соцсеть', 'Тип', 'Стадия', 'Этап', 'Ведёт', 'Что дальше', 'Непрочитанные', 'В сети', 'Возраст', 'Город', 'Личность', 'Аккаунт', 'Последнее',
@@ -218,7 +218,7 @@ describe('«Менеджер» и «Регион» — только у адми�
     const [head, ...rows] = [...host.querySelectorAll('[role="status"] > div')];
     expect([...head.children].map((el) => el.textContent)).toEqual(['Собеседник', 'Контакт', 'Соцсеть', 'Тип', 'Стадия', 'Этап', 'Ведёт', 'Что дальше', 'Аккаунт', 'Последнее', '']);
     for (const row of rows) expect(row.children.length).toBe(head.children.length);
-    expect(head.style.minWidth).toBe('1404px');
+    expect(head.style.minWidth).toBe('1436px');
   });
 
   it('админу и таблице вне каркаса колонки видны', async () => {
