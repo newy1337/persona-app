@@ -537,6 +537,9 @@ model Lead {
   cold               Boolean @default(false)
   /// когда лид попал в буфер (только ник, без телефона); статус 'buffer'
   bufferedAt         Int?    @map("buffered_at")
+  /// следующий шаг менеджера по лиду и когда его сделать (напоминание)
+  nextStep           String? @map("next_step")
+  nextStepAt         Int?    @map("next_step_at")
 
   @@index([chatId], map: "idx_leads_chat")
   @@index([ownerUserId], map: "idx_leads_owner")

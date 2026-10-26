@@ -84,7 +84,30 @@ export interface LeadView extends ManagerAttribution {
   /** холодка: пришёл через /api/post/cold */
   cold: boolean;
   buffered_at: number | null;
+  /** следующий шаг менеджера и когда его сделать */
+  next_step: string | null;
+  next_step_at: number | null;
+  /** активность связанного чата; у лида без чата — null / 0 / false */
+  last_message_ts: number | null;
+  last_client_ts: number | null;
+  unread_count: number;
+  is_paused: boolean;
 }
+
+/** Активность чата лида: последнее сообщение, ответ клиента, кто ведёт. */
+interface ChatActivity {
+  last_message_ts: number | null;
+  last_client_ts: number | null;
+  unread_count: number;
+  is_paused: boolean;
+}
+
+const NO_ACTIVITY: ChatActivity = {
+  last_message_ts: null,
+  last_client_ts: null,
+  unread_count: 0,
+  is_paused: false,
+};
 
 export interface LeadFilter {
   status?: string;
@@ -332,6 +355,7 @@ export class LeadsService {
     personas: Map<string, string> = new Map(),
     managers?: ManagerDirectory,
     stages: Map<string, DealStage> = new Map(),
+    activity: Map<string, ChatActivity> = new Map(),
   ): LeadView {
     return {
       ...(managers?.forLead(
@@ -384,6 +408,10 @@ export class LeadsService {
       reassigned: row.reassigned,
       cold: row.cold,
       buffered_at: row.bufferedAt,
+      next_step: row.nextStep,
+      next_step_at: row.nextStepAt,
+      ...((row.chatId === null ? null : activity.get(String(row.chatId))) ??
+        NO_ACTIVITY),
       deal_stage:
         row.chatId === null ? null : (stages.get(String(row.chatId)) ?? null),
     };
@@ -409,14 +437,18 @@ export class LeadsService {
       orderBy: { id: 'desc' },
       take: filter.limit ?? 200,
     });
-    const [names, personas, managers, stages] = await Promise.all([
+    const chatIds = rows.map((r) => r.chatId);
+    const [names, personas, managers, stages, activity] = await Promise.all([
       this.accountNames(),
       this.personaNames(),
       this.attribution.directory(),
-      this.stagesByChat(rows.map((r) => r.chatId)),
+      this.stagesByChat(chatIds),
+      this.activityByChat(chatIds),
     ]);
     return {
-      items: rows.map((r) => this.toView(r, names, personas, managers, stages)),
+      items: rows.map((r) =>
+        this.toView(r, names, personas, managers, stages, activity),
+      ),
       counts: await this.counts(scope),
       stages: await this.stageCounts(scope),
     };
@@ -439,6 +471,45 @@ export class LeadsService {
     for (const r of rows)
       if (r.stage && (DEAL_STAGES as readonly string[]).includes(r.stage))
         out.set(String(r.chat_id), r.stage as DealStage);
+    return out;
+  }
+
+  /**
+   * Активность чатов лидов одним запросом. Непрочитанные — как в списке
+   * диалогов: сообщения клиента после последнего нашего ответа и после того,
+   * как менеджер открывал чат.
+   */
+  private async activityByChat(
+    chatIds: Array<bigint | null>,
+  ): Promise<Map<string, ChatActivity>> {
+    const ids = chatIds.filter((id): id is bigint => id !== null);
+    const out = new Map<string, ChatActivity>();
+    if (!ids.length) return out;
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        chat_id: bigint;
+        pause_state: string | null;
+        last_ts: number | bigint | null;
+        last_client_ts: number | bigint | null;
+        unread_count: number | bigint | null;
+      }>
+    >`SELECT c.chat_id, c.pause_state,
+             (SELECT MAX(ts) FROM messages m WHERE m.chat_id = c.chat_id) AS last_ts,
+             (SELECT MAX(ts) FROM messages m WHERE m.chat_id = c.chat_id AND m.role = 'user') AS last_client_ts,
+             (SELECT COUNT(*) FROM messages mu
+               WHERE mu.chat_id = c.chat_id AND mu.role = 'user' AND mu.deleted_at IS NULL
+                 AND mu.ts > COALESCE(c.manager_seen_ts, 0)
+                 AND mu.ts > COALESCE((SELECT MAX(ma.ts) FROM messages ma
+                                       WHERE ma.chat_id = c.chat_id AND ma.role = 'assistant' AND ma.text NOT LIKE '[Реакция%'), 0)) AS unread_count
+      FROM contacts c WHERE c.chat_id IN (${Prisma.join(ids)})`;
+    const num = (v: number | bigint | null) => (v === null ? null : Number(v));
+    for (const r of rows)
+      out.set(String(r.chat_id), {
+        last_message_ts: num(r.last_ts),
+        last_client_ts: num(r.last_client_ts),
+        unread_count: num(r.unread_count) ?? 0,
+        is_paused: r.pause_state === 'paused',
+      });
     return out;
   }
 
@@ -737,13 +808,18 @@ export class LeadsService {
         );
       data.firstMessage = dto.first_message?.trim() || null;
     }
+    if (dto.next_step !== undefined)
+      data.nextStep = dto.next_step?.trim() || null;
+    if (dto.next_step_at !== undefined) data.nextStepAt = dto.next_step_at;
     const row = await this.prisma.lead.update({ where: { id }, data });
-    const [names, personas, managers] = await Promise.all([
+    const [names, personas, managers, stages, activity] = await Promise.all([
       this.accountNames(),
       this.personaNames(),
       this.attribution.directory(),
+      this.stagesByChat([row.chatId]),
+      this.activityByChat([row.chatId]),
     ]);
-    return this.toView(row, names, personas, managers);
+    return this.toView(row, names, personas, managers, stages, activity);
   }
 
   async remove(
