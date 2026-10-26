@@ -1918,8 +1918,11 @@ describe('Manager panel API (e2e)', () => {
       }).expect(201);
       expect(inRegion.body.assigned_to.user_id).toBe(c1);
       expect(
-        (await prisma.phoneNumber.findUnique({ where: { id: inRegion.body.id } }))
-          ?.requestedRegion,
+        (
+          await prisma.phoneNumber.findUnique({
+            where: { id: inRegion.body.id },
+          })
+        )?.requestedRegion,
       ).toBe('0921');
       const closed = await post({
         source: 'beboo',
