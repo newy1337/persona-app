@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { IconAction } from '../IconAction/IconAction';
+import { QuickReplyPicker } from '../QuickReplyPicker/QuickReplyPicker';
 import ClientAvatar from '../ClientAvatar/ClientAvatar';
 import { MediaContent, fmtTime } from '../../pages/ConversationPage/MessageFeed';
 import { getConversationById, getConversationRevision, sendMessage, setAiMode } from '../../api/conversations';
@@ -131,7 +132,7 @@ function Feed({ chatId, messages, onReply }) {
 }
 
 /** Подвал окна: тумблер режима, ошибка и — в ручном режиме — поле ответа. */
-function Composer({ chatId, data, reload, reply, setReply }) {
+function Composer({ chatId, data, name, reload, reply, setReply }) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -217,6 +218,14 @@ function Composer({ chatId, data, reload, reply, setReply }) {
                 }
               }}
             />
+            <QuickReplyPicker
+              name={name}
+              disabled={busy}
+              onPick={(text) => {
+                setDraft((d) => (d.trim() ? `${d.replace(/\s+$/, '')} ${text}` : text));
+                requestAnimationFrame(() => field.current?.focus());
+              }}
+            />
             <IconAction icon={Send} label="Отправить" className="mr-1 mb-1" disabled={busy || !draft.trim()} onClick={send} />
           </div>
         </div>
@@ -295,7 +304,7 @@ export default function WatchWindow({ win, zIndex, onUpdate, onFocus, onClose })
         </div>
       )}
 
-      {data && <Composer chatId={win.chatId} data={data} reload={reload} reply={reply} setReply={setReply} />}
+      {data && <Composer chatId={win.chatId} data={data} name={data?.pinned_facts?.name || win.name} reload={reload} reply={reply} setReply={setReply} />}
     </section>
   );
 }

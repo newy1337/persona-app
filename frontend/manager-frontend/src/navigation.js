@@ -14,6 +14,8 @@ const SETTINGS = {
   catalogs: { path: 'catalogs', label: 'Справочники' },
   buffer: { path: 'buffer', label: 'Буфер' },
   team: { path: 'team', label: 'Команда' },
+  replies: { path: 'replies', label: 'Шаблоны ответов' },
+  audit: { path: 'audit', label: 'Журнал' },
   // Прежняя страница «Настройки»: бот, стоп-фразы, API-ключи.
   general: { path: 'general', label: 'Бот и API' },
 };
@@ -36,12 +38,12 @@ const topNav = (...keys) => keys.map((key) => ({ key, ...TOP[key] }));
 const MENU = {
   admin: {
     top: topNav('dialogs', 'leads', 'voice', 'accounts', 'managers', 'stats', 'settings'),
-    settings: settingsTabs('accounts', 'personas', 'photoSets', 'leadget', 'catalogs', 'buffer', 'general'),
+    settings: settingsTabs('accounts', 'personas', 'photoSets', 'leadget', 'catalogs', 'buffer', 'replies', 'general', 'audit'),
   },
   // Статистика хеду пока не отдаётся бэкендом (только админу) — вкладки нет.
   head: {
     top: topNav('dialogs', 'leads', 'voice', 'settings'),
-    settings: settingsTabs('team', 'buffer', 'photoSets', 'accounts'),
+    settings: settingsTabs('team', 'buffer', 'photoSets', 'accounts', 'replies'),
   },
   teamlead: {
     top: topNav('dialogs', 'leads', 'voice', 'settings'),

@@ -23,6 +23,8 @@ const load = {
   settings: () => import('./pages/Settings/Settings'),
   users: () => import('./pages/Users/Users'),
   catalogs: () => import('./pages/Catalogs/Catalogs'),
+  replies: () => import('./pages/QuickReplies/QuickReplies'),
+  audit: () => import('./pages/Audit/Audit'),
 };
 const Dashboard = lazy(load.dashboard);
 const ConversationPage = lazy(load.conversation);
@@ -37,6 +39,8 @@ const Stats = lazy(load.stats);
 const Settings = lazy(load.settings);
 const Users = lazy(load.users);
 const Catalogs = lazy(load.catalogs);
+const QuickReplies = lazy(load.replies);
+const Audit = lazy(load.audit);
 
 const STAFF_PAGES = ['dashboard', 'conversation', 'voice', 'leads', 'accounts', 'photoSets'];
 const PAGES_BY_ROLE = {
@@ -131,6 +135,8 @@ function App() {
           <Route path="buffer" element={setting('buffer', <Buffer />)} />
           <Route path="team" element={setting('team', <Managers />)} />
           <Route path="general" element={setting('general', <Settings />)} />
+          <Route path="replies" element={setting('replies', <QuickReplies />)} />
+          <Route path="audit" element={setting('audit', <Audit />)} />
           <Route path="*" element={away} />
         </Route>
         <Route path="*" element={away} />

@@ -9,6 +9,7 @@ import { IconAction } from '@/components/IconAction/IconAction';
 import { nextActionLabel } from '../../utils/scenario';
 import { answerNow } from '../../api/conversations';
 import EmojiPicker from '../../components/composer/EmojiPicker';
+import { QuickReplyPicker } from '../../components/QuickReplyPicker/QuickReplyPicker';
 import VoicerActions from './VoicerActions';
 
 /* «Что дальше» — нейтральный текст; тон показывает только точка перед ним. */
@@ -284,6 +285,15 @@ function InputArea({
                     />
                   )}
                 </span>
+                {/* Шаблон дописывается к набранному через пробел и ставит фокус в поле. */}
+                <QuickReplyPicker
+                  name={data?.pinned_facts?.name}
+                  disabled={busy}
+                  onPick={(text) => {
+                    setDraft((d) => (d.trim() ? `${d.replace(/\s+$/, '')} ${text}` : text));
+                    requestAnimationFrame(() => field.current?.focus());
+                  }}
+                />
                 <Button
                   type="button"
                   variant="ghost"
