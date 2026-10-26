@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Logger,
+  Get,
   Post,
   Req,
   UseGuards,
@@ -131,5 +132,22 @@ export class InboundController {
     return this.inbound.acceptCold(
       this.withAliases('/api/post/cold', dto, req, COLD_FIELDS),
     );
+  }
+
+  @ApiOperation({
+    summary:
+      'Включённые личности: name и slug — slug передавайте в persona (холодка) или person (входящие)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '{ items: [{ name, slug }] } — по имени, выключенных нет',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'ключ не передан, неверный или отозван',
+  })
+  @Get('personas')
+  personas() {
+    return this.inbound.personas();
   }
 }
