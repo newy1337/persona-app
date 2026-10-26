@@ -1,0 +1,40 @@
+@use '../../styles/variables' as *;
+
+.row { position: relative; display: flex; align-items: center; gap: 6px; }
+.toggle {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid $border-control;
+  border-radius: $radius-full;
+  background: transparent;
+  color: $text-readable;
+  font: 600 11px/1 $font-family;
+  font-style: italic;
+  cursor: pointer;
+  &:hover, &[aria-expanded='true'] { color: $text-primary; border-color: $accent-blue; }
+  &:focus-visible { outline: 2px solid $accent-blue; outline-offset: 2px; }
+}
+.popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  padding: 14px 16px;
+  background: $bg-elevated;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: $radius-md;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  color: $text-primary;
+  font-size: 13px;
+  line-height: 1.45;
+  h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+  ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; list-style: decimal; }
+  li::marker { color: $text-readable; font-weight: 600; }
+  p { margin: 10px 0 0; color: $text-readable; font-size: 12px; }
+}
