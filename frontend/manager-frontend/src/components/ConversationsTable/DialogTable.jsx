@@ -56,7 +56,7 @@ const MSK = new Intl.DateTimeFormat('ru-RU', {
 });
 
 /** Время последнего сообщения по Москве: «06.10, 22:15», в подсказке — с годом. */
-function lastSeen(ts) {
+export function lastSeen(ts) {
   if (!ts) return { text: '—' };
   const p = Object.fromEntries(MSK.formatToParts(new Date(ts * 1000)).map((part) => [part.type, part.value]));
   return {

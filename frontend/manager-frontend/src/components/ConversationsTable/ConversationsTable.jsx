@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DialogTable } from './DialogTable';
+import { DialogCards, useNarrow } from './DialogCards';
 import { useChatWatch } from '../ChatWatch/chatWatch';
 import { useHotkeys } from '../Hotkeys/hotkeys';
 import TableSkeleton from '../TableSkeleton/TableSkeleton';
@@ -198,6 +199,19 @@ function ConversationsTable({
   }, [visible.length]);
 
   const loading = !ready && rows.length === 0;
+  const narrow = useNarrow();
+  const tableHelpers = {
+    Avatar: ClientAvatar,
+    Stage: StatusBadge,
+    isNew: waitsForManager,
+    unreadLabel: newLabel,
+    presence: presenceLabel,
+    nextAction: nextActionLabel,
+    time: fmtTime,
+    date: fmtDate,
+    accountLost: accountLostLabel,
+    typingLabels: ACTIVITY_LABEL,
+  };
 
   return (
     <section className="flex flex-col gap-3">
@@ -253,6 +267,15 @@ function ConversationsTable({
       {loading ? (
         <TableSkeleton rows={8} label="Загружаем диалоги…" />
       ) : (
+        narrow ? (
+          <DialogCards
+            rows={visible}
+            archived={showHidden}
+            urgent={urgent}
+            onOpen={(id) => navigate(`/conversation/${id}`)}
+            helpers={tableHelpers}
+          />
+        ) : (
         <DialogTable
           rows={visible}
           totalRows={rows.length}
@@ -265,19 +288,9 @@ function ConversationsTable({
           onDealStage={onDealStage}
           urgent={urgent}
           filters={{ defs: filterDefs, state: filterState, onChange: setFilter }}
-          helpers={{
-            Avatar: ClientAvatar,
-            Stage: StatusBadge,
-            isNew: waitsForManager,
-            unreadLabel: newLabel,
-            presence: presenceLabel,
-            nextAction: nextActionLabel,
-            time: fmtTime,
-            date: fmtDate,
-            accountLost: accountLostLabel,
-            typingLabels: ACTIVITY_LABEL,
-          }}
+          helpers={tableHelpers}
         />
+        )
       )}
 
       {loading ? (
