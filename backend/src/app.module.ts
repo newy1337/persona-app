@@ -23,6 +23,8 @@ import { StatsModule } from './modules/stats/stats.module';
 import { PhotoSetsModule } from './modules/photo-sets/photo-sets.module';
 import { InboundModule } from './modules/inbound/inbound.module';
 
+import { AuditModule } from './modules/audit/audit.module';
+import { QuickRepliesModule } from './modules/quick-replies/quick-replies.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -46,6 +48,8 @@ import { InboundModule } from './modules/inbound/inbound.module';
     StatsModule,
     PhotoSetsModule,
     InboundModule,
+    AuditModule,
+    QuickRepliesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
