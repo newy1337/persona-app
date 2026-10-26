@@ -21,8 +21,8 @@ export function createLead(body) {
   return api.post('/api/leads', body);
 }
 
-export function importLeads({ text, queue, persona_id }) {
-  return api.post('/api/leads/import', { text, queue, persona_id: persona_id || undefined });
+export function importLeads({ text, queue, persona_id, channel }) {
+  return api.post('/api/leads/import', { text, queue, persona_id: persona_id || undefined, channel: channel || undefined });
 }
 
 export function getLeadPersonas() {
