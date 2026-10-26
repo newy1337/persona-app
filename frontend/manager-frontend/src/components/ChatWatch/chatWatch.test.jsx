@@ -12,13 +12,16 @@ vi.mock('../../api/conversations', () => ({
     is_paused: id === 2,
     pinned_facts: { name: `Клиент ${id}` },
     messages: [
-      { id: 1, role: 'user', content: 'привет', ts: 1_700_000_000 },
+      { id: 1, role: 'user', content: 'привет', ts: 1_700_000_000, tg_msg_id: 501 },
       { id: 2, role: 'assistant', author: 'bot', content: 'привет-привет', ts: 1_700_000_060 },
     ],
   })),
   getConversationRevision: vi.fn(async () => ({ revision: 'r1' })),
   markListened: vi.fn(async () => ({})),
+  sendMessage: vi.fn(async () => ({})),
+  setAiMode: vi.fn(async () => ({})),
 }));
+import { sendMessage, setAiMode } from '../../api/conversations';
 
 import ConversationsTable from '../ConversationsTable/ConversationsTable';
 import ChatWatchLayer from './ChatWatchLayer';
@@ -66,6 +69,11 @@ const settle = async (count = 1) => {
 const rowButton = (chatId, label) =>
   document.querySelector(`tbody tr[data-chat-id="${chatId}"] button[aria-label="${label}"]`);
 const windows = () => [...document.querySelectorAll('[data-testid="watch-window"]')];
+const windowOf = (chatId) => document.querySelector(`[data-testid="watch-window"][data-chat-id="${chatId}"]`);
+const type = (el, value) => {
+  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, value);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+};
 
 describe('окна наблюдения за диалогами', () => {
   it('«Следить» открывает окно с перепиской и тем, кто ведёт; окон может быть несколько', async () => {
@@ -78,8 +86,8 @@ describe('окна наблюдения за диалогами', () => {
     const first = windows()[0];
     expect(first.getAttribute('aria-label')).toBe('Наблюдение: Клиент 1');
     expect(first.querySelector('[data-testid="watch-feed"]').textContent).toContain('привет-привет');
-    expect(first.textContent).toContain('Ведёт бот');
-    expect(windows()[1].textContent).toContain('Ведёт менеджер');
+    expect(first.textContent).toContain('бот отвечает');
+    expect(windows()[1].textContent).toContain('ручной режим');
     // Кнопка в строке меняется на «Не следить» и закрывает окно.
     await act(async () => rowButton(1, 'Не следить').click());
     expect(windows().map((w) => w.dataset.chatId)).toEqual(['2']);
@@ -102,6 +110,40 @@ describe('окна наблюдения за диалогами', () => {
     expect(windows()).toHaveLength(1);
     await act(async () => windows()[0].querySelector('button[aria-label="Открыть чат"]').click());
     expect(navigate).toHaveBeenCalledWith('/conversation/1');
+  });
+
+  it('пока ведёт бот, поля нет; тумблер забирает чат', async () => {
+    setAiMode.mockClear();
+    await act(async () => root.render(<Harness />));
+    await act(async () => rowButton(1, 'Следить').click());
+    await settle();
+    const win = windowOf(1);
+    expect(win.querySelector('textarea')).toBeNull();
+    expect(win.querySelector('button[aria-label="Ответить"]')).toBeNull();
+    await act(async () => win.querySelector('[aria-label="Бот отвечает"]').click());
+    expect(setAiMode).toHaveBeenCalledWith(1, false);
+  });
+
+  it('в ручном режиме можно ответить: Enter отправляет, «Ответить» цитирует сообщение', async () => {
+    sendMessage.mockClear();
+    await act(async () => root.render(<Harness />));
+    await act(async () => rowButton(2, 'Следить').click());
+    await settle();
+    const win = windowOf(2);
+    const field = win.querySelector('textarea[aria-label="Сообщение"]');
+    await act(async () => type(field, 'добрый вечер'));
+    await act(async () => field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    await settle();
+    expect(sendMessage).toHaveBeenCalledWith(2, 'добрый вечер', { replyTo: null });
+    expect(field.value).toBe('');
+
+    await act(async () => win.querySelector('button[aria-label="Ответить"]').click());
+    expect(win.querySelector('[data-testid="watch-reply"]').textContent).toContain('привет');
+    await act(async () => type(field, 'да'));
+    await act(async () => win.querySelector('button[aria-label="Отправить"]').click());
+    await settle();
+    expect(sendMessage).toHaveBeenLastCalledWith(2, 'да', { replyTo: 501 });
+    expect(win.querySelector('[data-testid="watch-reply"]')).toBeNull();
   });
 
   it('окно не уезжает за край экрана, новые встают справа налево', () => {
