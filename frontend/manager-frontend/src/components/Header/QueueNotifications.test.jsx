@@ -59,3 +59,27 @@ test('баннер уходит через три секунды, но чат о
   expect(JSON.parse(sessionStorage.getItem(SHOWN_KEY))).toContain(queueKey(queue.items[0]));
   expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
 });
+
+test('свёрнутая вкладка продолжает опрашивать очередь: новый чат приходит системным уведомлением', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+  const shown = [];
+  const original = globalThis.Notification;
+  globalThis.Notification = class {
+    static permission = 'granted';
+    constructor(title, opts) { shown.push([title, opts.body]); }
+    close() {}
+  };
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+  try {
+    await render();
+    queue = { items: [...queue.items, { chat_id: 777, name: 'Ира', queue_reason: 'trigger_phrase', waiting_since: Math.floor(Date.now() / 1000) }] };
+    await act(async () => { vi.advanceTimersByTime(10000); });
+    await act(async () => { await Promise.resolve(); });
+    expect(shown).toEqual([['Ждут менеджера', 'Ира: Стоп-фраза клиента']]);
+    // Пока вкладка свёрнута, ленту голосовых не трогаем — только очередь.
+    expect(api.get.mock.calls.filter(([url]) => url.includes('/voicer/notices'))).toHaveLength(0);
+  } finally {
+    visibility.mockRestore();
+    globalThis.Notification = original;
+  }
+});

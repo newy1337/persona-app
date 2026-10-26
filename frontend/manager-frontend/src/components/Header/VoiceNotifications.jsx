@@ -72,16 +72,19 @@ export default function VoiceNotifications({ userId }) {
 
   useEffect(() => {
     let active = true, pending = false;
+    // Свёрнутая вкладка опрашивает только очередь: иначе push «ждут менеджера»
+    // не приходил никогда — он нужен как раз когда вкладка не видна.
     const pull = async () => {
-      if (pending || document.visibilityState !== 'visible') return;
+      if (pending) return;
+      const visible = document.visibilityState === 'visible';
       pending = true;
       try {
         const [notices, queued] = await Promise.all([
-          api.get('/api/voicer/notices'),
+          visible ? api.get('/api/voicer/notices') : null,
           api.get('/api/manager/queue').then(normalizeQueue).catch(() => null),
         ]);
         if (!active) return;
-        setData(normalize(notices)); setError('');
+        if (notices) { setData(normalize(notices)); setError(''); }
         if (queued) {
           setQueue(queued);
           setClosed(prev => { const next = pruneDismissed(prev, queued); if (Object.keys(next).length !== Object.keys(prev).length) saveDismissed(next); return next; });
