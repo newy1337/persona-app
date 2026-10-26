@@ -65,6 +65,19 @@ afterEach(() => {
 });
 
 describe('страница статистики', () => {
+  it('«Модели»: таблица по умолчанию, «Радар» — контуры моделей; выбор запоминается', async () => {
+    localStorage.removeItem('stats_models_view');
+    const view = () => host.querySelector('[data-testid="models-view"]');
+    expect(host.querySelector('[data-testid="models-radar"]')).toBeNull();
+    await act(async () => buttonByText(view(), 'Радар').click());
+    const radar = host.querySelector('[data-testid="models-radar"]');
+    expect(radar).not.toBeNull();
+    expect(radar.textContent).toContain('Каждая ось — доля от наибольшего');
+    expect(localStorage.getItem('stats_models_view')).toBe('radar');
+    await act(async () => buttonByText(view(), 'Таблица').click());
+    expect(host.querySelector('[data-testid="models-radar"]')).toBeNull();
+    localStorage.removeItem('stats_models_view');
+  });
   it('«Куда уходят деньги»: список полосок по умолчанию, «Диаграмма» — кольцо; выбор запоминается', async () => {
     localStorage.removeItem('stats_spend_view');
     const list = host.querySelector('[data-testid="bar-list"]');

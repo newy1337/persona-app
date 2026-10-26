@@ -28,7 +28,7 @@ import {
   stickyLastCol,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
+import { Cell, Pie, PieChart, PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { EDGE, NUM, Section, SkeletonRows, TD, TH, kilo, money, num, pct } from './StatsUi';
 
 const STAGE_LABEL = {
@@ -250,6 +250,154 @@ function SpendSection({ data, personaNames }) {
           )}
         </>
       )}
+    </Section>
+  );
+}
+
+// Радар моделей: каждая модель — контур по пяти осям. Оси в разных единицах,
+// поэтому каждая нормирована к максимуму среди моделей (100% — самая большая
+// величина); настоящие числа — в подсказке. Больше пяти моделей не рисуем —
+// берём пять самых дорогих (цветов в палитре пять).
+const RADAR_AXES = [
+  { id: 'calls', label: 'Вызовы', get: (m) => m.calls, text: (m) => num(m.calls) },
+  { id: 'input', label: 'Вход', get: (m) => m.tokens.input + m.tokens.cache_read + m.tokens.cache_write, text: (m) => kilo(m.tokens.input + m.tokens.cache_read + m.tokens.cache_write) },
+  { id: 'output', label: 'Выход', get: (m) => m.tokens.output, text: (m) => kilo(m.tokens.output) },
+  { id: 'cost', label: 'Расход', get: (m) => m.cost_usd, text: (m) => money(m.cost_usd) },
+  { id: 'latency', label: 'Время ответа', get: (m) => m.avg_latency_ms ?? 0, text: (m) => (m.avg_latency_ms ? `${(m.avg_latency_ms / 1000).toFixed(1)} с` : '—') },
+];
+
+/** Значения CSS-переменных цветов: атрибуты SVG у recharts не понимают var(--…). */
+function seriesColors() {
+  const css = typeof window === 'undefined' ? null : getComputedStyle(document.documentElement);
+  return SERIES.map((v, i) => css?.getPropertyValue(`--series-${i + 1}`).trim() || ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181'][i]);
+}
+
+function RadarTip({ active, payload, models }) {
+  if (!active || !payload?.length) return null;
+  const axis = RADAR_AXES.find((a) => a.label === payload[0].payload.axis);
+  return (
+    <div className="rounded-md border bg-popover px-3 py-2 text-xs shadow-md">
+      <p className="mb-1 font-medium">{axis.label}</p>
+      {models.map((m) => (
+        <p key={m.model} className="flex items-center justify-between gap-3">
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground"><i className="size-2 shrink-0 rounded-xs" style={{ background: m.color }} /><span className="truncate font-mono">{m.model}</span></span>
+          <span className="font-medium tabular-nums">{axis.text(m)}</span>
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function ModelsRadar({ models: all }) {
+  const colors = seriesColors();
+  const models = [...all].sort((a, b) => b.cost_usd - a.cost_usd).slice(0, SERIES.length).map((m, i) => ({ ...m, color: colors[i] }));
+  const max = Object.fromEntries(RADAR_AXES.map((a) => [a.id, Math.max(...models.map(a.get), 0) || 1]));
+  const rows = RADAR_AXES.map((a) => ({
+    axis: a.label,
+    ...Object.fromEntries(models.map((m) => [m.model, Math.round((a.get(m) / max[a.id]) * 100)])),
+  }));
+  return (
+    <div className="flex flex-col gap-2 px-4 pb-4" data-testid="models-radar">
+      <div className="h-[280px]" role="img" aria-label={`Модели по осям: ${models.map((m) => m.model).join(', ')}`}>
+        <ResponsiveContainer width="100%" height="100%">
+          <RadarChart data={rows} outerRadius="72%">
+            <PolarGrid stroke="var(--border)" />
+            <PolarAngleAxis dataKey="axis" tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }} />
+            <Tooltip content={<RadarTip models={models} />} />
+            {models.map((m) => (
+              <Radar key={m.model} name={m.model} dataKey={m.model} stroke={m.color} strokeWidth={2} fill={m.color} fillOpacity={0.18} dot={{ r: 3, fill: m.color, strokeWidth: 0 }} />
+            ))}
+          </RadarChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs">
+        {models.map((m) => (
+          <span key={m.model} className="inline-flex items-center gap-1.5">
+            <i className="size-2 rounded-xs" style={{ background: m.color }} />
+            <span className="font-mono">{m.model}</span>
+          </span>
+        ))}
+      </div>
+      <p className="text-center text-xs text-muted-foreground">Каждая ось — доля от наибольшего среди моделей; точные числа — при наведении.</p>
+    </div>
+  );
+}
+
+const MODELS_VIEW_KEY = 'stats_models_view';
+
+/** «Модели»: таблица или радар — переключатель в шапке, выбор запоминается. */
+function ModelsSection({ data, description }) {
+  const [view, setViewState] = useState(() => {
+    try {
+      return localStorage.getItem(MODELS_VIEW_KEY) === 'radar' ? 'radar' : 'table';
+    } catch {
+      return 'table';
+    }
+  });
+  const setView = (next) => {
+    setViewState(next);
+    try {
+      localStorage.setItem(MODELS_VIEW_KEY, next);
+    } catch {
+      // приватное окно — выбор просто не запомнится
+    }
+  };
+  const radar = view === 'radar' && data?.by_model.length > 0;
+  return (
+    <Section
+      title="Модели"
+      description={
+        <div className="flex flex-col gap-1">
+          <div className="flex justify-end">
+            <div className="flex items-center gap-0.5" role="radiogroup" aria-label="Вид" data-testid="models-view">
+              {[['table', 'Таблица'], ['radar', 'Радар']].map(([id, label]) => (
+                <Button key={id} type="button" role="radio" aria-checked={view === id} variant={view === id ? 'secondary' : 'ghost'} size="xs" onClick={() => setView(id)}>
+                  {label}
+                </Button>
+              ))}
+            </div>
+          </div>
+          {description}
+        </div>
+      }
+      flush={!radar}
+      className="min-w-0"
+    >
+      {radar ? (
+        <ModelsRadar models={data.by_model} />
+      ) : (
+<Table className={EDGE}>
+      <TableHeader>
+        <TableRow>
+          <TableHead className={TH}>Модель</TableHead>
+          <TableHead className={cn(TH, 'text-right')}>Вызовов</TableHead>
+          <TableHead className={cn(TH, 'text-right')}>Вход</TableHead>
+          <TableHead className={cn(TH, 'text-right')}>Выход</TableHead>
+          <TableHead className={cn(TH, 'text-right')}>Расход</TableHead>
+          <TableHead className={cn(TH, 'text-right')}>Ответ</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {!data && <SkeletonRows rows={MODEL_SKELETON_ROWS} cols={6} />}
+        {data?.by_model.map((m) => (
+          <TableRow key={m.model}>
+            <TableCell className={cn(TD, 'font-mono text-xs')}>
+              {m.model}
+              {!m.priced && <Badge variant="destructive" className="ml-2 h-5 align-middle font-sans">без цены</Badge>}
+            </TableCell>
+            <TableCell className={cn(TD, NUM)}>{num(m.calls)}</TableCell>
+            <TableCell className={cn(TD, NUM, 'text-muted-foreground')}>{kilo(m.tokens.input + m.tokens.cache_read + m.tokens.cache_write)}</TableCell>
+            <TableCell className={cn(TD, NUM, 'text-muted-foreground')}>{kilo(m.tokens.output)}</TableCell>
+            <TableCell className={cn(TD, NUM)}>{money(m.cost_usd)}</TableCell>
+            <TableCell className={cn(TD, NUM, 'text-muted-foreground')}>{m.avg_latency_ms ? `${(m.avg_latency_ms / 1000).toFixed(1)} с` : '—'}</TableCell>
+          </TableRow>
+        ))}
+        {data?.by_model.length === 0 && (
+          <TableRow><TableCell colSpan={6} className={cn(TD, 'text-muted-foreground')}>За период вызовов не было</TableCell></TableRow>
+        )}
+      </TableBody>
+    </Table>
+        )}
     </Section>
   );
 }
@@ -539,39 +687,7 @@ export default function Stats() {
                 <div className="grid gap-4 lg:grid-cols-[minmax(280px,1fr)_minmax(320px,1.4fr)]">
                   <SpendSection data={data} personaNames={personaNames} />
 
-                  <Section title="Модели" description={modelsDescription} flush className="min-w-0">
-                    <Table className={EDGE}>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className={TH}>Модель</TableHead>
-                          <TableHead className={cn(TH, 'text-right')}>Вызовов</TableHead>
-                          <TableHead className={cn(TH, 'text-right')}>Вход</TableHead>
-                          <TableHead className={cn(TH, 'text-right')}>Выход</TableHead>
-                          <TableHead className={cn(TH, 'text-right')}>Расход</TableHead>
-                          <TableHead className={cn(TH, 'text-right')}>Ответ</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {!data && <SkeletonRows rows={MODEL_SKELETON_ROWS} cols={6} />}
-                        {data?.by_model.map((m) => (
-                          <TableRow key={m.model}>
-                            <TableCell className={cn(TD, 'font-mono text-xs')}>
-                              {m.model}
-                              {!m.priced && <Badge variant="destructive" className="ml-2 h-5 align-middle font-sans">без цены</Badge>}
-                            </TableCell>
-                            <TableCell className={cn(TD, NUM)}>{num(m.calls)}</TableCell>
-                            <TableCell className={cn(TD, NUM, 'text-muted-foreground')}>{kilo(m.tokens.input + m.tokens.cache_read + m.tokens.cache_write)}</TableCell>
-                            <TableCell className={cn(TD, NUM, 'text-muted-foreground')}>{kilo(m.tokens.output)}</TableCell>
-                            <TableCell className={cn(TD, NUM)}>{money(m.cost_usd)}</TableCell>
-                            <TableCell className={cn(TD, NUM, 'text-muted-foreground')}>{m.avg_latency_ms ? `${(m.avg_latency_ms / 1000).toFixed(1)} с` : '—'}</TableCell>
-                          </TableRow>
-                        ))}
-                        {data?.by_model.length === 0 && (
-                          <TableRow><TableCell colSpan={6} className={cn(TD, 'text-muted-foreground')}>За период вызовов не было</TableCell></TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </Section>
+                  <ModelsSection data={data} description={modelsDescription} />
                 </div>
 
                 <Section title="Самые дорогие диалоги" flush>
