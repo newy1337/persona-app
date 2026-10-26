@@ -78,16 +78,20 @@ export function pickRecipient(
 export interface ColdTags {
   source: string | null;
   persona: string | null;
+  /** указан — холодка только сотрудникам этого региона; нет — любым */
+  region?: string | null;
 }
 
 /**
- * Холодка: региона у лида нет. Получают сотрудники любых регионов, у кого
- * холодка включена (и в регионе, и лично), кто онлайн, не выбрал лимит и
- * принимает источник и личность лида. Счётчик и лимит общие с обычными входящими.
+ * Холодка: получают сотрудники, у кого она включена (и в регионе, и лично),
+ * кто онлайн, не выбрал лимит и принимает источник и личность лида. Регион в
+ * запросе сужает круг до этого региона, без него — все регионы. Счётчик и
+ * лимит общие с обычными входящими.
  */
 export function isColdEligible(r: Recipient, lead: ColdTags): boolean {
   return (
     Boolean(r.cold) &&
+    inRegion(r, lead.region ?? null) &&
     r.online &&
     underQuota(r) &&
     accepts(r.sources, lead.source) &&
@@ -103,8 +107,11 @@ export function pickColdRecipient(
 }
 
 export function coldSkipReason(list: Recipient[], lead: ColdTags): string {
-  const cold = list.filter((r) => r.cold);
-  if (!cold.length) return 'холодку никто не получает';
+  const cold = list.filter((r) => r.cold && inRegion(r, lead.region ?? null));
+  if (!cold.length)
+    return lead.region
+      ? `в регионе ${lead.region} холодку никто не получает`
+      : 'холодку никто не получает';
   const online = cold.filter((r) => r.online);
   if (!online.length) return 'из получающих холодку никого нет онлайн';
   const bySource = online.filter((r) => accepts(r.sources, lead.source));
