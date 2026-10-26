@@ -36,6 +36,7 @@ const INBOUND_FIELDS = [
 const COLD_FIELDS = [
   'source',
   'persona',
+  'region',
   'phone',
   'username',
   'name',
@@ -108,7 +109,7 @@ export class InboundController {
 
   @ApiOperation({
     summary:
-      'Холодка: лид без региона и личности, поровну тем, у кого холодка включена',
+      'Холодка: лид с личностью, поровну тем, у кого холодка включена; region сужает до одного региона',
   })
   @ApiResponse({
     status: 201,

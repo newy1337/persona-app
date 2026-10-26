@@ -1865,8 +1865,60 @@ describe('Manager panel API (e2e)', () => {
         first_name: 'Олег',
       });
 
+      // регион в запросе: только сотрудники этого региона, прочие условия те же
+      const inRegion = await post({
+        source: 'beboo',
+        phone: '+79015551240',
+        region: '0921',
+      }).expect(201);
+      expect(inRegion.body.assigned_to.user_id).toBe(c1);
+      expect(
+        (await prisma.phoneNumber.findUnique({ where: { id: inRegion.body.id } }))
+          ?.requestedRegion,
+      ).toBe('0921');
+      const closed = await post({
+        source: 'beboo',
+        phone: '+79015551241',
+        region: '0922',
+      }).expect(422);
+      expect(closed.body).toMatchObject({
+        error: 'no_recipient',
+        message: 'в регионе 0922 холодку никто не получает',
+      });
+      await post({
+        source: 'beboo',
+        phone: '+79015551241',
+        region: '12',
+      }).expect(400);
+      await request(app.getHttpServer())
+        .put('/api/region-settings/0922')
+        .set(h)
+        .send({ accept_cold: true })
+        .expect(200);
+      const other = await post({
+        source: 'beboo',
+        phone: '+79015551241',
+        region: '0922',
+      }).expect(201);
+      expect(other.body.assigned_to.user_id).toBe(c3);
+      await request(app.getHttpServer())
+        .put('/api/region-settings/0922')
+        .set(h)
+        .send({ accept_cold: false })
+        .expect(200);
+
       await prisma.phoneNumber.deleteMany({
-        where: { id: { in: [first.body.id, second.body.id, third.body.id] } },
+        where: {
+          id: {
+            in: [
+              first.body.id,
+              second.body.id,
+              third.body.id,
+              inRegion.body.id,
+              other.body.id,
+            ],
+          },
+        },
       });
       for (const id of [c1, c2, c3, c4])
         await request(app.getHttpServer())

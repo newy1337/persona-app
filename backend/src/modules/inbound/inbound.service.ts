@@ -167,7 +167,7 @@ export class InboundService {
         error: 'persona_not_found',
         message: `личности «${raw}» нет`,
       });
-    const tags = { source, persona };
+    const tags = { source, persona, region: dto.region?.trim() || null };
     try {
       return await this.prisma.$transaction(
         async (tx) => {
@@ -212,6 +212,7 @@ export class InboundService {
               sourceType: source,
               personaId: persona,
               requestedPersona: raw,
+              requestedRegion: tags.region,
               cold: true,
               status: INBOUND_STATUS,
               inboundAt: now,

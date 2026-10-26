@@ -127,6 +127,25 @@ describe('холодка', () => {
     ).toBe(3);
   });
 
+  it('регион в запросе: только сотрудники этого региона, с прочими условиями', () => {
+    const list = [
+      r({ id: 1, region: '001', cold: true, todayCount: 5 }),
+      r({ id: 2, region: '777', cold: true, todayCount: 0 }),
+      r({ id: 3, region: '001', cold: false, todayCount: 0 }),
+      r({ id: 4, region: '001', cold: true, online: false, todayCount: 0 }),
+    ];
+    const lead = { source: 'beboo', persona: 'nastya', region: '001' };
+    expect(pickColdRecipient(list, lead)?.id).toBe(1);
+    expect(pickColdRecipient(list, { ...lead, region: null })?.id).toBe(2);
+    expect(pickColdRecipient(list, { ...lead, region: '055' })).toBeNull();
+    expect(coldSkipReason(list, { ...lead, region: '055' })).toBe(
+      'в регионе 055 холодку никто не получает',
+    );
+    expect(coldSkipReason([list[3]], { ...lead, region: '001' })).toBe(
+      'из получающих холодку никого нет онлайн',
+    );
+  });
+
   it('не берёт оффлайн, с выбранным лимитом и чужим источником; доноры не мешают', () => {
     const list = [
       r({ id: 1, cold: true, online: false }),
