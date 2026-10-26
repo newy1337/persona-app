@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getUsage, getManagerUsage, getBalance, getDealStages, getColdLeads } from '../../api/usage';
+import { getUsage, getManagerUsage, getBalance, getDealStages, getColdLeads, getInsights } from '../../api/usage';
 import DailyChart, { DailyChartSkeleton } from './DailyChart';
 import DateRangePicker, { mskToday, addDays } from '../../components/DateRangePicker/DateRangePicker';
 import PricesEditor from './PricesEditor';
@@ -8,6 +8,7 @@ import ManagersTable, { ManagersTableSkeleton } from './ManagersTable';
 import StagesTable, { StagesTableSkeleton } from './StagesTable';
 import Balance, { BalanceSkeleton } from './Balance';
 import ColdTable from './ColdTable';
+import { AccountsTab, ActivityTab, FunnelTab, InsightsSkeleton } from './Insights';
 import { ArrowUpRight, Tags } from 'lucide-react';
 import { useRouteBusy } from '@/components/AppLayout/routeBusy';
 import { IconAction } from '@/components/IconAction/IconAction';
@@ -46,7 +47,18 @@ const SPLIT_COLORS = [
   'bg-muted-foreground/15',
 ];
 
-const TABS = [['overview', 'Обзор'], ['managers', 'По менеджерам'], ['teams', 'По командам'], ['stages', 'Этапы'], ['cold', 'Холодка']];
+const TABS = [
+  ['overview', 'Обзор'],
+  ['funnel', 'Воронка'],
+  ['managers', 'По менеджерам'],
+  ['teams', 'По командам'],
+  ['accounts', 'Аккаунты'],
+  ['activity', 'Активность'],
+  ['stages', 'Этапы'],
+  ['cold', 'Холодка'],
+];
+// Вкладки срезов «про результат» — один запрос на все три.
+const INSIGHT_TABS = ['funnel', 'accounts', 'activity'];
 
 const TEAMS_HINT =
   'Хед — вся цепочка: тимлиды, их менеджеры и прямые менеджеры. Тимлид — его менеджеры. Цифры руководителя включены в команду. Нажмите на строку — раскроются дни.';
@@ -163,6 +175,7 @@ export default function Stats() {
   const [balance, setBalance] = useState(null);
   const [stages, setStages] = useState(null);
   const [cold, setCold] = useState(null);
+  const [insights, setInsights] = useState(null);
 
   const load = useCallback(() => {
     getUsage({ from: range.from, to: range.to })
@@ -231,6 +244,31 @@ export default function Stats() {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [tab, range]);
+
+  // «Воронка», «Аккаунты», «Активность» — один запрос /api/stats/insights. Период
+  // сменился — прошлые цифры не показываем (они про другой период).
+  const insightsTab = INSIGHT_TABS.includes(tab);
+  useEffect(() => setInsights(null), [range]);
+  useEffect(() => {
+    if (!insightsTab) return undefined;
+    let alive = true;
+    const pull = () => getInsights({ from: range.from, to: range.to })
+      .then((r) => {
+        if (!alive) return;
+        setInsights(r);
+        setError(null);
+      })
+      .catch((e) => alive && setError(e.detail || e.message));
+    pull();
+    const onVisible = () => document.visibilityState === 'visible' && pull();
+    const timer = setInterval(onVisible, 60000);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [insightsTab, range]);
 
   // «По менеджерам» и «По командам» — один запрос: ответ несёт обе разбивки.
   useEffect(() => {
@@ -311,7 +349,17 @@ export default function Stats() {
           </div>
 
           <div className="flex min-h-[320px] flex-col gap-4" aria-busy={(tab === 'overview' && !data) || undefined}>
-            {tab === 'cold' ? (
+            {insightsTab ? (
+              !insights ? (
+                <InsightsSkeleton />
+              ) : tab === 'funnel' ? (
+                <FunnelTab data={insights} />
+              ) : tab === 'accounts' ? (
+                <AccountsTab data={insights} />
+              ) : (
+                <ActivityTab data={insights} />
+              )
+            ) : tab === 'cold' ? (
               cold ? <ColdTable data={cold} /> : <ColdSkeleton />
             ) : tab === 'stages' ? (
               stages ? <StagesTable data={stages} /> : <StagesTableSkeleton label="Считаю этапы…" />
