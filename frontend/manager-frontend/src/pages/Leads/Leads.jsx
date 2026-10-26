@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Loader2, Play, Plus, Upload } from 'lucide-react';
+import { Columns3, Loader2, Play, Plus, Rows3, Upload } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PanelUX } from '../../ui/PanelUX';
 import { CreateLeadForm } from './CreateLeadForm';
 import { LeadsTable } from './LeadsTable';
+import { LeadCard } from './LeadCard';
+import { LeadsBoard } from './LeadsBoard';
+import { LEADS_BY_FILTER, NEXT_FILTER, TYPE_FILTER, leadsBy, matchesType, nextStepState } from './leadInfo';
+import { setDealStage } from '../../api/conversations';
 import {
   deleteLead,
   getLeadPersonas,
@@ -75,6 +79,26 @@ const FETCH_LIMIT = 1000;
 const onlyOne = (values) => (values.length === 1 ? values[0] : '');
 const stageOf = (row) => row.deal_stage || 'none';
 const PAGE_SIZES = [25, 50, 100];
+/* Фильтры, которые сервер не знает, — отбираются здесь по загруженному списку. */
+const GENDER_FILTER = [
+  { value: 'm', label: 'мужской' },
+  { value: 'f', label: 'женский' },
+  { value: 'unknown', label: 'не указан' },
+];
+const UNREAD_FILTER = [
+  { value: 'yes', label: 'есть' },
+  { value: 'no', label: 'нет' },
+];
+const keysOf = (options) => options.map((o) => o.value);
+const genderOf = (row) => (row.gender === 'm' || row.gender === 'f' ? row.gender : 'unknown');
+const VIEW_KEY = 'leads_view';
+const readView = () => {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'board' ? 'board' : 'table';
+  } catch {
+    return 'table';
+  }
+};
 const DOT = {
   success: 'bg-success-foreground',
   warning: 'bg-warning-foreground',
@@ -259,6 +283,22 @@ export default function Leads() {
   const dealStages = pick(filterState.stage, STAGE_KEYS);
   const status = onlyOne(statuses);
   const dealStage = onlyOne(dealStages);
+  const types = pick(filterState.type, keysOf(TYPE_FILTER));
+  const genders = pick(filterState.gender, keysOf(GENDER_FILTER));
+  const nexts = pick(filterState.next, keysOf(NEXT_FILTER));
+  const unreads = pick(filterState.unread, keysOf(UNREAD_FILTER));
+  const bys = pick(filterState.leads, keysOf(LEADS_BY_FILTER));
+  const [view, setViewState] = useState(readView);
+  const setView = (next) => {
+    setViewState(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // приватное окно — вид просто не запомнится
+    }
+  };
+  // Открытая карточка: держим id, а лида берём из свежего списка — карточка обновляется вместе с ним.
+  const [openId, setOpenId] = useState(null);
   const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
@@ -334,7 +374,14 @@ export default function Leads() {
   // Несколько статусов или этапов сервер не фильтрует — отбираем здесь.
   const matched = (data.items ?? []).filter((row) =>
     (statuses.length < 2 || statuses.includes(row.status)) &&
-    (dealStages.length < 2 || dealStages.includes(stageOf(row))));
+    (dealStages.length < 2 || dealStages.includes(stageOf(row))) &&
+    matchesType(row, types) &&
+    (genders.length === 0 || genders.includes(genderOf(row))) &&
+    (nexts.length === 0 || nexts.includes(nextStepState(row))) &&
+    (unreads.length === 0 || unreads.includes(row.unread_count > 0 ? 'yes' : 'no')) &&
+    (bys.length === 0 || bys.includes(leadsBy(row))));
+  const overdue = (data.items ?? []).filter((row) => nextStepState(row) === 'overdue').length;
+  const openLead = openId === null ? null : (data.items ?? []).find((row) => row.id === openId) ?? null;
   const total = matched.length;
   const items = matched.slice((page - 1) * pageSize, page * pageSize);
   const loaded = data.items !== null;
@@ -358,13 +405,34 @@ export default function Leads() {
       label: 'Этап',
       filter: { type: 'options', options: STAGE_OPTIONS.map((o) => ({ ...o, count: stageCounts[o.value] })) },
     },
+    { key: 'type', label: 'Тип', filter: { type: 'options', options: TYPE_FILTER } },
+    { key: 'gender', label: 'Пол', filter: { type: 'options', options: GENDER_FILTER } },
+    { key: 'next', label: 'Следующий шаг', filter: { type: 'options', options: NEXT_FILTER } },
+    { key: 'unread', label: 'Непрочитанные', filter: { type: 'options', options: UNREAD_FILTER } },
+    { key: 'leads', label: 'Ведёт', filter: { type: 'options', options: LEADS_BY_FILTER } },
   ];
   const filters = {
     defs: Object.fromEntries(filterColumns.map((col) => [col.key, col.filter])),
-    state: { status: statuses, stage: dealStages },
+    state: { status: statuses, stage: dealStages, type: types, gender: genders, next: nexts, unread: unreads, leads: bys },
     onChange: changeFilter,
   };
-  const filtered = Boolean(status || dealStage);
+  const filtered = Boolean(status || dealStage || types.length || genders.length || nexts.length || unreads.length || bys.length);
+
+  // Воронка: перенос карточки меняет этап диалога лида; в архив — с причиной.
+  async function moveToStage(lead, stage) {
+    let note = '';
+    if (stage === 'archive') {
+      note = await PanelUX.prompt({ title: 'В архив', message: 'Почему диалог уходит в архив?', value: '', confirmLabel: 'В архив' });
+      if (!note) return;
+    }
+    setError(null);
+    try {
+      await setDealStage(lead.telegram_user_id, stage, note);
+    } catch (e) {
+      setError(e.detail || e.message);
+    }
+    load();
+  }
 
   const written = (counts.contacted ?? 0) + (counts.replied ?? 0);
   const stages = STATUS.map((st) => ({
@@ -398,7 +466,27 @@ export default function Leads() {
           <div className="flex min-h-4 flex-col gap-1 text-xs" aria-live="polite">
             <OutreachBar status={outreach} queued={counts.queued ?? 0} />
             <StuckWarning items={data.items ?? []} personas={personas} />
+            {overdue > 0 && (
+              <StatusLine tone="destructive" data-testid="overdue-steps">
+                {`Просрочен следующий шаг у ${overdue} ${overdue === 1 ? 'лида' : 'лидов'}. `}
+                <button type="button" className="text-primary underline-offset-4 hover:underline" onClick={() => changeFilter('next', ['overdue'])}>
+                  Показать
+                </button>
+              </StatusLine>
+            )}
             {error && <p className="leading-4 text-destructive [overflow-wrap:anywhere]">{error}</p>}
+          </div>
+
+          <div className="flex items-center gap-1" role="radiogroup" aria-label="Вид" data-testid="leads-view">
+            {[
+              ['table', 'Таблица', Rows3],
+              ['board', 'Воронка', Columns3],
+            ].map(([key, label, Icon]) => (
+              <Button key={key} type="button" role="radio" aria-checked={view === key} variant={view === key ? 'secondary' : 'ghost'} size="xs" onClick={() => setView(key)}>
+                <Icon aria-hidden="true" />
+                {label}
+              </Button>
+            ))}
           </div>
 
           <StageTabs
@@ -442,19 +530,24 @@ export default function Leads() {
             />
           </div>
 
+          {view === 'board' && loaded ? (
+            <LeadsBoard rows={matched} onOpen={(row) => setOpenId(row.id)} onMove={moveToStage} />
+          ) : (
           <LeadsTable rows={loaded ? items : null} query={q} filtered={filtered} filters={filters} selected={selected}
             onToggle={toggle} onSelectVisible={checked => setSelected(previous => {
               const next = new Set(previous);
               for (const row of items) { if (checked) next.add(row.id); else next.delete(row.id); }
               return next;
             })}
+            onOpen={(row) => setOpenId(row.id)}
             onChat={id => navigate(`/conversation/${id}`)}
             onQueue={ids => run(() => startOutreach(ids))} onUnqueue={ids => run(() => stopOutreach(ids))}
             onReassign={row => run(() => writeFromAnother(row.id))} onDelete={setDeleting}
             onPersonaChange={(id, persona_id) => run(() => updateLead(id, { persona_id }))}
             personas={personas} helpers={{ PersonaSelect, statusLabels: LABEL, statusBadges: BADGE, date: fmtTs }} />
+          )}
 
-          {loaded ? (
+          {view === 'board' ? null : loaded ? (
             <Pager
               label="Страницы лидов"
               page={page}
@@ -469,6 +562,19 @@ export default function Leads() {
           )}
         </div>
       </div>
+      {openLead && (
+        <LeadCard
+          lead={openLead}
+          statusLabel={LABEL[openLead.status] || openLead.status}
+          statusBadge={BADGE[openLead.status]}
+          onClose={() => setOpenId(null)}
+          onChanged={load}
+          onChat={(id) => navigate(`/conversation/${id}`)}
+          onQueue={(ids) => run(() => startOutreach(ids))}
+          onUnqueue={(ids) => run(() => stopOutreach(ids))}
+          onDelete={(lead) => { setOpenId(null); setDeleting(lead); }}
+        />
+      )}
       {adding && <CreateLeadForm personas={personas} PersonaSelect={PersonaSelect} onDone={() => { setAdding(false); load(); }} onCancel={() => setAdding(false)} />}
       {importing && <ImportDialog personas={personas} onClose={() => { setImporting(false); load(); }} />}
       {deleting && (

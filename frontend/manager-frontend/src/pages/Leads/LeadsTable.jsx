@@ -10,6 +10,7 @@ import { ColumnPicker } from '../../components/ColumnPicker/ColumnPicker';
 import { tableMinWidth, useColumnPrefs } from '../../components/ColumnPicker/columnPrefs';
 import { IconAction } from '../../components/IconAction/IconAction';
 import { dealStageLabel } from '../../data/dealStages';
+import { NEXT_TONE, leadTypeLabel, leadsBy, nextStepState, nextStepWhen, shortDate } from './leadInfo';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -26,8 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 const SKELETON_ROWS = 8;
 
 /* Сетка лидов: одно значение в ячейке, ширины колонок (px) фиксированы (опрос
-   и листание ничего не двигают), «Лид» забирает остаток. «Telegram» и «Сайт»
-   по умолчанию видны с 1680px. Какие колонки показывать, пользователь выбирает
+   и листание ничего не двигают), «Лид» забирает остаток. Какие колонки показывать, пользователь выбирает
    сам — «Настроить поля» в заголовке колонки действий; чекбокс, лида и действия
    скрыть нельзя. Значение скрытой колонки остаётся в подсказке лида, сайт ещё
    и дописывается под имя. Уже минимальной ширины таблица прокручивается
@@ -35,23 +35,41 @@ const SKELETON_ROWS = 8;
    там всегда он сам, колонка не рисуется и в настройке полей не предлагается.
    «Источник» — откуда пришёл лид (API LeadGet, холодка, перезабив, донор),
    подробности — в поповере. «Этап» — этап сделки диалога лида (deal_stage),
-   его ставит менеджер в диалоге. */
-const WIDE_QUERY = '(min-width: 1680px)';
+   его ставит менеджер в диалоге. «Тип», «Следующий шаг» и «Последнее» видны
+   сразу; Telegram, сайт, «Написали», «Добавлен» и прочие дополнительные
+   колонки включаются в «Настроить поля». Раньше Telegram и сайт сами
+   появлялись с 1680px, но «широкие» колонки не входят в минимальную ширину
+   таблицы, и на 1920px «Лид» сжимался до нуля. Щелчок по строке открывает
+   карточку лида. */
 // Меньше этого «Лид» не сжимается.
 const FLEX_MIN_WIDTH = 180;
 const COLUMNS = [
   { key: 'select', label: 'Выбор', width: 36, required: true, bars: [] },
   { key: 'lead', label: 'Лид', required: true, bars: ['w-28', 'w-24'] },
+  { key: 'type', label: 'Тип', width: 104, bars: ['w-14'] },
   { key: 'contact', label: 'Контакт', width: 160, bars: ['w-24'] },
-  { key: 'telegram', label: 'Telegram', width: 168, show: 'wide', bars: ['w-20'] },
-  { key: 'site', label: 'Сайт', width: 92, show: 'wide', bars: ['w-12'] },
+  { key: 'age', label: 'Возраст', width: 96, show: false, bars: ['w-8'] },
+  { key: 'city', label: 'Город', width: 136, show: false, bars: ['w-20'] },
+  { key: 'gender', label: 'Пол', width: 80, show: false, bars: ['w-8'] },
+  { key: 'telegram', label: 'Telegram', width: 168, show: false, bars: ['w-20'] },
+  { key: 'site', label: 'Сайт', width: 92, show: false, bars: ['w-12'] },
   { key: 'source', label: 'Источник', width: 150, bars: ['w-16', 'w-20'] },
+  { key: 'donor', label: 'Донор', width: 140, show: false, bars: ['w-16', 'w-12'] },
+  { key: 'region', label: 'Регион', width: 92, show: false, bars: ['w-8'] },
   { key: 'persona', label: 'Личность', width: 168, bars: ['w-24'] },
   { key: 'manager', label: 'Менеджер', width: 116, adminOnly: true, bars: ['w-16'] },
   { key: 'account', label: 'Аккаунт', width: 152, bars: ['w-20'] },
   { key: 'status', label: 'Статус', width: 164, bars: ['w-20'] },
   { key: 'stage', label: 'Этап', width: 112, bars: ['w-14'] },
-  { key: 'contacted', label: 'Написали', width: 128, bars: ['w-16'] },
+  { key: 'next', label: 'Следующий шаг', width: 176, bars: ['w-28', 'w-16'] },
+  { key: 'activity', label: 'Последнее', width: 120, bars: ['w-16'] },
+  { key: 'unread', label: 'Непрочитанные', width: 136, show: false, bars: ['w-6'] },
+  { key: 'leads', label: 'Ведёт', width: 104, show: false, bars: ['w-14'] },
+  { key: 'contacted', label: 'Написали', width: 128, show: false, bars: ['w-16'] },
+  { key: 'attempts', label: 'Попытки', width: 128, show: false, bars: ['w-8', 'w-16'] },
+  { key: 'error', label: 'Ошибка', width: 180, show: false, bars: ['w-24'] },
+  { key: 'added', label: 'Добавлен', width: 128, show: false, bars: ['w-16'] },
+  { key: 'notes', label: 'Заметки', width: 180, show: false, bars: ['w-24'] },
   { key: 'actions', label: 'Действия', width: 96, required: true, bars: [] },
 ];
 const PUBLIC_COLUMNS = COLUMNS.filter((col) => !col.adminOnly);
@@ -177,13 +195,13 @@ function SkeletonRow({ columns }) {
 
 /* filters — фильтры колонок: { defs: { ключ колонки: описание }, state, onChange(key, value) };
    список листается на сервере, поэтому сами строки здесь не отбираются. */
-export function LeadsTable({ rows, query, filtered, filters, selected, onToggle, onSelectVisible, onChat, onQueue, onUnqueue, onReassign, onDelete, onPersonaChange, personas, helpers }) {
+export function LeadsTable({ rows, query, filtered, filters, selected, onToggle, onSelectVisible, onOpen, onChat, onQueue, onUnqueue, onReassign, onDelete, onPersonaChange, personas, helpers }) {
   const { PersonaSelect, statusLabels, statusBadges, date } = helpers;
   const busy = ux.useActions().pending.some(key => key.includes('/api/leads'));
   const me = useMe();
   // Вне каркаса (тесты) — как у руководителя: колонка менеджера есть.
   const admin = !me || me.role !== 'manager';
-  const prefs = useColumnPrefs('leads', admin ? COLUMNS : PUBLIC_COLUMNS, { wide: WIDE_QUERY });
+  const prefs = useColumnPrefs('leads', admin ? COLUMNS : PUBLIC_COLUMNS);
   const { columns, has } = prefs;
   const loading = rows == null;
   const list = rows ?? [];
@@ -269,6 +287,11 @@ export function LeadsTable({ rows, query, filtered, filters, selected, onToggle,
             const statusText = statusLabels[row.status] || row.status;
             const stageText = row.deal_stage ? dealStageLabel(row.deal_stage) : null;
             const stageTitle = stageText ? [stageText, row.deal_note].filter(Boolean).join(' — ') : 'Этап не указан';
+            const next = nextStepState(row);
+            const nextWhen = nextStepWhen(row);
+            const nextTitle = next === 'none' ? 'Следующий шаг не задан' : [row.next_step || 'Шаг без описания', nextWhen].filter(Boolean).join(' · ');
+            const by = leadsBy(row);
+            const attemptsTitle = [`Попыток: ${row.attempts ?? 0}`, row.next_attempt_at ? `следующая: ${shortDate(row.next_attempt_at)}` : null].filter(Boolean).join(' · ');
             // Значения скрытых колонок не пропадают: они дописываются в подсказку лида.
             const leadTitle = [
               row.first_name || `Лид #${row.id}`,
@@ -285,9 +308,23 @@ export function LeadsTable({ rows, query, filtered, filters, selected, onToggle,
               !has('status') && `Статус: ${[statusText, row.last_error].filter(Boolean).join(' — ')}`,
               !has('stage') && stageText && `Этап: ${stageTitle}`,
               !has('contacted') && (row.first_contact_at ? `Написали: ${date(row.first_contact_at)}` : 'Ещё не писали'),
+              !has('type') && `Тип: ${leadTypeLabel(row)}`,
+              !has('next') && next !== 'none' && `Шаг: ${nextTitle}`,
             ].filter(Boolean).join(' · ');
             return (
-              <TableRow key={row.id} data-state={isSelected ? 'selected' : undefined} data-lead-id={row.id} data-lead-status={row.status}>
+              <TableRow
+                key={row.id}
+                data-state={isSelected ? 'selected' : undefined}
+                data-lead-id={row.id}
+                data-lead-status={row.status}
+                className={cn(onOpen && 'cursor-pointer')}
+                onClick={(e) => {
+                  // Щелчки по ссылкам, кнопкам и селектам — их собственные; из портала (меню) — не наши.
+                  if (!onOpen || !e.currentTarget.contains(e.target)) return;
+                  if (e.target.closest('a, button, select, input, label, [role="checkbox"], [role="menuitem"]')) return;
+                  onOpen(row);
+                }}
+              >
                 <TableCell className={cn(cell, 'pr-0')}>
                   <Checkbox className="block" checked={isSelected} aria-label={`Выбрать лид: ${name}`} onCheckedChange={() => onToggle(row.id)} />
                 </TableCell>
@@ -304,6 +341,15 @@ export function LeadsTable({ rows, query, filtered, filters, selected, onToggle,
                   </div>
                 </TableCell>
 
+                {has('type') && (
+                  <TableCell className={cell}>
+                    <div className={cn(one, 'gap-1')} title={[leadTypeLabel(row), row.reassigned ? 'перезабив' : null].filter(Boolean).join(' · ')}>
+                      <Badge variant={row.cold ? 'secondary' : 'default'} className="h-5" data-testid="lead-type">{leadTypeLabel(row)}</Badge>
+                      {row.reassigned && <span className="truncate text-xs text-muted-foreground" title="Перезабив">↻</span>}
+                    </div>
+                  </TableCell>
+                )}
+
                 {has('contact') && (
                   <TableCell className={cell}>
                     {row.phone_e164 && (
@@ -315,6 +361,24 @@ export function LeadsTable({ rows, query, filtered, filters, selected, onToggle,
                       </div>
                     )}
                     {!row.phone_e164 && !row.username && <Empty />}
+                  </TableCell>
+                )}
+
+                {has('age') && (
+                  <TableCell className={cell}>
+                    <div className={cn(one, 'tabular-nums')}>{row.age ? <span className="truncate">{row.age}</span> : <Empty />}</div>
+                  </TableCell>
+                )}
+
+                {has('city') && (
+                  <TableCell className={cell}>
+                    <div className={one} title={row.city || undefined}>{row.city ? <span className="truncate">{row.city}</span> : <Empty />}</div>
+                  </TableCell>
+                )}
+
+                {has('gender') && (
+                  <TableCell className={cell}>
+                    <div className={one}>{genderLabel(row.gender, true) ? <span className="truncate">{genderLabel(row.gender, true)}</span> : <Empty />}</div>
                   </TableCell>
                 )}
 
@@ -347,6 +411,19 @@ export function LeadsTable({ rows, query, filtered, filters, selected, onToggle,
                       <InboundDetails name={name} row={row} />
                     </div>
                     {tags.length > 0 && <div className={line2}>{tags.join(' · ')}</div>}
+                  </TableCell>
+                )}
+
+                {has('donor') && (
+                  <TableCell className={cell} title={[row.donor, row.external_id ? `ID: ${row.external_id}` : null, row.account_label].filter(Boolean).join(' · ') || undefined}>
+                    <div className={line1}>{row.donor ? <span className="truncate text-sm">{row.donor}</span> : <Empty />}</div>
+                    {row.external_id && <div className={line2}>{`ID ${row.external_id}`}</div>}
+                  </TableCell>
+                )}
+
+                {has('region') && (
+                  <TableCell className={cell}>
+                    <div className={cn(one, 'tabular-nums')}>{row.requested_region ? <span className="truncate">{row.requested_region}</span> : <Empty />}</div>
                   </TableCell>
                 )}
 
@@ -407,10 +484,88 @@ export function LeadsTable({ rows, query, filtered, filters, selected, onToggle,
                   </TableCell>
                 )}
 
+                {has('next') && (
+                  <TableCell className={cell} title={nextTitle}>
+                    {next === 'none' ? (
+                      <div className={one}><Empty /></div>
+                    ) : (
+                      <>
+                        <div className={line1}>
+                          <span className={cn('truncate text-sm', !row.next_step && 'text-muted-foreground')}>{row.next_step || 'шаг без описания'}</span>
+                        </div>
+                        <div className={cn(line2, NEXT_TONE[next], next === 'overdue' && 'font-medium')} data-testid="next-when" data-state={next}>
+                          {nextWhen}
+                        </div>
+                      </>
+                    )}
+                  </TableCell>
+                )}
+
+                {has('activity') && (
+                  <TableCell className={cell}>
+                    <div
+                      className={cn(one, 'tabular-nums')}
+                      title={row.last_message_ts ? `Последнее сообщение: ${shortDate(row.last_message_ts)}${row.last_client_ts ? ` · клиент писал: ${shortDate(row.last_client_ts)}` : ''}` : 'Переписки ещё нет'}
+                    >
+                      {row.last_message_ts ? <span className="truncate">{shortDate(row.last_message_ts)}</span> : <Empty />}
+                      {!has('unread') && row.unread_count > 0 && (
+                        <Badge variant="default" className="h-5 px-1.5 tabular-nums">{row.unread_count}</Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                )}
+
+                {has('unread') && (
+                  <TableCell className={cell}>
+                    <div className={one}>
+                      {row.unread_count > 0 ? <Badge variant="default" className="h-5 px-1.5 tabular-nums" data-testid="lead-unread">{row.unread_count}</Badge> : <Empty />}
+                    </div>
+                  </TableCell>
+                )}
+
+                {has('leads') && (
+                  <TableCell className={cell}>
+                    <div className={one}>
+                      {by === 'none' ? <Empty /> : <span className="truncate">{by === 'manager' ? 'Менеджер' : 'Бот'}</span>}
+                    </div>
+                  </TableCell>
+                )}
+
                 {has('contacted') && (
                   <TableCell className={cell}>
                     <div className={cn(one, 'tabular-nums')} title={row.first_contact_at ? `Написали: ${date(row.first_contact_at)}` : 'Ещё не писали'}>
                       {row.first_contact_at ? <span className="truncate">{date(row.first_contact_at)}</span> : <Empty />}
+                    </div>
+                  </TableCell>
+                )}
+
+                {has('attempts') && (
+                  <TableCell className={cell} title={attemptsTitle}>
+                    <div className={cn(line1, 'tabular-nums')}><span className="truncate text-sm">{row.attempts ?? 0}</span></div>
+                    {row.next_attempt_at && <div className={cn(line2, 'tabular-nums')}>{`след. ${shortDate(row.next_attempt_at)}`}</div>}
+                  </TableCell>
+                )}
+
+                {has('error') && (
+                  <TableCell className={cell}>
+                    <div className={one} title={row.last_error || undefined}>
+                      {row.last_error ? <span className="truncate text-destructive">{row.last_error}</span> : <Empty />}
+                    </div>
+                  </TableCell>
+                )}
+
+                {has('added') && (
+                  <TableCell className={cell}>
+                    <div className={cn(one, 'tabular-nums')} title={`Добавлен: ${date(row.inserted_at)}`}>
+                      {row.inserted_at ? <span className="truncate">{shortDate(row.inserted_at)}</span> : <Empty />}
+                    </div>
+                  </TableCell>
+                )}
+
+                {has('notes') && (
+                  <TableCell className={cell}>
+                    <div className={one} title={row.notes || undefined}>
+                      {row.notes ? <span className="truncate">{row.notes}</span> : <Empty />}
                     </div>
                   </TableCell>
                 )}

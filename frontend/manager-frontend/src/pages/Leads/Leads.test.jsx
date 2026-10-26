@@ -243,7 +243,7 @@ describe('лиды: фильтры колонок «Статус» и «Этап
 
   it('у «Статуса» и «Этапа» есть значок фильтра; варианты — с числами из counts и stages', async () => {
     await mount();
-    expect([...host.querySelectorAll('thead button[aria-label^="Фильтр: "]')].map((b) => b.getAttribute('aria-label'))).toEqual(['Фильтр: Статус', 'Фильтр: Этап']);
+    expect([...host.querySelectorAll('thead button[aria-label^="Фильтр: "]')].map((b) => b.getAttribute('aria-label'))).toEqual(['Фильтр: Тип', 'Фильтр: Статус', 'Фильтр: Этап', 'Фильтр: Следующий шаг']);
     await click(filterButton('Статус'));
     expect([...popover().querySelectorAll('label')].map((l) => l.textContent)).toEqual(['В базе40', 'В очереди10', 'Найден0', 'Написали6', 'Ответил4', 'Недоступен0']);
     await closePopover();

@@ -71,22 +71,30 @@ const box = (label) => boxes().find((item) => item.textContent === label);
 const click = (el) => act(async () => el.click());
 
 describe('таблица лидов: настройка полей', () => {
-  it('по умолчанию на узком экране нет «Telegram» и «Сайта»; сайт дописан под имя', async () => {
+  it('по умолчанию нет «Telegram» и «Сайта»; сайт дописан под имя', async () => {
     await draw();
-    expect(heads()).toEqual(['', 'Лид', 'Контакт', 'Источник', 'Личность', 'Менеджер', 'Аккаунт', 'Статус', 'Этап', 'Написали', 'Действия']);
+    expect(heads()).toEqual(['', 'Лид', 'Тип', 'Контакт', 'Источник', 'Личность', 'Менеджер', 'Аккаунт', 'Статус', 'Этап', 'Следующий шаг', 'Последнее', 'Действия']);
     expect(firstRow().length).toBe(heads().length);
     expect(cellOf('Лид').textContent).toContain('· mamba');
     expect(cellOf('Лид').getAttribute('title')).toContain('Telegram: @ira_tg');
-    expect(host.querySelector('table').style.minWidth).toBe('1462px');
+    expect(host.querySelector('table').style.minWidth).toBe('1734px');
   });
 
-  it('на широком экране обе колонки видны, сайт под именем не повторяется', async () => {
+  it('и на широком экране «Telegram» и «Сайт» сами не появляются: «Лид» не сжимается до нуля', async () => {
     setWide(true);
+    await draw();
+    expect(heads()).not.toContain('Telegram');
+    expect(heads()).not.toContain('Сайт');
+    expect(host.querySelector('table').style.minWidth).toBe('1734px');
+  });
+
+  it('включённый «Сайт» стоит колонкой и под именем не повторяется; ширина таблицы растёт', async () => {
+    localStorage.setItem(KEY, JSON.stringify({ telegram: true, site: true }));
     await draw();
     expect(cellOf('Telegram').textContent).toBe('@ira_tg');
     expect(cellOf('Сайт').textContent).toBe('mamba');
     expect(cellOf('Лид').textContent).not.toContain('mamba');
-    expect(host.querySelector('table').style.minWidth).toBe('1462px');
+    expect(host.querySelector('table').style.minWidth).toBe('1994px');
   });
 
   it('явное включение показывает «Telegram» на узком экране', async () => {
@@ -95,15 +103,14 @@ describe('таблица лидов: настройка полей', () => {
     await click(box('Telegram'));
     expect(cellOf('Telegram').querySelector('a').getAttribute('href')).toBe('https://t.me/ira_tg');
     expect(JSON.parse(localStorage.getItem(KEY))).toEqual({ telegram: true });
-    expect(host.querySelector('table').style.minWidth).toBe('1630px');
+    expect(host.querySelector('table').style.minWidth).toBe('1902px');
   });
 
   it('скрытая колонка пропадает из заголовка и строк, значение остаётся в подсказке лида', async () => {
     await draw();
     await openPicker();
     await click(box('Менеджер'));
-    await click(box('Написали'));
-    expect(heads()).toEqual(['', 'Лид', 'Контакт', 'Источник', 'Личность', 'Аккаунт', 'Статус', 'Этап', 'Действия']);
+    expect(heads()).toEqual(['', 'Лид', 'Тип', 'Контакт', 'Источник', 'Личность', 'Аккаунт', 'Статус', 'Этап', 'Следующий шаг', 'Последнее', 'Действия']);
     expect(firstRow().length).toBe(heads().length);
     const title = cellOf('Лид').getAttribute('title');
     expect(title).toContain('Менеджер: olga');
@@ -116,7 +123,7 @@ describe('таблица лидов: настройка полей', () => {
     expect(host.querySelector('thead [aria-label="Выбрать лидов на странице"]')).not.toBeNull();
     expect(heads()).toContain('Лид');
     await openPicker();
-    expect(boxes().map((item) => item.textContent)).toEqual(['Контакт', 'Telegram', 'Сайт', 'Источник', 'Личность', 'Менеджер', 'Аккаунт', 'Статус', 'Этап', 'Написали']);
+    expect(boxes().map((item) => item.textContent)).toEqual(['Тип', 'Контакт', 'Возраст', 'Город', 'Пол', 'Telegram', 'Сайт', 'Источник', 'Донор', 'Регион', 'Личность', 'Менеджер', 'Аккаунт', 'Статус', 'Этап', 'Следующий шаг', 'Последнее', 'Непрочитанные', 'Ведёт', 'Написали', 'Попытки', 'Ошибка', 'Добавлен', 'Заметки']);
   });
 
   it('заглушка и пустое состояние собраны из видимых колонок', async () => {
@@ -140,7 +147,7 @@ describe('таблица лидов: колонка «Этап»', () => {
     ]);
     const at = heads().indexOf('Этап');
     expect(at).toBe(heads().indexOf('Статус') + 1);
-    expect(heads()[at + 1]).toBe('Написали');
+    expect(heads()[at + 1]).toBe('Следующий шаг');
     const cells = [...host.querySelectorAll('tbody tr')].map((tr) => tr.children[at]);
     expect(cells.map((td) => td.textContent)).toEqual(['Архив', 'Лид', '—', '—']);
     expect(cells[0].querySelector('[title]').title).toBe('Архив — не отвечает');
@@ -187,12 +194,12 @@ describe('таблица лидов: колонка «Менеджер» — у 
 
   it('менеджер: колонки нет в заголовке, строках, заглушке и настройке полей; имя менеджера не попадает в подсказки', async () => {
     await drawAs({ id: 2, username: 'olga', role: 'manager' });
-    expect(heads()).toEqual(['', 'Лид', 'Контакт', 'Источник', 'Личность', 'Аккаунт', 'Статус', 'Этап', 'Написали', 'Действия']);
+    expect(heads()).toEqual(['', 'Лид', 'Тип', 'Контакт', 'Источник', 'Личность', 'Аккаунт', 'Статус', 'Этап', 'Следующий шаг', 'Последнее', 'Действия']);
     expect(firstRow().length).toBe(heads().length);
-    expect(host.querySelector('table').style.minWidth).toBe('1346px');
+    expect(host.querySelector('table').style.minWidth).toBe('1618px');
     expect(host.querySelector('tbody').innerHTML).not.toContain('Менеджер:');
     await openPicker();
-    expect(boxes().map((item) => item.textContent)).toEqual(['Контакт', 'Telegram', 'Сайт', 'Источник', 'Личность', 'Аккаунт', 'Статус', 'Этап', 'Написали']);
+    expect(boxes().map((item) => item.textContent)).toEqual(['Тип', 'Контакт', 'Возраст', 'Город', 'Пол', 'Telegram', 'Сайт', 'Источник', 'Донор', 'Регион', 'Личность', 'Аккаунт', 'Статус', 'Этап', 'Следующий шаг', 'Последнее', 'Непрочитанные', 'Ведёт', 'Написали', 'Попытки', 'Ошибка', 'Добавлен', 'Заметки']);
     // Даже явная запись в хранилище колонку не возвращает.
     localStorage.setItem(KEY, JSON.stringify({ manager: true, contact: false }));
     await drawAs({ id: 2, username: 'olga', role: 'manager' });
