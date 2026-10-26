@@ -61,6 +61,8 @@ export class MediaController {
   ) {
     await this.scope.requireChatOwned(user, chatId);
     const path = await this.media.nearestFile(chatId, msgTs);
+    // Файл сообщения не меняется: браузер держит его сутки, лента не перекачивает фото при каждом обновлении.
+    res.setHeader('Cache-Control', 'private, max-age=86400');
     res.sendFile(path);
   }
 }

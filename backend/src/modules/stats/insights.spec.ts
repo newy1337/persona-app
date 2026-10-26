@@ -65,6 +65,18 @@ describe('срезы статистики', () => {
     ]);
   });
 
+  it('два лида одного чата: деньги чата в строке разреза считаются один раз', () => {
+    const rows = sliceBy(
+      [lead({ chatId: '1' }), lead({ chatId: '1', replied: true })],
+      () => 'all',
+      (k) => k,
+      new Map([['1', 2]]),
+    );
+    expect(rows).toEqual([
+      expect.objectContaining({ written: 2, replied: 1, cost_usd: 2 }),
+    ]);
+  });
+
   it('стоимость результата: деньги / число на шаге; пустой шаг — null', () => {
     expect(
       costPerStep(

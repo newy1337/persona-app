@@ -165,6 +165,7 @@ export class UpdateLeadDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(2147483647)
   next_step_at?: number | null;
 }
 

@@ -73,6 +73,8 @@ model DashboardAuditLog {
   user DashboardUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([ts], map: "idx_dashboard_audit_ts")
+  @@index([userId, id], map: "idx_dashboard_audit_user_id")
+  @@index([action, id], map: "idx_dashboard_audit_action_id")
   @@map("dashboard_audit_log")
 }
 
@@ -225,6 +227,7 @@ model Message {
   @@index([chatId, id], map: "idx_messages_chat")
   @@index([chatId, ts, id], map: "idx_messages_chat_ts")
   @@index([processedAt, role], map: "idx_messages_unprocessed")
+  @@index([ts, role], map: "idx_messages_ts_role")
   @@map("messages")
 }
 
@@ -550,6 +553,7 @@ model Lead {
   @@index([status, nextAttemptAt], map: "idx_leads_status_next")
   @@index([assignedAccountId, firstContactAt], map: "idx_leads_account_contact")
   @@index([ownerUserId, inboundAt], map: "idx_leads_owner_inbound")
+  @@index([firstContactAt], map: "idx_leads_first_contact")
   @@map("leads")
 }
 
@@ -629,6 +633,7 @@ model ModelUsage {
   elapsedMs                Int?    @map("elapsed_ms")
 
   @@index([createdAt], map: "idx_model_usage_created")
+  @@index([chatId], map: "idx_model_usage_chat")
   @@map("model_usage")
 }
 

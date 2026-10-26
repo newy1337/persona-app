@@ -77,15 +77,21 @@ export function sliceBy(
   costByChat: ReadonlyMap<string, number>,
 ): SliceRow[] {
   const rows = new Map<string, SliceRow>();
+  // Несколько лидов одного чата — деньги чата считаются в строке один раз.
+  const counted = new Map<string, Set<string>>();
   for (const l of leads) {
     const key = keyOf(l);
     let row = rows.get(key);
     if (!row) {
       row = { key, label: labelOf(key), cost_usd: 0, ...zeroFunnel() };
       rows.set(key, row);
+      counted.set(key, new Set());
     }
     addLead(row, l);
-    if (l.chatId) row.cost_usd += costByChat.get(l.chatId) ?? 0;
+    if (l.chatId && !counted.get(key)!.has(l.chatId)) {
+      counted.get(key)!.add(l.chatId);
+      row.cost_usd += costByChat.get(l.chatId) ?? 0;
+    }
   }
   return [...rows.values()]
     .map((r) => ({ ...r, cost_usd: round(r.cost_usd) }))

@@ -387,6 +387,13 @@ describe('Manager panel API (e2e)', () => {
       is_paused: false,
     });
 
+    // Дата шага — секунды unix; миллисекунды не влезают в колонку → 400, не 500.
+    await request(app.getHttpServer())
+      .put(`/api/leads/${withChat.id}`)
+      .set(h)
+      .send({ next_step_at: Date.now() })
+      .expect(400);
+
     // Пустой шаг и null снимают напоминание.
     const cleared = await request(app.getHttpServer())
       .put(`/api/leads/${withChat.id}`)
@@ -712,6 +719,40 @@ describe('Manager panel API (e2e)', () => {
     expect(failed.body.items.every((i: any) => i.result === 'failure')).toBe(
       true,
     );
+    // Числа в параметрах проверяются: «abc» — 400, а не NaN в фильтре.
+    await request(app.getHttpServer())
+      .get('/api/audit?user_id=abc')
+      .set(h)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/audit?before=0')
+      .set(h)
+      .expect(400);
+    const byUser = await request(app.getHttpServer())
+      .get(
+        `/api/audit?user_id=${log.body.items[0].user_id}&before=${log.body.items[0].id + 1}`,
+      )
+      .set(h)
+      .expect(200);
+    expect(byUser.body.items[0].id).toBe(log.body.items[0].id);
+
+    // Срезы — только админу.
+    await request(app.getHttpServer())
+      .get('/api/stats/insights')
+      .set(mh)
+      .expect(403);
+    await request(app.getHttpServer())
+      .get('/api/stats/insights?from=2026-01-01&to=2026-06-30')
+      .set(h)
+      .expect(422);
+
+    const qr = await app
+      .get(PrismaService)
+      .dashboardUser.findUnique({ where: { username: 'qr_manager' } });
+    await request(app.getHttpServer())
+      .delete(`/api/managers/${qr!.id}`)
+      .set(h)
+      .expect(200);
   });
 
   it('срезы статистики: воронка когорты по донору, стоимость, тепловая карта, скорость', async () => {

@@ -423,7 +423,11 @@ export class ManagerService {
       LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
       LEFT JOIN channel_accounts a ON a.id = c.account_id
       LEFT JOIN personas pe ON pe.slug = a.persona_id
-      WHERE 1 = 1 ${this.scopeSql(accounts)} ${NOT_HIDDEN_SQL}`;
+      -- Только то, что attentionReason может принять: без аккаунта, не на паузе и
+      -- не в передаче лид в очередь не попадает — незачем считать по нему 10 подзапросов.
+      WHERE c.account_id IS NOT NULL
+        AND (h.state = 'hold_armed' OR c.pause_state = 'paused')
+        ${this.scopeSql(accounts)} ${NOT_HIDDEN_SQL}`;
 
     const out: ManagerChatRow[] = [];
     const stageOf = await this.stageResolver();

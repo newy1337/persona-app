@@ -41,6 +41,7 @@ import {
 } from 'src/shared/deal-stage-stats';
 
 const TOP_CHATS = 12;
+const INSIGHTS_MAX_DAYS = 93;
 const NO_MANAGER = '—';
 
 interface LeadCounts {
@@ -327,6 +328,11 @@ export class StatsService {
    */
   async insights(query: { from?: string; to?: string }) {
     const range = resolveRange(query, this.clock.ts());
+    // Три прохода по messages за период: длиннее квартала — дорого и бессмысленно.
+    if (range.days.length > INSIGHTS_MAX_DAYS)
+      throw new UnprocessableEntityException(
+        `срезы считаются не больше чем за ${INSIGHTS_MAX_DAYS} дней`,
+      );
     const cohort = await this.prisma.$queryRaw<
       {
         persona_id: string | null;
@@ -345,8 +351,10 @@ export class StatsService {
              l.cold, l.chat_id,
              EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = l.chat_id AND m.role = 'user'
                        AND m.deleted_at IS NULL AND m.ts >= l.first_contact_at) AS replied,
-             ARRAY(SELECT jsonb_object_keys(COALESCE(p.facts::jsonb->'deal_reached', '{}'::jsonb))
-                   FROM pinned_facts p WHERE p.chat_id = l.chat_id) AS reached
+             ARRAY(SELECT jsonb_object_keys(
+                     CASE WHEN jsonb_typeof(p.facts::jsonb->'deal_reached') = 'object'
+                          THEN p.facts::jsonb->'deal_reached' ELSE '{}'::jsonb END)
+                   FROM pinned_facts p WHERE p.chat_id = l.chat_id AND p.facts LIKE '%"deal_reached"%') AS reached
       FROM leads l
       WHERE l.first_contact_at >= ${range.start} AND l.first_contact_at < ${range.end}`;
     const leads: CohortLead[] = cohort.map((r) => ({
@@ -361,35 +369,51 @@ export class StatsService {
     }));
 
     // Деньги на модели по чатам когорты — за всё время: столько стоил результат.
-    const chatIds = [...new Set(leads.map((l) => l.chatId).filter((c) => c))];
+    // Токены суммируются в базе по (чат, модель): цена линейна по токенам, в JS
+    // остаётся только умножить на прайс — вместо выгрузки каждого вызова.
     const price = memoPrice(await this.prices());
     const costByChat = new Map<string, number>();
-    for (let i = 0; i < chatIds.length; i += 5000) {
-      const usage = (await this.prisma.modelUsage.findMany({
-        where: {
-          chatId: { in: chatIds.slice(i, i + 5000).map((c) => BigInt(c!)) },
-        },
-        select: {
-          chatId: true,
-          personaId: true,
-          model: true,
-          stage: true,
-          inputTokens: true,
-          outputTokens: true,
-          cachedTokens: true,
-          cacheWriteTokens: true,
-          cacheWrite1hTokens: true,
-          elapsedMs: true,
-          createdAt: true,
-        },
-      })) as UsageRow[];
-      for (const u of usage) {
-        const b = bucket();
-        add(b, u, price(normalizeModel(u.model)));
-        const key = String(u.chatId);
-        costByChat.set(key, (costByChat.get(key) ?? 0) + b.cost);
-      }
+    const agg = await this.prisma.$queryRaw<
+      {
+        chat_id: bigint;
+        model: string;
+        input: bigint;
+        output: bigint;
+        cached: bigint;
+        cw: bigint;
+        cw1h: bigint;
+      }[]
+    >`
+      SELECT u.chat_id, u.model,
+             COALESCE(SUM(u.input_tokens), 0) AS input,
+             COALESCE(SUM(u.output_tokens), 0) AS output,
+             COALESCE(SUM(u.cached_tokens), 0) AS cached,
+             COALESCE(SUM(u.cache_write_tokens), 0) AS cw,
+             COALESCE(SUM(u.cache_write_1h_tokens), 0) AS cw1h
+      FROM model_usage u
+      WHERE u.chat_id IN (SELECT l.chat_id FROM leads l
+                          WHERE l.first_contact_at >= ${range.start} AND l.first_contact_at < ${range.end}
+                            AND l.chat_id IS NOT NULL)
+      GROUP BY u.chat_id, u.model`;
+    for (const r of agg) {
+      const cached = Number(r.cached);
+      const cw = Number(r.cw);
+      const t: Tokens = {
+        input: Math.max(0, Number(r.input) - cached - cw),
+        output: Number(r.output),
+        cache_write: cw,
+        cache_read: cached,
+      };
+      const p = price(normalizeModel(r.model));
+      const key = String(r.chat_id);
+      costByChat.set(
+        key,
+        (costByChat.get(key) ?? 0) +
+          costOf(p, t) +
+          cacheWrite1hExtra(p, Number(r.cw1h)),
+      );
     }
+    const chatIds = [...new Set(leads.map((l) => l.chatId).filter((c) => c))];
 
     const [users, personas, accounts] = await Promise.all([
       this.prisma.dashboardUser.findMany({
@@ -445,10 +469,12 @@ export class StatsService {
              COUNT(*) FILTER (WHERE m.role = 'assistant') AS out,
              COUNT(*) FILTER (WHERE m.role = 'user') AS in,
              COUNT(DISTINCT m.chat_id) FILTER (WHERE m.role = 'assistant') AS chats,
-             COUNT(DISTINCT m.chat_id) FILTER (WHERE m.role = 'user') AS replied_chats
+             COUNT(DISTINCT m.chat_id) FILTER (WHERE m.role = 'user' AND EXISTS (
+               SELECT 1 FROM messages a WHERE a.chat_id = m.chat_id AND a.role = 'assistant'
+                 AND a.deleted_at IS NULL AND a.ts >= ${range.start} AND a.ts < ${range.end})) AS replied_chats
       FROM messages m JOIN contacts c ON c.chat_id = m.chat_id
       WHERE m.ts >= ${range.start} AND m.ts < ${range.end} AND m.deleted_at IS NULL
-        AND c.account_id IS NOT NULL
+        AND m.role IN ('user', 'assistant') AND c.account_id IS NOT NULL
       GROUP BY c.account_id`;
     const talk = new Map(accountTalk.map((r) => [Number(r.account_id), r]));
     const byAccountFunnel = new Map(
@@ -509,18 +535,35 @@ export class StatsService {
       { who: string; median: number; p90: number; n: bigint }[]
     >`
       WITH m AS (
-        SELECT role, author, ts,
-               LAG(role) OVER w AS prev_role, LAG(ts) OVER w AS prev_ts
+        SELECT chat_id, role, author, ts, id,
+               LAG(role) OVER w AS prev_role
         FROM messages
         WHERE ts >= ${range.start} AND ts < ${range.end} AND deleted_at IS NULL
-          AND text NOT LIKE '[Реакция%'
+          AND role IN ('user', 'assistant') AND text NOT LIKE '[Реакция%'
         WINDOW w AS (PARTITION BY chat_id ORDER BY ts, id)
+      ),
+      -- Серия подряд идущих сообщений одной стороны; ждём от её первого сообщения.
+      runs AS (
+        SELECT chat_id, role, author, ts,
+               SUM(CASE WHEN prev_role IS DISTINCT FROM role THEN 1 ELSE 0 END)
+                 OVER (PARTITION BY chat_id ORDER BY ts, id) AS run
+        FROM m
+      ),
+      starts AS (
+        SELECT chat_id, role, run, MIN(ts) AS first_ts, MIN(author) AS author
+        FROM runs GROUP BY chat_id, role, run
+      ),
+      pairs AS (
+        SELECT s.author, s.first_ts - LAG(s.first_ts) OVER (PARTITION BY s.chat_id ORDER BY s.run) AS wait,
+               LAG(s.role) OVER (PARTITION BY s.chat_id ORDER BY s.run) AS prev_role, s.role
+        FROM starts s
       )
-      SELECT CASE WHEN author LIKE 'operator:%' THEN 'manager' ELSE 'bot' END AS who,
-             percentile_cont(0.5) WITHIN GROUP (ORDER BY ts - prev_ts) AS median,
-             percentile_cont(0.9) WITHIN GROUP (ORDER BY ts - prev_ts) AS p90,
+      SELECT CASE WHEN author = 'operator:voice' THEN 'voice'
+                  WHEN author LIKE 'operator:%' THEN 'manager' ELSE 'bot' END AS who,
+             percentile_cont(0.5) WITHIN GROUP (ORDER BY wait) AS median,
+             percentile_cont(0.9) WITHIN GROUP (ORDER BY wait) AS p90,
              COUNT(*) AS n
-      FROM m
+      FROM pairs
       WHERE role = 'assistant' AND prev_role = 'user'
       GROUP BY 1`;
     const [firstReply] = await this.prisma.$queryRaw<
@@ -608,21 +651,27 @@ export class StatsService {
     };
   }
 
+  // Прайс читается на каждом запросе статистики, а меняется из панели редко:
+  // держим в памяти, сбрасываем при записи. Один процесс бэкенда — этого хватает.
+  private pricesCache: PriceTable | null = null;
+
   async prices(): Promise<PriceTable> {
+    if (this.pricesCache) return this.pricesCache;
     const row = await this.prisma.setting.findUnique({
       where: { key: PRICES_KEY },
     });
-    if (!row) return { ...DEFAULT_PRICES, is_default: true };
+    if (!row)
+      return (this.pricesCache = { ...DEFAULT_PRICES, is_default: true });
     try {
-      return {
+      return (this.pricesCache = {
         ...parseTable(JSON.parse(row.value), DEFAULT_PRICES.families),
         is_default: false,
-      };
+      });
     } catch (e) {
       this.log.warn(
         `таблица цен в настройках не читается (${(e as Error).message}) — работаю по умолчаниям`,
       );
-      return { ...DEFAULT_PRICES, is_default: true };
+      return (this.pricesCache = { ...DEFAULT_PRICES, is_default: true });
     }
   }
 
@@ -640,11 +689,13 @@ export class StatsService {
       create: { key: PRICES_KEY, value, updatedAt: now },
       update: { value, updatedAt: now },
     });
+    this.pricesCache = null;
     return { ...table, is_default: false };
   }
 
   async resetPrices(): Promise<PriceTable> {
     await this.prisma.setting.deleteMany({ where: { key: PRICES_KEY } });
+    this.pricesCache = null;
     return { ...DEFAULT_PRICES, is_default: true };
   }
 

@@ -2,10 +2,20 @@ import { Controller, Get, Query } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
-  ApiQuery,
+  ApiPropertyOptional,
   ApiTags,
 } from '@nestjs/swagger';
 import { Prisma } from '@prisma/client';
+import { Type } from 'class-transformer';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { Auth } from 'src/decorators/auth.decorator';
 import { Roles } from 'src/decorators/roles.decorator';
 import { Role } from 'src/enums/roles.enum';
@@ -15,6 +25,46 @@ import { ClockService } from 'src/shared/clock.service';
 
 const PAGE = 100;
 const PAYLOAD_MAX = 2000;
+
+/** Параметры журнала: числа проверяются до запроса, иначе NaN уходил бы в фильтр Prisma. */
+export class AuditQuery {
+  @ApiPropertyOptional({ example: '2026-10-01' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  from?: string;
+  @ApiPropertyOptional({ example: '2026-10-27' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  to?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  user_id?: number;
+  @ApiPropertyOptional({
+    description: 'начало имени действия: lead, persona.section',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  action?: string;
+  @ApiPropertyOptional({ description: '1 — только ошибки' })
+  @IsOptional()
+  @IsIn(['1', '0'])
+  failed?: string;
+  @ApiPropertyOptional({ description: 'поиск по объекту и данным' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  q?: string;
+  @ApiPropertyOptional({ description: 'id — листать дальше' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  before?: number;
+}
 
 /**
  * Журнал действий в панели (dashboard_audit_log) — то, что пишут audit.wrap
@@ -33,39 +83,10 @@ export class AuditController {
   ) {}
 
   @ApiOperation({ summary: 'Журнал действий: новые сверху, по 100' })
-  @ApiQuery({ name: 'from', required: false, example: '2026-10-01' })
-  @ApiQuery({ name: 'to', required: false, example: '2026-10-27' })
-  @ApiQuery({ name: 'user_id', required: false })
-  @ApiQuery({
-    name: 'action',
-    required: false,
-    description: 'начало имени действия: lead, persona.section',
-  })
-  @ApiQuery({
-    name: 'failed',
-    required: false,
-    description: '1 — только ошибки',
-  })
-  @ApiQuery({
-    name: 'q',
-    required: false,
-    description: 'поиск по объекту и данным',
-  })
-  @ApiQuery({
-    name: 'before',
-    required: false,
-    description: 'id — листать дальше',
-  })
   @Get()
-  async list(
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-    @Query('user_id') userId?: string,
-    @Query('action') action?: string,
-    @Query('failed') failed?: string,
-    @Query('q') q?: string,
-    @Query('before') before?: string,
-  ) {
+  async list(@Query() query: AuditQuery) {
+    const { from, to, action, failed, q, before } = query;
+    const userId = query.user_id;
     const range =
       from || to ? resolveRange({ from, to }, this.clock.ts()) : null;
     const text = q?.trim();
