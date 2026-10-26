@@ -129,8 +129,9 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
     owners.length > 1 && h('label', { className: s.label }, 'Чей лид',
       h('select', { className: s.select, value: draft.owner_user_id, disabled: busy, 'aria-label': 'Чей лид', onChange: e => change({ owner_user_id: e.target.value, preferred_account_id: '' }) },
         owners.map(o => h('option', { key: o.user_id, value: o.self ? '' : String(o.user_id) }, o.self ? `Себе (${o.username})` : [o.username, ROLE_LABELS[o.role] || o.role, o.region_code ? `регион ${o.region_code}` : null].filter(Boolean).join(' · '))))),
-    input('first_name', 'Имя', { maxLength: 64 }), input('city', 'Город', { maxLength: 64 }),
-    input('age', 'Возраст', { inputMode: 'numeric' }), input('site', 'Сайт знакомств', { placeholder: 'beboo', maxLength: 64 }),
+    // Город — без цифр, возраст — только цифры: иначе возраст попадал в город и бот звал его родным городом.
+    input('first_name', 'Имя', { maxLength: 64 }), input('city', 'Город', { maxLength: 64, onChange: e => change({ city: e.target.value.replace(/\d/g, '') }) }),
+    input('age', 'Возраст', { inputMode: 'numeric', maxLength: 2, onChange: e => change({ age: e.target.value.replace(/\D/g, '') }) }), input('site', 'Сайт знакомств', { placeholder: 'beboo', maxLength: 64 }),
     h('label', { className: s.label }, 'С какой личности писать', draft.preferred_account_id ? h('select', { className: s.select, disabled: true, value: draft.persona_id, title: 'Личность выбранного аккаунта' }, h('option', { value: draft.persona_id }, personas.find(p => p.slug === draft.persona_id)?.name || draft.persona_id)) : h(PersonaSelect, { personas, value: draft.persona_id, onChange: value => change({ persona_id: value }) })),
     h('div', { className: `${s.formFull} mr-lead-sender` },
       h('label', { className: s.label }, channel === 'vk' ? 'Аккаунт VK для первого сообщения' : 'Telegram-аккаунт для первого сообщения',

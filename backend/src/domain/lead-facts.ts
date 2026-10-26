@@ -1,3 +1,5 @@
+import { CITY_DIGITS_ERROR } from './leads';
+
 export type LeadFacts = Record<string, unknown>;
 
 export const ARCHIVED_AT_KEY = '_archived_at';
@@ -30,6 +32,7 @@ const FALSE_WORDS = new Set(['false', '0', 'no', 'n', 'нет', '']);
 
 export function coerceLeadFactValue(key: string, value: string): unknown {
   const raw = value.trim();
+  if (key === 'city' && /\d/.test(raw)) throw new Error(CITY_DIGITS_ERROR);
   if (INT_KEYS.has(key)) {
     const n = Number(raw);
     if (!Number.isInteger(n))

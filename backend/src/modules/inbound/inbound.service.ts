@@ -14,6 +14,7 @@ import {
   leadKey,
   mskDayStart,
   normalizePhone,
+  isCityName,
   normalizeUsername,
 } from 'src/domain/leads';
 import {
@@ -208,7 +209,7 @@ export class InboundService {
               usernameKey: username,
               firstName: dto.name?.trim() || null,
               gender: dto.gender ?? null,
-              city: dto.city?.trim() || null,
+              city: isCityName(dto.city) ? dto.city.trim() : null,
               age: dto.age ?? null,
               sourceType: source,
               personaId: persona,
@@ -303,7 +304,7 @@ export class InboundService {
             phoneE164: phone,
             usernameKey: username,
             firstName: dto.name?.trim() || null,
-            city: dto.city?.trim() || null,
+            city: isCityName(dto.city) ? dto.city.trim() : null,
             age: dto.age ?? null,
             gender: dto.gender ?? null,
             sourceType: tags.source ?? 'api',

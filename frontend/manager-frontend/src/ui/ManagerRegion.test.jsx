@@ -185,3 +185,19 @@ test('строка лида VK: метка VK, ссылки на vk.com с бэ�
   expect(hrefs.some(h => h.includes('t.me'))).toBe(false);
   expect(host.textContent).toContain('ВКонтакте: id123');
 });
+
+test('форма лида: в город цифры не вводятся, в возраст — только цифры', async () => {
+  const post = vi.spyOn(api, 'post').mockResolvedValue({ ok: true });
+  await render(<CreateLeadForm personas={[{ slug: 'nastya', name: 'Настя' }]} PersonaSelect={() => null} onDone={() => {}} onCancel={() => {}} />);
+  const field = title => [...host.querySelectorAll('label')].find(l => l.firstChild?.textContent === title).querySelector('input');
+  await input(field('Телефон или @username'), '+79001234567');
+  await input(field('Город'), '38');
+  expect(field('Город').value).toBe('');
+  await input(field('Город'), 'Пермь 2');
+  expect(field('Город').value).toBe('Пермь ');
+  await input(field('Возраст'), 'тридцать 5');
+  expect(field('Возраст').value).toBe('5');
+  await input(field('Возраст'), '38');
+  await act(async () => host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  expect(post).toHaveBeenCalledWith('/api/leads', expect.objectContaining({ age: 38 }));
+});

@@ -19,6 +19,8 @@ import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import {
   BUFFER_STATUS,
+  CITY_DIGITS_ERROR,
+  cityOf,
   LEAD_STATUSES,
   LeadChannel,
   LeadDraft,
@@ -598,6 +600,15 @@ export class LeadsService {
     return { ...contact, channel };
   }
 
+  /** Город из формы; с цифрами — 422 (возраст вписали не в то поле). */
+  private city(raw: string | null | undefined): string | null {
+    try {
+      return cityOf(raw);
+    } catch {
+      throw new UnprocessableEntityException(CITY_DIGITS_ERROR);
+    }
+  }
+
   /** Канал выбранного аккаунта: лид и аккаунт должны быть из одного мессенджера. */
   private async accountChannel(id: number | null | undefined) {
     if (!id) return null;
@@ -651,7 +662,7 @@ export class LeadsService {
         usernameKey: contact.username ?? null,
         channel: contact.channel,
         firstName: dto.first_name?.trim() || null,
-        city: dto.city?.trim() || null,
+        city: this.city(dto.city),
         age: dto.age ?? null,
         site: dto.site?.trim() || null,
         ...sender,
@@ -691,6 +702,7 @@ export class LeadsService {
     for (const item of dto.items ?? []) {
       let contact: ReturnType<LeadsService['contactOf']>;
       try {
+        cityOf(item.city);
         contact = this.contactOf(
           { ...item, channel: item.channel ?? batchChannel },
           await this.accountChannel(item.preferred_account_id),
@@ -708,7 +720,7 @@ export class LeadsService {
       drafts.push({
         ...contact,
         first_name: item.first_name ?? null,
-        city: item.city ?? null,
+        city: item.city?.trim() || null,
         age: item.age ?? null,
         site: item.site ?? null,
         persona_id: sender.personaId,
@@ -775,7 +787,7 @@ export class LeadsService {
     const data: Prisma.LeadUpdateInput = {};
     if (dto.first_name !== undefined)
       data.firstName = dto.first_name?.trim() || null;
-    if (dto.city !== undefined) data.city = dto.city?.trim() || null;
+    if (dto.city !== undefined) data.city = this.city(dto.city);
     if (dto.age !== undefined) data.age = dto.age;
     if (dto.site !== undefined) data.site = dto.site?.trim() || null;
     if (dto.persona_id !== undefined) {

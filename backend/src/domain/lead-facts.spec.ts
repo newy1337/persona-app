@@ -10,6 +10,10 @@ import {
 describe('lead facts', () => {
   it('coerces operator input by field type', () => {
     expect(coerceLeadFactValue('age', ' 34 ')).toBe(34);
+    expect(coerceLeadFactValue('city', ' Омск ')).toBe('Омск');
+    expect(() => coerceLeadFactValue('city', '38')).toThrow(
+      'не может быть цифр',
+    );
     expect(coerceLeadFactValue('analyst_agreed', 'Да')).toBe(true);
     expect(coerceLeadFactValue('analyst_offered', '')).toBe(false);
     expect(coerceLeadFactValue('city', ' Пхукет ')).toBe('Пхукет');

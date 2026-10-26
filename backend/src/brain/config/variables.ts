@@ -1,3 +1,5 @@
+import { isCityName } from 'src/domain/leads';
+
 export const VARIABLE_NAME_RX = /^[\p{L}_][\p{L}\p{N}_]{0,39}$/u;
 const PLACEHOLDER_RX = /\{([\p{L}_][\p{L}\p{N}_]{0,39})\}/gu;
 
@@ -42,13 +44,15 @@ export function chatVariables(
   facts: Record<string, unknown> | null | undefined,
 ): Record<string, string> {
   const out: Record<string, string> = {
-    interlocutor_city: typeof facts?.city === 'string' ? facts.city.trim() : '',
+    interlocutor_city: isCityName(facts?.city) ? facts.city.trim() : '',
   };
   for (const key of Object.keys(CHAT_VARIABLES)) {
     const value =
       key === 'city'
         ? (facts?.['_persona_home_city'] ?? facts?.city)
         : facts?.[key];
+    // Город без букв («38» — возраст не в том поле) — не город: бот его не называет.
+    if (key === 'city' && !isCityName(value)) continue;
     if (typeof value === 'string' && value.trim()) out[key] = value.trim();
   }
   return out;

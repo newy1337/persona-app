@@ -7,6 +7,7 @@ import { PhotoLibraryService } from './photo-library.service';
 import { BOT_ACTIVE_REASON, PauseState } from '../domain/pause';
 import { LeadFacts, parseLeadFacts } from '../domain/lead-facts';
 import { toChatId } from '../utils/ids';
+import { isCityName } from 'src/domain/leads';
 import { peerOf } from '../channels/ids';
 import {
   ClientPresence,
@@ -722,7 +723,8 @@ export class HistoryService {
     if (!('_persona_home_city' in current)) {
       const home =
         current.city || (typeof patch.city === 'string' ? patch.city : '');
-      if (typeof home === 'string' && home.trim())
+      // «38» в городе — возраст не в том поле, родным городом легенды не станет.
+      if (isCityName(home) && home.trim())
         next['_persona_home_city'] = home.trim();
     }
     for (const [k, v] of Object.entries(patch)) {

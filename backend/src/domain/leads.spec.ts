@@ -1,5 +1,7 @@
 import {
   floodRetryAfter,
+  cityOf,
+  isCityName,
   mskDayStart,
   normalizePhone,
   normalizeUsername,
@@ -10,6 +12,22 @@ import {
 } from './leads';
 
 describe('leads domain', () => {
+  it('город без цифр: «38» — возраст не в том поле, строка импорта с ним — ошибка', () => {
+    expect(isCityName('Москва')).toBe(true);
+    expect(isCityName('38')).toBe(false);
+    expect(isCityName('Москва 2')).toBe(false);
+    expect(isCityName('')).toBe(false);
+    expect(isCityName(null)).toBe(false);
+    expect(cityOf(' Омск ')).toBe('Омск');
+    expect(cityOf('')).toBeNull();
+    expect(() => cityOf('38')).toThrow('не может быть цифр');
+    const r = parseLeadLines('+79001234567;Олег;38\n+79001234568;Ира;Пермь;30');
+    expect(r.items.map((i) => i.city)).toEqual(['Пермь']);
+    expect(r.errors).toEqual([
+      expect.stringContaining('строка 1: в поле «Город» не может быть цифр'),
+    ]);
+  });
+
   it('parses VK pages: links, idN, bare numbers and short names with dots', () => {
     expect(normalizeVkUsername('https://vk.com/id12345')).toBe('id12345');
     expect(normalizeVkUsername('m.vk.com/Ivan.Petrov?from=search')).toBe(

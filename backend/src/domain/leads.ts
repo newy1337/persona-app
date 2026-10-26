@@ -40,6 +40,20 @@ export function normalizePhone(raw: string): string | null {
   return `+${digits}`;
 }
 
+/** Город — слово без цифр: «38» в поле города — это возраст, вписанный не туда. */
+export const isCityName = (v: unknown): v is string =>
+  typeof v === 'string' && /\p{L}/u.test(v) && !/\d/.test(v);
+
+export const CITY_DIGITS_ERROR =
+  'в поле «Город» не может быть цифр — возраст впишите в «Возраст»';
+
+/** Город из формы: пусто — null; с цифрами — ошибка. */
+export function cityOf(raw: string | null | undefined): string | null {
+  const text = raw?.trim() || null;
+  if (text && /\d/.test(text)) throw new Error(CITY_DIGITS_ERROR);
+  return text;
+}
+
 export interface LeadDraft {
   phone_e164?: string | null;
   username?: string | null;
@@ -139,6 +153,10 @@ export function parseLeadLines(
       errors.push(
         `строка ${i + 1}: не похоже на телефон или ${channel === 'vk' ? 'ник VK' : '@username'} — «${parts[0]}»`,
       );
+      return;
+    }
+    if (parts[2] && /\d/.test(parts[2])) {
+      errors.push(`строка ${i + 1}: ${CITY_DIGITS_ERROR} — «${parts[2]}»`);
       return;
     }
     const key = leadKey(contact);

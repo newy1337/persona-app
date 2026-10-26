@@ -19,6 +19,7 @@ import {
   RETRY_BACKOFF_S,
   releasedLeadError,
   withinOutreachHours,
+  isCityName,
 } from 'src/domain/leads';
 import { toChatId } from 'src/utils/ids';
 import { isTelegramTimeout } from 'src/domain/timeout';
@@ -425,7 +426,7 @@ export class OutreachWorker implements OnModuleInit {
         chatId,
         {
           ...(candidate.firstName ? { name: candidate.firstName } : {}),
-          ...(candidate.city ? { city: candidate.city } : {}),
+          ...(isCityName(candidate.city) ? { city: candidate.city } : {}),
           ...(candidate.site ? { site: candidate.site } : {}),
           ...(candidate.age ? { age: candidate.age } : {}),
           ...(candidate.phoneE164 ? { phone: candidate.phoneE164 } : {}),
@@ -437,7 +438,7 @@ export class OutreachWorker implements OnModuleInit {
       openerStarted = true;
       const text = await this.brain.openLead(chatId, accountId, {
         firstName: candidate.firstName,
-        city: candidate.city,
+        city: isCityName(candidate.city) ? candidate.city : null,
         age: candidate.age,
         site: candidate.site,
         opener: candidate.firstMessage,

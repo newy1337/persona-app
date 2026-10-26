@@ -60,6 +60,9 @@ describe('переменные личности', () => {
     expect(
       chatVariables({ city: ' Омск ', site: 'mamba', name: 'Олег' }),
     ).toEqual({ city: 'Омск', site: 'mamba', interlocutor_city: 'Омск' });
+    expect(chatVariables({ city: '38', _persona_home_city: '38' })).toEqual({
+      interlocutor_city: '',
+    });
     expect(chatVariables({ city: '', site: null })).toEqual({
       interlocutor_city: '',
     });

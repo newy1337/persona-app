@@ -6385,6 +6385,34 @@ describe('Manager panel API (e2e)', () => {
       }
     });
 
+    it('город с цифрами не принимается: возраст вписали не в то поле', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      const bad = await request(app.getHttpServer())
+        .post('/api/leads')
+        .set(h)
+        .send({ phone: '+79005550222', first_name: 'Олег', city: '38' })
+        .expect(422);
+      expect(bad.body.message).toContain('не может быть цифр');
+      const ok = await request(app.getHttpServer())
+        .post('/api/leads')
+        .set(h)
+        .send({ phone: '+79005550222', city: 'Пермь', age: 38 })
+        .expect(200);
+      await request(app.getHttpServer())
+        .put(`/api/leads/${ok.body.id}`)
+        .set(h)
+        .send({ city: '42' })
+        .expect(422);
+      const imp = await request(app.getHttpServer())
+        .post('/api/leads/import')
+        .set(h)
+        .send({ text: '+79005550223;Ира;35\n+79005550224;Аня;Омск;30' })
+        .expect(200);
+      expect(imp.body.created).toBe(1);
+      expect(imp.body.errors[0]).toContain('не может быть цифр');
+      await app.get(PrismaService).lead.deleteMany({});
+    });
+
     it('voice role has no access to leads', async () => {
       const h = { Authorization: `Bearer ${token}` };
       await request(app.getHttpServer())
