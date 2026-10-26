@@ -1713,6 +1713,21 @@ describe('Manager panel API (e2e)', () => {
         .send({ name: 'Холодка' })
         .expect(201);
       const key = { 'X-Api-Key': made.body.key };
+      // список личностей для отправителя: name и slug включённых, по ключу
+      const enabled = await prisma.persona.findMany({
+        where: { enabled: true },
+        select: { name: true, slug: true },
+        orderBy: { name: 'asc' },
+      });
+      const personas = await request(app.getHttpServer())
+        .get('/api/post/personas')
+        .set(key)
+        .expect(200);
+      expect(personas.body.items).toEqual(enabled);
+      expect(personas.body.items).toContainEqual(
+        expect.objectContaining({ slug: 'nastya' }),
+      );
+      await request(app.getHttpServer()).get('/api/post/personas').expect(401);
       const post = (body: Record<string, unknown>) =>
         request(app.getHttpServer())
           .post('/api/post/cold')

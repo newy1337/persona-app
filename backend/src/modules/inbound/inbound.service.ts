@@ -136,11 +136,21 @@ export class InboundService {
     return row?.slug ?? null;
   }
 
+  /** Личности для отправителей лидов: какие slug можно слать в persona / person. */
+  async personas(): Promise<{ items: { name: string; slug: string }[] }> {
+    const rows = await this.prisma.persona.findMany({
+      where: { enabled: true },
+      select: { name: true, slug: true },
+      orderBy: { name: 'asc' },
+    });
+    return { items: rows };
+  }
+
   /**
-   * Холодка: источник, личность и контакт, без региона и донора. Раздаётся
-   * поровну тем, у кого холодка включена (лично и в регионе), кто онлайн, с
-   * квотой, с этим источником и этой личностью. Буфера у холодки нет: региона, чей хед решал
-   * бы за лид только с ником, у неё нет — уходит сразу сотруднику.
+   * Холодка: источник, личность и контакт, регион по желанию, без донора.
+   * Раздаётся поровну тем, у кого холодка включена (лично и в регионе), кто
+   * онлайн, с квотой, с этим источником и этой личностью; region сужает до
+   * одного региона. Буфера у холодки нет — лид уходит сразу сотруднику.
    */
   async acceptCold(dto: ColdLeadDto): Promise<InboundResult> {
     const username = dto.username ? normalizeUsername(dto.username) : null;
