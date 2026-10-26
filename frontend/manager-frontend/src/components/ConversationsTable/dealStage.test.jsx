@@ -102,3 +102,17 @@ test('в списке только Telegram — фильтра канала не
   await act(async () => root.render(<ConversationsTable rows={[row({})]} />));
   expect(host.querySelector('[data-testid="channel-filters"]')).toBeNull();
 });
+
+test('диалоги без этапа подсвечены жёлтым — те же, что в напоминании; архив и скрытые — нет', async () => {
+  const rows = [
+    row({ chat_id: 1, id: 1, name: 'Без этапа' }),
+    row({ chat_id: 2, id: 2, name: 'С этапом', deal_stage: 'vbros' }),
+    row({ chat_id: 3, id: 3, name: 'Скрытый', hidden: true }),
+  ];
+  await act(async () => root.render(<ConversationsTable rows={rows} />));
+  const tr = (id) => host.querySelector(`tbody tr[data-chat-id="${id}"]`);
+  expect(tr(1).className).toContain('bg-warning');
+  expect(tr(1).dataset.noStage).toBe('true');
+  expect(tr(2).className).not.toContain('bg-warning');
+  if (tr(3)) expect(tr(3).className).not.toContain('bg-warning');
+});

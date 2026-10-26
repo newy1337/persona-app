@@ -153,6 +153,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
               ? 'Статус собеседника вдруг скрылся — так бывает, когда кидают в ЧС (или скрыли статус приватностью)'
               : undefined;
             const who = row.name || `Чат ${row.chat_id}`;
+            const noStage = !archived && !row.hidden && !row.deal_stage;
             const age = row.age ? `${row.age} лет` : null;
             const idLabel = `ID ${row.chat_id}`;
             const about = [age, row.city].filter(Boolean).join(' · ');
@@ -195,7 +196,12 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                 key={row.chat_id}
                 data-chat-id={row.chat_id}
                 onClick={() => onOpen(row.chat_id)}
-                className="cursor-pointer focus-within:bg-muted/50"
+                data-no-stage={noStage || undefined}
+                className={cn(
+                  'cursor-pointer focus-within:bg-muted/50',
+                  // Этап не указан — те же диалоги, что в напоминании над таблицей.
+                  noStage && 'bg-warning hover:bg-warning focus-within:bg-warning',
+                )}
               >
                 <TableCell className={CELL}>
                   <div className="flex min-w-0 items-center gap-2.5" title={whoTitle}>
