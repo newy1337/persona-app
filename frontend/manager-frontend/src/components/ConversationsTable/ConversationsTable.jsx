@@ -128,12 +128,13 @@ function ConversationsTable({
 
   const sorted = sort.col
     ? [...filtered].sort((a, b) => {
-      const aVal = sort.col === 'name' ? (a.name || '')
-        : sort.col === 'status' ? (a.stage?.index ?? 0)
-          : (a.last_message_ts || 0);
-      const bVal = sort.col === 'name' ? (b.name || '')
-        : sort.col === 'status' ? (b.stage?.index ?? 0)
-          : (b.last_message_ts || 0);
+      const value = (row) => (sort.col === 'name' ? (row.name || '')
+        : sort.col === 'status' ? (row.stage?.index ?? 0)
+          : sort.col === 'unread' ? (row.unread_count ?? 0)
+            : sort.col === 'age' ? (row.age ?? 0)
+              : (row.last_message_ts || 0));
+      const aVal = value(a);
+      const bVal = value(b);
       if (aVal < bVal) {
         return sort.dir === 'asc' ? -1 : 1;
       }

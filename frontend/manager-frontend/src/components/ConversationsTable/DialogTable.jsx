@@ -8,7 +8,7 @@ import { DEAL_STAGES, dealStageLabel } from '../../data/dealStages';
 import { ColumnFilter } from '../ColumnFilter/ColumnFilter';
 import { ColumnPicker } from '../ColumnPicker/ColumnPicker';
 import { IconAction } from '../IconAction/IconAction';
-import { CELL, HEAD_CELL, LINE_1, LINE_2, WAITS_TEXT, accountLabel, useDialogColumns } from './rowLayout';
+import { CELL, HEAD_CELL, LINE_1, LINE_2, WAITS_TEXT, accountLabel, leadTypeLabel, presenceText, useDialogColumns } from './rowLayout';
 import { accountContact, channelBadge, clientContact } from '../../utils/channel';
 
 /** Профиль ссылкой: адрес и подпись отдаёт бэк (t.me или vk.com), см. utils/channel. */
@@ -173,6 +173,9 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
               about,
               online?.text,
               !has('contact') && contactTitle,
+              !has('channel') && channel.other && `Соцсеть: ${channel.title}`,
+              !has('type') && row.lead_type && `Тип: ${leadTypeLabel(row.lead_type)}`,
+              !has('persona') && row.persona_name && `Личность: ${row.persona_name}`,
               !has('stage') && row.stage?.title && `Стадия: ${row.stage.title}`,
               !has('deal') && row.deal_stage && `Этап: ${dealStageLabel(row.deal_stage)}`,
               !has('lead') && `Ведёт: ${row.is_paused ? 'менеджер' : 'бот'}`,
@@ -237,7 +240,8 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
 
                 {has('contact') && (
                   <Cell title={contactTitle}>
-                    {channel.other && (
+                    {/* Отдельная колонка «Соцсеть» скрыта — метка канала остаётся у контакта. */}
+                    {channel.other && !has('channel') && (
                       <Badge variant="outline" className="h-4 shrink-0 px-1 text-[10px] font-normal" data-channel={channel.key} data-testid="channel-badge" title={channel.title}>
                         {channel.label}
                       </Badge>
@@ -246,6 +250,36 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                       <ContactLink contact={client} />
                     ) : (
                       <span className="truncate font-mono text-xs tabular-nums">{row.phone || idLabel}</span>
+                    )}
+                  </Cell>
+                )}
+
+                {has('channel') && (
+                  <Cell title={channel.title}>
+                    <Badge
+                      variant={channel.other ? 'secondary' : 'outline'}
+                      className="h-5 shrink-0 px-1.5 text-[11px] font-medium"
+                      data-channel={channel.key}
+                      data-testid="channel-cell"
+                    >
+                      {channel.label}
+                    </Badge>
+                  </Cell>
+                )}
+
+                {has('type') && (
+                  <Cell>
+                    {row.lead_type ? (
+                      <Badge
+                        variant={row.lead_type === 'cold' ? 'secondary' : row.lead_type === 'hot' ? 'default' : 'outline'}
+                        className="h-5 shrink-0 px-1.5 text-[11px] font-medium"
+                        data-type={row.lead_type}
+                        data-testid="lead-type"
+                      >
+                        {leadTypeLabel(row.lead_type)}
+                      </Badge>
+                    ) : (
+                      <Empty />
                     )}
                   </Cell>
                 )}
@@ -317,6 +351,42 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, onOpen, o
                       <Empty />
                     )}
                   </Cell>
+                )}
+
+                {has('unread') && (
+                  <Cell>
+                    {(row.unread_count ?? 0) > 0 ? (
+                      <Badge variant="default" className="h-5 px-1.5 tabular-nums" data-testid="unread-cell">
+                        {row.unread_count}
+                      </Badge>
+                    ) : (
+                      <Empty />
+                    )}
+                  </Cell>
+                )}
+
+                {has('online') && (
+                  <Cell title={presenceText(row) || undefined}>
+                    {presenceText(row) ? (
+                      <span className={cn('truncate', row.client_presence?.kind === 'online' ? 'text-success-foreground' : 'text-muted-foreground')}>
+                        {presenceText(row)}
+                      </span>
+                    ) : (
+                      <Empty />
+                    )}
+                  </Cell>
+                )}
+
+                {has('age') && (
+                  <Cell>{row.age ? <span className="tabular-nums">{row.age}</span> : <Empty />}</Cell>
+                )}
+
+                {has('city') && (
+                  <Cell title={row.city || undefined}>{row.city ? <span className="truncate">{row.city}</span> : <Empty />}</Cell>
+                )}
+
+                {has('persona') && (
+                  <Cell>{row.persona_name ? <span className="truncate">{row.persona_name}</span> : <Empty />}</Cell>
                 )}
 
                 {has('manager') && (

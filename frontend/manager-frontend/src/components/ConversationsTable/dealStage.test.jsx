@@ -94,7 +94,8 @@ test('фильтр канала появляется, когда в списке
   const text = [...host.querySelectorAll('tbody tr')].map((tr) => tr.textContent).join(' ');
   expect(text).toContain('Вк');
   expect(text).not.toContain('Тг');
-  expect(host.querySelector('[data-testid="channel-badge"]').textContent).toBe('VK');
+  // Канал теперь в своей колонке «Соцсеть»; метка у контакта — только когда колонка скрыта.
+  expect(host.querySelector('tbody tr[data-chat-id="2"] [data-testid="channel-cell"]').textContent).toBe('VK');
 });
 
 test('в списке только Telegram — фильтра канала нет', async () => {

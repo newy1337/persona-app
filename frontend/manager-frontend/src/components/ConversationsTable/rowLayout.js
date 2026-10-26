@@ -4,6 +4,8 @@ import { useIsAdmin } from '../AppLayout/me';
 import { DEAL_STAGES } from '../../data/dealStages';
 import { stageColors } from '../../data/stages';
 import { nextActionLabel } from '../../utils/scenario';
+import { channelBadge } from '../../utils/channel';
+import { presenceLabel } from '../../utils/telegramStatus';
 
 // Раскладка списка диалогов — сетка из узких колонок: одно значение в ячейке и
 // в одну линию, только у собеседника под именем вторая короткая. Её делят
@@ -22,10 +24,19 @@ import { nextActionLabel } from '../../utils/scenario';
 export const COLUMNS = [
   { key: 'who', label: 'Собеседник', sort: 'name', width: 184, required: true, bars: ['w-24', 'w-28'] },
   { key: 'contact', label: 'Контакт', width: 140, bars: ['w-24'] },
+  { key: 'channel', label: 'Соцсеть', width: 104, bars: ['w-8'] },
+  { key: 'type', label: 'Тип', width: 112, bars: ['w-14'] },
   { key: 'stage', label: 'Стадия', sort: 'status', width: 160, bars: ['w-28'] },
   { key: 'deal', label: 'Этап', width: 136, bars: ['w-20'] },
   { key: 'lead', label: 'Ведёт', width: 112, bars: ['w-14'] },
   { key: 'next', label: 'Что дальше', bars: ['w-24'] },
+  // Дополнительные — по умолчанию скрыты, включаются в «Настроить поля»: показанные сразу,
+  // они на 1920px сжимали «Что дальше» почти до нуля.
+  { key: 'unread', label: 'Непрочитанные', sort: 'unread', width: 148, show: false, bars: ['w-6'] },
+  { key: 'online', label: 'В сети', width: 144, show: false, bars: ['w-20'] },
+  { key: 'age', label: 'Возраст', sort: 'age', width: 108, show: false, bars: ['w-8'] },
+  { key: 'city', label: 'Город', width: 136, show: false, bars: ['w-20'] },
+  { key: 'persona', label: 'Личность', width: 120, show: false, bars: ['w-16'] },
   { key: 'manager', label: 'Менеджер', width: 108, adminOnly: true, bars: ['w-20'] },
   { key: 'region', label: 'Регион', width: 92, show: 'wide', adminOnly: true, bars: ['w-8'] },
   { key: 'account', label: 'Аккаунт', width: 120, bars: ['w-20'] },
@@ -71,6 +82,29 @@ export function accountLabel(row) {
   if (row.account_username) return `@${row.account_username}`;
   return row.account_id ? `Аккаунт #${row.account_id}` : 'Аккаунт удалён';
 }
+
+/** Тип диалога: холодка, обычный лид (хот) или человек написал сам. */
+export const LEAD_TYPES = [
+  { value: 'cold', label: 'Холодка' },
+  { value: 'hot', label: 'Хот' },
+  { value: 'inbound', label: 'Входящий' },
+];
+export const leadTypeLabel = (type) => LEAD_TYPES.find((t) => t.value === type)?.label ?? '';
+
+/** Соцсеть строки так, как она подписана в колонке. */
+export const channelOf = (row) => channelBadge(row.channel).label;
+
+/** «В сети» строки: вид присутствия (в сети, недавно, давно…) для фильтра. */
+const PRESENCE_GROUPS = {
+  online: 'в сети',
+  offline: 'был(а) в сети',
+  recently: 'недавно',
+  last_week: 'на этой неделе',
+  last_month: 'в этом месяце',
+  hidden: 'время скрыто',
+};
+const presenceOf = (row) => row.client_presence?.kind || '';
+export const presenceText = (row) => presenceLabel(row.client_presence)?.text ?? '';
 
 /** Текст ячейки «Что дальше». */
 export function nextText(row) {
@@ -179,6 +213,50 @@ const FILTERS = {
     options: keepPicked(optionsFrom(rows, accountLabel), value),
   }),
   last: () => ({ type: 'period', get: (row) => row.last_message_ts }),
+  channel: (rows, value) => ({
+    type: 'options',
+    get: channelOf,
+    options: keepPicked(optionsFrom(rows, channelOf), value),
+  }),
+  type: (rows) => {
+    const counts = new Map();
+    for (const row of rows) counts.set(row.lead_type, (counts.get(row.lead_type) || 0) + 1);
+    return {
+      type: 'options',
+      get: (row) => row.lead_type || '',
+      options: LEAD_TYPES.map((t) => ({ ...t, count: counts.get(t.value) || 0 })),
+    };
+  },
+  unread: (rows) => {
+    const has = rows.filter((row) => (row.unread_count ?? 0) > 0).length;
+    return {
+      type: 'options',
+      get: (row) => ((row.unread_count ?? 0) > 0 ? 'yes' : 'no'),
+      options: [
+        { value: 'yes', label: 'Есть непрочитанные', count: has },
+        { value: 'no', label: 'Всё прочитано', count: rows.length - has },
+      ],
+    };
+  },
+  online: (rows, value) => ({
+    type: 'options',
+    get: presenceOf,
+    options: keepPicked(
+      Object.entries(PRESENCE_GROUPS).map(([kind, label]) => ({
+        value: kind,
+        label,
+        count: rows.filter((row) => presenceOf(row) === kind).length,
+      })).filter((o) => o.count > 0),
+      value,
+    ),
+  }),
+  age: () => ({ type: 'text', placeholder: 'Например, 34', get: (row) => [row.age] }),
+  city: () => ({ type: 'text', placeholder: 'Город', get: (row) => [row.city] }),
+  persona: (rows, value) => ({
+    type: 'options',
+    get: (row) => row.persona_name || '',
+    options: keepPicked(optionsFrom(rows, (row) => row.persona_name || '', { empty: 'не указана' }), value, 'не указана'),
+  }),
 };
 
 /**

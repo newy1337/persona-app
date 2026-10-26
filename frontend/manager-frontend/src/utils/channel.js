@@ -2,18 +2,20 @@
 // `account.contact`: t.me или vk.com) — панель канал не вычисляет. Строка без этих полей —
 // старая форма (только Telegram): тогда @ник → t.me, как было.
 
-const LABELS = { tg: 'TG', vk: 'VK' };
-const TITLES = { tg: 'Telegram', vk: 'ВКонтакте' };
+const LABELS = { tg: 'TG', vk: 'VK', wa: 'WA' };
+const TITLES = { tg: 'Telegram', vk: 'ВКонтакте', wa: 'WhatsApp' };
+const KEYS = { telegram: 'tg', tg: 'tg', vk: 'vk', whatsapp: 'wa', wa: 'wa' };
 
-/** Ключ канала: бэк пишет `telegram` / `vk`; нет поля — Telegram. */
+/** Ключ канала: бэк пишет `telegram` / `vk` (и т.д.); нет поля — Telegram; незнакомый — как есть. */
 export function channelKey(channel) {
-  return channel === 'vk' ? 'vk' : 'tg';
+  if (!channel) return 'tg';
+  return KEYS[channel] ?? String(channel);
 }
 
 /** Бейдж канала. `other` — не Telegram: только такие чаты и аккаунты помечаем. */
 export function channelBadge(channel) {
   const key = channelKey(channel);
-  return { key, label: LABELS[key], title: TITLES[key], other: key !== 'tg' };
+  return { key, label: LABELS[key] ?? key.toUpperCase(), title: TITLES[key] ?? key, other: key !== 'tg' };
 }
 
 export const CHANNEL_FILTERS = [['all', 'Все'], ['tg', 'Telegram'], ['vk', 'ВКонтакте']];
