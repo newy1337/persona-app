@@ -1714,20 +1714,50 @@ describe('Manager panel API (e2e)', () => {
         .send({ name: 'Холодка' })
         .expect(201);
       const key = { 'X-Api-Key': made.body.key };
-      // список личностей для отправителя: name и slug включённых, по ключу
+      // список личностей для отправителя: name, slug и тип трафика включённых, по ключу
+      const nastya = await prisma.persona.findUniqueOrThrow({
+        where: { slug: 'nastya' },
+      });
+      const personaPut = (body: object) =>
+        request(app.getHttpServer())
+          .put(`/api/personas/${nastya.id}`)
+          .set(h)
+          .send(body);
+      await personaPut({ traffic_type: 'warm' }).expect(400);
+      expect(
+        (await personaPut({ traffic_type: 'cold' }).expect(200)).body
+          .traffic_type,
+      ).toBe('cold');
       const enabled = await prisma.persona.findMany({
         where: { enabled: true },
-        select: { name: true, slug: true },
+        select: { name: true, slug: true, trafficType: true },
         orderBy: { name: 'asc' },
       });
       const personas = await request(app.getHttpServer())
         .get('/api/post/personas')
         .set(key)
         .expect(200);
-      expect(personas.body.items).toEqual(enabled);
-      expect(personas.body.items).toContainEqual(
-        expect.objectContaining({ slug: 'nastya' }),
+      expect(personas.body.items).toEqual(
+        enabled.map((p) => ({
+          name: p.name,
+          slug: p.slug,
+          traffic_type: p.trafficType,
+        })),
       );
+      expect(personas.body.items).toContainEqual({
+        name: nastya.name,
+        slug: 'nastya',
+        traffic_type: 'cold',
+      });
+      await personaPut({ traffic_type: null }).expect(200);
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/post/personas')
+            .set(key)
+            .expect(200)
+        ).body.items.find((p: any) => p.slug === 'nastya').traffic_type,
+      ).toBeNull();
       await request(app.getHttpServer()).get('/api/post/personas').expect(401);
       const post = (body: Record<string, unknown>) =>
         request(app.getHttpServer())
