@@ -594,7 +594,7 @@ export default function Personas() {
                       ) : tab === 'variables' ? (
                         <VariablesEditor persona={persona} onSaved={refresh} onError={setError} />
                       ) : (
-                        <SectionEditor persona={persona} section={tab} onSaved={refresh} onError={setError} />
+                        <SectionEditor persona={persona} section={tab} about={TABS.find((t) => t.key === tab)?.about} personas={items} onSaved={refresh} onError={setError} />
                       )}
                     </div>
                   </div>

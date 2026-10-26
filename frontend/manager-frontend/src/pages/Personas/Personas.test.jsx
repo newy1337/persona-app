@@ -121,6 +121,9 @@ describe('страница личностей', () => {
     expect(byLabel('Отменить правки').disabled).toBe(true);
     expect(byLabel('Текст из кода').disabled).toBe(true);
 
+    // Тексты свёрнуты — сначала раскрываем первый.
+    expect(host.querySelector('textarea')).toBeNull();
+    await act(async () => host.querySelector('[data-prompt] button[aria-expanded="false"]').click());
     const area = host.querySelector('textarea');
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(area, 'здравствуй');
@@ -132,6 +135,34 @@ describe('страница личностей', () => {
     await act(async () => byLabel('Отменить правки').click());
     expect(host.querySelector('textarea').value).toBe('привет');
     expect(save.disabled).toBe(true);
+  });
+
+  it('промпты: свёрнутый текст — превью; переменные подсвечены, неизвестная — красная с пояснением', async () => {
+    const row = host.querySelector('[data-prompt]');
+    expect(row.textContent).toContain('привет');
+    await act(async () => row.querySelector('button[aria-expanded="false"]').click());
+    const area = row.querySelector('textarea');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(area, 'я {name}, пишу про {citi}');
+      area.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const marks = [...row.querySelectorAll('mark')];
+    expect(marks.map((m) => m.textContent)).toEqual(['{name}', '{citi}']);
+    expect(marks[0].className).toContain('bg-primary');
+    expect(marks[1].className).toContain('bg-destructive');
+    expect(row.querySelector('[role="alert"]').textContent).toContain('Нет таких переменных: {citi}');
+    expect(row.textContent).toContain('нет переменной {citi}');
+  });
+
+  it('пустой раздел: пояснение и «Заполнить в JSON»', async () => {
+    await act(async () => host.querySelector('[data-section="goals"]').click());
+    await flush();
+    const empty = host.querySelector('[data-testid="section-empty"]');
+    expect(empty.textContent).toContain('Раздел пока пуст');
+    expect(empty.textContent).toContain('Что узнать у собеседника');
+    await act(async () => [...empty.querySelectorAll('button')].find((b) => b.textContent === 'Заполнить в JSON').click());
+    expect(host.querySelector('[data-testid="section-empty"]')).toBeNull();
+    expect(host.querySelector('textarea')).not.toBeNull();
   });
 
   it('«Новая личность» открывает окно с формой', async () => {

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { putSection } from '../../api/personas';
+import { getPersona, putSection } from '../../api/personas';
+import { Copy, FileJson, FileQuestion } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import VersionsTable, { useVersions } from './Versions';
@@ -10,7 +12,63 @@ import { drafts } from './drafts';
 const DRAFT_DELAY_MS = 600;
 const pretty = (value) => JSON.stringify(value ?? {}, null, 2);
 
-export default function SectionEditor({ persona, section, onSaved, onError }) {
+/** Пусто: нет документа, пустой массив или только служебные ключи (_заметки). */
+export const isEmptyDoc = (doc) =>
+  doc == null ||
+  (Array.isArray(doc) ? doc.length === 0 : typeof doc === 'object' && Object.keys(doc).filter((k) => !k.startsWith('_')).length === 0);
+
+/**
+ * Пустой раздел: что в нём бывает и с чего начать — скопировать у другой
+ * личности, у которой раздел заполнен, или набрать в JSON. Копия ложится в
+ * черновик; сохраняет обычная кнопка.
+ */
+function EmptySection({ section, about, persona, personas, onCopy, onJson }) {
+  const [sources, setSources] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const others = (personas ?? []).filter((p) => p.id !== persona.id);
+    Promise.all(others.map((p) => getPersona(p.id).catch(() => null)))
+      .then((full) => {
+        if (!alive) return;
+        setSources(full.filter((p) => p && !isEmptyDoc(p.sections?.[section])));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [personas, persona.id, section]);
+
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-10 text-center" data-testid="section-empty">
+      <span className="grid size-10 place-items-center rounded-full bg-muted text-muted-foreground">
+        <FileQuestion className="size-5" aria-hidden="true" />
+      </span>
+      <div className="flex max-w-md flex-col gap-1">
+        <p className="text-sm font-medium">Раздел пока пуст</p>
+        <p className="text-sm text-muted-foreground">
+          {section === 'beats' ? 'Пока пусто — биты берутся из сюжетов автоматически. Заполните, если нужен свой порядок шагов.' : about}
+        </p>
+      </div>
+      <div className="flex flex-wrap justify-center gap-2">
+        {sources === null ? (
+          <Button type="button" size="sm" variant="outline" disabled>Ищу заполненные у других личностей…</Button>
+        ) : (
+          sources.map((p) => (
+            <Button key={p.id} type="button" size="sm" onClick={() => onCopy(p)}>
+              <Copy aria-hidden="true" />
+              {`Скопировать у «${p.name}»`}
+            </Button>
+          ))
+        )}
+        <Button type="button" size="sm" variant="outline" onClick={onJson}>
+          <FileJson aria-hidden="true" />
+          Заполнить в JSON
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export default function SectionEditor({ persona, section, about = null, personas = [], onSaved, onError }) {
   const stored = persona.sections[section];
   const server = useMemo(() => pretty(stored), [stored]);
 
@@ -156,7 +214,19 @@ export default function SectionEditor({ persona, section, onSaved, onError }) {
 
       <VersionsTable versions={versions.versions} loading={versions.loading} onRestore={versions.restore} />
 
-      {mode === 'json' || !parsed.ok ? (
+      {mode === 'form' && parsed.ok && isEmptyDoc(parsed.doc) ? (
+        <EmptySection
+          section={section}
+          about={about}
+          persona={persona}
+          personas={personas}
+          onJson={() => setMode('json')}
+          onCopy={(from) => {
+            edit(pretty(from.sections[section]));
+            setFlash(`Скопировано у «${from.name}» — проверьте и сохраните`);
+          }}
+        />
+      ) : mode === 'json' || !parsed.ok ? (
         <Textarea
           className="field-sizing-fixed min-h-[60vh] resize-y overflow-x-auto font-mono text-xs leading-normal whitespace-pre [overflow-wrap:normal]"
           spellCheck={false}
@@ -173,7 +243,7 @@ export default function SectionEditor({ persona, section, onSaved, onError }) {
 
       <SaveBar
         error={parsed.ok ? null : `JSON не разбирается: ${parsed.error}`}
-        status={!dirty ? flash : null}
+        status={flash}
         note={note}
         onNote={setNote}
         onSave={save}

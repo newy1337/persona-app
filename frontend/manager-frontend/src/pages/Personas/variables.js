@@ -1,3 +1,8 @@
+/** Встроенные переменные: есть всегда, на вкладке «Переменные» не задаются. */
+export const BUILTINS = { name: 'имя личности' };
+/** Подставляются из чата лида. */
+export const CHAT_VARIABLES = { city: 'город лида', site: 'сайт знакомств лида' };
+
 export const NAME_RX = /^[\p{L}_][\p{L}\p{N}_]{0,39}$/u;
 const PLACEHOLDER_RX = /\{([\p{L}_][\p{L}\p{N}_]{0,39})\}/gu;
 

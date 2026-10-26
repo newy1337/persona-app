@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { putSection } from '../../api/personas';
 import { Badge } from '@/components/ui/badge';
-import { Download, RotateCcw, Upload } from 'lucide-react';
+import { ChevronRight, Download, RotateCcw, Upload } from 'lucide-react';
 import { HelpHint } from '@/components/HelpHint/HelpHint';
 import { IconAction } from '@/components/IconAction/IconAction';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
+import { HighlightTextarea, unknownVariables } from './HighlightTextarea';
+import { BUILTINS, CHAT_VARIABLES } from './variables';
 import { cn } from '@/lib/utils';
 import VersionsTable, { useVersions } from './Versions';
 import { EditorBar, SaveBar } from './EditorBar';
@@ -26,6 +28,8 @@ export default function PromptsEditor({ persona, defaults, onSaved, onError }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState(null);
+  // Раскрытые тексты: по умолчанию все свёрнуты — видно список целиком, а не стену полей.
+  const [open, setOpen] = useState(() => new Set());
   const timer = useRef(null);
   const lastId = useRef(null);
   const filePicker = useRef(null);
@@ -156,6 +160,20 @@ export default function PromptsEditor({ persona, defaults, onSaved, onError }) {
   }
 
   const changed = defaults.keys.filter((k) => (draft[k] ?? '') !== (defaults.defaults[k] ?? '')).length;
+  // Известные переменные: встроенные, из чата лида и заданные на вкладке «Переменные».
+  const known = new Set([
+    ...Object.keys(BUILTINS),
+    ...Object.keys(CHAT_VARIABLES),
+    ...Object.keys(persona.sections.variables ?? {}).filter((k) => !k.startsWith('_')),
+  ]);
+  const allOpen = open.size === defaults.keys.length;
+  const toggle = (key) =>
+    setOpen((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   return (
     <div className="flex flex-1 flex-col gap-4">
@@ -174,6 +192,9 @@ export default function PromptsEditor({ persona, defaults, onSaved, onError }) {
         versions={versions}
         onReset={reset}
       >
+        <Button type="button" variant="ghost" size="xs" onClick={() => setOpen(allOpen ? new Set() : new Set(defaults.keys))}>
+          {allOpen ? 'Свернуть все' : 'Развернуть все'}
+        </Button>
         <IconAction icon={Download} label="Выгрузить в файл" hint="Выгрузить в файл: скачать тексты одним файлом" onClick={exportFile} />
         <IconAction icon={Upload} label="Загрузить из файла" hint="Загрузить из файла — применит обычное сохранение" onClick={() => filePicker.current?.click()} />
         <input
@@ -191,35 +212,60 @@ export default function PromptsEditor({ persona, defaults, onSaved, onError }) {
 
       <VersionsTable versions={versions.versions} loading={versions.loading} onRestore={versions.restore} />
 
-      {defaults.keys.map((key) => {
-        const label = defaults.labels[key];
-        const value = draft[key] ?? '';
-        const same = value === defaults.defaults[key];
-        return (
-          <div key={key} className="flex flex-col gap-1.5">
-            <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
-              <span className="flex items-center gap-2 text-sm font-medium">
-                {label.title}
+      <div className="flex flex-col divide-y rounded-lg border bg-card" data-testid="prompt-list">
+        {defaults.keys.map((key) => {
+          const label = defaults.labels[key];
+          const value = draft[key] ?? '';
+          const same = value === defaults.defaults[key];
+          const expanded = open.has(key);
+          const unknown = unknownVariables(value, known);
+          const preview = value.trim().split('\n')[0] || 'пусто';
+          return (
+            <section key={key} className="flex flex-col" data-prompt={key}>
+              <div className="flex min-h-11 items-center gap-2 px-3">
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-label={`${expanded ? 'Свернуть' : 'Развернуть'}: ${label.title}`}
+                  className="flex min-w-0 flex-1 items-center gap-2 py-2 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  onClick={() => toggle(key)}
+                >
+                  <ChevronRight aria-hidden="true" className={cn('size-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90')} />
+                  <span className="shrink-0 text-sm font-medium">{label.title}</span>
+                  {!same && <Badge variant="outline" className="h-5 shrink-0 font-normal text-muted-foreground">изменён</Badge>}
+                  {unknown.length > 0 && (
+                    <Badge variant="destructive" className="h-5 shrink-0 font-normal" title={`Нет таких переменных: ${unknown.map((u) => `{${u}}`).join(', ')}`}>
+                      {`нет переменной {${unknown[0]}}${unknown.length > 1 ? ` +${unknown.length - 1}` : ''}`}
+                    </Badge>
+                  )}
+                  {!expanded && <span className="min-w-0 truncate text-xs text-muted-foreground">{preview}</span>}
+                </button>
                 {label.hint && <HelpHint label={label.title}>{label.hint}</HelpHint>}
-                <Badge variant="outline" className={cn('h-5 font-normal text-muted-foreground', same && 'invisible')}>изменён</Badge>
-              </span>
-              <div className="flex items-center gap-1">
-                <span className="min-w-16 text-right text-xs text-muted-foreground tabular-nums">
-                  {value.length} симв.
-                </span>
+                <span className="min-w-16 text-right text-xs text-muted-foreground tabular-nums">{value.length} симв.</span>
                 <IconAction icon={RotateCcw} label="Текст из кода" hint="Подставить в поле текст, зашитый в коде" disabled={same} onClick={() => set(key, defaults.defaults[key])} />
               </div>
-            </div>
-            <Textarea
-              className="field-sizing-fixed resize-y leading-relaxed"
-              rows={SHORT.has(key) ? 2 : 12}
-              spellCheck={false}
-              value={value}
-              onChange={(e) => set(key, e.target.value)}
-            />
-          </div>
-        );
-      })}
+              {expanded && (
+                <div className="flex flex-col gap-1.5 px-3 pb-3">
+                  <HighlightTextarea
+                    aria-label={label.title}
+                    known={known}
+                    className="field-sizing-fixed resize-y leading-relaxed"
+                    rows={SHORT.has(key) ? 2 : 12}
+                    spellCheck={false}
+                    value={value}
+                    onChange={(e) => set(key, e.target.value)}
+                  />
+                  {unknown.length > 0 && (
+                    <p className="text-xs text-destructive" role="alert">
+                      {`Нет таких переменных: ${unknown.map((u) => `{${u}}`).join(', ')} — задайте их во вкладке «Переменные» или исправьте написание.`}
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
 
       <SaveBar
         status={flash}

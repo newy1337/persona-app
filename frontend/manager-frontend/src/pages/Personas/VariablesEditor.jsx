@@ -18,11 +18,9 @@ import { cn } from '@/lib/utils';
 import VersionsTable, { useVersions } from './Versions';
 import { EditorBar, SaveBar } from './EditorBar';
 import { drafts } from './drafts';
-import { SECTION_LABELS, docFromRows, rowErrors, rowsFromDoc, usages } from './variables';
+import { BUILTINS, CHAT_VARIABLES, SECTION_LABELS, docFromRows, rowErrors, rowsFromDoc, usages } from './variables';
 
 const DRAFT_DELAY_MS = 600;
-const BUILTINS = { name: 'имя личности' };
-const CHAT_VARIABLES = { city: 'город лида', site: 'сайт знакомств лида' };
 
 const HEAD = 'h-9 px-3 text-xs font-medium text-muted-foreground';
 // Таблица идёт во всю ширину блока личности и отделена линиями, без своей рамки.
