@@ -22,6 +22,16 @@ import {
 } from './prices';
 import { dayKey, resolveRange, type DayRange } from './range';
 import { ACTIVE_AFTER, coldFunnel, coldLeadRows } from './cold-funnel';
+import {
+  FUNNEL_STEPS,
+  addLead,
+  costPerStep,
+  heatmap,
+  sliceBy,
+  speedOf,
+  zeroFunnel,
+  type CohortLead,
+} from './insights';
 import { normalizeModel } from './prices';
 import { DEAL_STAGES, DEAL_STAGE_LABELS } from 'src/domain/deal-stage';
 import {
@@ -307,6 +317,269 @@ export class StatsService {
           ]),
         ),
       ),
+    };
+  }
+
+  /**
+   * Срезы «про результат»: воронка когорты лидов (кому впервые написали в
+   * период) и её разрезы, стоимость результата, аккаунты, тепловая карта
+   * сообщений клиентов и скорость ответов. Подробности — в insights.ts.
+   */
+  async insights(query: { from?: string; to?: string }) {
+    const range = resolveRange(query, this.clock.ts());
+    const cohort = await this.prisma.$queryRaw<
+      {
+        persona_id: string | null;
+        owner_user_id: number | null;
+        source_type: string;
+        donor: string | null;
+        account_id: number | null;
+        cold: boolean;
+        chat_id: bigint | null;
+        replied: boolean;
+        reached: string[] | null;
+      }[]
+    >`
+      SELECT l.persona_id, l.owner_user_id, l.source_type, l.donor,
+             COALESCE(l.assigned_account_id, l.preferred_account_id) AS account_id,
+             l.cold, l.chat_id,
+             EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = l.chat_id AND m.role = 'user'
+                       AND m.deleted_at IS NULL AND m.ts >= l.first_contact_at) AS replied,
+             ARRAY(SELECT jsonb_object_keys(COALESCE(p.facts::jsonb->'deal_reached', '{}'::jsonb))
+                   FROM pinned_facts p WHERE p.chat_id = l.chat_id) AS reached
+      FROM leads l
+      WHERE l.first_contact_at >= ${range.start} AND l.first_contact_at < ${range.end}`;
+    const leads: CohortLead[] = cohort.map((r) => ({
+      persona: r.persona_id,
+      owner: r.owner_user_id === null ? null : Number(r.owner_user_id),
+      source: r.donor ? `donor:${r.donor}` : r.source_type,
+      account: r.account_id === null ? null : Number(r.account_id),
+      cold: r.cold,
+      chatId: r.chat_id === null ? null : String(r.chat_id),
+      replied: r.replied,
+      reached: r.reached ?? [],
+    }));
+
+    // Деньги на модели по чатам когорты — за всё время: столько стоил результат.
+    const chatIds = [...new Set(leads.map((l) => l.chatId).filter((c) => c))];
+    const price = memoPrice(await this.prices());
+    const costByChat = new Map<string, number>();
+    for (let i = 0; i < chatIds.length; i += 5000) {
+      const usage = (await this.prisma.modelUsage.findMany({
+        where: {
+          chatId: { in: chatIds.slice(i, i + 5000).map((c) => BigInt(c!)) },
+        },
+        select: {
+          chatId: true,
+          personaId: true,
+          model: true,
+          stage: true,
+          inputTokens: true,
+          outputTokens: true,
+          cachedTokens: true,
+          cacheWriteTokens: true,
+          cacheWrite1hTokens: true,
+          elapsedMs: true,
+          createdAt: true,
+        },
+      })) as UsageRow[];
+      for (const u of usage) {
+        const b = bucket();
+        add(b, u, price(normalizeModel(u.model)));
+        const key = String(u.chatId);
+        costByChat.set(key, (costByChat.get(key) ?? 0) + b.cost);
+      }
+    }
+
+    const [users, personas, accounts] = await Promise.all([
+      this.prisma.dashboardUser.findMany({
+        select: { id: true, username: true },
+      }),
+      this.prisma.persona.findMany({ select: { slug: true, name: true } }),
+      this.prisma.channelAccount.findMany({
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          login: true,
+          channel: true,
+          status: true,
+        },
+      }),
+    ]);
+    const userName = new Map(users.map((u) => [String(u.id), u.username]));
+    const personaName = new Map(personas.map((p) => [p.slug, p.name]));
+    const accountOf = new Map(accounts.map((a) => [a.id, a]));
+    const accountName = (id: number) => {
+      const a = accountOf.get(id);
+      return a
+        ? a.username
+          ? `@${a.username}`
+          : a.displayName || a.login
+        : `#${id}`;
+    };
+    const sourceLabel = (key: string) =>
+      key.startsWith('donor:')
+        ? key.slice(6)
+        : key === 'manual'
+          ? 'вручную'
+          : key === 'import'
+            ? 'импорт'
+            : key;
+
+    const funnel = zeroFunnel();
+    for (const l of leads) addLead(funnel, l);
+    const cost = chatIds.reduce((sum, c) => sum + (costByChat.get(c!) ?? 0), 0);
+
+    // Аккаунты за период: сколько написали, в скольких чатах клиент ответил.
+    const accountTalk = await this.prisma.$queryRaw<
+      {
+        account_id: number;
+        out: bigint;
+        in: bigint;
+        chats: bigint;
+        replied_chats: bigint;
+      }[]
+    >`
+      SELECT c.account_id,
+             COUNT(*) FILTER (WHERE m.role = 'assistant') AS out,
+             COUNT(*) FILTER (WHERE m.role = 'user') AS in,
+             COUNT(DISTINCT m.chat_id) FILTER (WHERE m.role = 'assistant') AS chats,
+             COUNT(DISTINCT m.chat_id) FILTER (WHERE m.role = 'user') AS replied_chats
+      FROM messages m JOIN contacts c ON c.chat_id = m.chat_id
+      WHERE m.ts >= ${range.start} AND m.ts < ${range.end} AND m.deleted_at IS NULL
+        AND c.account_id IS NOT NULL
+      GROUP BY c.account_id`;
+    const talk = new Map(accountTalk.map((r) => [Number(r.account_id), r]));
+    const byAccountFunnel = new Map(
+      sliceBy(
+        leads.filter((l) => l.account !== null),
+        (l) => String(l.account),
+        (k) => k,
+        costByChat,
+      ).map((r) => [Number(r.key), r]),
+    );
+    const accountRows = accounts
+      .map((a) => {
+        const t = talk.get(a.id);
+        const f = byAccountFunnel.get(a.id);
+        const chats = Number(t?.chats ?? 0);
+        const repliedChats = Number(t?.replied_chats ?? 0);
+        return {
+          id: a.id,
+          label: accountName(a.id),
+          channel: a.channel,
+          status: a.status,
+          messages_out: Number(t?.out ?? 0),
+          messages_in: Number(t?.in ?? 0),
+          chats,
+          replied_chats: repliedChats,
+          reply_rate: chats
+            ? Math.round((repliedChats / chats) * 1000) / 1000
+            : null,
+          leads_written: f?.written ?? 0,
+          leads_replied: f?.replied ?? 0,
+          deposits: f?.deposit ?? 0,
+        };
+      })
+      .filter(
+        (a) =>
+          a.messages_out ||
+          a.messages_in ||
+          a.leads_written ||
+          a.status === 'banned' ||
+          a.status === 'unauthorized',
+      )
+      .sort((a, b) => b.messages_out - a.messages_out || a.id - b.id);
+
+    // Когда пишут клиенты: сообщения клиентов по дню недели и часу (Москва).
+    const cells = await this.prisma.$queryRaw<
+      { dow: number; hour: number; n: bigint }[]
+    >`
+      SELECT EXTRACT(DOW FROM to_timestamp(ts) AT TIME ZONE 'Europe/Moscow')::int AS dow,
+             EXTRACT(HOUR FROM to_timestamp(ts) AT TIME ZONE 'Europe/Moscow')::int AS hour,
+             COUNT(*) AS n
+      FROM messages
+      WHERE role = 'user' AND deleted_at IS NULL AND ts >= ${range.start} AND ts < ${range.end}
+      GROUP BY 1, 2`;
+
+    // Скорость: от сообщения клиента до нашего ответа (бот / менеджер) и от
+    // первого нашего сообщения лиду до его первого ответа.
+    const replies = await this.prisma.$queryRaw<
+      { who: string; median: number; p90: number; n: bigint }[]
+    >`
+      WITH m AS (
+        SELECT role, author, ts,
+               LAG(role) OVER w AS prev_role, LAG(ts) OVER w AS prev_ts
+        FROM messages
+        WHERE ts >= ${range.start} AND ts < ${range.end} AND deleted_at IS NULL
+          AND text NOT LIKE '[Реакция%'
+        WINDOW w AS (PARTITION BY chat_id ORDER BY ts, id)
+      )
+      SELECT CASE WHEN author LIKE 'operator:%' THEN 'manager' ELSE 'bot' END AS who,
+             percentile_cont(0.5) WITHIN GROUP (ORDER BY ts - prev_ts) AS median,
+             percentile_cont(0.9) WITHIN GROUP (ORDER BY ts - prev_ts) AS p90,
+             COUNT(*) AS n
+      FROM m
+      WHERE role = 'assistant' AND prev_role = 'user'
+      GROUP BY 1`;
+    const [firstReply] = await this.prisma.$queryRaw<
+      { median: number | null; p90: number | null; n: bigint }[]
+    >`
+      SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY d) AS median,
+             percentile_cont(0.9) WITHIN GROUP (ORDER BY d) AS p90,
+             COUNT(d) AS n
+      FROM (
+        SELECT (SELECT MIN(m.ts) FROM messages m WHERE m.chat_id = l.chat_id AND m.role = 'user'
+                  AND m.deleted_at IS NULL AND m.ts >= l.first_contact_at) - l.first_contact_at AS d
+        FROM leads l
+        WHERE l.first_contact_at >= ${range.start} AND l.first_contact_at < ${range.end} AND l.chat_id IS NOT NULL
+      ) x WHERE d IS NOT NULL`;
+
+    return {
+      range: { from: range.from, to: range.to },
+      steps: FUNNEL_STEPS,
+      funnel,
+      cost: {
+        total_usd: Math.round(cost * 1e4) / 1e4,
+        per_step: costPerStep(funnel, cost),
+      },
+      by: {
+        persona: sliceBy(
+          leads,
+          (l) => l.persona ?? '—',
+          (k) => personaName.get(k) ?? (k === '—' ? 'без личности' : k),
+          costByChat,
+        ),
+        manager: sliceBy(
+          leads,
+          (l) => (l.owner === null ? '—' : String(l.owner)),
+          (k) => userName.get(k) ?? 'без менеджера',
+          costByChat,
+        ),
+        source: sliceBy(leads, (l) => l.source, sourceLabel, costByChat),
+        type: sliceBy(
+          leads,
+          (l) => (l.cold ? 'cold' : 'hot'),
+          (k) => (k === 'cold' ? 'Холодка' : 'Хот'),
+          costByChat,
+        ),
+        account: sliceBy(
+          leads,
+          (l) => (l.account === null ? '—' : String(l.account)),
+          (k) => (k === '—' ? 'не назначен' : accountName(Number(k))),
+          costByChat,
+        ),
+      },
+      accounts: accountRows,
+      heatmap: heatmap(
+        cells.map((c) => ({ dow: c.dow, hour: c.hour, n: Number(c.n) })),
+      ),
+      speed: {
+        bot: speedOf(replies.find((r) => r.who === 'bot')),
+        manager: speedOf(replies.find((r) => r.who === 'manager')),
+        first_reply: speedOf(firstReply),
+      },
     };
   }
 

@@ -632,6 +632,124 @@ describe('Manager panel API (e2e)', () => {
     });
   });
 
+  it('срезы статистики: воронка когорты по донору, стоимость, тепловая карта, скорость', async () => {
+    const h = { Authorization: `Bearer ${token}` };
+    const prisma = app.get(PrismaService);
+    const now = Math.floor(Date.now() / 1000);
+    const chats = { replied: 779001, silent: 779002 };
+    const leads = await Promise.all([
+      prisma.lead.create({
+        data: {
+          usernameKey: 'insights_a',
+          donor: 'e2e-donor',
+          chatId: BigInt(chats.replied),
+          firstContactAt: now - 600,
+          insertedAt: now - 700,
+          status: 'replied',
+        },
+      }),
+      prisma.lead.create({
+        data: {
+          usernameKey: 'insights_b',
+          donor: 'e2e-donor',
+          cold: true,
+          chatId: BigInt(chats.silent),
+          firstContactAt: now - 500,
+          insertedAt: now - 700,
+          status: 'contacted',
+        },
+      }),
+    ]);
+    await prisma.message.createMany({
+      data: [
+        {
+          chatId: BigInt(chats.replied),
+          ts: now - 600,
+          role: 'assistant',
+          text: 'привет',
+          author: 'llm',
+        },
+        {
+          chatId: BigInt(chats.replied),
+          ts: now - 480,
+          role: 'user',
+          text: 'привет!',
+          author: 'client',
+        },
+        {
+          chatId: BigInt(chats.replied),
+          ts: now - 420,
+          role: 'assistant',
+          text: 'как дела?',
+          author: 'llm',
+        },
+        {
+          chatId: BigInt(chats.silent),
+          ts: now - 500,
+          role: 'assistant',
+          text: 'привет',
+          author: 'llm',
+        },
+      ],
+    });
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${chats.replied}/deal-stage`)
+      .set(h)
+      .send({ stage: 'lead' })
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/stats/insights')
+      .set(h)
+      .expect(200);
+    expect(res.body.steps.map((s: any) => s.id)).toEqual([
+      'written',
+      'replied',
+      'soglas',
+      'lead',
+      'deposit',
+    ]);
+    const donor = res.body.by.source.find(
+      (r: any) => r.key === 'donor:e2e-donor',
+    );
+    expect(donor).toMatchObject({
+      label: 'e2e-donor',
+      written: 2,
+      replied: 1,
+      soglas: 1,
+      lead: 1,
+      deposit: 0,
+    });
+    expect(res.body.by.type.map((r: any) => r.key).sort()).toEqual(
+      expect.arrayContaining(['cold', 'hot']),
+    );
+    expect(res.body.funnel.written).toBeGreaterThanOrEqual(2);
+    expect(res.body.cost.per_step).toHaveProperty('deposit');
+    expect(res.body.heatmap).toHaveLength(7);
+    expect(res.body.heatmap.every((row: number[]) => row.length === 24)).toBe(
+      true,
+    );
+    expect(
+      res.body.heatmap.flat().reduce((a: number, b: number) => a + b, 0),
+    ).toBeGreaterThanOrEqual(1);
+    expect(res.body.speed.bot.n).toBeGreaterThanOrEqual(1);
+    expect(res.body.speed.first_reply.median_s).not.toBeNull();
+    expect(Array.isArray(res.body.accounts)).toBe(true);
+
+    await prisma.lead.deleteMany({
+      where: { id: { in: leads.map((l) => l.id) } },
+    });
+    await prisma.message.deleteMany({
+      where: { chatId: { in: Object.values(chats).map(BigInt) } },
+    });
+    await prisma.leadFacts.deleteMany({
+      where: { chatId: { in: Object.values(chats).map(BigInt) } },
+    });
+    await prisma.funnelEvent.deleteMany({
+      where: { chatId: { in: Object.values(chats).map(BigInt) } },
+    });
+  });
+
   it('этап сделки: ставится руками, архив требует причину, статистика считает по дням', async () => {
     const h = { Authorization: `Bearer ${token}` };
     const chatId = 424242;
