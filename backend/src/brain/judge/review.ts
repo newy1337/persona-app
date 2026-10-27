@@ -83,7 +83,7 @@ export async function reviewReply(
       null,
     dialogue_state: dialogueState,
     plan: judgment,
-    recent_history: judgeHistory(history, 16),
+    recent_history: judgeHistory(history, 16, 8),
     latest_user_message: userText,
     draft_reply: draft,
     time_violations: timeClaimIssues(draft, runtime.time_context),
@@ -93,7 +93,9 @@ export async function reviewReply(
     await judgeResponseText(
       deps,
       {
-        stable: `${prompt}\n\n${runtime.conversation_context ? CONVERSATION_REVIEW_RULE : ''}\n\n${QUESTION_POLICY_RULE}\n\n${TIME_RULES}\n\n${CALL_CONTEXT_RULE}\n\n${CONTINUITY_RULES}\n\n${OPTIONAL_GOODNIGHT_REVIEW}\nЕсли delivery_context.kind=continuation, sent_parts уже доставлены: не повторяй их и не начинай знакомство заново. Проверяй только оставшуюся часть ответа с текущими часами и датой. Сам переход через полночь не требует завершать разговор. Если оставшийся текст целиком неактуален и добавлять нечего, верни should_send:false с причиной; иначе should_send:true и актуальное продолжение.\nЕсли delivery_context.kind=voice, проверь именно текст одного короткого голосового до 800 знаков. Не обещай записать его позже, не вставляй эмодзи, сценические ремарки и инструкции войсеру; не добавляй ненадёжные слова о действиях прямо в эту минуту.\nЕсли delivery_context.kind=photo, строка с меткой [ФОТО] — подпись к снимку delivery_context.photo: сохрани метку в начале этой строки и порядок строк. Проверь, что подпись не противоречит описанию, месту и дате снимка, биографии и уже сказанному; без freshness=today не допускай «только что», «прямо сейчас», «сегодня сфоткала» и подобного — перепиши без привязки ко времени. Не отменяй отправку фото и не пиши, что фото не будет.\nПроверь time_violations: такие нарушения нельзя одобрять, исправь их.\n\nПЕРСОНА:\n${JSON.stringify(reviewPersona)}`,
+        stable: `${prompt}\n\n${QUESTION_POLICY_RULE}\n\n${TIME_RULES}\n\n${CALL_CONTEXT_RULE}\n\n${CONTINUITY_RULES}\n\n${OPTIONAL_GOODNIGHT_REVIEW}\nЕсли delivery_context.kind=continuation, sent_parts уже доставлены: не повторяй их и не начинай знакомство заново. Проверяй только оставшуюся часть ответа с текущими часами и датой. Сам переход через полночь не требует завершать разговор. Если оставшийся текст целиком неактуален и добавлять нечего, верни should_send:false с причиной; иначе should_send:true и актуальное продолжение.\nЕсли delivery_context.kind=voice, проверь именно текст одного короткого голосового до 800 знаков. Не обещай записать его позже, не вставляй эмодзи, сценические ремарки и инструкции войсеру; не добавляй ненадёжные слова о действиях прямо в эту минуту.\nЕсли delivery_context.kind=photo, строка с меткой [ФОТО] — подпись к снимку delivery_context.photo: сохрани метку в начале этой строки и порядок строк. Проверь, что подпись не противоречит описанию, месту и дате снимка, биографии и уже сказанному; без freshness=today не допускай «только что», «прямо сейчас», «сегодня сфоткала» и подобного — перепиши без привязки ко времени. Не отменяй отправку фото и не пиши, что фото не будет.\nПроверь time_violations: такие нарушения нельзя одобрять, исправь их.\n\nПЕРСОНА:\n${JSON.stringify(reviewPersona)}`,
+        // Есть не у каждого диалога — после истории, чтобы не делить кеш.
+        volatile: runtime.conversation_context ? CONVERSATION_REVIEW_RULE : '',
       },
       payload,
       5000,

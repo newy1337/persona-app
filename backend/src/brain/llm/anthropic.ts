@@ -8,7 +8,8 @@ import { fillText, variablesNote } from '../config/variables';
 
 export type Effort = 'low' | 'medium' | 'high';
 
-export const CACHE_TTL = '1h' as const;
+export { CACHE_TTL } from './cache';
+import { CACHE_TTL } from './cache';
 
 export interface SplitPrompt {
   stable: string;
@@ -22,6 +23,34 @@ export interface TextRequest {
   maxTokens: number;
   effort: Effort | 'off';
   stage: string;
+  /**
+   * История в messages размечена меткой кеша (cacheMark): всё изменчивое
+   * (заметка о переменных и volatile) уходит не в system, а в последнее
+   * сообщение перед его последним блоком. Иначе изменчивое стоит до истории
+   * и каждый ход отменяет её кеш.
+   */
+  cacheHistory?: boolean;
+}
+
+/** Служебные данные хода перед последним блоком последнего сообщения. */
+function withTail(
+  messages: Anthropic.MessageParam[],
+  tail: string[],
+): Anthropic.MessageParam[] {
+  if (!tail.length || !messages.length) return messages;
+  const out = [...messages];
+  const last = out[out.length - 1];
+  const blocks: Anthropic.ContentBlockParam[] =
+    typeof last.content === 'string'
+      ? [{ type: 'text', text: last.content }]
+      : [...last.content];
+  const service: Anthropic.TextBlockParam = {
+    type: 'text',
+    text: `СЛУЖЕБНЫЕ ДАННЫЕ ЭТОГО ХОДА (не сообщение собеседника):\n\n${tail.join('\n\n')}`,
+  };
+  blocks.splice(blocks.length - 1, 0, service);
+  out[out.length - 1] = { ...last, content: blocks };
+  return out;
 }
 
 export interface LlmDeps {
@@ -54,9 +83,12 @@ export async function completeText(
     ].join('\n'),
     vars,
   );
-  if (note) system.push({ type: 'text', text: note });
-  if (req.system.volatile)
-    system.push({ type: 'text', text: req.system.volatile });
+  const tail = [note, req.system.volatile ?? ''].filter(Boolean);
+  const messages = req.cacheHistory
+    ? withTail(req.messages, tail)
+    : req.messages;
+  if (!req.cacheHistory)
+    for (const text of tail) system.push({ type: 'text', text });
 
   const started = performance.now();
   const response = await deps.client.messages.create(
@@ -64,7 +96,7 @@ export async function completeText(
       model: req.model,
       max_tokens: req.maxTokens,
       system,
-      messages: req.messages,
+      messages,
       thinking:
         req.effort === 'off' ? { type: 'disabled' } : { type: 'adaptive' },
       ...(req.effort === 'off'

@@ -102,7 +102,7 @@ export async function judgeDialogue(
 
   const payload = {
     dialogue_state: context,
-    recent_history: judgeHistory(history, 30),
+    recent_history: judgeHistory(history, 30, 10),
     latest_user_message: userText,
     interlocutor_settings: customInstructions,
     allowed_slot_ids: [...allowedSlots].sort(),
@@ -114,7 +114,15 @@ export async function judgeDialogue(
   const text = await judgeResponseText(
     deps,
     {
-      stable: `${prompt}\n\n${runtime.conversation_context ? CONVERSATION_PLAN_RULE : ''}\n\n${MEDIA_REQUEST_RULE}\n\n${AUTO_VOICE_RULE}\n\n${runtime.photo_availability ? `${PHOTO_REPLY_RULE}\n\n` : ''}${PERSONA_EVENT_RULE}\n\n${QUESTION_POLICY_RULE}\n\n${TIME_RULES}\n\n${CALL_CONTEXT_RULE}\n\n${CONTINUITY_RULES}\nЕсли собеседник явно сообщил новое текущее место, обнови слот location. Будущая поездка, родной город и чужой город не меняют его текущее место.\n\n${referenceText(reference)}`,
+      stable: `${prompt}\n\n${MEDIA_REQUEST_RULE}\n\n${AUTO_VOICE_RULE}\n\n${PERSONA_EVENT_RULE}\n\n${QUESTION_POLICY_RULE}\n\n${TIME_RULES}\n\n${CALL_CONTEXT_RULE}\n\n${CONTINUITY_RULES}\nЕсли собеседник явно сообщил новое текущее место, обнови слот location. Будущая поездка, родной город и чужой город не меняют его текущее место.\n\n${referenceText(reference)}`,
+      // Правила, которые есть не у каждого диалога, — после истории: в
+      // стабильной части они делили бы кеш на варианты.
+      volatile: [
+        runtime.conversation_context ? CONVERSATION_PLAN_RULE : '',
+        runtime.photo_availability ? PHOTO_REPLY_RULE : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
     },
     payload,
     6000,

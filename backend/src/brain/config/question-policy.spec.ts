@@ -111,7 +111,11 @@ describe('переключатель одного вопроса на ответ
       for (const call of calls) {
         expect(call.model).toBe(model);
         expect(call.system[0].text).toContain(QUESTION_POLICY_RULE);
-        const payload = JSON.parse(call.messages[0].content);
+        // Вход судьи — блоками: история, потом состояние диалога одним JSON.
+        const content = call.messages[0].content;
+        const payload = JSON.parse(
+          typeof content === 'string' ? content : content.at(-1).text,
+        );
         expect(payload.dialogue_state.goal_plan.one_question_per_reply).toBe(
           enabled,
         );

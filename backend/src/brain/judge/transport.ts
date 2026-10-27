@@ -1,6 +1,8 @@
 import type { HistoryMessage } from '../kernel/types';
 import { ModelResponseError } from '../kernel/errors';
 import { resolveJudgeModel } from '../config/models';
+import type Anthropic from '@anthropic-ai/sdk';
+import { cacheMark, windowStart } from '../llm/cache';
 import {
   completeText,
   type Effort,
@@ -13,11 +15,17 @@ export interface JudgeDeps extends LlmDeps {
   model?: string;
 }
 
+/**
+ * Последние сообщения для судьи. Окно сдвигается блоками по step, а не на
+ * каждое сообщение: так начало истории совпадает с прошлым ходом и читается
+ * из кеша (от limit до limit+step-1 сообщений).
+ */
 export function judgeHistory(
   history: readonly Partial<HistoryMessage>[],
   limit: number,
+  step = 10,
 ): Array<Record<string, unknown>> {
-  return history.slice(-limit).map((item) => {
+  return history.slice(windowStart(history.length, limit, step)).map((item) => {
     const { id: _id, ...rest } = item as Record<string, unknown>;
     return rest;
   });
@@ -66,9 +74,40 @@ export async function judgeResponseText(
   return completeText(deps, {
     model: deps.model ?? resolveJudgeModel(),
     system,
-    messages: [{ role: 'user', content: JSON.stringify(payload) }],
+    messages: [{ role: 'user', content: judgePayloadBlocks(payload) }],
     maxTokens,
     effort: deps.effort ?? 'low',
     stage,
+    cacheHistory: true,
   });
+}
+
+/**
+ * Вход судьи блоками: recent_history — по сообщению в блоке, от старых к
+ * новым, с меткой кеша на последнем; остальное (состояние диалога, новое
+ * сообщение) — одним JSON после истории. Границы блоков истории те же, что
+ * на прошлом ходе, — по ним находится кеш, платится только новое.
+ */
+export function judgePayloadBlocks(
+  payload: unknown,
+): Anthropic.TextBlockParam[] {
+  const { recent_history: history, ...rest } = (payload ?? {}) as Record<
+    string,
+    unknown
+  >;
+  if (!Array.isArray(history) || !history.length)
+    return [{ type: 'text', text: JSON.stringify(payload) }];
+  const blocks: Anthropic.TextBlockParam[] = [
+    {
+      type: 'text',
+      text: 'recent_history — последние сообщения диалога, по одному JSON в блоке, от старых к новым:',
+    },
+    ...history.map((item) => ({
+      type: 'text' as const,
+      text: JSON.stringify(item),
+    })),
+  ];
+  Object.assign(blocks[blocks.length - 1], cacheMark());
+  blocks.push({ type: 'text', text: JSON.stringify(rest) });
+  return blocks;
 }

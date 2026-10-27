@@ -50,6 +50,7 @@ export function extendUnique(
   }
 }
 
+/** JSON для промпта — без отступов: тот же смысл, на 15–25% меньше токенов. */
 export function jsonText(value: unknown): string {
-  return JSON.stringify(value, null, 2);
+  return JSON.stringify(value);
 }

@@ -42,9 +42,10 @@ it('review retains the character rules and validates unresolved question referen
   expect((completeText as jest.Mock).mock.calls[0][1].system.stable).toContain(
     'Own opinion',
   );
-  expect((completeText as jest.Mock).mock.calls[0][1].system.stable).toContain(
-    'unanswered_question_ids',
-  );
+  // Правило про вопросы диалога — в изменчивой части: оно не у каждого чата.
+  expect(
+    (completeText as jest.Mock).mock.calls[0][1].system.volatile,
+  ).toContain('unanswered_question_ids');
 });
 it('an unsolicited message can be cancelled without inventing a replacement', async () => {
   (completeText as jest.Mock).mockResolvedValue(
