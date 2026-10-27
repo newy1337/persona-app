@@ -6473,6 +6473,50 @@ describe('Manager panel API (e2e)', () => {
           preferred_account_id: account.id,
         }).expect(422);
         expect(mismatch.body.message).toContain('Telegram-аккаунт');
+
+        // личность без аккаунтов VK лиду VK не ставится: писать некому
+        const noVk = await request(app.getHttpServer())
+          .post('/api/personas')
+          .set(h)
+          .send({ name: 'Без VK' })
+          .expect(200);
+        try {
+          const lonely = await post({
+            username: 'vk.lonely',
+            channel: 'vk',
+            persona_id: noVk.body.slug,
+          }).expect(422);
+          expect(lonely.body.message).toContain('нет аккаунтов VK');
+          const withVk = await post({
+            username: 'vk.with.persona',
+            channel: 'vk',
+            persona_id: 'nastya',
+          }).expect(200);
+          const change = await request(app.getHttpServer())
+            .put(`/api/leads/${withVk.body.id}`)
+            .set(h)
+            .send({ persona_id: noVk.body.slug })
+            .expect(422);
+          expect(change.body.message).toContain('нет аккаунтов VK');
+          const choices = (
+            await request(app.getHttpServer())
+              .get('/api/leads/personas')
+              .set(h)
+              .expect(200)
+          ).body.items;
+          const by = (slug: string) =>
+            choices.find((c: any) => c.slug === slug).by_channel;
+          expect(by('nastya').vk.accounts).toBe(1);
+          expect(by(noVk.body.slug)).toEqual({
+            telegram: { accounts: 0, ready: 0 },
+            vk: { accounts: 0, ready: 0 },
+          });
+        } finally {
+          await request(app.getHttpServer())
+            .delete(`/api/personas/${noVk.body.id}`)
+            .set(h)
+            .expect(200);
+        }
         const rows = await prisma.lead.findMany({ orderBy: { id: 'asc' } });
         expect(
           rows.map((r) => `${r.channel}:${r.usernameKey ?? r.phoneE164}`),

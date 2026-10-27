@@ -40,16 +40,23 @@ function fmtTs(ts) {
   return new Date(ts * 1000).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
-function PersonaSelect({ personas, value, onChange, className }) {
+// Лиду пишет аккаунт его мессенджера: счётчик — по каналу лида, а личность без
+// аккаунтов этого канала выбрать нельзя (лид бы не ушёл никогда).
+export function PersonaSelect({ personas, value, onChange, className, channel = 'telegram' }) {
+  const tag = channel === 'vk' ? ' VK' : '';
   return (
     <select className={className ?? s.select} value={value || ''} onChange={(e) => onChange(e.target.value)}>
       <option value="">любая личность</option>
-      {personas.map((p) => (
-        <option key={p.slug} value={p.slug}>
-          {p.name}
-          {p.accounts_ready ? ` · ${p.accounts_ready} акк. в сети` : ' · нет аккаунтов в сети'}
-        </option>
-      ))}
+      {personas.map((p) => {
+        const c = p.by_channel?.[channel] ?? { accounts: p.accounts, ready: p.accounts_ready };
+        const none = p.by_channel && !c.accounts;
+        return (
+          <option key={p.slug} value={p.slug} disabled={none && p.slug !== value}>
+            {p.name}
+            {c.ready ? ` · ${c.ready} акк.${tag} в сети` : none ? ` · нет аккаунтов${tag}` : ` · нет аккаунтов${tag} в сети`}
+          </option>
+        );
+      })}
     </select>
   );
 }
@@ -124,7 +131,7 @@ function ImportDialog({ personas, onClose }) {
             </label>
             <label className={s.label}>
               С какой личности писать всем из списка
-              <PersonaSelect personas={personas} value={personaId} onChange={setPersonaId} />
+              <PersonaSelect personas={personas} value={personaId} onChange={setPersonaId} channel={channel} />
             </label>
             <label className={s.check}>
               <input type="checkbox" checked={queue} onChange={(e) => setQueue(e.target.checked)} />

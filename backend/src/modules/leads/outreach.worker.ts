@@ -600,22 +600,28 @@ export class OutreachWorker implements OnModuleInit {
           status: 'active',
           ...(scopeAccounts === null ? {} : { id: { in: scopeAccounts } }),
         },
-        select: { id: true, personaId: true, floodUntil: true },
+        select: { id: true, personaId: true, floodUntil: true, channel: true },
       }),
     ]);
+    const ready = (a: (typeof accounts)[number]) =>
+      this.channels.isOnline(a.id) && !(a.floodUntil && a.floodUntil > now);
     return {
       items: personas.map((p) => {
         const mine = accounts.filter((a) => a.personaId === p.slug);
+        // Лиду пишет аккаунт его мессенджера: панель показывает счётчик того
+        // канала, куда пойдёт лид, иначе VK-лиду можно выбрать личность, у
+        // которой только Telegram-аккаунты, и он не уйдёт никогда.
+        const of = (channel: string) => {
+          const list = mine.filter((a) => a.channel === channel);
+          return { accounts: list.length, ready: list.filter(ready).length };
+        };
         return {
           slug: p.slug,
           name: p.name,
           is_default: p.isDefault,
           accounts: mine.length,
-          accounts_ready: mine.filter(
-            (a) =>
-              this.channels.isOnline(a.id) &&
-              !(a.floodUntil && a.floodUntil > now),
-          ).length,
+          accounts_ready: mine.filter(ready).length,
+          by_channel: { telegram: of('telegram'), vk: of('vk') },
         };
       }),
     };

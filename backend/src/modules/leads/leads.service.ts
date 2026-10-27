@@ -310,7 +310,10 @@ export class LeadsService {
   ) {
     const personaId = await this.personaOf(dto.persona_id);
     const preferredAccountId = dto.preferred_account_id ?? null;
-    if (preferredAccountId === null) return { personaId, preferredAccountId };
+    if (preferredAccountId === null) {
+      await this.requireChannelAccounts(personaId, channel);
+      return { personaId, preferredAccountId };
+    }
     if (scope !== null && !scope.accounts.includes(preferredAccountId)) {
       throw new UnprocessableEntityException(
         'можно выбрать только свой аккаунт',
@@ -609,6 +612,31 @@ export class LeadsService {
     }
   }
 
+  /**
+   * У личности должен быть хоть один аккаунт мессенджера лида: VK-лиду пишет
+   * только аккаунт VK, Telegram-лиду — Telegram. Иначе лид навсегда застрянет
+   * в очереди. Выключенные и на паузе считаются: их включат.
+   */
+  private async requireChannelAccounts(
+    personaId: string | null,
+    channel: LeadChannel,
+  ) {
+    if (!personaId) return;
+    const count = await this.prisma.channelAccount.count({
+      where: {
+        personaId,
+        channel,
+        status: { notIn: ['banned', 'deleted'] },
+      },
+    });
+    if (!count)
+      throw new UnprocessableEntityException(
+        channel === 'vk'
+          ? `у личности «${personaId}» нет аккаунтов VK — лиду VK писать некому`
+          : `у личности «${personaId}» нет Telegram-аккаунтов — этому лиду писать некому`,
+      );
+  }
+
   /** Канал выбранного аккаунта: лид и аккаунт должны быть из одного мессенджера. */
   private async accountChannel(id: number | null | undefined) {
     if (!id) return null;
@@ -693,6 +721,7 @@ export class LeadsService {
     const errors: string[] = [];
     let duplicates = 0;
     const batchChannel = (dto.channel ?? 'telegram') as LeadChannel;
+    if (dto.text) await this.requireChannelAccounts(batchPersona, batchChannel);
     if (dto.text) {
       const parsed = parseLeadLines(dto.text, batchChannel);
       drafts.push(...parsed.items);
@@ -797,6 +826,10 @@ export class LeadsService {
           'лиду уже написали — личность ведёт диалог, сменить её нельзя',
         );
       data.personaId = await this.personaOf(dto.persona_id);
+      await this.requireChannelAccounts(
+        data.personaId,
+        row.channel as LeadChannel,
+      );
       if (row.preferredAccountId !== null && data.personaId) {
         const chosen = await this.prisma.channelAccount.findUnique({
           where: { id: row.preferredAccountId },
