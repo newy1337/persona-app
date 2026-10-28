@@ -39,6 +39,9 @@ export const appConfig = {
     1,
     Number(process.env.LLM_GATEWAY_CONCURRENCY || 5),
   ),
+  // Сколько чат, ушедший в OpenRouter, остаётся там (кеш истории — по маршруту).
+  llmGatewayStickyMs:
+    Math.max(0, Number(process.env.LLM_GATEWAY_STICKY_S ?? 900)) * 1000,
   llmGatewayWaitMs:
     Math.max(0, Number(process.env.LLM_GATEWAY_WAIT_S ?? 15)) * 1000,
   anthropicWorkspaceId: process.env.ANTHROPIC_WORKSPACE_ID || '',

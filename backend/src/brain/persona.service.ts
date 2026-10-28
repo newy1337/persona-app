@@ -8,7 +8,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { createOpenRouterClient } from './llm/openrouter';
-import { gatewayBaseUrl, withGateway } from './llm/gateway';
+import { gatewayBaseUrl, withGateway, withoutRouteKey } from './llm/gateway';
 import { appConfig } from 'src/config/app.config';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
@@ -166,9 +166,10 @@ export class PersonaService implements OnModuleInit {
           log: this.log,
           maxConcurrent: appConfig.llmGatewayConcurrency,
           waitMs: appConfig.llmGatewayWaitMs,
+          stickyMs: appConfig.llmGatewayStickyMs,
         },
       )
-    : this.direct;
+    : withoutRouteKey(this.direct);
 
   constructor(
     private prisma: PrismaService,

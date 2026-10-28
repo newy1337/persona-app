@@ -1,3 +1,4 @@
+import { callOptions } from '../llm/anthropic';
 import { checkCancelled } from 'src/shared/cancellation';
 import sharp from 'sharp';
 import type Anthropic from '@anthropic-ai/sdk';
@@ -113,7 +114,7 @@ export async function inspectImage(
         },
       ],
     },
-    deps.signal ? { signal: deps.signal } : undefined,
+    callOptions(deps),
   );
   await recordUsage(deps.usageDb, deps.logger, response, {
     provider: deps.provider ?? 'anthropic',

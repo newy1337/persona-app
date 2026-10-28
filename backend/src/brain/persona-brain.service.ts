@@ -277,6 +277,7 @@ export class PersonaBrainService implements ReplyBrain {
       usageDb: this.usage.scoped(scope),
       logger: this.logger,
       variables,
+      routeKey: scope.chatId == null ? undefined : `chat:${scope.chatId}`,
     };
   }
 

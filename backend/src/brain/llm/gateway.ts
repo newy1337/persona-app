@@ -23,6 +23,12 @@ export interface GatewayOptions {
   waitMs?: number;
   /** Пауза между повторами, когда шлюз ответил «занято». */
   retryMs?: number;
+  /**
+   * Чат, чей запрос ушёл в OpenRouter, столько остаётся там: кеш истории
+   * у каждого маршрута свой, и чат, прыгающий между ними, платит за запись
+   * кеша в OpenRouter, а читает его уже шлюз.
+   */
+  stickyMs?: number;
   now?: () => number;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
@@ -78,6 +84,7 @@ export function withGateway(
     maxConcurrent = 5,
     waitMs = 15_000,
     retryMs = 1_500,
+    stickyMs = 15 * 60_000,
     now = Date.now,
     sleep = cancellableSleep,
   }: GatewayOptions,
@@ -87,6 +94,24 @@ export function withGateway(
   let active = 0;
   let busyFallbacks = 0;
   let busyLoggedAt = 0;
+  /** Чат → до какого времени его запросы идут сразу в OpenRouter. */
+  const sticky = new Map<string, number>();
+
+  function stick(key: string | undefined) {
+    if (!key || stickyMs <= 0) return;
+    if (sticky.size > 10_000)
+      for (const [k, until] of sticky) if (until <= now()) sticky.delete(k);
+    sticky.set(key, now() + stickyMs);
+  }
+
+  function stuck(key: string | undefined): boolean {
+    if (!key) return false;
+    const until = sticky.get(key);
+    if (until === undefined) return false;
+    if (until > now()) return true;
+    sticky.delete(key);
+    return false;
+  }
 
   function noteBusyFallback(reason: string) {
     busyFallbacks += 1;
@@ -151,14 +176,32 @@ export function withGateway(
 
   async function create(
     params: Anthropic.MessageCreateParamsNonStreaming,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; routeKey?: string },
   ): Promise<Anthropic.Message> {
-    if (now() >= pausedUntil) {
-      const response = await viaGateway(params, options, now() + waitMs);
+    const { routeKey, ...rest } = options ?? {};
+    const sendOptions = options ? rest : undefined;
+    if (now() >= pausedUntil && !stuck(routeKey)) {
+      const response = await viaGateway(params, sendOptions, now() + waitMs);
       if (response) return response;
+      stick(routeKey);
     }
-    return fallback.messages.create(params, options);
+    return fallback.messages.create(params, sendOptions);
   }
 
   return { messages: { create } } as unknown as Anthropic;
+}
+
+/** Без шлюза ключ маршрута не нужен — до клиента модели он не доходит. */
+export function withoutRouteKey(client: Anthropic): Anthropic {
+  return {
+    messages: {
+      create: (
+        params: Anthropic.MessageCreateParamsNonStreaming,
+        options?: { signal?: AbortSignal; routeKey?: string },
+      ) => {
+        const { routeKey: _routeKey, ...rest } = options ?? {};
+        return client.messages.create(params, options ? rest : undefined);
+      },
+    },
+  } as unknown as Anthropic;
 }

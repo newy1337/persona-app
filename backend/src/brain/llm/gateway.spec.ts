@@ -5,6 +5,7 @@ import {
   gatewayBusy,
   responseRoute,
   withGateway,
+  withoutRouteKey,
 } from './gateway';
 import { usageValues } from './usage';
 
@@ -201,5 +202,51 @@ describe('шлюз LLM с откатом на OpenRouter', () => {
     ).toBe(true);
     expect(gatewayBusy(new Error('OpenRouter 503: down'))).toBe(false);
     expect(gatewayBusy(new Error('нет связи'))).toBe(false);
+  });
+
+  it('липкий маршрут: чат, ушедший в OpenRouter, 15 минут остаётся там, другие чаты — нет', async () => {
+    let busy = true;
+    const { client, gateway, fallback, tick } = setup(async () => {
+      if (busy)
+        throw Object.assign(
+          new Error('OpenRouter 429: No Agent key has available capacity.'),
+          { status: 429 },
+        );
+      return reply('шлюз');
+    });
+    const a = { routeKey: 'chat:1' } as any;
+    expect(text(await client.messages.create(params, a))).toBe('openrouter');
+    busy = false;
+    const calls = gateway.messages.create.mock.calls.length;
+    // Тот же чат — сразу в OpenRouter, шлюз не трогаем.
+    expect(text(await client.messages.create(params, a))).toBe('openrouter');
+    expect(gateway.messages.create.mock.calls.length).toBe(calls);
+    // Другой чат — как обычно, через шлюз.
+    expect(
+      text(await client.messages.create(params, { routeKey: 'chat:2' } as any)),
+    ).toBe('шлюз');
+    // Через 15 минут чат 1 снова пробует шлюз.
+    tick(15 * 60_000);
+    expect(text(await client.messages.create(params, a))).toBe('шлюз');
+    // Ключ маршрута до клиентов не доходит.
+    for (const [, opts] of [
+      ...gateway.messages.create.mock.calls,
+      ...fallback.messages.create.mock.calls,
+    ] as any[])
+      expect(opts?.routeKey).toBeUndefined();
+  });
+
+  it('без шлюза ключ маршрута снимается перед вызовом модели', async () => {
+    const direct = {
+      messages: { create: jest.fn(async () => reply('напрямую')) },
+    };
+    const client = withoutRouteKey(direct as any);
+    await client.messages.create(params, {
+      routeKey: 'chat:1',
+      signal: undefined,
+    } as any);
+    expect((direct.messages.create.mock.calls[0] as any[])[1]).toEqual({
+      signal: undefined,
+    });
   });
 });

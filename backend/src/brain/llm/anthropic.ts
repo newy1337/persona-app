@@ -60,6 +60,20 @@ export interface LlmDeps {
   logger: Logger;
   variables?: Record<string, string>;
   provider?: string;
+  /** Чей запрос (обычно чат): шлюз держит запросы одного чата на одном маршруте. */
+  routeKey?: string;
+}
+
+/** Опции вызова модели: сигнал отмены и ключ маршрута для шлюза. */
+export function callOptions(deps: {
+  signal?: AbortSignal;
+  routeKey?: string;
+}): { signal?: AbortSignal; routeKey?: string } | undefined {
+  if (!deps.signal && !deps.routeKey) return undefined;
+  return {
+    ...(deps.signal ? { signal: deps.signal } : {}),
+    ...(deps.routeKey ? { routeKey: deps.routeKey } : {}),
+  };
 }
 
 export async function completeText(
@@ -103,7 +117,7 @@ export async function completeText(
         ? {}
         : { output_config: { effort: req.effort } }),
     },
-    deps.signal ? { signal: deps.signal } : undefined,
+    callOptions(deps),
   );
   await recordUsage(deps.usageDb, deps.logger, response, {
     provider: deps.provider ?? 'anthropic',
