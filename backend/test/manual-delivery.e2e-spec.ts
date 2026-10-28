@@ -11,6 +11,7 @@ import { HistoryService } from '../src/shared/history.service';
 import { RelayWorker } from '../src/channels/telegram/relay.worker';
 import { ReplyScheduleService } from '../src/brain/reply-schedule.service';
 import { PauseService } from '../src/shared/pause.service';
+import { chatIdFor } from '../src/channels/ids';
 
 describe('manual outbox recovery against a migrated database', () => {
   let db: PrismaService,
@@ -250,5 +251,107 @@ describe('manual outbox recovery against a migrated database', () => {
     for (const r of await schedule.dueRows(now))
       await schedule.defer(r.chatId, now + 60, 'manual_pending');
     expect((await schedule.dueRows(now)).map((r) => r.chatId)).toEqual([51]);
+  });
+
+  describe('VK-чат: ручные сообщения идут через VK, а не Telegram', () => {
+    const vkChat = chatIdFor('vk', 123456);
+    let vk: any;
+    const vkWorker = () =>
+      new RelayWorker(
+        history,
+        clock,
+        {} as any,
+        pause,
+        telegram,
+        brain,
+        undefined,
+        undefined,
+        { get: () => vk } as any,
+      );
+    beforeAll(async () => {
+      await db.channelAccount.create({
+        data: {
+          id: 2,
+          channel: 'vk',
+          personaId: 'test',
+          login: 'vk',
+          addedAt: 1,
+        },
+      });
+    });
+    beforeEach(async () => {
+      await history.wipeChat(vkChat);
+      await db.pendingReply.deleteMany({ where: { chatId: BigInt(vkChat) } });
+      await history.ensureContact(vkChat, 2);
+      vk = {
+        sendText: jest.fn(async (_c, _t, opts) => {
+          await opts.onDispatch?.(0);
+          await opts.onPart?.(0, 31);
+          return [31];
+        }),
+        sendPhoto: jest.fn(async (_c, opts) => {
+          await opts.onDispatch?.();
+          return 32;
+        }),
+        sendReaction: jest.fn(),
+      };
+    });
+
+    it('текст и фото уходят через VK с аккаунтом чата; Telegram не трогается', async () => {
+      const text = await history.enqueueManualReply(
+        vkChat,
+        'Привет из VK',
+        now,
+      );
+      const photo = await history.enqueueManualReply(vkChat, 'смотри', now, {
+        kind: 'photo',
+        filePath: '/synthetic/vk.jpg',
+      });
+      const worker = vkWorker();
+      await worker.tick();
+      await worker.tick();
+      expect((await row(text))!.status).toBe('sent');
+      expect((await row(photo))!.status).toBe('sent');
+      expect(vk.sendText.mock.calls[0][2].accountId).toBe(2);
+      expect(vk.sendPhoto.mock.calls[0][1]).toMatchObject({
+        path: '/synthetic/vk.jpg',
+        caption: 'смотри',
+        accountId: 2,
+        randomId: JSON.parse((await row(photo))!.delivery!).randomId,
+      });
+      expect(telegram.sendText).not.toHaveBeenCalled();
+      expect(telegram.sendMedia).not.toHaveBeenCalled();
+    });
+
+    it('видео в VK сразу на проверку с понятной причиной, без повторов и без Telegram', async () => {
+      const id = await history.enqueueManualReply(vkChat, '', now, {
+        kind: 'video',
+        filePath: '/synthetic/v.mp4',
+      });
+      await vkWorker().tick();
+      const r = (await row(id))!;
+      expect(r.status).toBe('needs_review');
+      expect(r.error).toContain('ВКонтакте пока не умеет');
+      expect(telegram.sendMedia).not.toHaveBeenCalled();
+      expect(vk.sendPhoto).not.toHaveBeenCalled();
+      expect(pause.pause.mock.calls.at(-1)[3].reasonText).toContain(
+        'ВКонтакте',
+      );
+    });
+
+    it('сбой доставки в VK просит проверить ВКонтакте, а не Telegram', async () => {
+      const id = await history.enqueueManualReply(vkChat, 'не дойдёт', now);
+      vk.sendText.mockRejectedValue(Error('vk down'));
+      const worker = vkWorker();
+      for (let i = 0; i < 6; i++) {
+        await worker.tick();
+        now += 1000;
+      }
+      const r = (await row(id))!;
+      expect(r.status).toBe('needs_review');
+      expect(r.error).toContain('Проверьте ВКонтакте');
+      expect(r.error).not.toContain('Telegram');
+      expect(telegram.sendText).not.toHaveBeenCalled();
+    });
   });
 });
