@@ -103,6 +103,8 @@ export interface OutboundTransport {
     parts: string[],
     opts?: {
       accountId?: number | null;
+      /** ответом на сообщение собеседника (id в мессенджере) */
+      replyTo?: number | null;
       typing?: TypingStyle;
       signal?: AbortSignal;
       beforePart?: () => Promise<void>;

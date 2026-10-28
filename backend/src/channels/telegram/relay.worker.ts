@@ -19,6 +19,16 @@ import { TakeoverReason } from 'src/domain/pause';
 import { VoicerDeliveryService } from '../../modules/voicer/voicer-delivery.service';
 import { KIND_LABEL, kindForFile } from 'src/domain/attachments';
 import { PhotoLibraryService } from 'src/shared/photo-library.service';
+import { ChannelRegistry } from 'src/channels/registry';
+import { peerOf } from 'src/channels/ids';
+import type { OutboundTransport } from 'src/brain/reply-brain.port';
+
+/** Что из панели умеет уйти в VK: текст, фото и реакция. Остальное — только Telegram. */
+const VK_KINDS = new Set(['text', 'photo', 'reaction']);
+
+/** Как назвать мессенджер чата в подсказке менеджеру. */
+const channelTitle = (chatId: number | bigint) =>
+  peerOf(chatId).channel === 'vk' ? 'ВКонтакте' : 'Telegram';
 
 /**
  * Одна строка на диалог — самая старая. Тик идёт каждые пять секунд, и если
@@ -53,7 +63,18 @@ export class RelayWorker implements OnModuleInit {
     @Inject(forwardRef(() => REPLY_BRAIN)) private brain: ReplyBrain,
     @Optional() private voiceDelivery?: VoicerDeliveryService,
     @Optional() private photos?: PhotoLibraryService,
+    @Optional() private channels?: ChannelRegistry,
   ) {}
+
+  /**
+   * Через что слать в чат: Telegram-чат — Telegram-сервисом (он умеет все
+   * вложения), VK-чат — каналом VK из реестра. Без реестра (тесты) — Telegram.
+   */
+  private vkFor(chatId: number): OutboundTransport | null {
+    return peerOf(chatId).channel === 'vk' && this.channels
+      ? this.channels.get('vk')
+      : null;
+  }
 
   async onModuleInit() {
     await this.history.recoverManualReplies(true);
@@ -71,7 +92,7 @@ export class RelayWorker implements OnModuleInit {
           TakeoverReason.HOLD,
           'system:manual_delivery',
           {
-            reasonText: `Ручное сообщение №${row.id}: ${row.error || 'проверьте доставку в Telegram, затем включите бота'}`,
+            reasonText: `Ручное сообщение №${row.id}: ${row.error || `проверьте доставку в ${channelTitle(row.chatId)}, затем включите бота`}`,
           },
         );
       }
@@ -99,6 +120,28 @@ export class RelayWorker implements OnModuleInit {
       delivery ??= { version: 1, randomId: deliveryRandomId() };
       const automated = claimed.source.startsWith('bot:voicer:');
       const voicer = automated || claimed.source.startsWith('operator:voicer:');
+      const vk = this.vkFor(chatId);
+      // VK не принимает из панели видео, голосовые, файлы, стикеры и альбомы:
+      // повторять бессмысленно — сразу на проверку с понятной причиной.
+      if (vk && !VK_KINDS.has(claimed.kind) && !delivery.dispatchedAt) {
+        const label = (KIND_LABEL[claimed.kind] ?? claimed.kind).replace(
+          /[[\]]/g,
+          '',
+        );
+        const reason = `ВКонтакте пока не умеет отправлять из панели «${claimed.kind === 'album' ? 'альбом' : label}» — отправьте текстом или фото. Сообщение не отправлено.`;
+        await this.history.reviewManualReply(reply.id, reason);
+        await this.pause.pause(
+          chatId,
+          TakeoverReason.HOLD,
+          'system:manual_delivery',
+          { reasonText: `Ручное сообщение №${reply.id}: ${reason}` },
+        );
+        this.log.warn(
+          `manual reply ${reply.id} chat=${chatId}: ${claimed.kind} is not supported by VK`,
+        );
+        if (voicer) await this.voiceDelivery?.syncReply(reply.id);
+        continue;
+      }
       try {
         if (voicer && !delivery.ids?.length) {
           try {
@@ -128,7 +171,7 @@ export class RelayWorker implements OnModuleInit {
             await this.history.saveManualDelivery(reply.id, delivery);
           };
           if (claimed.kind === 'text') {
-            await this.telegram.sendText(chatId, [claimed.text], {
+            await (vk ?? this.telegram).sendText(chatId, [claimed.text], {
               accountId: claimed.accountId,
               replyTo: claimed.replyTo,
               randomIds: [delivery.randomId],
@@ -143,7 +186,7 @@ export class RelayWorker implements OnModuleInit {
             if (!voicer) await dispatch();
             delivery.ids = await this.deliverMedia(
               chatId,
-              claimed,
+              { ...claimed, randomId: delivery.randomId },
               voicer
                 ? async () => {
                     await this.voiceDelivery!.beforeDispatch(reply.id);
@@ -187,14 +230,14 @@ export class RelayWorker implements OnModuleInit {
         } else {
           await this.history.reviewManualReply(
             reply.id,
-            'Не удалось подтвердить доставку. Проверьте Telegram, затем включите бота. Сообщение не будет повторено автоматически.',
+            `Не удалось подтвердить доставку. Проверьте ${channelTitle(chatId)}, затем включите бота. Сообщение не будет повторено автоматически.`,
           );
           await this.pause.pause(
             chatId,
             TakeoverReason.HOLD,
             'system:manual_delivery',
             {
-              reasonText: `Проверьте доставку ручного сообщения №${reply.id} в Telegram, затем включите бота`,
+              reasonText: `Проверьте доставку ручного сообщения №${reply.id} в ${channelTitle(chatId)}, затем включите бота`,
             },
           );
         }
@@ -215,12 +258,14 @@ export class RelayWorker implements OnModuleInit {
       filePath: string | null;
       replyTo: number | null;
       accountId: number | null;
+      randomId?: string;
     },
     beforeSend?: () => Promise<void>,
   ): Promise<number[]> {
+    const vk = this.vkFor(chatId);
     if (row.kind === 'reaction') {
       if (!row.replyTo) throw new Error('реакции нужен id сообщения');
-      await this.telegram.sendReaction(chatId, row.replyTo, row.text);
+      await (vk ?? this.telegram).sendReaction(chatId, row.replyTo, row.text);
       await this.history.setReaction(chatId, row.replyTo, row.text || null);
       return [row.replyTo];
     }
@@ -234,6 +279,19 @@ export class RelayWorker implements OnModuleInit {
       });
     }
     if (!row.filePath) throw new Error(`вложению «${row.kind}» нужен файл`);
+    if (vk) {
+      if (row.kind !== 'photo' || !vk.sendPhoto)
+        throw new Error(`ВКонтакте не умеет отправлять «${row.kind}»`);
+      return [
+        await vk.sendPhoto(chatId, {
+          path: row.filePath,
+          caption: row.text,
+          randomId: row.randomId ?? deliveryRandomId(),
+          accountId: row.accountId,
+          ...(beforeSend ? { onDispatch: beforeSend } : {}),
+        }),
+      ];
+    }
     return [
       await this.telegram.sendMedia(chatId, {
         kind: row.kind,
@@ -271,7 +329,9 @@ export class RelayWorker implements OnModuleInit {
         : [row.filePath];
     for (const [i, path] of paths.entries()) {
       if (!ids[i])
-        throw new Error('Telegram не подтвердил все части сообщения');
+        throw new Error(
+          `${channelTitle(chatId)} не подтвердил все части сообщения`,
+        );
       const kind =
         row.kind === 'album'
           ? kindForFile(path!) === 'video'
@@ -333,9 +393,11 @@ export class RelayWorker implements OnModuleInit {
         try {
           const data = JSON.parse(claimed.payload);
           const text = String(data.text);
-          const ids = await this.telegram.sendText(chatId, [text], {
-            accountId: claimed.accountId,
-          });
+          const ids = await (this.vkFor(chatId) ?? this.telegram).sendText(
+            chatId,
+            [text],
+            { accountId: claimed.accountId },
+          );
           const ts = this.clock.ts();
           await this.history.appendMessage(chatId, {
             role: 'assistant',
