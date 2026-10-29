@@ -1,5 +1,6 @@
 import type { StoredMessage } from 'src/shared/history.service';
 import type { ConversationState, HistoryMessage } from '../kernel/types';
+import { quoteSnippet } from './reply-quote';
 
 export function reconcileTranscript(
   state: ConversationState,
@@ -31,6 +32,12 @@ export function reconcileTranscript(
       if (index >= 0) messages.splice(index, 1);
       continue;
     }
+    const quoted = row.reply_to
+      ? (rows.find((r) => r.tg_msg_id === row.reply_to && r.id !== row.id)
+          ?.text ??
+        messages.find((m) => m.telegram_message_id === row.reply_to)?.content)
+      : null;
+    const reply_quote = quoteSnippet(quoted) ?? match?.reply_quote;
     const message: HistoryMessage = {
       ...match,
       id: match?.id ?? `panel:${row.id}`,
@@ -45,6 +52,7 @@ export function reconcileTranscript(
       source: row.author.startsWith('operator')
         ? 'operator'
         : (match?.source ?? (row.role === 'user' ? 'dialogue' : row.author)),
+      ...(reply_quote ? { reply_quote } : {}),
     };
     if (index >= 0) messages[index] = message;
     else messages.push(message);

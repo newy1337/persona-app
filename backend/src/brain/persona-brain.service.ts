@@ -114,6 +114,7 @@ import {
   validQuestionIds,
 } from './character/conversation';
 import { appendAssistantMessage } from './memory/history';
+import { withReplyQuote } from './memory/reply-quote';
 import { markMemoryRecalled } from './memory/memories';
 import { withAttachmentContext } from './media/attachment';
 import { applyOperatorSlots } from './memory/profile';
@@ -352,6 +353,9 @@ export class PersonaBrainService implements ReplyBrain {
       [FIRST_CONTACT_TS_KEY]: turn.ts,
     });
 
+    if (turn.replyTo && !turn.replyQuote)
+      turn.replyQuote = await this.history.quoteOf(chatId, turn.replyTo);
+
     let text = turn.text.trim();
     let modality = 'text';
     if (turn.media) {
@@ -384,6 +388,7 @@ export class PersonaBrainService implements ReplyBrain {
       author: 'client',
       sourceMessageId: turn.messageId,
       modality,
+      replyTo: turn.replyTo ?? null,
       inboundPayload: JSON.stringify(turn),
       ...(turn.media?.path
         ? { mediaKind: turn.media.kind, filePath: turn.media.path }
@@ -808,7 +813,9 @@ export class PersonaBrainService implements ReplyBrain {
           await this.schedule.drop(chatId);
           return true;
         }
-        let text = turns.map((t) => t.text).join('\n');
+        let text = turns
+          .map((t) => withReplyQuote(t.text, t.turn.replyQuote))
+          .join('\n');
         if (
           turns.some(
             (t) => t.turn.media?.kind === 'voice' && !t.turn.media.transcript,

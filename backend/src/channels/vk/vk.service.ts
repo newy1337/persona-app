@@ -503,6 +503,9 @@ export class VkService
         text: inboundText(message, media),
         ts: message.date,
         media,
+        ...(message.reply_message?.conversation_message_id
+          ? { replyTo: message.reply_message.conversation_message_id }
+          : {}),
       });
     } finally {
       release?.();
@@ -571,6 +574,7 @@ export class VkService
         ts: message.date,
         author: 'operator:vk',
         peerMsgId: cmid,
+        replyTo: message.reply_message?.conversation_message_id ?? null,
         mediaKind: media?.kind,
       });
       await this.brain.noteOperatorMessage(chatId);

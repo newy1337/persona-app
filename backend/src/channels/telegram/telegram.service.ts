@@ -138,6 +138,27 @@ const UNKNOWN_MEDIA: Array<[new (...args: any[]) => unknown, string]> = [
   [Api.MessageMediaUnsupported, 'вложение, не поддержанное Telegram'],
 ];
 
+/**
+ * На какое сообщение этого же чата ответил собеседник: номер и выделенная
+ * цитата, если он цитировал кусок. Ответ на сообщение из другого чата — не наш.
+ */
+export function replyOf(message: Api.Message): {
+  replyTo: number | null;
+  replyQuote: string | null;
+} {
+  const header = message.replyTo;
+  if (
+    !(header instanceof Api.MessageReplyHeader) ||
+    !header.replyToMsgId ||
+    header.replyToPeerId
+  )
+    return { replyTo: null, replyQuote: null };
+  return {
+    replyTo: header.replyToMsgId,
+    replyQuote: header.quote ? header.quoteText?.trim() || null : null,
+  };
+}
+
 export function inboundText(
   message: Api.Message,
   media: InboundMedia | null,
@@ -687,6 +708,7 @@ export class TelegramService
         ts: message.date,
         author: 'operator:telegram',
         peerMsgId: message.id,
+        replyTo: replyOf(message).replyTo,
         mediaKind: media?.kind,
         filePath: media?.path,
       });
@@ -827,6 +849,7 @@ export class TelegramService
         text: inboundText(message, media),
         ts: message.date,
         media,
+        ...replyOf(message),
       });
     } catch (e) {
       this.log.error(`inbound failed chat=${chatId}: ${e?.stack ?? e}`);
@@ -1249,6 +1272,7 @@ export class TelegramService
             text: inboundText(message, media),
             ts: message.date,
             media,
+            ...replyOf(message),
           });
         }
         await this.brain.answerAfterResume(chatId);

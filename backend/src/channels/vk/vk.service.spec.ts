@@ -105,6 +105,28 @@ describe('VK: входящие', () => {
     ]);
   });
 
+  it('ответ собеседника на сообщение — в ходе номер того сообщения (cmid)', async () => {
+    const { svc, entry, turns } = setup();
+    await svc.onMessage(entry, {
+      kind: 'message',
+      outgoing: false,
+      thin: false,
+      message: {
+        id: 9,
+        conversation_message_id: 9,
+        peer_id: 555,
+        from_id: 555,
+        date: 1700000000,
+        text: 'да',
+        out: 0,
+        reply_message: { conversation_message_id: 4 },
+      },
+    } as never);
+    expect(turns).toEqual([
+      expect.objectContaining({ messageId: 9, replyTo: 4 }),
+    ]);
+  });
+
   it('эхо своей отправки — мимо; реплика из приложения VK — в историю от оператора', async () => {
     const { svc, entry, turns, appended } = setup({
       'messages.send': [{ cmid: 8 }],

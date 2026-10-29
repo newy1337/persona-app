@@ -26,6 +26,10 @@ export interface InboundTurn {
   ts: number;
   media?: InboundMedia | null;
   replay?: boolean;
+  /** Собеседник ответил на сообщение: его номер в канале (Telegram id, VK cmid). */
+  replyTo?: number | null;
+  /** Текст того сообщения (или выделенная цитата) — для модели. */
+  replyQuote?: string | null;
 }
 
 export interface ReplyBrain {

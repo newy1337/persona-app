@@ -4475,6 +4475,60 @@ describe('Manager panel API (e2e)', () => {
       await prisma.contact.delete({ where: { chatId: BigInt(orphan) } });
     });
 
+    it('ответ клиента на сообщение: номер в истории и в панели, цитата — для модели', async () => {
+      const prisma = app.get(PrismaService);
+      const brain = app.get(REPLY_BRAIN_TOKEN) as any;
+      const chatId = 777000336;
+      const h = { Authorization: `Bearer ${token}` };
+      const acc = await request(app.getHttpServer())
+        .post('/api/tg-accounts')
+        .set(h)
+        .send({ phone_e164: '+79001110198', persona_id: 'nastya' })
+        .expect(200);
+      const ts = Math.floor(Date.now() / 1000);
+      await prisma.contact.create({
+        data: { chatId: BigInt(chatId), accountId: acc.body.id, createdAt: ts },
+      });
+      await prisma.message.create({
+        data: {
+          chatId: BigInt(chatId),
+          ts: ts - 60,
+          role: 'assistant',
+          text: 'Ты любишь кино?',
+          author: 'llm',
+          peerMsgId: 50,
+        },
+      });
+      await brain.handleInbound({
+        chatId,
+        accountId: acc.body.id,
+        messageId: 51,
+        ts,
+        text: 'очень',
+        replyTo: 50,
+      });
+      const stored = await prisma.message.findFirstOrThrow({
+        where: { chatId: BigInt(chatId), role: 'user' },
+      });
+      expect(stored.replyTo).toBe(50);
+      expect(JSON.parse(stored.inboundPayload!).replyQuote).toBe(
+        'Ты любишь кино?',
+      );
+      const panel = await request(app.getHttpServer())
+        .get(`/api/conversations/${chatId}`)
+        .set(h)
+        .expect(200);
+      expect(
+        panel.body.messages.find((m: any) => m.role === 'user'),
+      ).toMatchObject({ content: 'очень', reply_to: 50, tg_msg_id: 51 });
+
+      await app.get(TelegramService)['history'].wipeChat(chatId);
+      await request(app.getHttpServer())
+        .delete(`/api/tg-accounts/${acc.body.id}`)
+        .set(h)
+        .expect(200);
+    });
+
     it('голосовое расшифровывается: текст в истории и в панели, расход — в статистике; повтор доставки не платится', async () => {
       const prisma = app.get(PrismaService);
       const brain = app.get(REPLY_BRAIN_TOKEN) as any;

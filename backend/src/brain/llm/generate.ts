@@ -6,6 +6,7 @@ import { resolveModel } from '../config/models';
 import { normalizeReply } from '../character/reply';
 import { completeText, type LlmDeps, type SplitPrompt } from './anthropic';
 import { cacheMark, windowStart } from './cache';
+import { withReplyQuote } from '../memory/reply-quote';
 
 const HISTORY_LIMIT = 40;
 const MAX_TOKENS = 2048;
@@ -41,7 +42,7 @@ export function buildMessages(
   for (const message of recent) {
     push(
       asText(message.role) === 'assistant' ? 'assistant' : 'user',
-      asText(message.content),
+      withReplyQuote(asText(message.content), message.reply_quote),
     );
   }
   const lastHistory = out[out.length - 1]?.content.at(-1);

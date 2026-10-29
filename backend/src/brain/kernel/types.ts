@@ -34,6 +34,8 @@ export interface HistoryMessage {
   attachment_context?: string;
   panel_message_id?: number;
   telegram_message_id?: number;
+  /** на какое сообщение это ответ: его текст (цитата) */
+  reply_quote?: string;
 }
 
 export interface MemoryRevision {

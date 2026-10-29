@@ -516,6 +516,16 @@ export class HistoryService {
     });
   }
 
+  /** Текст сообщения чата по его номеру в канале — для цитаты ответа. */
+  async quoteOf(chatId: number, peerMsgId: number): Promise<string | null> {
+    const row = await this.prisma.message.findFirst({
+      where: { chatId: toChatId(chatId), peerMsgId, deletedAt: null },
+      orderBy: { id: 'desc' },
+      select: { text: true },
+    });
+    return row?.text ?? null;
+  }
+
   async appendMessage(
     chatId: number,
     m: AppendMessage,
