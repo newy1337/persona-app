@@ -7,6 +7,7 @@ import {
   gatewaySlots,
   gatewayTransient,
   lastCacheMarkOnly,
+  watchGatewayCapacity,
   responseRoute,
   withGateway,
   withoutRouteKey,
@@ -392,5 +393,35 @@ describe('шлюз LLM: ёмкость, перегрузка и метки ке�
       ),
     ).toBe(true);
     expect(lastCacheMarkOnly(params)).toEqual(params);
+  });
+});
+
+describe('ёмкость шлюза из его списка ключей', () => {
+  it('читает ответ вида { data: [...] } и считает готовые слоты', async () => {
+    const fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [
+          { enabled: true, status: 'ready', max_concurrent: 5 },
+          { enabled: true, status: 'cooldown', max_concurrent: 4 },
+          { enabled: true, status: 'ready', max_concurrent: 4 },
+        ],
+      }),
+    }));
+    const log = { warn: jest.fn(), log: jest.fn() };
+    const watch = watchGatewayCapacity({
+      url: 'http://h:3000/v1',
+      apiKey: 'k',
+      log,
+      fetch: fetch as any,
+    });
+    await new Promise((r) => setImmediate(r));
+    watch.stop();
+    expect((fetch.mock.calls[0] as any[])[0]).toBe(
+      'http://h:3000/dashboard/api/keys',
+    );
+    expect(watch.current()).toBe(9);
+    expect(log.warn).not.toHaveBeenCalled();
   });
 });

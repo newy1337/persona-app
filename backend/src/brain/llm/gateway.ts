@@ -170,7 +170,8 @@ export function watchGatewayCapacity({
       const json: unknown = await res.json();
       const keys = Array.isArray(json)
         ? json
-        : (json as { keys?: unknown })?.keys;
+        : ((json as { data?: unknown; keys?: unknown })?.data ??
+          (json as { keys?: unknown })?.keys);
       if (!res.ok || !Array.isArray(keys))
         throw new Error(`HTTP ${res.status}`);
       const next = gatewaySlots(keys as GatewayKey[]);
