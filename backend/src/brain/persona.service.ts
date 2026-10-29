@@ -2,13 +2,19 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { createOpenRouterClient } from './llm/openrouter';
-import { gatewayBaseUrl, withGateway, withoutRouteKey } from './llm/gateway';
+import {
+  gatewayBaseUrl,
+  watchGatewayCapacity,
+  withGateway,
+  withoutRouteKey,
+} from './llm/gateway';
 import { appConfig } from 'src/config/app.config';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
@@ -99,7 +105,7 @@ const json = (text: string | null | undefined): Record<string, any> => {
 };
 
 @Injectable()
-export class PersonaService implements OnModuleInit {
+export class PersonaService implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger(PersonaService.name);
 
   /**
@@ -153,6 +159,14 @@ export class PersonaService implements OnModuleInit {
             : {}),
         });
 
+  private readonly gatewayCapacity = appConfig.llmGatewayUrl
+    ? watchGatewayCapacity({
+        url: appConfig.llmGatewayUrl,
+        apiKey: appConfig.llmGatewayApiKey,
+        log: this.log,
+      })
+    : null;
+
   readonly anthropic: Anthropic = appConfig.llmGatewayUrl
     ? withGateway(
         createOpenRouterClient({
@@ -167,6 +181,7 @@ export class PersonaService implements OnModuleInit {
           maxConcurrent: appConfig.llmGatewayConcurrency,
           waitMs: appConfig.llmGatewayWaitMs,
           stickyMs: appConfig.llmGatewayStickyMs,
+          capacity: () => this.gatewayCapacity?.current() ?? null,
         },
       )
     : withoutRouteKey(this.direct);
@@ -264,6 +279,10 @@ export class PersonaService implements OnModuleInit {
       );
     await this.seedFromFiles();
     await this.fillPrompts();
+  }
+
+  onModuleDestroy(): void {
+    this.gatewayCapacity?.stop();
   }
 
   private async fillPrompts(): Promise<void> {

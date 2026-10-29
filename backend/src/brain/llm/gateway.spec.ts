@@ -2,7 +2,11 @@ import type Anthropic from '@anthropic-ai/sdk';
 import {
   GATEWAY_ROUTE,
   gatewayBaseUrl,
+  cacheLimitError,
   gatewayBusy,
+  gatewaySlots,
+  gatewayTransient,
+  lastCacheMarkOnly,
   responseRoute,
   withGateway,
   withoutRouteKey,
@@ -248,5 +252,145 @@ describe('шлюз LLM с откатом на OpenRouter', () => {
     expect((direct.messages.create.mock.calls[0] as any[])[1]).toEqual({
       signal: undefined,
     });
+  });
+});
+
+describe('шлюз LLM: ёмкость, перегрузка и метки кеша', () => {
+  const make = (
+    gatewayImpl: (p: any) => Promise<Anthropic.Message>,
+    opts: Record<string, unknown> = {},
+  ) => {
+    let clock = 0;
+    const gateway = { messages: { create: jest.fn(gatewayImpl) } };
+    const fallback = {
+      messages: { create: jest.fn(async () => reply('openrouter')) },
+    };
+    const log = { warn: jest.fn(), log: jest.fn() };
+    const client = withGateway(gateway as any, fallback as any, {
+      log,
+      failLimit: 2,
+      pauseMs: 60_000,
+      waitMs: 10_000,
+      retryMs: 1_000,
+      now: () => clock,
+      sleep: async (ms: number) => {
+        clock += ms;
+        await Promise.resolve();
+      },
+      ...opts,
+    });
+    return { client, gateway, fallback, tick: (ms: number) => (clock += ms) };
+  };
+
+  it('слоты — сумма по включённым готовым ключам', () => {
+    expect(
+      gatewaySlots([
+        { enabled: true, status: 'ready', max_concurrent: 5 },
+        { enabled: true, status: 'cooldown', max_concurrent: 4 },
+        { enabled: false, status: 'ready', max_concurrent: 4 },
+        { enabled: true, status: 'ready', max_concurrent: 3 },
+      ]),
+    ).toBe(8);
+  });
+
+  it('предел — меньшее из ёмкости шлюза и maxConcurrent', async () => {
+    let release!: () => void;
+    const hold = new Promise<void>((r) => (release = r));
+    const { client, gateway, fallback } = make(
+      async () => {
+        await hold;
+        return reply('шлюз');
+      },
+      { maxConcurrent: 25, capacity: () => 1 },
+    );
+    const a = client.messages.create(params);
+    const b = client.messages.create(params);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(gateway.messages.create).toHaveBeenCalledTimes(1);
+    release();
+    await Promise.all([a, b]);
+    expect(gateway.messages.create).toHaveBeenCalledTimes(2);
+    expect(fallback.messages.create).not.toHaveBeenCalled();
+  });
+
+  it('все ключи на паузе — сразу в OpenRouter, шлюз не ждём', async () => {
+    const { client, gateway, fallback } = make(async () => reply('шлюз'), {
+      capacity: () => 0,
+    });
+    expect(text(await client.messages.create(params))).toBe('openrouter');
+    expect(gateway.messages.create).not.toHaveBeenCalled();
+    expect(fallback.messages.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('таймауты у отвечающего шлюза не ставят его на паузу', async () => {
+    let fail = false;
+    const { client, gateway } = make(async () => {
+      if (fail) throw new Error('OpenRouter: нет ответа за 90 с');
+      return reply('шлюз');
+    });
+    await client.messages.create(params);
+    fail = true;
+    for (let i = 0; i < 4; i++) await client.messages.create(params);
+    expect(gateway.messages.create).toHaveBeenCalledTimes(5);
+  });
+
+  it('шлюз давно молчит — таймауты ставят на паузу', async () => {
+    const { client, gateway, tick } = make(async () => {
+      throw new Error('OpenRouter: нет связи (ECONNRESET)');
+    });
+    tick(120_000);
+    for (let i = 0; i < 4; i++) await client.messages.create(params);
+    expect(gateway.messages.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('лишняя метка кеша — повтор в шлюзе с одной меткой', async () => {
+    const mark = { type: 'ephemeral' };
+    const marked = {
+      ...params,
+      system: [{ type: 'text', text: 'правила', cache_control: mark }],
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'история', cache_control: mark },
+            { type: 'text', text: 'реплика' },
+          ],
+        },
+      ],
+    } as any;
+    const seen: any[] = [];
+    const { client, fallback } = make(async (p) => {
+      seen.push(p);
+      if (seen.length === 1)
+        throw new Error(
+          'OpenRouter 502: API Error: 400 A maximum of 4 blocks with cache_control may be provided. Found 5.',
+        );
+      return reply('шлюз');
+    });
+    expect(text(await client.messages.create(marked))).toBe('шлюз');
+    expect(fallback.messages.create).not.toHaveBeenCalled();
+    expect(seen[1].system[0].cache_control).toBeUndefined();
+    expect(seen[1].messages[0].content[0].cache_control).toEqual(mark);
+    // Исходный запрос не испорчен.
+    expect(marked.system[0].cache_control).toEqual(mark);
+  });
+
+  it('что считается перегрузкой и ошибкой меток', () => {
+    expect(gatewayTransient(new Error('OpenRouter: нет ответа за 90 с'))).toBe(
+      true,
+    );
+    expect(
+      gatewayTransient(new Error('OpenRouter: нет связи (ECONNRESET)')),
+    ).toBe(true);
+    expect(
+      gatewayTransient(new Error('OpenRouter: нет связи (ECONNREFUSED)')),
+    ).toBe(false);
+    expect(
+      cacheLimitError(
+        new Error('A maximum of 4 blocks with cache_control may be provided'),
+      ),
+    ).toBe(true);
+    expect(lastCacheMarkOnly(params)).toEqual(params);
   });
 });
