@@ -723,6 +723,77 @@ describe('Manager panel API (e2e)', () => {
       .set(await as('rg-other', 'oth123456'))
       .expect(404);
 
+    // новый аккаунт тимлид и хед закрепляют за менеджером своей команды
+    const leadAuth = await as('rg-lead', 'lead12345');
+    const owners = async (auth: Record<string, string>) =>
+      (
+        await request(app.getHttpServer())
+          .get('/api/tg-accounts/owners')
+          .set(auth)
+          .expect(200)
+      ).body;
+    const leadOwners = await owners(leadAuth);
+    expect(leadOwners.required).toBe(true);
+    expect(leadOwners.items.map((u: any) => u.username)).toEqual(['rg-man']);
+    expect(
+      (await owners(headAuth)).items.map((u: any) => u.username).sort(),
+    ).toEqual(['rg-direct', 'rg-man']);
+    const adminOwners = await owners(h);
+    expect(adminOwners.required).toBe(false);
+    expect(adminOwners.items.some((u: any) => u.id === stranger)).toBe(true);
+    expect(await owners(await as('rg-man', 'man123456'))).toEqual({
+      required: false,
+      items: [],
+    });
+    const addAs = (auth: Record<string, string>, body: object) =>
+      request(app.getHttpServer())
+        .post('/api/tg-accounts')
+        .set(auth)
+        .send({ persona_id: 'nastya', ...body });
+    await addAs(leadAuth, { phone_e164: '+79001230011' }).expect(422);
+    await addAs(leadAuth, {
+      phone_e164: '+79001230011',
+      manager_id: stranger,
+    }).expect(422);
+    await request(app.getHttpServer())
+      .post('/api/tg-accounts/vk')
+      .set(leadAuth)
+      .send({
+        login: '79001230013',
+        persona_id: 'nastya',
+        cookies: [{ name: 'remixsid', value: 'x', domain: '.vk.ru' }],
+        proxy_config: { type: 'socks5', host: '127.0.0.1', port: 1080 },
+      })
+      .expect(422);
+    const leadAcc = (
+      await addAs(leadAuth, {
+        phone_e164: '+79001230011',
+        manager_id: manager,
+      }).expect(200)
+    ).body.id as number;
+    const manAcc = (
+      await addAs(await as('rg-man', 'man123456'), {
+        phone_e164: '+79001230012',
+        manager_id: stranger,
+      }).expect(200)
+    ).body.id as number;
+    const ownerOf = async (accountId: number) =>
+      (await prisma.managerAccount.findUnique({ where: { accountId } }))
+        ?.userId;
+    expect(await ownerOf(leadAcc)).toBe(manager);
+    expect(await ownerOf(manAcc)).toBe(manager);
+    expect(
+      (
+        await request(app.getHttpServer())
+          .get('/api/tg-accounts')
+          .set(leadAuth)
+          .expect(200)
+      ).body.some((a: any) => a.id === leadAcc),
+    ).toBe(true);
+    await prisma.channelAccount.deleteMany({
+      where: { id: { in: [leadAcc, manAcc] } },
+    });
+
     // статистика по командам: хед — все по цепочке, тимлид — свои менеджеры
     const teams = await request(app.getHttpServer())
       .get('/api/stats/managers')

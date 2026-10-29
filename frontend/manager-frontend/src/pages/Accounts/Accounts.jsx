@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   addAccount,
   addVkAccount,
+  getAccountOwners,
   deleteAccount,
   getAccounts,
   clearAccountFlood,
@@ -52,6 +53,7 @@ function fmtTs(ts) {
 const EMPTY_FORM = {
   channel: 'telegram', phone_e164: '', login: '', cookies: '', user_agent: '',
   persona_id: 'nastya', purpose: 'prod', daily_msg_quota: '', withProxy: false, proxy: EMPTY_PROXY,
+  manager_id: '',
 };
 
 /** Выбор мессенджера — как в Chutter: переключатель над формой, поля под канал. */
@@ -70,16 +72,22 @@ function ChannelSwitch({ value, onChange }) {
   );
 }
 
-function AddForm({ personas, onDone, onCancel }) {
+export function AddForm({ personas, onDone, onCancel }) {
   const [f, setF] = useState(EMPTY_FORM);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Тимлид и хед закрепляют аккаунт за менеджером своей команды: свободный они бы не увидели.
+  const [owners, setOwners] = useState({ required: false, items: [] });
+  useEffect(() => {
+    getAccountOwners().then(setOwners).catch(() => {});
+  }, []);
   const set = (patch) => setF((v) => ({ ...v, ...patch }));
   const vk = f.channel === 'vk';
   // VK: токен привязан к выходному IP — без прокси аккаунт не живёт, поэтому прокси обязателен.
   const withProxy = vk || f.withProxy;
   const cookies = vk ? parseVkCookies(f.cookies) : null;
   const valid = f.persona_id.trim()
+    && (!owners.required || f.manager_id)
     && (vk ? f.login.trim().length >= 3 && cookies.ok : /^\+?\d{10,15}$/.test(f.phone_e164.trim()))
     && (!withProxy || proxyValid(f.proxy, f.channel));
 
@@ -97,6 +105,7 @@ function AddForm({ personas, onDone, onCancel }) {
       persona_id: f.persona_id.trim(),
       purpose: f.purpose,
       daily_msg_quota: f.daily_msg_quota ? Number(f.daily_msg_quota) : null,
+      ...(f.manager_id ? { manager_id: Number(f.manager_id) } : {}),
     };
     try {
       if (vk) {
@@ -150,6 +159,18 @@ function AddForm({ personas, onDone, onCancel }) {
           ))}
         </select>
       </label>
+      {owners.items.length > 0 || owners.required ? (
+        <label className={s.label}>
+          Менеджер
+          <select className={s.select} aria-label="Менеджер" value={f.manager_id} onChange={(e) => set({ manager_id: e.target.value })}>
+            <option value="">{owners.required ? '— выберите менеджера —' : '— без менеджера —'}</option>
+            {owners.items.map((m) => (
+              <option key={m.id} value={m.id}>{m.username}{m.region_code ? ` (${m.region_code})` : ''}</option>
+            ))}
+          </select>
+          {owners.required && !owners.items.length && <span className={s.hint}>В вашей команде нет менеджеров — аккаунт закрепить не за кем.</span>}
+        </label>
+      ) : null}
       <label className={s.label}>
         Назначение
         <select className={s.select} value={f.purpose} onChange={(e) => set({ purpose: e.target.value })}>

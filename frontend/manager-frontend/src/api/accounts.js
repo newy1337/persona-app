@@ -64,6 +64,11 @@ export async function uploadAccountAvatar(id, file) {
   return data;
 }
 
+/** За кем можно закрепить новый аккаунт: { required, items: [{ id, username, region_code }] }. */
+export function getAccountOwners() {
+  return api.get('/api/tg-accounts/owners');
+}
+
 /** VK-аккаунт по кукам браузера и прокси — сразу подключается. */
 export function addVkAccount(body) {
   return api.post('/api/tg-accounts/vk', body);

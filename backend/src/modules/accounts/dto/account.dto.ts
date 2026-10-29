@@ -71,6 +71,15 @@ export class AddTelegramAccountDto {
   @IsOptional()
   @IsIn(['prod', 'test'])
   purpose?: 'prod' | 'test' = 'prod';
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'менеджер, за которым закрепить аккаунт; тимлиду и хеду обязателен',
+  })
+  @IsOptional()
+  @IsInt()
+  manager_id?: number | null;
 }
 
 /**
@@ -130,6 +139,15 @@ export class AddVkAccountDto {
   @IsOptional()
   @IsIn(['prod', 'test'])
   purpose?: 'prod' | 'test' = 'prod';
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'менеджер, за которым закрепить аккаунт; тимлиду и хеду обязателен',
+  })
+  @IsOptional()
+  @IsInt()
+  manager_id?: number | null;
 }
 
 /** Новые куки VK-аккаунта: сессия умерла или вход сделан заново. */

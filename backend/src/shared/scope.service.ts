@@ -2,6 +2,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { DashboardUser } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -77,6 +78,59 @@ export class ScopeService {
       for (const id of frontier) seen.add(id);
     }
     return [...seen];
+  }
+
+  /**
+   * За кем можно закрепить новый аккаунт: админ — за любым менеджером (или
+   * оставить свободным), тимлид и хед — только за менеджером своей команды,
+   * и выбрать обязательно: свободный аккаунт они бы сами больше не увидели.
+   * Менеджеру выбирать не из кого — аккаунт его.
+   */
+  async accountOwners(user: DashboardUser): Promise<{
+    required: boolean;
+    items: Array<{ id: number; username: string; region_code: string | null }>;
+  }> {
+    if (user.role === Role.MANAGER) return { required: false, items: [] };
+    const isAdmin = user.role === Role.ADMIN;
+    const rows = await this.prisma.dashboardUser.findMany({
+      where: {
+        role: Role.MANAGER,
+        ...(isAdmin
+          ? {}
+          : { id: { in: await this.teamIds(user.id, user.regionCode) } }),
+      },
+      select: { id: true, username: true, regionCode: true },
+      orderBy: { username: 'asc' },
+    });
+    return {
+      required: !isAdmin,
+      items: rows.map((r) => ({
+        id: r.id,
+        username: r.username,
+        region_code: r.regionCode,
+      })),
+    };
+  }
+
+  /** Владелец нового аккаунта по правилам accountOwners. */
+  async ownerForNewAccount(
+    user: DashboardUser,
+    managerId: number | null | undefined,
+  ): Promise<number | null> {
+    if (user.role === Role.MANAGER) return user.id;
+    const { required, items } = await this.accountOwners(user);
+    if (managerId == null) {
+      if (required)
+        throw new UnprocessableEntityException(
+          'выберите менеджера, за которым закрепить аккаунт',
+        );
+      return null;
+    }
+    if (!items.some((m) => m.id === managerId))
+      throw new UnprocessableEntityException(
+        required ? 'этот менеджер не из вашей команды' : 'нет такого менеджера',
+      );
+    return managerId;
   }
 
   async accountsFilter(user: DashboardUser): Promise<number[] | null> {

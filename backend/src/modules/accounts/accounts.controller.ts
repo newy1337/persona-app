@@ -97,6 +97,14 @@ export class AccountsController {
     res.sendFile(path);
   }
 
+  @ApiOperation({
+    summary: 'Менеджеры, за которыми можно закрепить новый аккаунт',
+  })
+  @Get('tg-accounts/owners')
+  owners(@CurrentUser() user: DashboardUser) {
+    return this.scope.accountOwners(user);
+  }
+
   @ApiOperation({ summary: 'List accounts' })
   @ApiQuery({ name: 'status', required: false })
   @ApiQuery({ name: 'persona_id', required: false })
@@ -127,15 +135,17 @@ export class AccountsController {
   @HttpCode(200)
   @UsePipes(ValidationPipe)
   add(@Body() dto: AddTelegramAccountDto, @CurrentUser() user: DashboardUser) {
-    // Аккаунт закрепляется только за менеджером; тимлид и хед добавляют свободный.
-    const owner = user.role === Role.MANAGER ? user.id : null;
     return this.audit.wrap(
       {
         userId: user.id,
         action: 'tg_account.add',
         resource: `tg_account:${dto.phone_e164}`,
       },
-      () => this.accounts.add(dto, owner),
+      async () =>
+        this.accounts.add(
+          dto,
+          await this.scope.ownerForNewAccount(user, dto.manager_id),
+        ),
     );
   }
 
@@ -144,14 +154,17 @@ export class AccountsController {
   @HttpCode(200)
   @UsePipes(ValidationPipe)
   addVk(@Body() dto: AddVkAccountDto, @CurrentUser() user: DashboardUser) {
-    const owner = user.role === Role.MANAGER ? user.id : null;
     return this.audit.wrap(
       {
         userId: user.id,
         action: 'tg_account.add',
         resource: `vk_account:${dto.login}`,
       },
-      () => this.accounts.addVk(dto, owner),
+      async () =>
+        this.accounts.addVk(
+          dto,
+          await this.scope.ownerForNewAccount(user, dto.manager_id),
+        ),
     );
   }
 
