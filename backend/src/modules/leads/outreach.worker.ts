@@ -364,7 +364,11 @@ export class OutreachWorker implements OnModuleInit {
         resolved = await byPhone();
       if (resolved.kind === 'retry') {
         const until = now + IMPORT_THROTTLE_BACKOFF_S;
-        await this.limitAccount(accountId, until, 'лимит импорта контактов');
+        await this.limitAccount(
+          accountId,
+          until,
+          `лимит импорта контактов: Telegram отложил номер ${candidate.phoneE164} (лид #${candidate.id})`,
+        );
         await this.releaseLead(
           candidate.id,
           accountId,

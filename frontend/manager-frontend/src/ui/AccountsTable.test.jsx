@@ -52,3 +52,15 @@ test('в списке диалогов: точный ЧС и вероятный 
   const marks = [...host.querySelectorAll('[data-testid="blocked-mark"]')].map((m) => m.textContent);
   expect(marks).toEqual(['ЧС: заблокировал(а) нас', 'Вероятно, ЧС']);
 });
+
+test('ограниченный аккаунт — причина и срок прямо в строке', async () => {
+  await act(async () => root.render(
+    <AccountsTable
+      rows={[{ id: 1, status: 'active', username: 'a1', flood_until: 2000, flood_reason: 'лимит импорта контактов: Telegram отложил номер +79001234567 (лид #11174)' }]}
+      alive={{ 1: true }}
+      onEdit={noop} onLogin={noop} onProxy={noop} onStatus={noop} onClearFlood={noop} onDelete={noop}
+      helpers={{ ...helpers, date: () => '30.10 14:00' }}
+    />,
+  ));
+  expect(host.querySelector('[data-testid="flood-reason"]').textContent).toBe('Ограничен: лимит импорта контактов: Telegram отложил номер +79001234567 (лид #11174) · до 30.10 14:00');
+});
