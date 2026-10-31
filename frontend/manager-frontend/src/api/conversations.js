@@ -70,6 +70,11 @@ export function editMessage(chatId, messageId, text) {
   return api.put(`/api/conversations/${chatId}/messages/${messageId}`, { text });
 }
 
+/** История чата: кто и что делал — [{ ts, who, text, failed? }], новые сверху. */
+export function getChatJournal(chatId) {
+  return api.get(`/api/conversations/${chatId}/journal`).then((r) => r.items ?? []);
+}
+
 export function getMediaGallery(chatId) {
   return api.get(`/api/conversations/${chatId}/media-gallery`).then((r) => r.items ?? []);
 }

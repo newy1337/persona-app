@@ -11,6 +11,7 @@ import ClientAvatar, { ACTIVITY_LABEL } from '../../components/ClientAvatar/Clie
 import { accountLostLabel, presenceLabel, whenLabel } from '../../utils/telegramStatus';
 import VoicePlayer from '../../components/VoicePlayer/VoicePlayer';
 import MediaGallery from '../../components/MediaGallery/MediaGallery';
+import ChatJournal from '../../components/ChatJournal/ChatJournal';
 import EditableValue from '../../components/EditableValue/EditableValue';
 import {
   goalRows,
@@ -54,6 +55,7 @@ import {
   getInboundMedia,
   downloadChatHtml,
   getMediaGallery,
+  getChatJournal,
   markListened as markListenedApi,
   editMessage,
   sendAlbum,
@@ -233,6 +235,7 @@ function ConversationPage() {
   const seenCountRef = useRef(0);
   const [editing, setEditing] = useState(null);
   const [gallery, setGallery] = useState(null);
+  const [journal, setJournal] = useState(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [reactFor, setReactFor] = useState(null);
@@ -1105,6 +1108,23 @@ function ConversationPage() {
             <button
               type="button"
               className={styles.exportBtn}
+              title="Кто и когда включал и выключал бота, менял этап, писал клиенту"
+              data-testid="open-journal"
+              onClick={() => {
+                setJournal({ items: null, loading: true, error: null });
+                getChatJournal(id)
+                  .then((items) => setJournal({ items, loading: false, error: null }))
+                  .catch((e) => setJournal({ items: [], loading: false, error: e.message }));
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+              </svg>
+              <span className={styles.exportLabel}>История</span>
+            </button>
+            <button
+              type="button"
+              className={styles.exportBtn}
               disabled={busy}
               data-testid="archive-toggle"
               title={data.archived
@@ -1370,6 +1390,15 @@ function ConversationPage() {
                 </div>
               )}
             </div>
+
+            {journal && (
+              <ChatJournal
+                items={journal.items}
+                loading={journal.loading}
+                error={journal.error}
+                onClose={() => setJournal(null)}
+              />
+            )}
 
             {gallery && (
               <MediaGallery

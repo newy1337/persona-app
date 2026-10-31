@@ -128,6 +128,18 @@ export class ConversationsController {
     );
   }
 
+  @ApiOperation({
+    summary: 'История чата: кто включал и выключал бота, этапы, правки',
+  })
+  @Get(':chatId/journal')
+  async journal(
+    @Param('chatId', ParseIntPipe) chatId: number,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    await this.scope.requireChatOwned(user, chatId);
+    return this.conversations.journal(chatId);
+  }
+
   @ApiOperation({ summary: 'Все фото и видео чата — вкладка «Медиа»' })
   @Get(':chatId/media-gallery')
   async mediaGallery(

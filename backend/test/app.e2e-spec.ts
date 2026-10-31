@@ -4475,6 +4475,80 @@ describe('Manager panel API (e2e)', () => {
       await prisma.contact.delete({ where: { chatId: BigInt(orphan) } });
     });
 
+    it('история чата: кто включал и выключал бота и менял этап, системные выключения — тоже', async () => {
+      const prisma = app.get(PrismaService);
+      const chatId = 777000391;
+      const h = { Authorization: `Bearer ${token}` };
+      const acc = await request(app.getHttpServer())
+        .post('/api/tg-accounts')
+        .set(h)
+        .send({ phone_e164: '+79001110377', persona_id: 'nastya' })
+        .expect(200);
+      await prisma.contact.create({
+        data: {
+          chatId: BigInt(chatId),
+          accountId: acc.body.id,
+          createdAt: Math.floor(Date.now() / 1000),
+        },
+      });
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${chatId}/pause`)
+        .set(h)
+        .expect(200);
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${chatId}/resume`)
+        .set(h)
+        .expect(200);
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${chatId}/deal-stage`)
+        .set(h)
+        .send({ stage: 'soglas', note: '' })
+        .expect(200);
+      await prisma.funnelEvent.create({
+        data: {
+          personaId: 'nastya',
+          chatId: BigInt(chatId),
+          eventType: 'conversation_paused',
+          eventMeta: JSON.stringify({
+            reason: 'human_takeover:клиент написал «Биржа» — ответьте сами',
+            actor: 'bot:trigger',
+          }),
+          ts: Math.floor(Date.now() / 1000) + 5,
+        },
+      });
+      const journal = await request(app.getHttpServer())
+        .get(`/api/conversations/${chatId}/journal`)
+        .set(h)
+        .expect(200);
+      const texts = journal.body.items.map((i: any) => `${i.who}: ${i.text}`);
+      expect(texts[0]).toBe(
+        'Бот: Бот отдал чат менеджеру: клиент написал «Биржа» — ответьте сами',
+      );
+      expect(texts).toEqual(
+        expect.arrayContaining([
+          'admin: Выключил(а) бота',
+          'admin: Включил(а) бота',
+          'admin: Этап сделки: Соглас',
+        ]),
+      );
+      // Ручные включения — один раз, из журнала панели, а не ещё и из воронки.
+      expect(texts.filter((t: string) => t.includes('Включил'))).toHaveLength(
+        1,
+      );
+      expect(texts.some((t: string) => t.startsWith('Система: Бот вкл'))).toBe(
+        false,
+      );
+
+      await prisma.funnelEvent.deleteMany({
+        where: { chatId: BigInt(chatId) },
+      });
+      await app.get(TelegramService)['history'].wipeChat(chatId);
+      await request(app.getHttpServer())
+        .delete(`/api/tg-accounts/${acc.body.id}`)
+        .set(h)
+        .expect(200);
+    });
+
     it('ответ клиента на сообщение: номер в истории и в панели, цитата — для модели', async () => {
       const prisma = app.get(PrismaService);
       const brain = app.get(REPLY_BRAIN_TOKEN) as any;

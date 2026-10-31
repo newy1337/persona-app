@@ -1,0 +1,104 @@
+@use '../../styles/variables' as *;
+@use '../../styles/ui' as *;
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100%);
+  height: 100%;
+  background: $bg-main;
+  border-left: 1px solid $border-subtle;
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.4);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 12px;
+  border-bottom: 1px solid $border-subtle;
+}
+
+.title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: $text-primary;
+}
+
+.close {
+  @include icon-btn;
+}
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 16px 24px;
+}
+
+.day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 12px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: $text-secondary;
+  background: $bg-main;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 2px 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid $border-subtle;
+  font-size: 13px;
+}
+
+.time {
+  grid-row: span 2;
+  color: $text-secondary;
+  font-variant-numeric: tabular-nums;
+}
+
+.who {
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.auto {
+  color: $text-secondary;
+}
+
+.text {
+  color: $text-primary;
+  overflow-wrap: anywhere;
+}
+
+.failed {
+  color: $status-red;
+}
+
+.empty,
+.error {
+  margin: 40px 0;
+  text-align: center;
+  font-size: 13px;
+  color: $text-secondary;
+}
+
+.error {
+  color: $status-red;
+}

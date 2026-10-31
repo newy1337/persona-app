@@ -73,6 +73,7 @@ model DashboardAuditLog {
   user DashboardUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([ts], map: "idx_dashboard_audit_ts")
+  @@index([resource, id], map: "idx_dashboard_audit_resource")
   @@map("dashboard_audit_log")
 }
 

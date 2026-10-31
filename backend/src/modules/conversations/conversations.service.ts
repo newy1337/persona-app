@@ -62,8 +62,10 @@ import {
 } from 'src/domain/deal-stage';
 import { ManagerAttributionService } from 'src/shared/manager-attribution.service';
 import { ChannelRegistry } from 'src/channels/registry';
+import { journalItems } from './journal';
 
 const DETAIL_LIMIT = 500;
+const JOURNAL_LIMIT = 300;
 const LIST_LIMIT = 200;
 const EXPORT_MESSAGE_LIMIT = 5000;
 const GALLERY_LIMIT = 1000;
@@ -109,6 +111,50 @@ export class ConversationsService {
     @Inject(forwardRef(() => REPLY_BRAIN)) private brain: ReplyBrain,
     private attribution: ManagerAttributionService,
   ) {}
+
+  /**
+   * История чата: кто и что делал в панели (журнал действий) и когда бот
+   * включался и выключался сам (события воронки). Новые сверху.
+   */
+  async journal(chatId: number) {
+    const id = toChatId(chatId);
+    const leads = await this.prisma.lead.findMany({
+      where: { chatId: id },
+      select: { id: true },
+    });
+    const resources = [`chat:${chatId}`, ...leads.map((l) => `lead:${l.id}`)];
+    const [audit, funnel] = await Promise.all([
+      this.prisma.dashboardAuditLog.findMany({
+        where: { resource: { in: resources } },
+        orderBy: { id: 'desc' },
+        take: JOURNAL_LIMIT,
+        select: {
+          ts: true,
+          action: true,
+          payloadJson: true,
+          result: true,
+          error: true,
+          user: { select: { username: true } },
+        },
+      }),
+      this.prisma.funnelEvent.findMany({
+        where: {
+          chatId: id,
+          eventType: {
+            in: [
+              'conversation_paused',
+              'conversation_resumed',
+              'outreach_sent',
+            ],
+          },
+        },
+        orderBy: { ts: 'desc' },
+        take: JOURNAL_LIMIT,
+        select: { ts: true, eventType: true, eventMeta: true },
+      }),
+    ]);
+    return { items: journalItems(audit, funnel).slice(0, JOURNAL_LIMIT) };
+  }
 
   private leadScore(facts: LeadFacts): number | null {
     const v = facts['lead_score'];

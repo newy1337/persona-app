@@ -28,6 +28,7 @@ vi.mock('../../api/conversations', () => ({
   uploadFile: vi.fn(async (_id, file) => ({ path: `/tmp/${file?.name ?? 'x'}`, kind: file?.name?.endsWith('.pdf') ? 'document' : 'photo', bytes: 1 })),
   sendAlbum: vi.fn(async () => ({ ok: true })),
   getMediaGallery: vi.fn(async () => []),
+  getChatJournal: vi.fn(async () => []),
   setConversationHidden: vi.fn(async () => ({ ok: true })),
   setDealStage: vi.fn(async () => ({ ok: true })),
   downloadChatHtml: vi.fn(async () => 'x.html'),
@@ -71,7 +72,7 @@ vi.mock('../../api/client', () => ({
 
 import ConversationPage, { TOGGLE_COOLDOWN_MS } from './ConversationPage';
 import { PanelUX } from '../../ui/PanelUX';
-import { getConversationById, getInboundMedia, getPauseStatus, sendAlbum, sendAttachment, getMediaGallery, setConversationHidden, setDealStage } from '../../api/conversations';
+import { getConversationById, getInboundMedia, getPauseStatus, sendAlbum, sendAttachment, getMediaGallery, getChatJournal, setConversationHidden, setDealStage } from '../../api/conversations';
 
 let container = null;
 let root = null;
@@ -1027,6 +1028,27 @@ describe('несколько фото, «Медиа», архив и «вниз�
     expect(dialog).toBeTruthy();
     expect(dialog.querySelectorAll('img[src="/api/files/5"]')).toHaveLength(1);
     expect(dialog.textContent).toContain('Кружки');
+  });
+
+  it('«История» показывает, кто и когда включал и выключал бота', async () => {
+    getChatJournal.mockResolvedValueOnce([
+      { ts: 1793441634, who: 'Rybulichka', text: 'Выключил(а) бота' },
+      { ts: 1793438400, who: 'Система', text: 'Бот выключен: Проверьте доставку' },
+      { ts: 1793435738, who: 'Rybulichka', text: 'Включил(а) бота' },
+    ]);
+    await renderPage();
+    await act(async () => {
+      container.querySelector('[data-testid="open-journal"]').click();
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const dialog = document.querySelector('[aria-label="История чата"]');
+    expect(dialog).toBeTruthy();
+    const rows = [...dialog.querySelectorAll('[data-testid="journal-row"]')].map((r) => r.textContent);
+    expect(rows).toEqual(['13:13RybulichkaВыключил(а) бота', '12:20СистемаБот выключен: Проверьте доставку', '11:35RybulichkaВключил(а) бота']);
+    expect(dialog.textContent).toContain('31 октября 2026');
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
+    expect(document.querySelector('[aria-label="История чата"]')).toBeNull();
   });
 
   it('«Кружком»: видео уходит видеосообщением', async () => {
