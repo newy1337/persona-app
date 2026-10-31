@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { appConfig } from 'src/config/app.config';
 import { ClockService } from 'src/shared/clock.service';
+import { alertConfigured, sendTelegramAlert } from 'src/shared/telegram-alert';
 import { BalanceService, type OpenRouterBalance } from './balance.service';
 
 const HOUR = 3600;
@@ -32,9 +33,7 @@ export class BalanceAlertService {
   ) {}
 
   get configured(): boolean {
-    return Boolean(
-      appConfig.balanceAlert.chatId && appConfig.balanceAlert.botToken,
-    );
+    return alertConfigured();
   }
 
   @Cron(CronExpression.EVERY_10_MINUTES)
@@ -81,29 +80,10 @@ export class BalanceAlertService {
   }
 
   private async send(text: string): Promise<void> {
-    const { botToken, chatId } = appConfig.balanceAlert;
-    const res = await fetch(
-      `https://api.telegram.org/bot${botToken}/sendMessage`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          disable_web_page_preview: true,
-        }),
-        signal: AbortSignal.timeout(15_000),
-      },
+    await sendTelegramAlert(text);
+    this.log.log(
+      `баланс OpenRouter: отправлено в чат ${appConfig.balanceAlert.chatId}`,
     );
-    const body = (await res.json().catch(() => null)) as {
-      ok?: boolean;
-      description?: string;
-    } | null;
-    if (!res.ok || !body?.ok)
-      throw new Error(
-        `Telegram не принял сообщение: ${body?.description ?? `HTTP ${res.status}`}`,
-      );
-    this.log.log(`баланс OpenRouter: отправлено в чат ${chatId}`);
   }
 }
 
