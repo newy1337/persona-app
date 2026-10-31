@@ -52,6 +52,19 @@ export class ProxyAlertService {
     }
   }
 
+  /** «В сети», но приём сбоит из-за прокси — для предупреждения это как не в сети. */
+  private state(id: number, channel: string) {
+    if (!this.channels.isOnline(id))
+      return {
+        online: false,
+        reason: this.channels.offlineReason(id, channel),
+      };
+    const trouble = this.channels.connectionTrouble(id, channel);
+    return trouble
+      ? { online: false, reason: trouble }
+      : { online: true, reason: null };
+  }
+
   async probes(): Promise<AccountProbe[]> {
     const rows = await this.prisma.channelAccount.findMany({
       where: { status: 'active' },
@@ -82,8 +95,7 @@ export class ProxyAlertService {
         proxy,
         manager: a.manager?.user.username ?? null,
         region: a.manager?.user.regionCode ?? null,
-        online: this.channels.isOnline(a.id),
-        reason: this.channels.offlineReason(a.id, a.channel),
+        ...this.state(a.id, a.channel),
       };
     });
   }

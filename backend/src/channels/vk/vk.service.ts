@@ -72,6 +72,8 @@ const CONTACTS_MAX = 5000;
 const INVALID_USER = 113;
 /** «Печатает» VK держит 5–10 с; переставляем чаще. */
 const TYPING_REFRESH_MS = 5_000;
+/** Столько сбоев приёма подряд — уже не случайность, а проблема связи. */
+const TROUBLE_FAILURES = 3;
 /** Событие «печатает» старше — из догрузки, не живое. */
 const TYPING_FRESH_S = 5;
 const INBOUND_MAX_BYTES = 50 * 1024 * 1024;
@@ -91,6 +93,8 @@ interface LiveVk {
   plain: Set<number>;
   /** Есть контакты без связи с настоящим id или завели новый — перечитать. */
   contactsStale: boolean;
+  /** Приём сообщений: по его сбоям видно, что прокси сбоит у «живого» аккаунта. */
+  poll?: VkLongPoll;
 }
 
 /**
@@ -171,6 +175,16 @@ export class VkService
         ? `переподключается — прошлая попытка: ${f.reason}`
         : 'подключается';
     return f ? f.reason : 'не подключён';
+  }
+
+  /**
+   * Аккаунт в сети, но приём сообщений сбоит подряд (прокси рвёт соединения,
+   * таймауты): входящие не приходят. null — всё в порядке.
+   */
+  connectionTrouble(accountId: number): string | null {
+    const poll = this.live.get(accountId)?.poll;
+    if (!poll || poll.failures < TROUBLE_FAILURES) return null;
+    return `в сети, но прокси или связь с VK сбоят: приём сообщений падает ${poll.failures} раз подряд (${(poll.lastError ?? '').slice(0, 120)})`;
   }
 
   async reviveOffline(): Promise<void> {
@@ -333,6 +347,7 @@ export class VkService
       join(appConfig.dataDir, 'vk_longpoll', `${entry.id}.json`),
     );
     const lp = new VkLongPoll(entry.api, file, this.log);
+    entry.poll = lp;
     const committer = new CursorCommitter(file);
     let beat = 0;
     try {

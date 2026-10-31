@@ -77,6 +77,11 @@ export class ChannelRegistry implements OutboundTransport {
     return t.offlineReason(accountId);
   }
 
+  connectionTrouble(accountId: number, channel: string): string | null {
+    const t = isChannel(channel) ? this.transports.get(channel) : undefined;
+    return t?.connectionTrouble?.(accountId) ?? null;
+  }
+
   async ownChatIds(): Promise<Set<number>> {
     const sets = await Promise.all(this.all().map((t) => t.ownChatIds()));
     return new Set(sets.flatMap((s) => [...s]));

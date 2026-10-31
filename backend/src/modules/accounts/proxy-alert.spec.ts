@@ -34,6 +34,11 @@ describe('предупреждения о нерабочих прокси', () =
       false,
     );
     expect(isProxyTrouble(null)).toBe(false);
+    expect(
+      isProxyTrouble(
+        'в сети, но прокси или связь с VK сбоят: приём сообщений падает 4 раз подряд (Proxy rejected the CONNECT tunnel with status code 504.)',
+      ),
+    ).toBe(true);
   });
 
   it('пишет через 15 минут, один раз; напоминает раз в 12 часов; сообщает о возврате', () => {

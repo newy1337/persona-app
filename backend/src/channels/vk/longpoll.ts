@@ -91,6 +91,9 @@ export class VkLongPoll {
   private pts: number | null = null;
   /** Что догрузить первым делом: курсор до разрыва. */
   private gap: Cursor | null = null;
+  /** Сбои подряд и последний из них: аккаунт «в сети», но приём стоит. */
+  failures = 0;
+  lastError: string | null = null;
 
   constructor(
     private readonly api: VkApi,
@@ -225,25 +228,27 @@ export class VkLongPoll {
    * курсор; терминальные ошибки (сессия умерла, капча, бан) — наружу.
    */
   async *batches(signal: AbortSignal): AsyncGenerator<LpBatch> {
-    let failures = 0;
+    this.failures = 0;
     while (!signal.aborted) {
       let batch: LpBatch;
       try {
         batch = await this.next();
       } catch (e) {
         if (e instanceof VkSessionExpired || isTerminal(e)) throw e;
-        failures++;
+        this.failures++;
+        this.lastError = (e as Error).message;
         const delay = Math.min(
-          REBIND_DELAY_MS * 2 ** (failures - 1),
+          REBIND_DELAY_MS * 2 ** (this.failures - 1),
           REBIND_MAX_MS,
         );
         this.log.warn(
-          `long poll сбой ${failures} подряд — повтор через ${Math.round(delay / 1000)} с: ${(e as Error).message}`,
+          `long poll сбой ${this.failures} подряд — повтор через ${Math.round(delay / 1000)} с: ${(e as Error).message}`,
         );
         await sleep(delay, signal);
         continue;
       }
-      failures = 0;
+      this.failures = 0;
+      this.lastError = null;
       yield batch;
     }
   }

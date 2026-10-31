@@ -32,6 +32,8 @@ export interface ChannelTransport extends OutboundTransport {
   onlineIds(): number[];
   /** Почему аккаунт не в сети; null — в сети. */
   offlineReason(accountId: number): string | null;
+  /** В сети, но связь сбоит (прокси); null — порядок или канал не умеет. */
+  connectionTrouble?(accountId: number): string | null;
   connect(accountId: number): Promise<void>;
   /** hold — отключили намеренно, сторож не подключит обратно. */
   disconnect(accountId: number, opts?: { hold?: boolean }): Promise<void>;
