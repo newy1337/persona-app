@@ -49,6 +49,18 @@ export function oldestPerChat<
   return [...best.values()];
 }
 
+/**
+ * Telegram отказал навсегда — так настроил собеседник. Текст для менеджера
+ * вместо «не удалось подтвердить доставку»; null — сбой, можно повторить.
+ */
+export function refusalReason(error: string): string | null {
+  if (/VOICE_MESSAGES_FORBIDDEN/.test(error))
+    return 'собеседник запретил в Telegram присылать ему голосовые и кружки (настройка приватности). Голосовое не отправлено — напишите текстом или пришлите фото.';
+  if (/USER_PRIVACY_RESTRICTED|PRIVACY_PREMIUM_REQUIRED/.test(error))
+    return 'собеседник ограничил в Telegram, кто может ему писать. Сообщение не отправлено.';
+  return null;
+}
+
 /** Сколько чатов одновременно получают ручные сообщения. */
 const MANUAL_PARALLEL = 10;
 
@@ -267,7 +279,17 @@ export class RelayWorker implements OnModuleInit {
       await this.history.markManualReplySent(reply.id);
     } catch (e) {
       const error = String(e?.message ?? e);
-      if (
+      const refused = refusalReason(error);
+      if (refused) {
+        // Отказ навсегда (настройки собеседника): повтор бесполезен, причина — словами.
+        await this.history.reviewManualReply(reply.id, refused);
+        await this.pause.pause(
+          chatId,
+          TakeoverReason.HOLD,
+          'system:manual_delivery',
+          { reasonText: `Ручное сообщение №${reply.id}: ${refused}` },
+        );
+      } else if (
         (claimed.kind === 'text' ||
           delivery.ids?.length ||
           !delivery.dispatchedAt) &&

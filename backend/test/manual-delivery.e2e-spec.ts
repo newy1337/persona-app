@@ -129,6 +129,34 @@ describe('manual outbox recovery against a migrated database', () => {
     expect((await row(id)).status).toBe('needs_review');
     expect(telegram.sendMedia).toHaveBeenCalledTimes(1);
   });
+  it('голосовое, запрещённое настройками собеседника: причина словами, без повторов', async () => {
+    const id = await history.enqueueManualReply(1, '', now, {
+      kind: 'voice',
+      filePath: '/synthetic/voice.ogg',
+    });
+    telegram.sendMedia.mockRejectedValue(
+      Error('400: VOICE_MESSAGES_FORBIDDEN (caused by messages.SendMedia)'),
+    );
+    await worker.tick();
+    now += 600;
+    await worker.tick();
+    const stored = await row(id);
+    expect(stored.status).toBe('needs_review');
+    expect(stored.error).toContain(
+      'запретил в Telegram присылать ему голосовые',
+    );
+    expect(telegram.sendMedia).toHaveBeenCalledTimes(1);
+    expect(pause.pause).toHaveBeenCalledWith(
+      1,
+      expect.anything(),
+      'system:manual_delivery',
+      {
+        reasonText: expect.stringContaining(
+          `Ручное сообщение №${id}: собеседник запретил`,
+        ),
+      },
+    );
+  });
   it('sends five new texts and a reaction past an old review without resending its album or resuming the bot', async () => {
     const old = await db.pendingReply.create({
       data: {
