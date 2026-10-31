@@ -406,6 +406,20 @@ describe('manual outbox recovery against a migrated database', () => {
       );
     });
 
+    it('собеседник закрыл личку VK: причина словами с первого раза, без пяти повторов', async () => {
+      const id = await history.enqueueManualReply(vkChat, 'привет', now);
+      vk.sendText.mockRejectedValue(
+        new Error(
+          'собеседник закрыл личные сообщения — сообщение не доставлено',
+        ),
+      );
+      await vkWorker().tick();
+      const stored = (await row(id))!;
+      expect(stored.status).toBe('needs_review');
+      expect(stored.error).toContain('закрыл личные сообщения во ВКонтакте');
+      expect(vk.sendText).toHaveBeenCalledTimes(1);
+    });
+
     it('сбой доставки в VK просит проверить ВКонтакте, а не Telegram', async () => {
       const id = await history.enqueueManualReply(vkChat, 'не дойдёт', now);
       vk.sendText.mockRejectedValue(Error('vk down'));
