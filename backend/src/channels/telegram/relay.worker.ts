@@ -49,10 +49,15 @@ export function oldestPerChat<
   return [...best.values()];
 }
 
+/** Сколько чатов одновременно получают ручные сообщения. */
+const MANUAL_PARALLEL = 10;
+
 @Injectable()
 export class RelayWorker implements OnModuleInit {
   private readonly log = new Logger(RelayWorker.name);
   private running = false;
+  /** чаты, в которые сейчас уходят ручные сообщения */
+  private readonly sending = new Set<string>();
 
   constructor(
     private history: HistoryService,
@@ -84,6 +89,7 @@ export class RelayWorker implements OnModuleInit {
   async tick() {
     if (this.running) return;
     this.running = true;
+    let manual: Promise<void>[] = [];
     try {
       await this.history.recoverManualReplies();
       for (const row of oldestPerChat(await this.history.manualReviewRows())) {
@@ -96,7 +102,9 @@ export class RelayWorker implements OnModuleInit {
           },
         );
       }
-      await this.deliverManualReplies();
+      manual = this.startManualReplies(
+        await this.history.pendingManualReplies(),
+      );
       await this.deliverRelays();
       await this.pause.autoResumeDue();
     } catch (e) {
@@ -104,149 +112,189 @@ export class RelayWorker implements OnModuleInit {
     } finally {
       this.running = false;
     }
+    // Следующий тик не ждёт долгих отправок: берёт новые чаты.
+    await Promise.all(manual);
   }
 
-  private async deliverManualReplies() {
-    for (const reply of await this.history.pendingManualReplies()) {
-      const chatId = Number(reply.chatId);
-      const claimed = await this.history.claimManualReply(reply.id);
-      if (!claimed) continue;
-      let delivery: any;
-      try {
-        delivery = JSON.parse(claimed.delivery ?? 'null');
-      } catch {
-        delivery = null;
+  /**
+   * Ручные сообщения: чаты — параллельно (до MANUAL_PARALLEL), внутри чата —
+   * по порядку. Иначе одна долгая отправка (имитация набора, мёртвый прокси)
+   * держала очередь всех менеджеров минутами. Чат, который ещё отправляется,
+   * следующий тик не трогает.
+   */
+  private startManualReplies(
+    rows: Awaited<ReturnType<HistoryService['pendingManualReplies']>>,
+  ): Promise<void>[] {
+    const byChat = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const key = String(row.chatId);
+      byChat.set(key, [...(byChat.get(key) ?? []), row]);
+    }
+    const started: Promise<void>[] = [];
+    for (const [key, replies] of byChat) {
+      if (this.sending.has(key)) continue;
+      if (this.sending.size >= MANUAL_PARALLEL) break;
+      this.sending.add(key);
+      started.push(
+        (async () => {
+          try {
+            for (const reply of replies) await this.deliverManualReply(reply);
+          } catch (e) {
+            this.log.error(
+              `manual delivery failed chat=${key}: ${e?.message ?? e}`,
+            );
+          } finally {
+            this.sending.delete(key);
+          }
+        })(),
+      );
+    }
+    return started;
+  }
+
+  /** Все ждущие ручные сообщения — до конца (тесты, ручной прогон). */
+  async deliverManualReplies() {
+    await Promise.all(
+      this.startManualReplies(await this.history.pendingManualReplies()),
+    );
+  }
+
+  private async deliverManualReply(
+    reply: Awaited<ReturnType<HistoryService['pendingManualReplies']>>[number],
+  ) {
+    const chatId = Number(reply.chatId);
+    const claimed = await this.history.claimManualReply(reply.id);
+    if (!claimed) return;
+    let delivery: any;
+    try {
+      delivery = JSON.parse(claimed.delivery ?? 'null');
+    } catch {
+      delivery = null;
+    }
+    delivery ??= { version: 1, randomId: deliveryRandomId() };
+    const automated = claimed.source.startsWith('bot:voicer:');
+    const voicer = automated || claimed.source.startsWith('operator:voicer:');
+    const vk = this.vkFor(chatId);
+    // VK не принимает из панели видео, голосовые, файлы, стикеры и альбомы:
+    // повторять бессмысленно — сразу на проверку с понятной причиной.
+    if (vk && !VK_KINDS.has(claimed.kind) && !delivery.dispatchedAt) {
+      const label = (KIND_LABEL[claimed.kind] ?? claimed.kind).replace(
+        /[[\]]/g,
+        '',
+      );
+      const reason = `ВКонтакте пока не умеет отправлять из панели «${claimed.kind === 'album' ? 'альбом' : label}» — отправьте текстом или фото. Сообщение не отправлено.`;
+      await this.history.reviewManualReply(reply.id, reason);
+      await this.pause.pause(
+        chatId,
+        TakeoverReason.HOLD,
+        'system:manual_delivery',
+        { reasonText: `Ручное сообщение №${reply.id}: ${reason}` },
+      );
+      this.log.warn(
+        `manual reply ${reply.id} chat=${chatId}: ${claimed.kind} is not supported by VK`,
+      );
+      if (voicer) await this.voiceDelivery?.syncReply(reply.id);
+      return;
+    }
+    try {
+      if (voicer && !delivery.ids?.length) {
+        try {
+          if (!this.voiceDelivery)
+            throw new Error('Сервис отправки голосовых недоступен');
+          await this.voiceDelivery.beforeDispatch(reply.id);
+        } catch (e) {
+          await this.history.failManualReply(reply.id, String(e?.message ?? e));
+          return;
+        }
+        if (!automated) await this.brain.noteOperatorQueued?.(chatId);
+        if (!automated && (await this.voiceDelivery!.pauseOnManual()))
+          await this.pause.pause(
+            chatId,
+            TakeoverReason.MANUAL_TAKEOVER,
+            'manager:manual_message',
+          );
       }
-      delivery ??= { version: 1, randomId: deliveryRandomId() };
-      const automated = claimed.source.startsWith('bot:voicer:');
-      const voicer = automated || claimed.source.startsWith('operator:voicer:');
-      const vk = this.vkFor(chatId);
-      // VK не принимает из панели видео, голосовые, файлы, стикеры и альбомы:
-      // повторять бессмысленно — сразу на проверку с понятной причиной.
-      if (vk && !VK_KINDS.has(claimed.kind) && !delivery.dispatchedAt) {
-        const label = (KIND_LABEL[claimed.kind] ?? claimed.kind).replace(
-          /[[\]]/g,
-          '',
+      delivery.attempts = (delivery.attempts ?? 0) + 1;
+      await this.history.saveManualDelivery(reply.id, delivery);
+      if (!delivery.ids?.length) {
+        const dispatch = async () => {
+          delivery.dispatchedAt = this.clock.ts();
+          await this.history.saveManualDelivery(reply.id, delivery);
+        };
+        if (claimed.kind === 'text') {
+          await (vk ?? this.telegram).sendText(chatId, [claimed.text], {
+            accountId: claimed.accountId,
+            replyTo: claimed.replyTo,
+            randomIds: [delivery.randomId],
+            onDispatch: dispatch,
+            onPart: async (_i, id) => {
+              delivery.ids = [id];
+              delivery.confirmedAt = this.clock.ts();
+              await this.history.saveManualDelivery(reply.id, delivery);
+            },
+          });
+        } else {
+          if (!voicer) await dispatch();
+          delivery.ids = await this.deliverMedia(
+            chatId,
+            { ...claimed, randomId: delivery.randomId },
+            voicer
+              ? async () => {
+                  await this.voiceDelivery!.beforeDispatch(reply.id);
+                  await dispatch();
+                }
+              : undefined,
+          );
+          delivery.confirmedAt = this.clock.ts();
+          await this.history.saveManualDelivery(reply.id, delivery);
+        }
+      }
+      await this.recordDelivery(
+        chatId,
+        voicer
+          ? {
+              ...claimed,
+              text: await this.voiceDelivery!.historyText(reply.id),
+            }
+          : claimed,
+        delivery.ids,
+        delivery.confirmedAt ?? this.clock.ts(),
+        automated
+          ? ((await this.voiceDelivery!.replyContext(reply.id))?.task
+              .autoReplyId ?? undefined)
+          : undefined,
+      );
+      await this.history.markManualReplySent(reply.id);
+    } catch (e) {
+      const error = String(e?.message ?? e);
+      if (
+        (claimed.kind === 'text' ||
+          delivery.ids?.length ||
+          !delivery.dispatchedAt) &&
+        (delivery.attempts ?? 0) < 5
+      ) {
+        await this.history.retryManualReply(
+          reply.id,
+          error,
+          this.clock.ts() + 30 * Math.max(1, delivery.attempts ?? 1),
         );
-        const reason = `ВКонтакте пока не умеет отправлять из панели «${claimed.kind === 'album' ? 'альбом' : label}» — отправьте текстом или фото. Сообщение не отправлено.`;
-        await this.history.reviewManualReply(reply.id, reason);
+      } else {
+        await this.history.reviewManualReply(
+          reply.id,
+          `Не удалось подтвердить доставку. Проверьте ${channelTitle(chatId)}, затем включите бота. Сообщение не будет повторено автоматически.`,
+        );
         await this.pause.pause(
           chatId,
           TakeoverReason.HOLD,
           'system:manual_delivery',
-          { reasonText: `Ручное сообщение №${reply.id}: ${reason}` },
+          {
+            reasonText: `Проверьте доставку ручного сообщения №${reply.id} в ${channelTitle(chatId)}, затем включите бота`,
+          },
         );
-        this.log.warn(
-          `manual reply ${reply.id} chat=${chatId}: ${claimed.kind} is not supported by VK`,
-        );
-        if (voicer) await this.voiceDelivery?.syncReply(reply.id);
-        continue;
       }
-      try {
-        if (voicer && !delivery.ids?.length) {
-          try {
-            if (!this.voiceDelivery)
-              throw new Error('Сервис отправки голосовых недоступен');
-            await this.voiceDelivery.beforeDispatch(reply.id);
-          } catch (e) {
-            await this.history.failManualReply(
-              reply.id,
-              String(e?.message ?? e),
-            );
-            continue;
-          }
-          if (!automated) await this.brain.noteOperatorQueued?.(chatId);
-          if (!automated && (await this.voiceDelivery!.pauseOnManual()))
-            await this.pause.pause(
-              chatId,
-              TakeoverReason.MANUAL_TAKEOVER,
-              'manager:manual_message',
-            );
-        }
-        delivery.attempts = (delivery.attempts ?? 0) + 1;
-        await this.history.saveManualDelivery(reply.id, delivery);
-        if (!delivery.ids?.length) {
-          const dispatch = async () => {
-            delivery.dispatchedAt = this.clock.ts();
-            await this.history.saveManualDelivery(reply.id, delivery);
-          };
-          if (claimed.kind === 'text') {
-            await (vk ?? this.telegram).sendText(chatId, [claimed.text], {
-              accountId: claimed.accountId,
-              replyTo: claimed.replyTo,
-              randomIds: [delivery.randomId],
-              onDispatch: dispatch,
-              onPart: async (_i, id) => {
-                delivery.ids = [id];
-                delivery.confirmedAt = this.clock.ts();
-                await this.history.saveManualDelivery(reply.id, delivery);
-              },
-            });
-          } else {
-            if (!voicer) await dispatch();
-            delivery.ids = await this.deliverMedia(
-              chatId,
-              { ...claimed, randomId: delivery.randomId },
-              voicer
-                ? async () => {
-                    await this.voiceDelivery!.beforeDispatch(reply.id);
-                    await dispatch();
-                  }
-                : undefined,
-            );
-            delivery.confirmedAt = this.clock.ts();
-            await this.history.saveManualDelivery(reply.id, delivery);
-          }
-        }
-        await this.recordDelivery(
-          chatId,
-          voicer
-            ? {
-                ...claimed,
-                text: await this.voiceDelivery!.historyText(reply.id),
-              }
-            : claimed,
-          delivery.ids,
-          delivery.confirmedAt ?? this.clock.ts(),
-          automated
-            ? ((await this.voiceDelivery!.replyContext(reply.id))?.task
-                .autoReplyId ?? undefined)
-            : undefined,
-        );
-        await this.history.markManualReplySent(reply.id);
-      } catch (e) {
-        const error = String(e?.message ?? e);
-        if (
-          (claimed.kind === 'text' ||
-            delivery.ids?.length ||
-            !delivery.dispatchedAt) &&
-          (delivery.attempts ?? 0) < 5
-        ) {
-          await this.history.retryManualReply(
-            reply.id,
-            error,
-            this.clock.ts() + 30 * Math.max(1, delivery.attempts ?? 1),
-          );
-        } else {
-          await this.history.reviewManualReply(
-            reply.id,
-            `Не удалось подтвердить доставку. Проверьте ${channelTitle(chatId)}, затем включите бота. Сообщение не будет повторено автоматически.`,
-          );
-          await this.pause.pause(
-            chatId,
-            TakeoverReason.HOLD,
-            'system:manual_delivery',
-            {
-              reasonText: `Проверьте доставку ручного сообщения №${reply.id} в ${channelTitle(chatId)}, затем включите бота`,
-            },
-          );
-        }
-        this.log.warn(
-          `manual reply ${reply.id} failed chat=${chatId}: ${error}`,
-        );
-      } finally {
-        if (voicer) await this.voiceDelivery?.syncReply(reply.id);
-      }
+      this.log.warn(`manual reply ${reply.id} failed chat=${chatId}: ${error}`);
+    } finally {
+      if (voicer) await this.voiceDelivery?.syncReply(reply.id);
     }
   }
 

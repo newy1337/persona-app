@@ -253,6 +253,45 @@ describe('manual outbox recovery against a migrated database', () => {
     expect((await schedule.dueRows(now)).map((r) => r.chatId)).toEqual([51]);
   });
 
+  it('долгая отправка в одном чате не держит ручные сообщения других чатов', async () => {
+    for (const chat of [61, 62]) {
+      await history.wipeChat(chat);
+      await history.ensureContact(chat, 1);
+    }
+    let release!: () => void;
+    const hanging = new Promise<void>((done) => (release = done));
+    telegram.sendText.mockImplementation(async (chat, _t, opts) => {
+      await opts.onDispatch?.(0);
+      if (chat === 1) await hanging;
+      await opts.onPart?.(0, 700 + chat);
+      return [700 + chat];
+    });
+    const slow = await history.enqueueManualReply(1, 'долго', now);
+    const slowNext = await history.enqueueManualReply(1, 'следом', now);
+    const first = worker.tick();
+    await new Promise((done) => setTimeout(done, 50));
+    // Пока чат 1 висит на отправке, следующий тик отправляет другие чаты.
+    const other = await history.enqueueManualReply(61, 'быстро', now);
+    const another = await history.enqueueManualReply(62, 'тоже', now);
+    await worker.tick();
+    expect((await row(other))!.status).toBe('sent');
+    expect((await row(another))!.status).toBe('sent');
+    expect((await row(slow))!.status).toBe('claimed');
+    expect((await row(slowNext))!.status).toBe('pending');
+    expect(
+      telegram.sendText.mock.calls.filter(([chat]) => chat === 1),
+    ).toHaveLength(1);
+    release();
+    await first;
+    expect((await row(slow))!.status).toBe('sent');
+    expect((await row(slowNext))!.status).toBe('sent');
+    const order = telegram.sendText.mock.calls
+      .filter(([chat]) => chat === 1)
+      .map(([, text]) => text[0]);
+    expect(order).toEqual(['долго', 'следом']);
+    for (const chat of [61, 62]) await history.wipeChat(chat);
+  });
+
   describe('VK-чат: ручные сообщения идут через VK, а не Telegram', () => {
     const vkChat = chatIdFor('vk', 123456);
     let vk: any;
