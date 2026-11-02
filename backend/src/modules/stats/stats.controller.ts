@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Delete,
   Get,
   HttpCode,
@@ -22,6 +23,7 @@ import { Roles } from 'src/decorators/roles.decorator';
 import { Role } from 'src/enums/roles.enum';
 import { CurrentUser } from 'src/decorators/user.decorator';
 import { AuditService } from 'src/shared/audit.service';
+import { DashboardUser } from '@prisma/client';
 
 @ApiTags('Stats')
 @ApiBearerAuth()
@@ -112,5 +114,46 @@ export class StatsController {
     return this.audit.wrap({ userId, action: 'stats.prices_reset' }, () =>
       this.stats.resetPrices(),
     );
+  }
+}
+
+/**
+ * Статистика региона — для хедов. Админская «Статистика» им закрыта: там
+ * все регионы, цены и баланс. Хед видит только свой регион, админ — любой.
+ */
+@ApiTags('Stats')
+@ApiBearerAuth()
+@Auth()
+@Roles(Role.HEAD)
+@Controller('api/region-stats')
+export class RegionStatsController {
+  constructor(private readonly stats: StatsService) {}
+
+  @ApiOperation({
+    summary:
+      'Регион: расход и номера по менеджерам, этапы, холодка, тип трафика',
+  })
+  @ApiQuery({ name: 'from', required: false, example: '2026-10-01' })
+  @ApiQuery({ name: 'to', required: false, example: '2026-10-31' })
+  @ApiQuery({ name: 'region', required: false, description: 'только админу' })
+  @Get()
+  async region(
+    @CurrentUser() user: DashboardUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('region') requested?: string,
+  ) {
+    const regions = user.role === Role.ADMIN ? await this.stats.regions() : [];
+    const region =
+      user.role === Role.ADMIN
+        ? requested?.trim() && regions.includes(requested.trim())
+          ? requested.trim()
+          : (regions[0] ?? null)
+        : user.regionCode;
+    if (!region)
+      throw new ForbiddenException(
+        'у вас не указан регион — статистика недоступна',
+      );
+    return { ...(await this.stats.region({ from, to, region })), regions };
   }
 }

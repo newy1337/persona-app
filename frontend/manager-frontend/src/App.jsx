@@ -7,6 +7,7 @@ import ConversationPage from './pages/ConversationPage/ConversationPage';
 import Accounts from './pages/Accounts/Accounts';
 import Managers from './pages/Managers/Managers';
 import Openers from './pages/Openers/Openers';
+import RegionStats from './pages/Stats/RegionStats';
 import Leads from './pages/Leads/Leads';
 import Personas from './pages/Personas/Personas';
 import Stats from './pages/Stats/Stats';
@@ -59,6 +60,7 @@ function App() {
           <Route path="/openers" element={only(admin || me.role === 'head', <Openers />)} />
           <Route path="/personas" element={only(admin, <Personas />)} />
           <Route path="/stats" element={only(admin, <Stats />)} />
+          <Route path="/region-stats" element={only(admin || me.role === 'head', <RegionStats />)} />
           <Route path="/settings" element={only(admin, <Settings />)} />
           <Route path="/users" element={only(admin, <Users />)} />
           <Route path="/catalogs" element={only(admin, <Catalogs />)} />

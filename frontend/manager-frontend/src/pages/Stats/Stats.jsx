@@ -164,6 +164,9 @@ export default function Stats() {
               <button className={s.btn} onClick={() => setShowPrices((v) => !v)}>
                 {showPrices ? 'Скрыть цены' : 'Цены моделей'}
               </button>
+              <button className={s.btn} title="Что видят хеды: один регион" onClick={() => navigate('/region-stats')}>
+                Как видит хед
+              </button>
             </div>
           </div>
 

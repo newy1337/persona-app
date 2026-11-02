@@ -634,6 +634,168 @@ export class StatsService {
     };
   }
 
+  /** Регионы, где есть сотрудники, — выбор региона админу. */
+  async regions(): Promise<string[]> {
+    const rows = await this.prisma.dashboardUser.findMany({
+      where: { regionCode: { not: null } },
+      select: { regionCode: true },
+      distinct: ['regionCode'],
+      orderBy: { regionCode: 'asc' },
+    });
+    return rows.map((r) => r.regionCode!).filter(Boolean);
+  }
+
+  /**
+   * Статистика региона для хеда: те же расчёты, что у админа, только по
+   * сотрудникам региона. Расход по менеджерам и итог, номера, этапы,
+   * холодка и разбивка по типу трафика личности (холодка / hot).
+   */
+  async region(query: { from?: string; to?: string; region: string }) {
+    const range = resolveRange(query, this.clock.ts());
+    const members = await this.prisma.dashboardUser.findMany({
+      where: { regionCode: query.region },
+      select: { id: true },
+    });
+    const ids = new Set(members.map((m) => m.id));
+    const mine = (id: number | null) => id !== null && ids.has(id);
+
+    const all = await this.byManager(query);
+    const managers = all.by_manager.filter((r) => mine(r.manager_id));
+    const total = {
+      cost_usd: usd(managers.reduce((n, r) => n + r.cost_usd, 0)),
+      calls: managers.reduce((n, r) => n + r.calls, 0),
+      leads_uploaded: managers.reduce((n, r) => n + r.leads_uploaded, 0),
+      leads_valid: managers.reduce((n, r) => n + r.leads_valid, 0),
+      leads_replied: managers.reduce((n, r) => n + r.leads_replied, 0),
+      active_chats: managers.reduce((n, r) => n + r.active_chats, 0),
+      messages_in: managers.reduce((n, r) => n + r.messages_in, 0),
+      messages_out: managers.reduce((n, r) => n + r.messages_out, 0),
+    };
+
+    // Этапы: суммы по менеджерам региона, по дням и за всё время.
+    const totals = zeroStages();
+    const byDay = new Map<string, Record<string, number>>();
+    for (const r of managers) {
+      for (const st of DEAL_STAGES) totals[st] += r.stages[st] ?? 0;
+      for (const d of r.days) {
+        if (!byDay.has(d.day)) byDay.set(d.day, zeroStages());
+        for (const st of DEAL_STAGES)
+          byDay.get(d.day)![st] += d.stages[st] ?? 0;
+      }
+    }
+    const owners = await this.chatOwners();
+    const regionChats = new Set(
+      (await this.prisma.contact.findMany({ select: { chatId: true } }))
+        .map((c) => c.chatId)
+        .filter((c) => mine(Number(owners.manager(c)) || null))
+        .map(String),
+    );
+    const stages = {
+      range: { from: range.from, to: range.to },
+      stages: DEAL_STAGES.map((id) => ({ id, label: DEAL_STAGE_LABELS[id] })),
+      days: range.days
+        .filter((d) => byDay.has(d))
+        .map((day) => ({ day, counts: byDay.get(day)! }))
+        .filter((d) => Object.values(d.counts).some((n) => n > 0)),
+      totals,
+      reached: await stagesReachedEver(this.prisma, regionChats),
+    };
+
+    const coldAll = await this.coldLeads(query);
+    const coldRows = coldAll.by_manager.filter((r) => mine(r.user_id));
+    const sum = (
+      k: 'received' | 'written' | 'invalid' | 'replied' | 'active',
+    ) => coldRows.reduce((n, r) => n + (r[k] ?? 0), 0);
+    const cold = {
+      range: coldAll.range,
+      active_after: coldAll.active_after,
+      totals: {
+        received: sum('received'),
+        written: sum('written'),
+        invalid: sum('invalid'),
+        replied: sum('replied'),
+        active: sum('active'),
+      },
+      by_manager: coldRows,
+    };
+
+    return {
+      range: all.range,
+      region: query.region,
+      managers,
+      total,
+      stages,
+      cold,
+      traffic: await this.trafficSplit(range, mine, owners),
+    };
+  }
+
+  /** Номера и расход региона по типу трафика личности: холодка, hot, не указан. */
+  private async trafficSplit(
+    range: DayRange,
+    mine: (id: number | null) => boolean,
+    owners: { manager: (chatId: bigint | number | null) => string },
+  ) {
+    const personas = await this.prisma.persona.findMany({
+      select: { slug: true, trafficType: true },
+    });
+    const typeOf = (slug: string | null) =>
+      personas.find((p) => p.slug === slug)?.trafficType ?? 'none';
+    const out = new Map<
+      string,
+      { leads_uploaded: number; leads_replied: number; cost: Bucket }
+    >(
+      ['cold', 'hot', 'none'].map((t) => [
+        t,
+        { leads_uploaded: 0, leads_replied: 0, cost: bucket() },
+      ]),
+    );
+    const leads = await this.prisma.lead.findMany({
+      where: { insertedAt: { gte: range.start, lt: range.end } },
+      select: { ownerUserId: true, personaId: true, status: true },
+    });
+    for (const l of leads) {
+      if (!mine(l.ownerUserId)) continue;
+      const row = out.get(typeOf(l.personaId))!;
+      row.leads_uploaded += 1;
+      if (l.status === 'replied') row.leads_replied += 1;
+    }
+    const price = memoPrice(await this.prices());
+    const usage = (await this.prisma.modelUsage.findMany({
+      where: { createdAt: { gte: range.start, lt: range.end } },
+      select: {
+        chatId: true,
+        personaId: true,
+        model: true,
+        stage: true,
+        inputTokens: true,
+        outputTokens: true,
+        cachedTokens: true,
+        cacheWriteTokens: true,
+        cacheWrite1hTokens: true,
+        elapsedMs: true,
+        createdAt: true,
+      },
+    })) as UsageRow[];
+    for (const u of usage) {
+      if (!mine(Number(owners.manager(u.chatId)) || null)) continue;
+      u.model = normalizeModel(u.model);
+      add(out.get(typeOf(u.personaId))!.cost, u, price(u.model));
+    }
+    const LABEL: Record<string, string> = {
+      cold: 'Холодка',
+      hot: 'Hot',
+      none: 'Тип не указан',
+    };
+    return [...out.entries()].map(([type, r]) => ({
+      type,
+      label: LABEL[type],
+      leads_uploaded: r.leads_uploaded,
+      leads_replied: r.leads_replied,
+      cost_usd: view(r.cost).cost_usd,
+    }));
+  }
+
   private async leadFunnel(range: DayRange): Promise<Map<string, LeadCounts>> {
     const rows = await this.prisma.lead.findMany({
       where: { insertedAt: { gte: range.start, lt: range.end } },

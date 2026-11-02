@@ -176,6 +176,7 @@ function Header({
             {me.role === 'admin' && <NavLink to="/users" className={navClass}>LeadGet</NavLink>}
             {me.role === 'admin' && <NavLink to="/catalogs" className={navClass}>Справочники</NavLink>}
             {me.role === 'admin' && <NavLink to="/stats" className={navClass}>Статистика</NavLink>}
+            {me.role === 'head' && <NavLink to="/region-stats" className={navClass}>Статистика</NavLink>}
             {me.role === 'admin' && <NavLink to="/settings" className={navClass}>Настройки</NavLink>}
           </nav>
         )}

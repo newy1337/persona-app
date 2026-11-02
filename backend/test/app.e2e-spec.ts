@@ -4516,6 +4516,179 @@ describe('Manager panel API (e2e)', () => {
       await prisma.contact.delete({ where: { chatId: BigInt(orphan) } });
     });
 
+    it('статистика региона: хед видит только свой регион, админская статистика ему закрыта', async () => {
+      const prisma = app.get(PrismaService);
+      const h = { Authorization: `Bearer ${token}` };
+      const mk = async (body: object) =>
+        (
+          await request(app.getHttpServer())
+            .post('/api/managers')
+            .set(h)
+            .send(body)
+            .expect(200)
+        ).body.created_user_id as number;
+      const head = await mk({
+        username: 'rs-head',
+        password: 'head12345',
+        role: 'head',
+        region_code: '0505',
+      });
+      const mine = await mk({
+        username: 'rs-man',
+        password: 'man123456',
+        role: 'manager',
+        region_code: '0505',
+      });
+      const other = await mk({
+        username: 'rs-other',
+        password: 'oth123456',
+        role: 'manager',
+        region_code: '0606',
+      });
+      const lead = await mk({
+        username: 'rs-lead',
+        password: 'lead12345',
+        role: 'teamlead',
+        region_code: '0505',
+      });
+      const now = Math.floor(Date.now() / 1000);
+      const accounts: number[] = [];
+      for (const [i, owner] of [mine, other].entries()) {
+        const acc = await request(app.getHttpServer())
+          .post('/api/tg-accounts')
+          .set(h)
+          .send({
+            phone_e164: `+7900123050${i}`,
+            persona_id: 'nastya',
+            manager_id: owner,
+          })
+          .expect(200);
+        accounts.push(acc.body.id);
+        await prisma.contact.create({
+          data: {
+            chatId: BigInt(777000700 + i),
+            accountId: acc.body.id,
+            createdAt: now,
+          },
+        });
+        await prisma.modelUsage.create({
+          data: {
+            createdAt: now,
+            chatId: BigInt(777000700 + i),
+            personaId: 'nastya',
+            provider: 'anthropic',
+            model: 'claude-sonnet-5',
+            stage: 'generator',
+            inputTokens: 100000,
+            outputTokens: 1000,
+          },
+        });
+        await prisma.lead.create({
+          data: {
+            insertedAt: now,
+            ownerUserId: owner,
+            personaId: 'nastya',
+            phoneE164: `+7900123060${i}`,
+            status: 'replied',
+            chatId: BigInt(777000700 + i),
+          },
+        });
+      }
+      const nastya = await prisma.persona.findUniqueOrThrow({
+        where: { slug: 'nastya' },
+      });
+      await prisma.persona.update({
+        where: { slug: 'nastya' },
+        data: { trafficType: 'cold' },
+      });
+      const login = async (username: string, password: string) => ({
+        Authorization: `Bearer ${
+          (
+            await request(app.getHttpServer())
+              .post('/auth/login')
+              .send({ username, password })
+              .expect(200)
+          ).body.tokens.accessToken
+        }`,
+      });
+      const headAuth = await login('rs-head', 'head12345');
+      const r = await request(app.getHttpServer())
+        .get('/api/region-stats')
+        .set(headAuth)
+        .expect(200);
+      expect(r.body.region).toBe('0505');
+      expect(r.body.regions).toEqual([]);
+      expect(r.body.managers.map((m: any) => m.username)).toEqual(['rs-man']);
+      expect(r.body.managers[0]).toMatchObject({
+        leads_uploaded: 1,
+        leads_replied: 1,
+      });
+      expect(r.body.managers[0].cost_usd).toBeGreaterThan(0);
+      expect(r.body.total.cost_usd).toBe(r.body.managers[0].cost_usd);
+      expect(r.body.total.leads_uploaded).toBe(1);
+      expect(r.body.traffic.find((t: any) => t.type === 'cold')).toMatchObject({
+        label: 'Холодка',
+        leads_uploaded: 1,
+        leads_replied: 1,
+      });
+      expect(r.body.traffic.find((t: any) => t.type === 'cold').cost_usd).toBe(
+        r.body.total.cost_usd,
+      );
+      expect(
+        r.body.cold.by_manager.every((m: any) => m.user_id !== other),
+      ).toBe(true);
+      expect(r.body.stages.stages.map((s: any) => s.id)).toContain('vbros');
+      // чужой регион хеду не подставить
+      const forced = await request(app.getHttpServer())
+        .get('/api/region-stats?region=0606')
+        .set(headAuth)
+        .expect(200);
+      expect(forced.body.region).toBe('0505');
+      // админская статистика хеду закрыта, тимлиду закрыта и региональная
+      await request(app.getHttpServer())
+        .get('/api/stats/managers')
+        .set(headAuth)
+        .expect(403);
+      await request(app.getHttpServer())
+        .get('/api/region-stats')
+        .set(await login('rs-lead', 'lead12345'))
+        .expect(403);
+      // админ выбирает регион
+      const admin = await request(app.getHttpServer())
+        .get('/api/region-stats?region=0606')
+        .set(h)
+        .expect(200);
+      expect(admin.body.regions).toEqual(
+        expect.arrayContaining(['0505', '0606']),
+      );
+      expect(admin.body.managers.map((m: any) => m.username)).toEqual([
+        'rs-other',
+      ]);
+
+      await prisma.persona.update({
+        where: { slug: 'nastya' },
+        data: { trafficType: nastya.trafficType },
+      });
+      await prisma.lead.deleteMany({
+        where: { chatId: { in: [777000700n, 777000701n] } },
+      });
+      await prisma.modelUsage.deleteMany({
+        where: { chatId: { in: [777000700n, 777000701n] } },
+      });
+      for (const c of [777000700, 777000701])
+        await app.get(TelegramService)['history'].wipeChat(c);
+      for (const id of accounts)
+        await request(app.getHttpServer())
+          .delete(`/api/tg-accounts/${id}`)
+          .set(h)
+          .expect(200);
+      for (const id of [mine, other, lead, head])
+        await request(app.getHttpServer())
+          .delete(`/api/managers/${id}`)
+          .set(h)
+          .expect(200);
+    });
+
     it('первые сообщения региона: хед правит свой пул, лидам его аккаунтов уходит он, пусто — общий пул личности', async () => {
       const prisma = app.get(PrismaService);
       const h = { Authorization: `Bearer ${token}` };
