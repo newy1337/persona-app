@@ -15,6 +15,7 @@ import {
 } from 'class-validator';
 import { LEAD_CHANNELS, LEAD_GENDERS, LEAD_STATUSES } from 'src/domain/leads';
 import { DEAL_STAGE_FILTERS, DealStageFilter } from 'src/domain/deal-stage';
+import { MANUAL_TRAFFIC_SOURCES } from 'src/domain/traffic-source';
 
 export class CreateLeadDto {
   @ApiPropertyOptional({ example: '+7 900 123-45-67' })
@@ -79,6 +80,16 @@ export class CreateLeadDto {
   @IsString()
   @MaxLength(32)
   source_type?: string;
+  @ApiPropertyOptional({
+    enum: MANUAL_TRAFFIC_SOURCES,
+    description: 'источник трафика: базовик или горячий лидген',
+  })
+  @IsOptional()
+  @IsIn(MANUAL_TRAFFIC_SOURCES, {
+    message:
+      'источник трафика: base (базовик) или hot_leadgen (горячий лидген)',
+  })
+  traffic_source?: string;
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -119,6 +130,17 @@ export class ImportLeadsDto {
   @MaxLength(32)
   source_type?: string;
 
+  @ApiPropertyOptional({
+    enum: MANUAL_TRAFFIC_SOURCES,
+    description: 'источник трафика всего импорта',
+  })
+  @IsOptional()
+  @IsIn(MANUAL_TRAFFIC_SOURCES, {
+    message:
+      'источник трафика: base (базовик) или hot_leadgen (горячий лидген)',
+  })
+  traffic_source?: string;
+
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
@@ -148,6 +170,13 @@ export class UpdateLeadDto {
   gender?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(512) notes?:
     string | null;
+  @ApiPropertyOptional({ enum: MANUAL_TRAFFIC_SOURCES })
+  @IsOptional()
+  @IsIn(MANUAL_TRAFFIC_SOURCES, {
+    message:
+      'источник трафика: base (базовик) или hot_leadgen (горячий лидген)',
+  })
+  traffic_source?: string;
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()

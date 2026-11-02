@@ -12,6 +12,7 @@ import { accountLostLabel, presenceLabel, whenLabel } from '../../utils/telegram
 import VoicePlayer from '../../components/VoicePlayer/VoicePlayer';
 import MediaGallery from '../../components/MediaGallery/MediaGallery';
 import ChatJournal from '../../components/ChatJournal/ChatJournal';
+import { trafficSourceLabel } from '../../utils/trafficSource';
 import EditableValue from '../../components/EditableValue/EditableValue';
 import {
   goalRows,
@@ -798,6 +799,10 @@ function ConversationPage() {
                   <span className={styles.metaRow} data-testid="client-gender">
                     <span className={styles.metaIcon}><AgeIcon />Пол</span>
                     {genderLabel(data.client_gender) || '—'}
+                  </span>
+                  <span className={styles.metaRow} data-testid="traffic-source">
+                    <span className={styles.metaIcon}><StatusIcon color="currentColor" />Трафик</span>
+                    {trafficSourceLabel(data.traffic_source) || 'не отмечен'}
                   </span>
                   <span className={styles.metaRow}>
                     <span className={styles.metaIcon}><LocationIcon />Город</span>

@@ -20,6 +20,11 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); });
 const render = async element => act(async () => root.render(element));
+/** Источник трафика в форме лида обязателен — тесты формы его выбирают. */
+const pickSource = async (value = 'base') => act(async () => {
+  const el = host.querySelector('select[aria-label="Источник трафика"]');
+  el.value = value; el.dispatchEvent(new Event('change', { bubbles: true }));
+});
 const click = async text => act(async () => [...host.querySelectorAll('button')].find(x => x.textContent === text).click());
 const input = async (element, value) => act(async () => {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(element, value);
@@ -68,6 +73,7 @@ test('a selected Telegram sender is submitted with its persona; automatic remain
   const post=vi.spyOn(api,'post').mockResolvedValue({ok:true});
   const Select=({onChange})=><select onChange={e=>onChange(e.target.value)}><option value="">Любая</option></select>;
   await render(<CreateLeadForm personas={[{slug:'nastya',name:'Настя'}]} PersonaSelect={Select} onDone={()=>{}} onCancel={()=>{}} />);
+  await pickSource();
   await input(host.querySelector('input'),'@test_contact');
   const sender=host.querySelector('.mr-lead-sender select');
   expect(sender.value).toBe('');
@@ -124,6 +130,7 @@ test('хед записывает лид на менеджера команды:
   const post = vi.spyOn(api, 'post').mockResolvedValue({ ok: true });
   const Select = ({ onChange }) => <select onChange={e => onChange(e.target.value)}><option value="">Любая</option></select>;
   await render(<CreateLeadForm personas={[{ slug: 'nastya', name: 'Настя' }]} PersonaSelect={Select} onDone={() => {}} onCancel={() => {}} />);
+  await pickSource();
   const ownerSelect = host.querySelector('select[aria-label="Чей лид"]');
   expect([...ownerSelect.options].map(o => o.textContent)).toEqual(['Себе (boss)', 'manager_test · менеджер · регион 0077', 'empty_manager · менеджер · регион 0077']);
   const pick = async (el, value) => act(async () => { el.value = value; el.dispatchEvent(new Event('change', { bubbles: true })); });
@@ -141,6 +148,7 @@ test('менеджеру выбор «Чей лид» не показывает�
   api.get.mockImplementation(async path => path === '/api/leads/owners' ? { items: [{ user_id: 2, username: 'manager_test', role: 'manager', account_ids: [7], self: true }] } : path === '/api/tg-accounts' ? accounts : {});
   const post = vi.spyOn(api, 'post').mockResolvedValue({ ok: true });
   await render(<CreateLeadForm personas={[{ slug: 'nastya', name: 'Настя' }]} PersonaSelect={() => null} onDone={() => {}} onCancel={() => {}} />);
+  await pickSource();
   expect(host.querySelector('select[aria-label="Чей лид"]')).toBeNull();
   await input(host.querySelector('input'), '@test_contact');
   await act(async () => host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
@@ -161,6 +169,7 @@ test('лид VK: ссылка vk.com сама выбирает ВКонтакт�
     : path === '/api/leads/owners' ? { items: [] } : { user_id: 1, role: 'admin' });
   const post = vi.spyOn(api, 'post').mockResolvedValue({ ok: true });
   await render(<CreateLeadForm personas={[{ slug: 'nastya', name: 'Настя' }]} PersonaSelect={() => null} onDone={() => {}} onCancel={() => {}} />);
+  await pickSource();
   const messenger = host.querySelector('select[aria-label="Мессенджер"]');
   expect(messenger.value).toBe('telegram');
   const options = () => [...host.querySelectorAll('.mr-lead-sender option')].map(o => o.value);
@@ -193,6 +202,7 @@ test('строка лида VK: метка VK, ссылки на vk.com с бэ�
 test('форма лида: в город цифры не вводятся, в возраст — только цифры', async () => {
   const post = vi.spyOn(api, 'post').mockResolvedValue({ ok: true });
   await render(<CreateLeadForm personas={[{ slug: 'nastya', name: 'Настя' }]} PersonaSelect={() => null} onDone={() => {}} onCancel={() => {}} />);
+  await pickSource();
   const field = title => [...host.querySelectorAll('label')].find(l => l.firstChild?.textContent === title).querySelector('input');
   await input(field('Телефон или @username'), '+79001234567');
   await input(field('Город'), '38');
@@ -203,5 +213,19 @@ test('форма лида: в город цифры не вводятся, в в
   expect(field('Возраст').value).toBe('5');
   await input(field('Возраст'), '38');
   await act(async () => host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
-  expect(post).toHaveBeenCalledWith('/api/leads', expect.objectContaining({ age: 38 }));
+  expect(post).toHaveBeenCalledWith('/api/leads', expect.objectContaining({ age: 38, traffic_source: 'base' }));
+});
+
+test('форма лида: без источника трафика не добавить; горячий лидген уходит в запрос', async () => {
+  const post = vi.spyOn(api, 'post').mockResolvedValue({ ok: true });
+  await render(<CreateLeadForm personas={[{ slug: 'nastya', name: 'Настя' }]} PersonaSelect={() => null} onDone={() => {}} onCancel={() => {}} />);
+  const source = host.querySelector('select[aria-label="Источник трафика"]');
+  expect([...source.options].map(o => o.textContent)).toEqual(['— выберите —', 'Базовик', 'Горячий лидген']);
+  await input(host.querySelector('input'), '+79001234567');
+  const submit = host.querySelector('button[type=submit]');
+  expect(submit.disabled).toBe(true);
+  await pickSource('hot_leadgen');
+  expect(submit.disabled).toBe(false);
+  await act(async () => host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  expect(post).toHaveBeenCalledWith('/api/leads', expect.objectContaining({ traffic_source: 'hot_leadgen' }));
 });

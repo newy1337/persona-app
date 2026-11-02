@@ -15,6 +15,7 @@ import {
 } from '../../api/leads';
 import s from '../../styles/AdminPage.module.scss';
 import { DEAL_STAGE_FILTERS, dealStageLabel } from '../../data/dealStages';
+import { MANUAL_TRAFFIC_SOURCES } from '../../utils/trafficSource';
 
 const STATUS = [
   { key: '', label: 'Все' },
@@ -68,6 +69,7 @@ function ImportDialog({ personas, onClose }) {
   const [queue, setQueue] = useState(false);
   const [personaId, setPersonaId] = useState('');
   const [channel, setChannel] = useState('telegram');
+  const [trafficSource, setTrafficSource] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -75,11 +77,11 @@ function ImportDialog({ personas, onClose }) {
 
   async function submit(e) {
     e.preventDefault();
-    if (busy || !lines) return;
+    if (busy || !lines || !trafficSource) return;
     setBusy(true);
     setError(null);
     try {
-      setResult(await importLeads({ text, queue, persona_id: personaId, channel }));
+      setResult(await importLeads({ text, queue, persona_id: personaId, channel, traffic_source: trafficSource }));
     } catch (err) {
       setError(err.detail || err.message);
     } finally {
@@ -123,6 +125,13 @@ function ImportDialog({ personas, onClose }) {
               style={{ fontFamily: 'monospace', resize: 'vertical' }}
             />
             <label className={s.label}>
+              Источник трафика
+              <select className={s.select} aria-label="Источник трафика" required value={trafficSource} onChange={(e) => setTrafficSource(e.target.value)}>
+                <option value="">— выберите —</option>
+                {MANUAL_TRAFFIC_SOURCES.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+              </select>
+            </label>
+            <label className={s.label}>
               Мессенджер
               <select className={s.select} aria-label="Мессенджер" value={channel} onChange={(e) => setChannel(e.target.value)}>
                 <option value="telegram">Telegram</option>
@@ -146,7 +155,7 @@ function ImportDialog({ personas, onClose }) {
           ) : (
             <>
               <button type="button" className={s.btn} onClick={() => onClose(false)}>Отмена</button>
-              <button type="submit" className={s.btnPrimary} disabled={busy || !lines}>{busy ? 'Импорт…' : `Импортировать (${lines})`}</button>
+              <button type="submit" className={s.btnPrimary} disabled={busy || !lines || !trafficSource}>{busy ? 'Импорт…' : `Импортировать (${lines})`}</button>
             </>
           )}
         </div>

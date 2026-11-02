@@ -47,3 +47,13 @@ export function putPrices(table) {
 export function resetPrices() {
   return api.delete('/api/stats/prices');
 }
+
+/** Лиды по источнику трафика: по регионам, статусам и этапам; source — фильтр. */
+export function getTrafficSources({ from, to, source } = {}) {
+  const p = new URLSearchParams();
+  if (from) p.set('from', from);
+  if (to) p.set('to', to);
+  if (source) p.set('source', source);
+  const qs = p.toString();
+  return api.get(`/api/stats/sources${qs ? `?${qs}` : ''}`);
+}

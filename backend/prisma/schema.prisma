@@ -538,6 +538,8 @@ model Lead {
   reassigned         Boolean @default(false)
   /// холодка: пришёл через /api/post/cold, раздан без региона и личности
   cold               Boolean @default(false)
+  /// источник трафика: base | hot_leadgen | cold_leadgen; null — до поля
+  trafficSource      String? @map("traffic_source")
   /// когда лид попал в буфер (только ник, без телефона); статус 'buffer'
   bufferedAt         Int?    @map("buffered_at")
 
@@ -546,6 +548,7 @@ model Lead {
   @@index([chatId], map: "idx_leads_chat")
   @@index([ownerUserId], map: "idx_leads_owner")
   @@index([status, nextAttemptAt], map: "idx_leads_status_next")
+  @@index([trafficSource, insertedAt], map: "idx_leads_traffic_source")
   @@index([assignedAccountId, firstContactAt], map: "idx_leads_account_contact")
   @@index([ownerUserId, inboundAt], map: "idx_leads_owner_inbound")
   @@map("leads")

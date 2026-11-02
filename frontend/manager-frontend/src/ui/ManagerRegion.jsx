@@ -9,6 +9,7 @@ import { OwnRegionReassign } from './ReassignSwitch';
 import { DEAL_STAGES, dealStageLabel } from '../data/dealStages';
 import { LEAD_ROLE_FOR, ROLE_LABELS } from '../utils/roles';
 import { genderLabel } from '../utils/chat';
+import { MANUAL_TRAFFIC_SOURCES, trafficSourceLabel } from '../utils/trafficSource';
 import PickerModal from './PickerModal';
 import { httpHref } from '../utils/safeUrl';
 import { accountContact, channelBadge, clientContact } from '../utils/channel';
@@ -59,6 +60,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, 
               h('div', { className: 'mr-dialog-person-text' },
                 h('button', { type: 'button', className: 'mr-dialog-name', onClick: e => { e.stopPropagation(); onOpen(row.chat_id); } }, row.name || `Чат ${row.chat_id}`),
                 channelMark(row.channel),
+                trafficSourceLabel(row.traffic_source) && h('span', { className: 'mr-channel-badge', 'data-testid': 'traffic-badge', title: 'Источник трафика' }, trafficSourceLabel(row.traffic_source)),
                 fresh && h('span', { className: 'mr-dialog-new-badge', 'data-testid': 'new-badge', title: 'Клиент написал — ждёт ответа менеджера' }, unreadLabel(row.unread_count)),
                 h('div', { className: 'mr-dialog-muted' }, row.typing ? `${typingLabels[row.typing] || 'печатает'}…` : [row.age ? `${row.age} лет` : null, row.city].filter(Boolean).join(' · ') || 'Возраст и город не указаны'))),
             h('div', { className: 'mr-dialog-contact' }, row.phone || null, contact && link(contact), !row.phone && !contact && h('span', { className: 'mr-dialog-muted' }, 'Контакт не указан')),
@@ -87,7 +89,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, 
 }
 
 export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
-  const [draft, setDraft] = useState({ phone: '', channel: 'telegram', first_name: '', city: '', age: '', site: '', first_message: '', persona_id: '', preferred_account_id: '', owner_user_id: '' });
+  const [draft, setDraft] = useState({ phone: '', channel: 'telegram', first_name: '', city: '', age: '', site: '', first_message: '', persona_id: '', preferred_account_id: '', owner_user_id: '', traffic_source: '' });
   const [accounts, setAccounts] = useState([]);
   // Тимлид, хед и админ записывают лид на себя или на сотрудника команды; у менеджера выбора нет.
   const [owners, setOwners] = useState([]);
@@ -108,14 +110,16 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
   // Ссылка vk.com/… или t.me/… сама выбирает мессенджер; иначе — переключатель формы.
   const channel = /vk\.(com|ru)\//i.test(draft.phone) ? 'vk' : /t\.me\//i.test(draft.phone) ? 'telegram' : draft.channel;
   const hasVk = accounts.some(a => a.channel === 'vk');
-  const valid = draft.phone.replace(/\D/g, '').length >= 10 || (channel === 'vk' ? /^@?[a-zA-Z0-9_.]{3,}$|vk\.(com|ru)\//i : /^@?[a-zA-Z][\w]{3,}$|t\.me\//).test(draft.phone.trim());
+  const contactValid = draft.phone.replace(/\D/g, '').length >= 10 || (channel === 'vk' ? /^@?[a-zA-Z0-9_.]{3,}$|vk\.(com|ru)\//i : /^@?[a-zA-Z][\w]{3,}$|t\.me\//).test(draft.phone.trim());
+  // Источник трафика обязателен: без него лид не попадёт в статистику по источникам.
+  const valid = contactValid && Boolean(draft.traffic_source);
   const available = accounts.filter(a => a.status === 'active' && (a.channel === 'vk' ? 'vk' : 'telegram') === channel && personas.some(p => p.slug === a.persona_id) && (!draft.persona_id || a.persona_id === draft.persona_id) && (!owner || owner.account_ids.includes(a.id)));
   async function submit(e) {
     e.preventDefault();
     if (busy || !valid) return;
     setBusy(true); setError('');
     try {
-      await api.post('/api/leads', { phone: draft.phone, channel, first_name: draft.first_name || undefined, city: draft.city || undefined, age: draft.age ? Number(draft.age) : undefined, site: draft.site.trim() || undefined, first_message: draft.first_message.trim() || undefined, persona_id: draft.persona_id || undefined, preferred_account_id: draft.preferred_account_id ? Number(draft.preferred_account_id) : undefined, owner_user_id: owner ? owner.user_id : undefined });
+      await api.post('/api/leads', { phone: draft.phone, channel, first_name: draft.first_name || undefined, city: draft.city || undefined, age: draft.age ? Number(draft.age) : undefined, site: draft.site.trim() || undefined, first_message: draft.first_message.trim() || undefined, persona_id: draft.persona_id || undefined, preferred_account_id: draft.preferred_account_id ? Number(draft.preferred_account_id) : undefined, owner_user_id: owner ? owner.user_id : undefined, traffic_source: draft.traffic_source });
       onDone();
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
@@ -125,6 +129,9 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
     hasVk && h('label', { className: s.label }, 'Мессенджер',
       h('select', { className: s.select, value: channel, disabled: busy, 'aria-label': 'Мессенджер', onChange: e => change({ channel: e.target.value, preferred_account_id: '' }) },
         h('option', { value: 'telegram' }, 'Telegram'), h('option', { value: 'vk' }, 'ВКонтакте'))),
+    h('label', { className: s.label }, 'Источник трафика',
+      h('select', { className: s.select, value: draft.traffic_source, disabled: busy, required: true, 'aria-label': 'Источник трафика', onChange: e => change({ traffic_source: e.target.value }) },
+        h('option', { value: '' }, '— выберите —'), MANUAL_TRAFFIC_SOURCES.map(x => h('option', { key: x.id, value: x.id }, x.label)))),
     input('phone', channel === 'vk' ? 'Телефон, VK ID или ссылка на профиль' : 'Телефон или @username', { autoFocus: true, placeholder: channel === 'vk' ? '+7 900 123-45-67, 123456789 или vk.com/…' : '+7 900 123-45-67 или @name', maxLength: 64 }),
     owners.length > 1 && h('label', { className: s.label }, 'Чей лид',
       h('select', { className: s.select, value: draft.owner_user_id, disabled: busy, 'aria-label': 'Чей лид', onChange: e => change({ owner_user_id: e.target.value, preferred_account_id: '' }) },
@@ -193,6 +200,7 @@ export function LeadsTable({ ready = true, rows, query, status, selected, onTogg
               h('span', { className: statusClasses[row.status] || s.badge }, statusLabels[row.status] || row.status),
               h('div', { className: 'mr-lead-contact-time mr-dialog-muted' }, row.first_contact_at ? `Написали: ${date(row.first_contact_at)}` : 'Ещё не писали'),
               row.deal_stage && h('div', { className: 'mr-dialog-muted', 'data-testid': 'lead-deal-stage' }, h('span', { className: 'mr-caption' }, 'Этап: '), dealStage ? dealStage(row.deal_stage) : row.deal_stage),
+              h('div', { className: 'mr-dialog-muted', 'data-testid': 'lead-traffic-source' }, h('span', { className: 'mr-caption' }, 'Трафик: '), trafficSourceLabel(row.traffic_source) || h('span', { className: 'mr-caption' }, 'не отмечен')),
               row.last_error && h('details', { className: 'mr-lead-error' }, h('summary', null, 'Подробнее об ошибке'), h('p', null, row.last_error))),
             h('td', { className: 'mr-dialog-actions mr-lead-actions' },
               canChat && h('button', { type: 'button', className: `${s.btnSm} mr-dialog-open`, 'aria-label': `Открыть диалог: ${name}`, onClick: () => onChat(row.telegram_user_id) }, 'Открыть', h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true }, h('path', { d: 'M6 3.5 10.5 8 6 12.5', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' }))),

@@ -62,6 +62,8 @@ export interface LeadView extends ManagerAttribution {
   site: string | null;
   gender: string | null;
   source_type: string;
+  /** base | hot_leadgen | cold_leadgen; null — источник не отмечен */
+  traffic_source: string | null;
   status: string;
   /** telegram | vk — куда пишем лиду */
   channel: string;
@@ -373,6 +375,7 @@ export class LeadsService {
       site: row.site,
       gender: row.gender,
       source_type: row.sourceType,
+      traffic_source: row.trafficSource,
       status: row.status,
       channel: row.channel,
       contact: row.usernameKey
@@ -696,6 +699,7 @@ export class LeadsService {
         ...sender,
         gender: dto.gender ?? null,
         sourceType: dto.source_type?.trim() || 'manual',
+        trafficSource: dto.traffic_source ?? null,
         notes: dto.notes?.trim() || null,
         firstMessage: dto.first_message?.trim() || null,
         ownerUserId,
@@ -796,6 +800,7 @@ export class LeadsService {
           personaId: d.persona_id || batchPersona,
           preferredAccountId: d.preferred_account_id ?? null,
           sourceType: dto.source_type?.trim() || 'import',
+          trafficSource: dto.traffic_source ?? null,
           status: dto.queue ? 'queued' : 'pending',
           ownerUserId,
           insertedAt: now,
@@ -819,6 +824,8 @@ export class LeadsService {
     if (dto.city !== undefined) data.city = this.city(dto.city);
     if (dto.age !== undefined) data.age = dto.age;
     if (dto.site !== undefined) data.site = dto.site?.trim() || null;
+    if (dto.traffic_source !== undefined)
+      data.trafficSource = dto.traffic_source;
     if (dto.persona_id !== undefined) {
       const row = await this.get(scope, id);
       if (row.firstContactAt)

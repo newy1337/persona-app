@@ -23,7 +23,17 @@ import {
 import { dayKey, resolveRange, type DayRange } from './range';
 import { ACTIVE_AFTER, coldFunnel, coldLeadRows } from './cold-funnel';
 import { normalizeModel } from './prices';
-import { DEAL_STAGES, DEAL_STAGE_LABELS } from 'src/domain/deal-stage';
+import {
+  DEAL_REACHED_KEY as DEAL_REACHED_FACT,
+  DEAL_STAGES,
+  DEAL_STAGE_LABELS,
+} from 'src/domain/deal-stage';
+import { LEAD_STATUSES } from 'src/domain/leads';
+import {
+  TRAFFIC_SOURCES,
+  TRAFFIC_SOURCE_FILTERS,
+  TRAFFIC_SOURCE_LABELS,
+} from 'src/domain/traffic-source';
 import {
   stageMovesInRange,
   stagesReachedEver,
@@ -634,6 +644,138 @@ export class StatsService {
     };
   }
 
+  /**
+   * Лиды за период по источнику трафика: по регионам — сколько добавлено,
+   * в каких статусах и до каких этапов сделки дошли. Регион лида — регион
+   * его менеджера, без менеджера — регион, в который лид прислали.
+   * source: base | hot_leadgen | cold_leadgen | none (без отметки) | все.
+   */
+  async sources(query: {
+    from?: string;
+    to?: string;
+    source?: string;
+    region?: string;
+  }) {
+    const range = resolveRange(query, this.clock.ts());
+    const source = (TRAFFIC_SOURCE_FILTERS as readonly string[]).includes(
+      query.source ?? '',
+    )
+      ? query.source
+      : null;
+    const leads = await this.prisma.lead.findMany({
+      where: {
+        insertedAt: { gte: range.start, lt: range.end },
+        ...(source === 'none'
+          ? { trafficSource: null }
+          : source
+            ? { trafficSource: source }
+            : {}),
+      },
+      select: {
+        ownerUserId: true,
+        requestedRegion: true,
+        status: true,
+        chatId: true,
+        trafficSource: true,
+      },
+    });
+    const users = await this.prisma.dashboardUser.findMany({
+      where: {
+        id: {
+          in: [
+            ...new Set(
+              leads.map((l) => l.ownerUserId).filter((id) => id !== null),
+            ),
+          ],
+        },
+      },
+      select: { id: true, regionCode: true },
+    });
+    const regionOf = new Map(users.map((u) => [u.id, u.regionCode]));
+    const reached = await this.reachedByChat(
+      leads.flatMap((l) => (l.chatId ? [l.chatId] : [])),
+    );
+    const blank = () => ({
+      leads: 0,
+      statuses: Object.fromEntries(LEAD_STATUSES.map((st) => [st, 0])),
+      stages: zeroStages(),
+      by_source: Object.fromEntries(
+        TRAFFIC_SOURCE_FILTERS.map((src) => [src, 0]),
+      ) as Record<string, number>,
+    });
+    const regions = new Map<string, ReturnType<typeof blank>>();
+    const bySource = new Map<string, ReturnType<typeof blank>>(
+      TRAFFIC_SOURCE_FILTERS.map((src) => [src, blank()]),
+    );
+    const total = blank();
+    for (const l of leads) {
+      const region =
+        (l.ownerUserId !== null ? regionOf.get(l.ownerUserId) : null) ??
+        l.requestedRegion ??
+        '—';
+      if (query.region && region !== query.region) continue;
+      if (!regions.has(region)) regions.set(region, blank());
+      const own = bySource.get(l.trafficSource ?? 'none') ?? blank();
+      for (const row of [regions.get(region)!, own, total]) {
+        row.leads += 1;
+        row.statuses[l.status] = (row.statuses[l.status] ?? 0) + 1;
+        row.by_source[l.trafficSource ?? 'none'] += 1;
+        for (const st of reached.get(String(l.chatId)) ?? [])
+          if (st in row.stages) row.stages[st] += 1;
+      }
+    }
+    return {
+      range: { from: range.from, to: range.to },
+      source: source ?? null,
+      sources: TRAFFIC_SOURCES.map((id) => ({
+        id,
+        label: TRAFFIC_SOURCE_LABELS[id],
+      })),
+      stages: DEAL_STAGES.map((id) => ({ id, label: DEAL_STAGE_LABELS[id] })),
+      statuses: [...LEAD_STATUSES],
+      total,
+      by_source: [...bySource.entries()]
+        .map(([id, row]) => ({
+          source: id,
+          label:
+            TRAFFIC_SOURCE_LABELS[id as keyof typeof TRAFFIC_SOURCE_LABELS] ??
+            'Не отмечен',
+          leads: row.leads,
+          statuses: row.statuses,
+          stages: row.stages,
+        }))
+        .filter((r) => r.leads > 0),
+      regions: [...regions.entries()]
+        .map(([region, row]) => ({ region, ...row }))
+        .sort((a, b) => b.leads - a.leads || a.region.localeCompare(b.region)),
+    };
+  }
+
+  /** До каких этапов дошёл каждый чат (deal_reached) и архив — по текущему этапу. */
+  private async reachedByChat(chatIds: bigint[]) {
+    const out = new Map<string, string[]>();
+    for (let i = 0; i < chatIds.length; i += 5000) {
+      const rows = await this.prisma.leadFacts.findMany({
+        where: { chatId: { in: chatIds.slice(i, i + 5000) } },
+        select: { chatId: true, facts: true },
+      });
+      for (const r of rows) {
+        if (!r.facts.includes('"deal_')) continue;
+        try {
+          const f = JSON.parse(r.facts) as Record<string, unknown>;
+          const got = Object.keys(
+            (f[DEAL_REACHED_FACT] as Record<string, unknown>) ?? {},
+          );
+          if (f['deal_stage'] === 'archive') got.push('archive');
+          out.set(String(r.chatId), got);
+        } catch {
+          continue;
+        }
+      }
+    }
+    return out;
+  }
+
   /** Регионы, где есть сотрудники, — выбор региона админу. */
   async regions(): Promise<string[]> {
     const rows = await this.prisma.dashboardUser.findMany({
@@ -727,6 +869,7 @@ export class StatsService {
       stages,
       cold,
       traffic: await this.trafficSplit(range, mine, owners),
+      sources: await this.sources({ ...query, region: query.region }),
     };
   }
 

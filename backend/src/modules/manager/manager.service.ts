@@ -71,6 +71,8 @@ export interface ManagerChatRow extends ManagerAttribution {
   /** этап сделки, выставленный менеджером; null — не задан */
   deal_stage: string | null;
   deal_note: string | null;
+  /** источник трафика лида: base | hot_leadgen | cold_leadgen */
+  traffic_source: string | null;
   age: number | null;
   city: string | null;
   phone: string | null;
@@ -113,6 +115,7 @@ interface RawRow {
   profile_city: string | null;
   profile_phone?: string | null;
   profile_username?: string | null;
+  traffic_source?: string | null;
   account_status?: string | null;
   account_lost_at?: number | bigint | null;
   client_status?: string | null;
@@ -260,6 +263,7 @@ export class ManagerService {
       name: (facts['name'] as string) ?? null,
       deal_stage: (facts['deal_stage'] as string) ?? null,
       deal_note: (facts['deal_note'] as string) ?? null,
+      traffic_source: r.traffic_source ?? null,
       age: intOrNull(facts['age']),
       city: (facts['city'] as string) || r.profile_city || null,
       phone:
@@ -330,7 +334,8 @@ export class ManagerService {
              p.facts AS facts,
              (SELECT pn.city FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_city,
              (SELECT pn.phone_e164 FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_phone,
-             (SELECT COALESCE(pn.peer_username, pn.username_key) FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_username
+             (SELECT COALESCE(pn.peer_username, pn.username_key) FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_username,
+             (SELECT pn.traffic_source FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS traffic_source
       FROM contacts c LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
       LEFT JOIN channel_accounts a ON a.id = c.account_id
       WHERE 1 = 1 ${this.scopeSql(accounts)} ${visible}
@@ -394,7 +399,8 @@ export class ManagerService {
              p.facts AS facts,
              (SELECT pn.city FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_city,
              (SELECT pn.phone_e164 FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_phone,
-             (SELECT COALESCE(pn.peer_username, pn.username_key) FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_username
+             (SELECT COALESCE(pn.peer_username, pn.username_key) FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS profile_username,
+             (SELECT pn.traffic_source FROM leads pn WHERE pn.chat_id = c.chat_id LIMIT 1) AS traffic_source
       FROM contacts c
       LEFT JOIN lead_handoff h ON h.chat_id = c.chat_id
       LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id

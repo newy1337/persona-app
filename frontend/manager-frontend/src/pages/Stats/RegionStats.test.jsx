@@ -15,6 +15,10 @@ vi.mock('../../api/regionStats', () => ({
       managers: [{ manager_id: 5, username: 'rs-man', cost_usd: 12.5, calls: 100, tokens: { input: 1, cache_read: 0, cache_write: 0, output: 0 }, leads_uploaded: 40, leads_valid: 30, leads_replied: 9, active_chats: 7, messages_in: 50, messages_out: 60, manual_share: 0, stages: { ...stage0, vbros: 3 }, days: [] }],
       stages: { stages: [{ id: 'vbros', label: 'Вброс' }], days: [], totals: { ...stage0, vbros: 3 }, reached: { ...stage0, vbros: 5 } },
       cold: { active_after: 3, totals: { received: 4, written: 3, invalid: 1, replied: 1, active: 0 }, by_manager: [] },
+      sources: {
+        statuses: ['contacted', 'replied'], stages: [{ id: 'vbros', label: 'Вброс' }],
+        by_source: [{ source: 'base', label: 'Базовик', leads: 12, statuses: { contacted: 8, replied: 4 }, stages: { vbros: 2 } }],
+      },
       traffic: [
         { type: 'cold', label: 'Холодка', leads_uploaded: 30, leads_replied: 6, cost_usd: 10 },
         { type: 'hot', label: 'Hot', leads_uploaded: 10, leads_replied: 3, cost_usd: 2.5 },
@@ -49,4 +53,7 @@ test('хед видит свой регион: итог, менеджеры, э�
   const rows = [...host.querySelectorAll('[data-testid="traffic-table"] tbody tr')].map((r) => r.textContent);
   expect(rows).toEqual(['Холодка306 · 20%$10.00', 'Hot103 · 30%$2.50']);
   expect(calls[0]).toMatchObject({ region: '' });
+  await act(async () => tab('sources').click());
+  const src = [...host.querySelectorAll('[data-testid="sources-table"] tbody tr')].map((r) => r.textContent);
+  expect(src).toEqual(['Базовик12842']);
 });

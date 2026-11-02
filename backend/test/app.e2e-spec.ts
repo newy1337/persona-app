@@ -1299,6 +1299,11 @@ describe('Manager panel API (e2e)', () => {
       // оба подходят, по нулю за сегодня — первый по id
       const l1 = await send({ ...base, name: 'Первый', phone: '+79005570001' });
       expect(l1.assigned_to).toMatchObject({ user_id: m1, username: 'inb-m1' });
+      // лид по API — горячий лидген, без участия менеджера
+      expect(
+        (await app.get(PrismaService).lead.findUnique({ where: { id: l1.id } }))
+          ?.trafficSource,
+      ).toBe('hot_leadgen');
       // у m1 уже один — очередь m2
       const l2 = await send({
         ...base,
@@ -1978,6 +1983,7 @@ describe('Manager panel API (e2e)', () => {
       expect(leads[0]).toMatchObject({
         cold: true,
         source_type: 'beboo',
+        traffic_source: 'cold_leadgen',
         status: 'queued',
         first_name: 'Олег',
       });
@@ -6931,6 +6937,103 @@ describe('Manager panel API (e2e)', () => {
           .set(h)
           .expect(200);
       }
+    });
+
+    it('источник трафика: менеджер выбирает базовик или горячий лидген, статистика по регионам и этапам', async () => {
+      const prisma = app.get(PrismaService);
+      const h = { Authorization: `Bearer ${token}` };
+      const created = await request(app.getHttpServer())
+        .post('/api/leads')
+        .set(h)
+        .send({ phone: '+7 900 777-10-01', traffic_source: 'base' })
+        .expect(200);
+      expect(created.body.traffic_source).toBe('base');
+      // холодку руками не ставят — её раздаёт сервис
+      await request(app.getHttpServer())
+        .post('/api/leads')
+        .set(h)
+        .send({ phone: '+7 900 777-10-02', traffic_source: 'cold_leadgen' })
+        .expect(400);
+      const edited = await request(app.getHttpServer())
+        .put(`/api/leads/${created.body.id}`)
+        .set(h)
+        .send({ traffic_source: 'hot_leadgen' })
+        .expect(200);
+      expect(edited.body.traffic_source).toBe('hot_leadgen');
+      const imported = await request(app.getHttpServer())
+        .post('/api/leads/import')
+        .set(h)
+        .send({
+          text: '+79007771003\n+79007771004',
+          traffic_source: 'base',
+        })
+        .expect(200);
+      expect(imported.body.created).toBe(2);
+      const base = await prisma.lead.findMany({
+        where: { phoneE164: { in: ['+79007771003', '+79007771004'] } },
+      });
+      expect(base.map((l) => l.trafficSource)).toEqual(['base', 'base']);
+
+      // в регион 0707: менеджер — владелец лидов; один лид дошёл до «Вброса»
+      const manager = (
+        await request(app.getHttpServer())
+          .post('/api/managers')
+          .set(h)
+          .send({
+            username: 'ts-man',
+            password: 'man123456',
+            role: 'manager',
+            region_code: '0707',
+          })
+          .expect(200)
+      ).body.created_user_id as number;
+      const ids = [created.body.id, ...base.map((l) => l.id)];
+      await prisma.lead.updateMany({
+        where: { id: { in: ids } },
+        data: { ownerUserId: manager },
+      });
+      await prisma.lead.update({
+        where: { id: base[0].id },
+        data: { chatId: 777000801n, status: 'replied' },
+      });
+      await prisma.leadFacts.create({
+        data: {
+          chatId: 777000801n,
+          facts: JSON.stringify({
+            deal_stage: 'vbros',
+            deal_reached: { vbros: 1 },
+          }),
+        },
+      });
+      const all = await request(app.getHttpServer())
+        .get('/api/stats/sources')
+        .set(h)
+        .expect(200);
+      const region = all.body.regions.find((r: any) => r.region === '0707');
+      expect(region).toMatchObject({ leads: 3 });
+      expect(region.by_source).toMatchObject({ base: 2, hot_leadgen: 1 });
+      expect(region.statuses.replied).toBe(1);
+      expect(region.stages.vbros).toBe(1);
+      expect(all.body.sources.map((x: any) => x.label)).toEqual([
+        'Базовик',
+        'Горячий лидген',
+        'Холодный лидген',
+      ]);
+      const onlyBase = await request(app.getHttpServer())
+        .get('/api/stats/sources?source=base')
+        .set(h)
+        .expect(200);
+      expect(onlyBase.body.source).toBe('base');
+      expect(
+        onlyBase.body.regions.find((r: any) => r.region === '0707'),
+      ).toMatchObject({ leads: 2 });
+
+      await prisma.leadFacts.deleteMany({ where: { chatId: 777000801n } });
+      await prisma.lead.deleteMany({ where: { id: { in: ids } } });
+      await request(app.getHttpServer())
+        .delete(`/api/managers/${manager}`)
+        .set(h)
+        .expect(200);
     });
 
     it('VK leads: vk.com link, channel field, same contact in both channels, account channel must match', async () => {

@@ -74,6 +74,26 @@ export class StatsController {
     return this.stats.coldLeads({ from, to });
   }
 
+  @ApiOperation({
+    summary:
+      'Лиды по источнику трафика: по регионам, статусам и этапам; фильтр source',
+  })
+  @ApiQuery({ name: 'from', required: false, example: '2026-10-01' })
+  @ApiQuery({ name: 'to', required: false, example: '2026-10-31' })
+  @ApiQuery({
+    name: 'source',
+    required: false,
+    description: 'base | hot_leadgen | cold_leadgen | none; пусто — все',
+  })
+  @Get('sources')
+  sources(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('source') source?: string,
+  ) {
+    return this.stats.sources({ from, to, source });
+  }
+
   @ApiOperation({ summary: 'Расход одного чата' })
   @Get('chat/:chatId')
   forChat(

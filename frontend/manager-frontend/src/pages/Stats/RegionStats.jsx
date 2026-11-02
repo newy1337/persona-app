@@ -4,6 +4,7 @@ import DateRangePicker, { mskToday, addDays } from '../../components/DateRangePi
 import ManagersTable from './ManagersTable';
 import StagesTable from './StagesTable';
 import ColdTable from './ColdTable';
+import SourcesTable from './SourcesTable';
 import TableSkeleton from '../../components/TableSkeleton/TableSkeleton';
 import s from '../../styles/AdminPage.module.scss';
 import p from './Stats.module.scss';
@@ -28,7 +29,7 @@ export function TrafficTable({ rows }) {
   return (
     <div className={p.managers}>
       <p className={s.hint}>
-        Тип трафика задаётся у личности. Номера — добавленные за период лиды менеджеров региона, расход — вызовы
+        Тип трафика личности (Холодка / Hot) задаётся у личности — это не источник номера. Номера — добавленные за период лиды менеджеров региона, расход — вызовы
         моделей в их диалогах.
       </p>
       <div className={s.tableWrap}>
@@ -63,7 +64,7 @@ export function TrafficTable({ rows }) {
   );
 }
 
-const TABS = [['managers', 'По менеджерам'], ['stages', 'Этапы'], ['cold', 'Холодка'], ['traffic', 'По трафику']];
+const TABS = [['managers', 'По менеджерам'], ['stages', 'Этапы'], ['cold', 'Холодка'], ['sources', 'По источнику'], ['traffic', 'По трафику']];
 
 export default function RegionStats() {
   const [range, setRange] = useState(() => ({ from: addDays(mskToday(), -29), to: mskToday() }));
@@ -127,6 +128,15 @@ export default function RegionStats() {
         <StagesTable data={data.stages} />
       ) : tab === 'cold' ? (
         <ColdTable data={data.cold} />
+      ) : tab === 'sources' ? (
+        <div className={p.managers}>
+          <p className={s.hint}>
+            Откуда номера: базовик, горячий или холодный лидген. Лиды, добавленные за период менеджерам региона, — в каких
+            они статусах и до каких этапов дошли. «Не отмечен» — добавленные до появления источника.
+          </p>
+          <SourcesTable data={data.sources} ariaLabel="Лиды по источнику" rowTitle="Источник"
+            rows={data.sources.by_source.map((r) => ({ ...r, key: r.source, title: r.label }))} />
+        </div>
       ) : tab === 'traffic' ? (
         <TrafficTable rows={data.traffic} />
       ) : (

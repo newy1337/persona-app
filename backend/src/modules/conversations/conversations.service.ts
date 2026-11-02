@@ -316,6 +316,7 @@ export class ConversationsService {
       gender?: string | null;
       usernameKey?: string | null;
       telegramUsername?: string | null;
+      trafficSource?: string | null;
     } | null = null,
     read: { outbox: number | null; inbox: number | null } = {
       outbox: null,
@@ -351,6 +352,8 @@ export class ConversationsService {
       client_city: profile?.city ?? null,
       /** пол из карточки лида: m / f / unknown; null — не указан */
       client_gender: profile?.gender ?? null,
+      /** источник трафика лида: base | hot_leadgen | cold_leadgen */
+      traffic_source: profile?.trafficSource ?? null,
       is_paused: isPaused,
       archived: Boolean(facts[HIDDEN_FROM_DASHBOARD_KEY]),
       messages: messages.map((m) => ({

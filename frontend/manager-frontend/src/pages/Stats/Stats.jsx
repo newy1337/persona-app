@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getUsage, getManagerUsage, getBalance, getDealStages, getColdLeads } from '../../api/usage';
+import { getUsage, getManagerUsage, getBalance, getDealStages, getColdLeads, getTrafficSources } from '../../api/usage';
+import { SourcesByRegion } from './SourcesTable';
 import DailyChart from './DailyChart';
 import DateRangePicker, { mskToday, addDays } from '../../components/DateRangePicker/DateRangePicker';
 import PricesEditor from './PricesEditor';
@@ -75,6 +76,8 @@ export default function Stats() {
   const [balance, setBalance] = useState(null);
   const [stages, setStages] = useState(null);
   const [cold, setCold] = useState(null);
+  const [sources, setSources] = useState(null);
+  const [source, setSource] = useState('');
 
   const load = useCallback(() => {
     getUsage({ from: range.from, to: range.to })
@@ -110,6 +113,16 @@ export default function Stats() {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [tab, range]);
+
+  useEffect(() => {
+    if (tab !== 'sources') return undefined;
+    let alive = true;
+    setSources(null);
+    getTrafficSources({ from: range.from, to: range.to, source })
+      .then((r) => alive && setSources(r))
+      .catch((e) => alive && setError(e.detail || e.message));
+    return () => { alive = false; };
+  }, [tab, range, source]);
 
   useEffect(() => {
     if (tab !== 'cold') return undefined;
@@ -187,7 +200,7 @@ export default function Stats() {
           {showPrices && <PricesEditor onChanged={load} onError={setError} />}
 
           <div className={p.tabs} role="tablist">
-            {[['overview', 'Обзор'], ['managers', 'По менеджерам'], ['teams', 'По командам'], ['stages', 'Этапы'], ['cold', 'Холодка']].map(([id, label]) => (
+            {[['overview', 'Обзор'], ['managers', 'По менеджерам'], ['teams', 'По командам'], ['stages', 'Этапы'], ['cold', 'Холодка'], ['sources', 'Источники']].map(([id, label]) => (
               <button
                 key={id}
                 role="tab"
@@ -201,7 +214,9 @@ export default function Stats() {
             ))}
           </div>
 
-          {tab === 'cold' ? (
+          {tab === 'sources' ? (
+            sources ? <SourcesByRegion data={sources} source={source} onSource={setSource} /> : <TableSkeleton rows={5} label="Считаю источники…" />
+          ) : tab === 'cold' ? (
             cold ? <ColdTable data={cold} /> : <TableSkeleton rows={5} label="Считаю холодку…" />
           ) : tab === 'stages' ? (
             stages ? <StagesTable data={stages} /> : <TableSkeleton rows={5} label="Считаю этапы…" />
