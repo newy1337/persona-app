@@ -468,6 +468,40 @@ describe('manual outbox recovery against a migrated database', () => {
       expect(telegram.sendAlbum).not.toHaveBeenCalled();
     });
 
+    it('альбом VK ушёл, память упала — повтор записывает историю один раз и не шлёт снова', async () => {
+      const id = await history.enqueueManualReply(vkChat, 'мы', now, {
+        kind: 'album',
+        filePath: JSON.stringify(['/synthetic/a.jpg', '/synthetic/b.jpg']),
+      });
+      brain.noteOperatorMessage.mockRejectedValueOnce(
+        Error('memory DB failed'),
+      );
+      const worker = vkWorker();
+      await worker.tick();
+      expect((await row(id))!.status).toBe('pending');
+      now += 60;
+      await worker.tick();
+      expect((await row(id))!.status).toBe('sent');
+      expect(vk.sendFiles).toHaveBeenCalledTimes(1);
+      expect(
+        await db.message.count({
+          where: { chatId: BigInt(vkChat), role: 'assistant' },
+        }),
+      ).toBe(2);
+    });
+
+    it('видео по ссылке в VK — сразу на проверку, без пяти повторов', async () => {
+      const id = await history.enqueueManualReply(vkChat, '', now, {
+        kind: 'video',
+        filePath: 'https://cdn.example/clip.mp4',
+      });
+      await vkWorker().tick();
+      const r = (await row(id))!;
+      expect(r.status).toBe('needs_review');
+      expect(r.error).toContain('видео по ссылке');
+      expect(vk.sendFile).not.toHaveBeenCalled();
+    });
+
     it('стикер и гиф по ссылке в VK сразу на проверку с понятной причиной, без Telegram', async () => {
       const sticker = await history.enqueueManualReply(vkChat, '', now, {
         kind: 'sticker',

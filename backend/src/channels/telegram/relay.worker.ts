@@ -21,6 +21,7 @@ import { KIND_LABEL, kindForFile } from 'src/domain/attachments';
 import { PhotoLibraryService } from 'src/shared/photo-library.service';
 import { ChannelRegistry } from 'src/channels/registry';
 import { peerOf } from 'src/channels/ids';
+import { toChatId } from 'src/utils/ids';
 import type { ChannelTransport, OutgoingFile } from 'src/channels/channel';
 
 /**
@@ -203,19 +204,20 @@ export class RelayWorker implements OnModuleInit {
     const automated = claimed.source.startsWith('bot:voicer:');
     const voicer = automated || claimed.source.startsWith('operator:voicer:');
     const vk = this.vkFor(chatId);
-    // VK не принимает из панели видео, голосовые, файлы, стикеры и альбомы:
+    // Стикеры и вложения по ссылке (Telegram скачал бы сам) VK не принимает:
     // повторять бессмысленно — сразу на проверку с понятной причиной.
-    // GIF по ссылке VK не загрузить: ему нужен файл.
-    const linkGif =
-      claimed.kind === 'animation' &&
+    const linkMedia =
+      claimed.kind !== 'text' &&
+      claimed.kind !== 'reaction' &&
+      claimed.kind !== 'album' &&
       /^https?:\/\//i.test(claimed.filePath ?? '');
     if (
       vk &&
-      (!VK_KINDS.has(claimed.kind) || linkGif) &&
+      (!VK_KINDS.has(claimed.kind) || linkMedia) &&
       !delivery.dispatchedAt
     ) {
-      const label = linkGif
-        ? 'гиф по ссылке'
+      const label = linkMedia
+        ? `${(KIND_LABEL[claimed.kind] ?? claimed.kind).replace(/[[\]]/g, '')} по ссылке`
         : (KIND_LABEL[claimed.kind] ?? claimed.kind).replace(/[[\]]/g, '');
       const reason = `ВКонтакте пока не умеет отправлять из панели «${label}» — отправьте текстом, фото или файлом. Сообщение не отправлено.`;
       await this.history.reviewManualReply(reply.id, reason);
@@ -460,6 +462,17 @@ export class RelayWorker implements OnModuleInit {
             ? 'video'
             : 'photo'
           : row.kind;
+      // Часть альбома VK без своего номера: повтор записи после сбоя памяти
+      // нашёл бы её только по файлу и времени — иначе в истории дубль.
+      const peerMsgId = i > 0 && ids[i] === ids[i - 1] ? null : ids[i];
+      if (
+        peerMsgId === null &&
+        (await this.history['prisma'].message.findFirst({
+          where: { chatId: toChatId(chatId), filePath: path, ts },
+          select: { id: true },
+        }))
+      )
+        continue;
       const stored = await this.history.appendMessage(chatId, {
         role: 'assistant',
         text: (i === 0 && row.text) || KIND_LABEL[kind] || `[${kind}]`,
@@ -471,7 +484,7 @@ export class RelayWorker implements OnModuleInit {
             : 'operator:web',
         // Альбом VK — одно сообщение: номер только у первой части, иначе
         // история приняла бы остальные за повтор и не записала.
-        peerMsgId: i > 0 && ids[i] === ids[i - 1] ? null : ids[i],
+        peerMsgId,
         mediaKind: kind === 'text' ? null : kind,
         filePath: path,
         replyTo: i === 0 ? row.replyTo : null,
