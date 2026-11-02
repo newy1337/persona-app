@@ -74,6 +74,8 @@ describe('manual outbox recovery against a migrated database', () => {
     );
     expect(telegram.sendText.mock.calls[1][2].accountId).toBe(1);
     expect((await row(id)).status).toBe('sent');
+    // ошибка первой попытки не висит рядом с «отправлено»
+    expect((await row(id)).error).toBeNull();
     expect(await db.message.count()).toBe(1);
   });
   it('acknowledged message survives memory failure and is recorded once without another RPC', async () => {

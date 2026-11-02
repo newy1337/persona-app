@@ -46,11 +46,14 @@ export const deliveryView = (d?: DeliveryWithStatus | null) =>
         recording_id: d.recordingId,
         chat_id: String(d.chatId),
         status: d.pendingReply?.status ?? 'needs_review',
+        // Дошло — ошибка прошлой попытки уже не причина (старые строки её хранят).
         error:
-          d.pendingReply?.error ??
-          (!d.pendingReply
-            ? 'Запись отправки недоступна. Проверьте диалог перед повтором'
-            : null),
+          d.pendingReply?.status === 'sent'
+            ? null
+            : (d.pendingReply?.error ??
+              (!d.pendingReply
+                ? 'Запись отправки недоступна. Проверьте диалог перед повтором'
+                : null)),
         created_at: d.createdAt,
         sent_at: d.pendingReply?.sentTs ?? null,
       }

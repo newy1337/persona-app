@@ -873,10 +873,11 @@ export class HistoryService {
       : null;
   }
 
+  /** Дошло: ошибка прошлой попытки больше не причина — панель её не показывает. */
   async markManualReplySent(id: number) {
     await this.prisma.pendingReply.update({
       where: { id },
-      data: { status: 'sent', sentTs: this.clock.ts() },
+      data: { status: 'sent', sentTs: this.clock.ts(), error: null },
     });
   }
 
