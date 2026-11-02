@@ -4516,6 +4516,115 @@ describe('Manager panel API (e2e)', () => {
       await prisma.contact.delete({ where: { chatId: BigInt(orphan) } });
     });
 
+    it('первые сообщения региона: хед правит свой пул, лидам его аккаунтов уходит он, пусто — общий пул личности', async () => {
+      const prisma = app.get(PrismaService);
+      const h = { Authorization: `Bearer ${token}` };
+      const mk = async (body: object) =>
+        (
+          await request(app.getHttpServer())
+            .post('/api/managers')
+            .set(h)
+            .send(body)
+            .expect(200)
+        ).body.created_user_id as number;
+      const head = await mk({
+        username: 'op-head',
+        password: 'head12345',
+        role: 'head',
+        region_code: '0303',
+      });
+      const manager = await mk({
+        username: 'op-man',
+        password: 'man123456',
+        role: 'manager',
+        region_code: '0303',
+      });
+      const headAuth = {
+        Authorization: `Bearer ${
+          (
+            await request(app.getHttpServer())
+              .post('/auth/login')
+              .send({ username: 'op-head', password: 'head12345' })
+              .expect(200)
+          ).body.tokens.accessToken
+        }`,
+      };
+      const list = await request(app.getHttpServer())
+        .get('/api/region-openers')
+        .set(headAuth)
+        .expect(200);
+      expect(list.body).toMatchObject({ region: '0303', can_manage: true });
+      const nastya = list.body.items.find((i: any) => i.slug === 'nastya');
+      expect(nastya.text).toBe('');
+      expect(nastya.default_text).toContain('{name}');
+      // чужой регион — нельзя; свой — можно
+      await request(app.getHttpServer())
+        .put('/api/region-openers/0304/nastya')
+        .set(headAuth)
+        .send({ text: 'Хай' })
+        .expect(403);
+      const pool = 'Регион 0303 зовёт, {name}\n---\nВторой вариант от {name}';
+      await request(app.getHttpServer())
+        .put('/api/region-openers/0303/nastya')
+        .set(headAuth)
+        .send({ text: pool })
+        .expect(200)
+        .expect((r) => expect(r.body.variants).toBe(2));
+      const admin = await request(app.getHttpServer())
+        .get('/api/region-openers?region=0303')
+        .set(h)
+        .expect(200);
+      expect(admin.body.regions).toContain('0303');
+      expect(admin.body.items.find((i: any) => i.slug === 'nastya').text).toBe(
+        pool,
+      );
+
+      // Аккаунт менеджера региона: первое сообщение — из пула региона.
+      const acc = await request(app.getHttpServer())
+        .post('/api/tg-accounts')
+        .set(h)
+        .send({
+          phone_e164: '+79001230303',
+          persona_id: 'nastya',
+          manager_id: manager,
+        })
+        .expect(200);
+      const brain = app.get(REPLY_BRAIN_TOKEN) as any;
+      const telegram = app.get(TelegramService);
+      const send = jest.spyOn(telegram, 'sendText').mockResolvedValue([1]);
+      const random = jest.spyOn(Math, 'random').mockReturnValue(0.99);
+      const regional = await brain.openLead(777000611, acc.body.id, {
+        firstName: 'Антон',
+      });
+      expect(regional).toMatch(/^Второй вариант от \S+$/);
+      // Пул региона сброшен — снова общий пул личности.
+      await request(app.getHttpServer())
+        .put('/api/region-openers/0303/nastya')
+        .set(headAuth)
+        .send({ text: '' })
+        .expect(200)
+        .expect((r) => expect(r.body.variants).toBe(0));
+      const fallback = await brain.openLead(777000612, acc.body.id, {
+        firstName: 'Антон',
+      });
+      expect(fallback).toMatch(/^Привет, это \S+/);
+      random.mockRestore();
+      send.mockRestore();
+
+      for (const c of [777000611, 777000612])
+        await app.get(TelegramService)['history'].wipeChat(c);
+      await request(app.getHttpServer())
+        .delete(`/api/tg-accounts/${acc.body.id}`)
+        .set(h)
+        .expect(200);
+      await prisma.regionOpener.deleteMany({ where: { regionCode: '0303' } });
+      for (const id of [manager, head])
+        await request(app.getHttpServer())
+          .delete(`/api/managers/${id}`)
+          .set(h)
+          .expect(200);
+    });
+
     it('история чата: кто включал и выключал бота и менял этап, системные выключения — тоже', async () => {
       const prisma = app.get(PrismaService);
       const chatId = 777000391;

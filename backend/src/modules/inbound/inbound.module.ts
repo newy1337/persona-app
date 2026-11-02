@@ -5,10 +5,12 @@ import { ApiKeysController } from './api-keys.controller';
 import { ApiKeysService } from './api-keys.service';
 import {
   BufferController,
+  RegionOpenersController,
   RegionSettingsController,
 } from './buffer.controller';
 import { BufferService } from './buffer.service';
 import { RegionSettingsService } from './region-settings.service';
+import { RegionOpenersService } from './region-openers.service';
 
 @Module({
   controllers: [
@@ -16,12 +18,14 @@ import { RegionSettingsService } from './region-settings.service';
     ApiKeysController,
     BufferController,
     RegionSettingsController,
+    RegionOpenersController,
   ],
   providers: [
     InboundService,
     ApiKeysService,
     BufferService,
     RegionSettingsService,
+    RegionOpenersService,
   ],
   exports: [InboundService, ApiKeysService],
 })

@@ -47,6 +47,7 @@ import {
   pickOpener,
 } from 'src/domain/outreach-opener';
 import { fillText } from './config/variables';
+import { regionOpenerFor } from 'src/shared/region-openers';
 import type { TypingStyle } from 'src/domain/typing';
 import {
   HANDOFF_TRIGGER_KEY,
@@ -2390,13 +2391,14 @@ export class PersonaBrainService implements ReplyBrain {
           },
         };
 
+        // Пул региона (задал хед) важнее общего пула личности.
+        const pool =
+          (this.prisma &&
+            (await regionOpenerFor(this.prisma, accountId, persona.slug))) ||
+          persona.prompts.opener;
         const reply =
           lead.opener?.trim() ||
-          openerText(
-            pickOpener(persona.prompts.opener),
-            persona.variables,
-            site,
-          );
+          openerText(pickOpener(pool), persona.variables, site);
         await this.deliverParts(
           chatId,
           [reply],

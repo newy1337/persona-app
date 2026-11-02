@@ -832,6 +832,19 @@ model DeclinedLead {
 }
 
 /// Настройки региона для входящих лидов. Нет строки — всё выключено.
+/// Пул первых сообщений региона для личности: хед правит сам, без админа.
+/// Пусто или нет строки — уходит общий пул личности из её промптов.
+model RegionOpener {
+  regionCode  String @map("region_code")
+  personaSlug String @map("persona_slug")
+  text        String
+  updatedAt   Int    @map("updated_at")
+  updatedById Int?   @map("updated_by_id")
+
+  @@id([regionCode, personaSlug])
+  @@map("region_openers")
+}
+
 model RegionSetting {
   regionCode       String  @id @map("region_code")
   /// принимать перезабив (reassigned=true); выключено — такие лиды отбиваются

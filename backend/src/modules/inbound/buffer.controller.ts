@@ -27,6 +27,7 @@ import { Role } from 'src/enums/roles.enum';
 import { AuditService } from 'src/shared/audit.service';
 import { BufferService } from './buffer.service';
 import { RegionSettingsService } from './region-settings.service';
+import { RegionOpenersService } from './region-openers.service';
 import { ParseRegionPipe } from './region.pipe';
 
 class DeclineDto {
@@ -34,6 +35,12 @@ class DeclineDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+}
+
+class RegionOpenerDto {
+  @IsString()
+  @MaxLength(4000)
+  text: string;
 }
 
 class RegionSettingDto {
@@ -148,6 +155,55 @@ export class RegionSettingsController {
           acceptReassigned: dto.accept_reassigned,
           acceptCold: dto.accept_cold,
         }),
+    );
+  }
+}
+
+@ApiTags('region-openers')
+@ApiBearerAuth()
+@Auth()
+@Roles(Role.HEAD)
+@Controller('api/region-openers')
+export class RegionOpenersController {
+  constructor(
+    private readonly openers: RegionOpenersService,
+    private readonly audit: AuditService,
+  ) {}
+
+  @ApiOperation({
+    summary:
+      'Первые сообщения региона по личностям: хед — свой регион, админ — любой',
+  })
+  @ApiQuery({ name: 'region', required: false })
+  @Get()
+  list(@CurrentUser() user: DashboardUser, @Query('region') region?: string) {
+    return this.openers.list(user, region?.trim() || null);
+  }
+
+  @ApiOperation({
+    summary: 'Пул первых сообщений региона для личности; пусто — общий пул',
+  })
+  @Put(':region/:slug')
+  @HttpCode(200)
+  @UsePipes(new ValidationPipe({ whitelist: true }))
+  update(
+    @Param('region', ParseRegionPipe) region: string,
+    @Param('slug') slug: string,
+    @Body() dto: RegionOpenerDto,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    return this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'region.openers',
+        resource: `region:${region}`,
+        payload: {
+          slug,
+          variants: dto.text.split(/^[ \t]*---[ \t]*$/m).filter((v) => v.trim())
+            .length,
+        },
+      },
+      () => this.openers.update(user, region, slug, dto.text),
     );
   }
 }

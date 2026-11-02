@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import ConversationPage from './pages/ConversationPage/ConversationPage';
 import Accounts from './pages/Accounts/Accounts';
 import Managers from './pages/Managers/Managers';
+import Openers from './pages/Openers/Openers';
 import Leads from './pages/Leads/Leads';
 import Personas from './pages/Personas/Personas';
 import Stats from './pages/Stats/Stats';
@@ -55,6 +56,7 @@ function App() {
           <Route path="/photo-sets" element={only(accountsAllowed, <PhotoSets />)} />
           <Route path="/buffer" element={only(['admin', 'head', 'teamlead'].includes(me.role), <Buffer />)} />
           <Route path="/managers" element={only(admin || me.role === 'head', <Managers />)} />
+          <Route path="/openers" element={only(admin || me.role === 'head', <Openers />)} />
           <Route path="/personas" element={only(admin, <Personas />)} />
           <Route path="/stats" element={only(admin, <Stats />)} />
           <Route path="/settings" element={only(admin, <Settings />)} />
