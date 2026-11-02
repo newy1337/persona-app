@@ -44,6 +44,7 @@ import {
   datingSiteOf,
   leadSlots,
   openerText,
+  pickOpener,
 } from 'src/domain/outreach-opener';
 import { fillText } from './config/variables';
 import type { TypingStyle } from 'src/domain/typing';
@@ -2391,7 +2392,11 @@ export class PersonaBrainService implements ReplyBrain {
 
         const reply =
           lead.opener?.trim() ||
-          openerText(persona.prompts.opener, persona.variables, site);
+          openerText(
+            pickOpener(persona.prompts.opener),
+            persona.variables,
+            site,
+          );
         await this.deliverParts(
           chatId,
           [reply],

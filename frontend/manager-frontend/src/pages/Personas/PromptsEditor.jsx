@@ -4,11 +4,12 @@ import VersionsTable, { ago, useVersions } from './Versions';
 import { buildPromptsFile, promptsFileName, readPromptsFile } from './promptsFile';
 import { saveJsonFile } from './files';
 import { drafts } from './drafts';
+import OpenerPool from './OpenerPool';
 import s from '../../styles/AdminPage.module.scss';
 import p from './Personas.module.scss';
 
 const DRAFT_DELAY_MS = 600;
-const SHORT = new Set(['opener', 'intro']);
+const SHORT = new Set(['intro']);
 
 export default function PromptsEditor({ persona, defaults, onSaved, onError }) {
   const server = persona.sections.prompts ?? {};
@@ -215,13 +216,17 @@ export default function PromptsEditor({ persona, defaults, onSaved, onError }) {
               </div>
             </div>
             <p className={p.promptHint}>{label.hint}</p>
-            <textarea
-              className={`${s.field} ${p.promptText}`}
-              rows={SHORT.has(key) ? 2 : 12}
-              spellCheck={false}
-              value={value}
-              onChange={(e) => set(key, e.target.value)}
-            />
+            {key === 'opener' ? (
+              <OpenerPool value={value} onChange={(text) => set(key, text)} />
+            ) : (
+              <textarea
+                className={`${s.field} ${p.promptText}`}
+                rows={SHORT.has(key) ? 2 : 12}
+                spellCheck={false}
+                value={value}
+                onChange={(e) => set(key, e.target.value)}
+              />
+            )}
           </div>
         );
       })}

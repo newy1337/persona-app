@@ -4055,7 +4055,48 @@ describe('Manager panel API (e2e)', () => {
       const text = await brain.openLead(chatId, 1, { firstName: 'Антон' });
       expect(text).toMatch(/Привет/);
       expect(send).toHaveBeenCalled();
+
+      // Пул первых сообщений: каждому лиду — случайный вариант из пула.
+      const persona = await prisma.persona.findUniqueOrThrow({
+        where: { slug: 'nastya' },
+      });
+      const ownPrompts = JSON.parse(persona.prompts);
+      const lastVersion = await prisma.personaVersion.aggregate({
+        where: { personaId: persona.id },
+        _max: { id: true },
+      });
+      const putPrompts = (data: object) =>
+        request(app.getHttpServer())
+          .put(`/api/personas/${persona.id}/sections/prompts`)
+          .set(h)
+          .send({ data })
+          .expect(200);
+      await putPrompts({
+        ...ownPrompts,
+        opener: 'Привет, это {name}\n---\nДобрый вечер, {name} тут',
+      });
+      const random = jest.spyOn(Math, 'random');
+      const openers: string[] = [];
+      for (const [i, r] of [0, 0.99].entries()) {
+        random.mockReturnValue(r);
+        openers.push(
+          await brain.openLead(777000601 + i, 1, { firstName: 'Антон' }),
+        );
+      }
+      random.mockRestore();
       send.mockRestore();
+      await putPrompts(ownPrompts);
+      // История промптов — как была: тесты личностей ниже считают версии.
+      await prisma.personaVersion.deleteMany({
+        where: {
+          personaId: persona.id,
+          id: { gt: lastVersion._max.id ?? 0 },
+        },
+      });
+      for (const c of [777000601, 777000602])
+        await app.get(TelegramService)['history'].wipeChat(c);
+      expect(openers[0]).toMatch(/^Привет, это \S+$/);
+      expect(openers[1]).toMatch(/^Добрый вечер, \S+ тут$/);
 
       // Если на чат ссылается другой лид — там живая переписка, чат не трогаем.
       const a = await request(app.getHttpServer())

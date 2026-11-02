@@ -3,6 +3,8 @@ import {
   leadSlots,
   openerText,
   SITE_FALLBACK,
+  openerVariants,
+  pickOpener,
 } from './outreach-opener';
 import { DEFAULT_PROMPTS } from '../brain/config/prompts';
 
@@ -46,5 +48,33 @@ describe('первое сообщение лиду', () => {
 
   it('свой текст личности остаётся как есть', () => {
     expect(openerText('Доброе утро)', vars, '')).toBe('Доброе утро)');
+  });
+});
+
+describe('пул первых сообщений', () => {
+  const pool =
+    'Привет, это {name}\n---\nПриветик) {name} с {site}\n  ---  \n\n---\nДобрый вечер!';
+
+  it('варианты через строку «---»; пустые не считаются; без разделителя — один', () => {
+    expect(openerVariants(pool)).toEqual([
+      'Привет, это {name}',
+      'Приветик) {name} с {site}',
+      'Добрый вечер!',
+    ]);
+    expect(openerVariants('Привет, это {name} с {site}')).toEqual([
+      'Привет, это {name} с {site}',
+    ]);
+    // тире внутри текста — не разделитель
+    expect(openerVariants('Привет --- как дела?')).toEqual([
+      'Привет --- как дела?',
+    ]);
+  });
+
+  it('каждому лиду — случайный вариант из пула', () => {
+    expect(pickOpener(pool, () => 0)).toBe('Привет, это {name}');
+    expect(pickOpener(pool, () => 0.5)).toBe('Приветик) {name} с {site}');
+    expect(pickOpener(pool, () => 0.999)).toBe('Добрый вечер!');
+    const seen = new Set(Array.from({ length: 200 }, () => pickOpener(pool)));
+    expect(seen.size).toBe(3);
   });
 });
