@@ -8,7 +8,11 @@ import {
 } from '@nestjs/common';
 import { mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import type { ChannelTransport, ResolvedPeer } from 'src/channels/channel';
+import type {
+  ChannelTransport,
+  OutgoingFile,
+  ResolvedPeer,
+} from 'src/channels/channel';
 import { chatIdFor, peerOf } from 'src/channels/ids';
 import { ChannelRegistry } from 'src/channels/registry';
 import { VkApi } from 'src/channels/vk/api';
@@ -44,6 +48,7 @@ import {
 import { appConfig } from 'src/config/app.config';
 import { offlineReasonOf } from 'src/domain/offline-reason';
 import { toProxyUrl } from 'src/domain/proxy';
+import { kindForFile } from 'src/domain/attachments';
 import {
   DEFAULT_TYPING,
   partPauseMs,
@@ -72,6 +77,12 @@ const CONTACTS_MAX = 5000;
 const INVALID_USER = 113;
 /** «Печатает» VK держит 5–10 с; переставляем чаще. */
 const TYPING_REFRESH_MS = 5_000;
+/** Сколько вложений VK берёт в одно сообщение. */
+const VK_MAX_ATTACHMENTS = 10;
+/** Что собеседник видит, пока грузится вложение. */
+const VK_ACTIVITY: Partial<
+  Record<OutgoingFile['kind'], 'audiomessage' | 'videomessage' | 'photo'>
+> = { voice: 'audiomessage', video_note: 'videomessage', photo: 'photo' };
 /** Столько сбоев приёма подряд — уже не случайность, а проблема связи. */
 const TROUBLE_FAILURES = 3;
 /** Событие «печатает» старше — из догрузки, не живое. */
@@ -747,6 +758,71 @@ export class VkService
       entry.messages.send(
         peer,
         { attachment, ...(opts.caption ? { message: opts.caption } : {}) },
+        { randomId: opts.randomId },
+      ),
+    );
+  }
+
+  /**
+   * Голосовое, кружок, видео, файл или гифка: загрузка в VK, потом одно
+   * сообщение с вложением и подписью. Гифка уходит файлом — так её и
+   * показывает VK.
+   */
+  async sendFile(chatId: number, opts: OutgoingFile): Promise<number> {
+    const { entry, peer } = await this.accountFor(chatId, opts.accountId);
+    await entry.messages
+      .typing(peer, VK_ACTIVITY[opts.kind] ?? 'typing')
+      .catch(() => undefined);
+    const attachment = await entry.messages.upload(
+      peer,
+      opts.path,
+      opts.kind === 'animation' ? 'document' : opts.kind,
+    );
+    return this.sendAttachments(chatId, entry, peer, [attachment], opts);
+  }
+
+  /** Альбом: фото и видео одним сообщением VK (до 10 вложений). */
+  async sendFiles(
+    chatId: number,
+    opts: Omit<OutgoingFile, 'kind' | 'path'> & { paths: string[] },
+  ): Promise<number> {
+    if (!opts.paths.length) throw new Error('в альбоме нет файлов');
+    if (opts.paths.length > VK_MAX_ATTACHMENTS)
+      throw new Error(
+        `ВКонтакте принимает до ${VK_MAX_ATTACHMENTS} вложений в одном сообщении`,
+      );
+    const { entry, peer } = await this.accountFor(chatId, opts.accountId);
+    await entry.messages.typing(peer, 'photo').catch(() => undefined);
+    const attachments: string[] = [];
+    for (const path of opts.paths)
+      attachments.push(
+        await entry.messages.upload(
+          peer,
+          path,
+          kindForFile(path) === 'video' ? 'video' : 'photo',
+        ),
+      );
+    return this.sendAttachments(chatId, entry, peer, attachments, opts);
+  }
+
+  private async sendAttachments(
+    chatId: number,
+    entry: LiveVk,
+    peer: number,
+    attachments: string[],
+    opts: Pick<OutgoingFile, 'caption' | 'randomId' | 'replyTo' | 'onDispatch'>,
+  ): Promise<number> {
+    await opts.onDispatch?.();
+    return this.deliver(chatId, () =>
+      entry.messages.send(
+        peer,
+        {
+          attachment: attachments.join(','),
+          ...(opts.caption ? { message: opts.caption } : {}),
+          ...(opts.replyTo
+            ? { forward: VkMessages.reply(peer, opts.replyTo) }
+            : {}),
+        },
         { randomId: opts.randomId },
       ),
     );

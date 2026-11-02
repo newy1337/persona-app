@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { chatIdFor } from 'src/channels/ids';
 import { VkApiError } from 'src/channels/vk/errors';
 import { decodeEvent, type VkEvent } from 'src/channels/vk/inbound';
@@ -244,5 +247,109 @@ describe('VK: поиск для рассылки', () => {
     expect(await svc.resolvePhone(3, '+79001112244')).toEqual({
       kind: 'not_found',
     });
+  });
+});
+
+describe('VK: вложения из панели и от войсера', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'vk-files-'));
+  const file = (name: string) => {
+    const path = join(dir, name);
+    writeFileSync(path, 'x');
+    return path;
+  };
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  const withUploads = (answers: Record<string, unknown[]>) => {
+    const t = setup(answers);
+    const posted: Array<Record<string, unknown>> = [];
+    Object.assign(t.entry.api, {
+      postFile: async (_url: string, f: Record<string, unknown>) => {
+        posted.push(f);
+        return f.field === 'photo'
+          ? { photo: 'p', server: 1, hash: 'h' }
+          : f.field === 'video_file'
+            ? { video_hash: 'vh' }
+            : { file: 'f' };
+      },
+    });
+    t.svc.accountFor = async () => ({ entry: t.entry, peer: 555 });
+    return { ...t, posted };
+  };
+
+  it('голосовое — документ audio_message, ответом на сообщение, с подписью', async () => {
+    const { svc, calls } = withUploads({
+      'messages.setActivity': [1],
+      'docs.getMessagesUploadServer': [{ upload_url: 'https://up' }],
+      'docs.save': [
+        {
+          type: 'audio_message',
+          audio_message: { owner_id: 9, id: 7, access_key: 'k' },
+        },
+      ],
+      'messages.send': [{ cmid: 31 }],
+    });
+    const dispatched: string[] = [];
+    const cmid = await svc.sendFile(chatIdFor('vk', 555), {
+      kind: 'voice',
+      path: file('v.ogg'),
+      caption: 'держи',
+      randomId: '42',
+      replyTo: 12,
+      onDispatch: async () => {
+        dispatched.push('ушло');
+      },
+    });
+    expect(cmid).toBe(31);
+    expect(dispatched).toEqual(['ушло']);
+    expect(calls.find(([m]) => m === 'messages.setActivity')![1].type).toBe(
+      'audiomessage',
+    );
+    expect(
+      calls.find(([m]) => m === 'docs.getMessagesUploadServer')![1],
+    ).toMatchObject({ peer_id: 555, type: 'audio_message' });
+    const send = calls.find(([m]) => m === 'messages.send')![1];
+    expect(send).toMatchObject({
+      peer_id: 555,
+      attachment: 'doc9_7_k',
+      message: 'держи',
+      random_id: foldRandomId('42'),
+    });
+    expect(JSON.parse(String(send.forward))).toMatchObject({
+      conversation_message_ids: [12],
+      is_reply: true,
+    });
+  });
+
+  it('альбом — одно сообщение: фото и видео через запятую', async () => {
+    const { svc, calls } = withUploads({
+      'messages.setActivity': [1],
+      'photos.getMessagesUploadServer': [{ upload_url: 'https://up' }],
+      'photos.saveMessagesPhoto': [[{ owner_id: 9, id: 1 }]],
+      'video.save': [{ upload_url: 'https://up', owner_id: 9, video_id: 2 }],
+      'messages.send': [{ cmid: 55 }],
+    });
+    const cmid = await svc.sendFiles(chatIdFor('vk', 555), {
+      paths: [file('a.jpg'), file('b.mp4')],
+      caption: 'мы',
+      randomId: '7',
+    });
+    expect(cmid).toBe(55);
+    expect(calls.filter(([m]) => m === 'messages.send')).toHaveLength(1);
+    expect(calls.find(([m]) => m === 'messages.send')![1]).toMatchObject({
+      attachment: 'photo9_1,video9_2',
+      message: 'мы',
+    });
+  });
+
+  it('больше 10 вложений — сразу отказ, ничего не загружено', async () => {
+    const { svc, calls } = withUploads({});
+    await expect(
+      svc.sendFiles(chatIdFor('vk', 555), {
+        paths: Array.from({ length: 11 }, (_, i) => `/x/${i}.jpg`),
+        caption: '',
+        randomId: '1',
+      }),
+    ).rejects.toThrow('до 10 вложений');
+    expect(calls).toEqual([]);
   });
 });

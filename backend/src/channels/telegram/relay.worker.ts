@@ -21,10 +21,23 @@ import { KIND_LABEL, kindForFile } from 'src/domain/attachments';
 import { PhotoLibraryService } from 'src/shared/photo-library.service';
 import { ChannelRegistry } from 'src/channels/registry';
 import { peerOf } from 'src/channels/ids';
-import type { OutboundTransport } from 'src/brain/reply-brain.port';
+import type { ChannelTransport, OutgoingFile } from 'src/channels/channel';
 
-/** Что из панели умеет уйти в VK: текст, фото и реакция. Остальное — только Telegram. */
-const VK_KINDS = new Set(['text', 'photo', 'reaction']);
+/**
+ * Что из панели и от войсера умеет уйти в VK. Стикеры Telegram — нет: у VK
+ * свои стикеры по номеру, файл стикера ему не отправить.
+ */
+const VK_KINDS = new Set([
+  'text',
+  'photo',
+  'reaction',
+  'voice',
+  'video_note',
+  'video',
+  'document',
+  'animation',
+  'album',
+]);
 
 /** Как назвать мессенджер чата в подсказке менеджеру. */
 const channelTitle = (chatId: number | bigint) =>
@@ -90,7 +103,7 @@ export class RelayWorker implements OnModuleInit {
    * Через что слать в чат: Telegram-чат — Telegram-сервисом (он умеет все
    * вложения), VK-чат — каналом VK из реестра. Без реестра (тесты) — Telegram.
    */
-  private vkFor(chatId: number): OutboundTransport | null {
+  private vkFor(chatId: number): ChannelTransport | null {
     return peerOf(chatId).channel === 'vk' && this.channels
       ? this.channels.get('vk')
       : null;
@@ -192,12 +205,19 @@ export class RelayWorker implements OnModuleInit {
     const vk = this.vkFor(chatId);
     // VK не принимает из панели видео, голосовые, файлы, стикеры и альбомы:
     // повторять бессмысленно — сразу на проверку с понятной причиной.
-    if (vk && !VK_KINDS.has(claimed.kind) && !delivery.dispatchedAt) {
-      const label = (KIND_LABEL[claimed.kind] ?? claimed.kind).replace(
-        /[[\]]/g,
-        '',
-      );
-      const reason = `ВКонтакте пока не умеет отправлять из панели «${claimed.kind === 'album' ? 'альбом' : label}» — отправьте текстом или фото. Сообщение не отправлено.`;
+    // GIF по ссылке VK не загрузить: ему нужен файл.
+    const linkGif =
+      claimed.kind === 'animation' &&
+      /^https?:\/\//i.test(claimed.filePath ?? '');
+    if (
+      vk &&
+      (!VK_KINDS.has(claimed.kind) || linkGif) &&
+      !delivery.dispatchedAt
+    ) {
+      const label = linkGif
+        ? 'гиф по ссылке'
+        : (KIND_LABEL[claimed.kind] ?? claimed.kind).replace(/[[\]]/g, '');
+      const reason = `ВКонтакте пока не умеет отправлять из панели «${label}» — отправьте текстом, фото или файлом. Сообщение не отправлено.`;
       await this.history.reviewManualReply(reply.id, reason);
       await this.pause.pause(
         chatId,
@@ -345,6 +365,20 @@ export class RelayWorker implements OnModuleInit {
     if (row.kind === 'album') {
       const paths: string[] = JSON.parse(row.filePath ?? '[]');
       if (!paths.length) throw new Error('в альбоме нет файлов');
+      if (vk) {
+        if (!vk.sendFiles)
+          throw new Error('ВКонтакте не умеет отправлять альбомы');
+        // В VK альбом — одно сообщение со всеми вложениями.
+        const id = await vk.sendFiles(chatId, {
+          paths,
+          caption: row.text,
+          randomId: row.randomId ?? deliveryRandomId(),
+          accountId: row.accountId,
+          replyTo: row.replyTo,
+          ...(beforeSend ? { onDispatch: beforeSend } : {}),
+        });
+        return paths.map(() => id);
+      }
       return this.telegram.sendAlbum(chatId, paths, {
         caption: row.text,
         replyTo: row.replyTo,
@@ -352,8 +386,23 @@ export class RelayWorker implements OnModuleInit {
       });
     }
     if (!row.filePath) throw new Error(`вложению «${row.kind}» нужен файл`);
+    if (vk && row.kind !== 'photo') {
+      if (!vk.sendFile || /^https?:\/\//i.test(row.filePath))
+        throw new Error(`ВКонтакте не умеет отправлять «${row.kind}»`);
+      return [
+        await vk.sendFile(chatId, {
+          kind: row.kind as OutgoingFile['kind'],
+          path: row.filePath,
+          caption: row.text,
+          randomId: row.randomId ?? deliveryRandomId(),
+          accountId: row.accountId,
+          replyTo: row.replyTo,
+          ...(beforeSend ? { onDispatch: beforeSend } : {}),
+        }),
+      ];
+    }
     if (vk) {
-      if (row.kind !== 'photo' || !vk.sendPhoto)
+      if (!vk.sendPhoto)
         throw new Error(`ВКонтакте не умеет отправлять «${row.kind}»`);
       return [
         await vk.sendPhoto(chatId, {
@@ -420,7 +469,9 @@ export class RelayWorker implements OnModuleInit {
           row.source.startsWith('bot:voicer:')
             ? row.source
             : 'operator:web',
-        peerMsgId: ids[i],
+        // Альбом VK — одно сообщение: номер только у первой части, иначе
+        // история приняла бы остальные за повтор и не записала.
+        peerMsgId: i > 0 && ids[i] === ids[i - 1] ? null : ids[i],
         mediaKind: kind === 'text' ? null : kind,
         filePath: path,
         replyTo: i === 0 ? row.replyTo : null,

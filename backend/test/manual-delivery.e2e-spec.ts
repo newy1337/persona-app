@@ -361,6 +361,14 @@ describe('manual outbox recovery against a migrated database', () => {
           return 32;
         }),
         sendReaction: jest.fn(),
+        sendFile: jest.fn(async (_c, opts) => {
+          await opts.onDispatch?.();
+          return 40 + vk.sendFile.mock.calls.length;
+        }),
+        sendFiles: jest.fn(async (_c, opts) => {
+          await opts.onDispatch?.();
+          return 55;
+        }),
       };
     });
 
@@ -390,20 +398,100 @@ describe('manual outbox recovery against a migrated database', () => {
       expect(telegram.sendMedia).not.toHaveBeenCalled();
     });
 
-    it('видео в VK сразу на проверку с понятной причиной, без повторов и без Telegram', async () => {
-      const id = await history.enqueueManualReply(vkChat, '', now, {
-        kind: 'video',
-        filePath: '/synthetic/v.mp4',
+    it('голосовое, кружок, видео и файл уходят в VK вложением с аккаунтом чата', async () => {
+      const ids = [];
+      for (const [kind, filePath] of [
+        ['voice', '/synthetic/v.ogg'],
+        ['video_note', '/synthetic/round.mp4'],
+        ['video', '/synthetic/clip.mp4'],
+        ['document', '/synthetic/doc.pdf'],
+      ] as const)
+        ids.push(
+          await history.enqueueManualReply(
+            vkChat,
+            kind === 'video' ? 'смотри' : '',
+            now,
+            {
+              kind,
+              filePath,
+            },
+          ),
+        );
+      await vkWorker().tick();
+      for (const id of ids) expect((await row(id))!.status).toBe('sent');
+      expect(vk.sendFile.mock.calls.map(([, o]) => o.kind)).toEqual([
+        'voice',
+        'video_note',
+        'video',
+        'document',
+      ]);
+      expect(vk.sendFile.mock.calls[2][1]).toMatchObject({
+        path: '/synthetic/clip.mp4',
+        caption: 'смотри',
+        accountId: 2,
+        randomId: JSON.parse((await row(ids[2]))!.delivery!).randomId,
+      });
+      const stored = await db.message.findMany({
+        where: { chatId: BigInt(vkChat), role: 'assistant' },
+        orderBy: { id: 'asc' },
+      });
+      expect(stored.map((m) => [m.mediaKind, m.peerMsgId])).toEqual([
+        ['voice', 41],
+        ['video_note', 42],
+        ['video', 43],
+        ['document', 44],
+      ]);
+      expect(telegram.sendMedia).not.toHaveBeenCalled();
+    });
+
+    it('альбом в VK — одно сообщение со всеми вложениями, в истории — каждое', async () => {
+      const id = await history.enqueueManualReply(vkChat, 'наши фото', now, {
+        kind: 'album',
+        filePath: JSON.stringify(['/synthetic/a.jpg', '/synthetic/b.mp4']),
       });
       await vkWorker().tick();
-      const r = (await row(id))!;
+      expect((await row(id))!.status).toBe('sent');
+      expect(vk.sendFiles).toHaveBeenCalledTimes(1);
+      expect(vk.sendFiles.mock.calls[0][1]).toMatchObject({
+        paths: ['/synthetic/a.jpg', '/synthetic/b.mp4'],
+        caption: 'наши фото',
+        accountId: 2,
+      });
+      const stored = await db.message.findMany({
+        where: { chatId: BigInt(vkChat), role: 'assistant' },
+        orderBy: { id: 'asc' },
+      });
+      expect(stored.map((m) => [m.mediaKind, m.peerMsgId, m.text])).toEqual([
+        ['photo', 55, 'наши фото'],
+        ['video', null, '[видео]'],
+      ]);
+      expect(telegram.sendAlbum).not.toHaveBeenCalled();
+    });
+
+    it('стикер и гиф по ссылке в VK сразу на проверку с понятной причиной, без Telegram', async () => {
+      const sticker = await history.enqueueManualReply(vkChat, '', now, {
+        kind: 'sticker',
+        filePath: '/synthetic/s.webp',
+      });
+      await vkWorker().tick();
+      const r = (await row(sticker))!;
       expect(r.status).toBe('needs_review');
       expect(r.error).toContain('ВКонтакте пока не умеет');
-      expect(telegram.sendMedia).not.toHaveBeenCalled();
-      expect(vk.sendPhoto).not.toHaveBeenCalled();
       expect(pause.pause.mock.calls.at(-1)[3].reasonText).toContain(
         'ВКонтакте',
       );
+      await db.pendingReply.update({
+        where: { id: sticker },
+        data: { status: 'resolved' },
+      });
+      const gif = await history.enqueueManualReply(vkChat, '', now, {
+        kind: 'animation',
+        filePath: 'https://media.example/x.gif',
+      });
+      await vkWorker().tick();
+      expect((await row(gif))!.error).toContain('гиф по ссылке');
+      expect(vk.sendFile).not.toHaveBeenCalled();
+      expect(telegram.sendMedia).not.toHaveBeenCalled();
     });
 
     it('собеседник закрыл личку VK: причина словами с первого раза, без пяти повторов', async () => {
