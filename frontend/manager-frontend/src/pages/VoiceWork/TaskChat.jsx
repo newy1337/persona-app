@@ -5,6 +5,17 @@ import VoicePlayer from '../../components/VoicePlayer/VoicePlayer';
 import s from '../../styles/AdminPage.module.scss';
 import v from './VoiceWork.module.scss';
 
+const CHANNEL_TITLE = { vk: 'ВК', telegram: 'Telegram' };
+
+/** Строка диалога в списке: мессенджер первым — видно, куда уйдёт голосовое. */
+export function chatOptionLabel(item, sendTarget = false) {
+  const channel = CHANNEL_TITLE[item.channel] ?? 'Telegram';
+  const id = item.channel === 'vk' ? `id${item.peer_id}` : item.peer_id ?? item.chat_id;
+  return [`${channel} · ${item.label}`, id, sendTarget ? item.persona_name : null, !sendTarget && item.unassigned ? 'без менеджера' : null]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 export function TaskChatSelect({ managerId, persona, value, onChange, disabled, required = false, warnMissing = true, sendTarget = false, showChatAccess = true }) {
   const [query, setQuery] = useState(''), [data, setData] = useState({ items: [] }), [error, setError] = useState(''), [loading, setLoading] = useState(false);
   useEffect(() => {
@@ -18,12 +29,12 @@ export function TaskChatSelect({ managerId, persona, value, onChange, disabled, 
     return () => { active = false; clearTimeout(timer); };
   }, [managerId, persona, query, sendTarget]);
   return <div className={v.chatSelect}>
-    <label className={s.label}>Поиск диалога<input className={s.field} placeholder="Имя, Telegram или ID" value={query} onChange={e => setQuery(e.target.value)} disabled={disabled} /></label>
+    <label className={s.label}>Поиск диалога<input className={s.field} placeholder="Имя, ник или ID" value={query} onChange={e => setQuery(e.target.value)} disabled={disabled} /></label>
     <label className={s.label}>{sendTarget ? 'Получатель' : required ? 'Диалог для автоматической отправки' : 'Переписка для войсера'}<select required={required} className={s.select} disabled={disabled || loading} value={value}
       onChange={e => onChange(e.target.value, data.items.find(item => item.chat_id === e.target.value))}>
       <option value="">{required ? 'Выберите диалог' : 'Без привязанного диалога'}</option>
       {value && !data.items.some(item => item.chat_id === value) && <option value={value}>Диалог {value}</option>}
-      {data.items.map(item => <option key={item.chat_id} value={item.chat_id}>{item.label} · {item.chat_id}{sendTarget && item.persona_name ? ` · ${item.persona_name}` : ''}{!sendTarget && item.unassigned ? ' · без менеджера' : ''}</option>)}
+      {data.items.map(item => <option key={item.chat_id} value={item.chat_id}>{chatOptionLabel(item, sendTarget)}</option>)}
     </select></label>
     <p className={v.meta}>{loading ? 'Ищем диалоги…' : data.more ? 'Показаны 40 диалогов. Уточните поиск.' : !data.items.length ? 'Подходящих диалогов не найдено.' : sendTarget ? 'Выберите получателя и убедитесь, что текст и голос подходят этому диалогу.' : showChatAccess ? 'Войсер сможет читать выбранную переписку, в том числе во время звонка.' : 'Войсер получит текст и эмоциональность. Переписка при записи голосового ему недоступна.'}</p>
     {!value && warnMissing && !sendTarget && <p className={v.warning}>Без привязки войсер получит задание, но не увидит переписку.</p>}

@@ -728,6 +728,10 @@ describe('Voicer workflow against a real migrated database', () => {
       const ids = targets.body.items.map((c) => c.chat_id);
       expect(ids).toContain('444');
       expect(ids).not.toContain('555');
+      // видно, куда уйдёт голосовое: мессенджер и id собеседника в нём
+      expect(targets.body.items.find((c) => c.chat_id === '444')).toMatchObject(
+        { channel: 'telegram', peer_id: '444' },
+      );
 
       // хед заданий не ставит
       await request(app.getHttpServer())

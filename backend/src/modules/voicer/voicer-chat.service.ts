@@ -10,6 +10,7 @@ import { isAbsolute, relative, resolve } from 'path';
 import { appConfig } from 'src/config/app.config';
 import { PrismaService } from 'src/prisma.service';
 import { ScopeService } from 'src/shared/scope.service';
+import { peerOf } from 'src/channels/ids';
 import { VoicerService } from './voicer.service';
 
 const factsOf = (text?: string) => {
@@ -150,12 +151,16 @@ export class VoicerChatService {
     return {
       items: selected.map((chatId) => {
         const f = factsOf(facts.find((f) => f.chatId === chatId)?.facts),
-          person = people.find((p) => p.chatId === chatId);
+          person = people.find((p) => p.chatId === chatId),
+          peer = peerOf(chatId);
         return {
           chat_id: String(chatId),
+          /** мессенджер диалога и id собеседника в нём (у VK — не номер чата) */
+          channel: peer.channel,
+          peer_id: String(peer.peerId),
           persona_name: rows.find((r) => r.chatId === chatId)?.account
             ?.personaId,
-          label: String(f.name || person?.firstName || `Диалог ${chatId}`),
+          label: String(f.name || person?.firstName || `Диалог ${peer.peerId}`),
           unassigned: !rows.find((r) => r.chatId === chatId)?.account?.manager,
           contact_ref: person?.peerUsername
             ? `@${person.peerUsername.replace(/^@/, '')}`
