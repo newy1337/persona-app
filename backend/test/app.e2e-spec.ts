@@ -4564,6 +4564,14 @@ describe('Manager panel API (e2e)', () => {
       const a1 = await add('+79001230801', man);
       const a2 = await add('+79001230802', man);
       const a3 = await add('+79001230803', other);
+      // без входа подключать нечего — панель так и пишет, а не «ждёт подключения»
+      const listed = await request(app.getHttpServer())
+        .get('/api/tg-accounts')
+        .set(h)
+        .expect(200);
+      expect(
+        listed.body.find((x: any) => x.id === a2).offline_reason,
+      ).toContain('вход не выполнен');
       const now = Math.floor(Date.now() / 1000);
       for (const [i, chat] of [777000901n, 777000902n].entries())
         await prisma.contact.create({

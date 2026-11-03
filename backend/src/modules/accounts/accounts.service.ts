@@ -72,6 +72,19 @@ export interface AccountSummary {
   offline_reason?: string | null;
 }
 
+/**
+ * Вход в аккаунт ещё не выполнен (нет сессии): подключать нечего, ждать
+ * бесполезно — нужно нажать «Войти». Иначе панель писала «ждёт подключения
+ * после перезапуска сервера», и аккаунты часами ждали сами.
+ */
+function offlineWithoutSession(a: {
+  sessionEncrypted: string | null;
+}): string | null {
+  return a.sessionEncrypted
+    ? null
+    : 'вход не выполнен — нажмите «Войти» и введите код из Telegram';
+}
+
 @Injectable()
 export class AccountsService {
   constructor(
@@ -144,7 +157,9 @@ export class AccountsService {
           ? a.banReason
           : null,
       online: this.channels.isOnline(a.id),
-      offline_reason: this.channels.offlineReason(a.id, a.channel),
+      offline_reason:
+        offlineWithoutSession(a) ??
+        this.channels.offlineReason(a.id, a.channel),
       has_session: Boolean(a.sessionEncrypted),
     };
   }
@@ -633,7 +648,9 @@ export class AccountsService {
           this.channels.isOnline(a.id) ||
           (a.lastHeartbeatAt !== null &&
             now - a.lastHeartbeatAt <= HEARTBEAT_ALIVE_S),
-        offline_reason: this.channels.offlineReason(a.id, a.channel),
+        offline_reason:
+          offlineWithoutSession(a) ??
+          this.channels.offlineReason(a.id, a.channel),
         purpose: a.purpose,
       })),
       active_conversations: Number(active[0]?.n ?? 0),
