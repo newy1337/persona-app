@@ -10,7 +10,7 @@ beforeEach(() => { host = document.createElement('div'); document.body.append(ho
 afterEach(() => { act(() => root.unmount()); host.remove(); });
 
 const data = {
-  statuses: ['contacted', 'replied'],
+  statuses: ['pending', 'queued', 'assigned', 'contacted', 'replied', 'dead'],
   stages: [{ id: 'vbros', label: 'Вброс' }],
   total: { leads: 5, by_source: { base: 3, hot_leadgen: 2 }, statuses: { contacted: 3, replied: 2 }, stages: { vbros: 1 } },
   regions: [
@@ -23,7 +23,7 @@ test('админ: регионы с итогом, разбивка по исто
   const onSource = vi.fn();
   await act(async () => root.render(<SourcesByRegion data={data} source="" onSource={onSource} />));
   const head = [...host.querySelectorAll('thead th')].map((th) => th.textContent);
-  expect(head).toEqual(['Регион', 'Лидов', 'Базовик', 'Горячий лидген', 'Холодный лидген', 'Не отмечен', 'Написали', 'Ответил', 'Вброс']);
+  expect(head).toEqual(['Регион', 'Лидов', 'Базовик', 'Горячий лидген', 'Холодный лидген', 'Не отмечен', 'Написали', 'Ответил', 'Недоступен', 'Вброс']);
   const rows = [...host.querySelectorAll('tbody tr')].map((r) => r.firstChild.textContent);
   expect(rows).toEqual(['Регион 0737', 'Без региона', 'Итого']);
   const select = host.querySelector('select[aria-label="Источник трафика"]');

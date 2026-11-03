@@ -16,13 +16,16 @@ export const LEAD_STATUS_LABELS = {
 
 const SOURCE_COLUMNS = [...TRAFFIC_SOURCES, { id: 'none', label: 'Не отмечен' }];
 
+/** Статусы до первого сообщения (в базе, в очереди, найден) в таблице не показываем. */
+const HIDDEN_STATUSES = new Set(['pending', 'queued', 'assigned']);
+
 /**
  * Лиды по источнику трафика: строки — регионы (админ) или источники (хед),
  * столбцы — сколько лидов, в каких статусах и до каких этапов дошли.
  * showSources — раскладка строки по источникам, когда фильтр «все».
  */
 export default function SourcesTable({ data, rows, rowTitle, ariaLabel, showSources = false, empty = 'За период лидов не было' }) {
-  const statuses = data.statuses;
+  const statuses = data.statuses.filter((st) => !HIDDEN_STATUSES.has(st));
   const stages = data.stages;
   return (
     <div className={s.tableWrap}>
