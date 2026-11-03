@@ -39,6 +39,7 @@ import { LocationResolver, LOCATION_RULES } from './kernel/location-resolver';
 import { type Place, unknownPlace } from './kernel/location';
 import { completeText } from './llm/anthropic';
 import { resolveModel } from './config/models';
+import { peerOf } from 'src/channels/ids';
 import { parseJsonObject } from './judge/transport';
 
 export const PERSONA_SECTIONS = [
@@ -463,7 +464,10 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
       where: { chatId: toChatId(chatId) },
       select: { facts: true },
     });
-    return chatVariables(parseLeadFacts(row?.facts));
+    return {
+      ...chatVariables(parseLeadFacts(row?.facts)),
+      messenger: peerOf(chatId).channel === 'vk' ? 'ВКонтакте' : 'Telegram',
+    };
   }
 
   async bySlug(slug: string): Promise<LoadedPersona> {

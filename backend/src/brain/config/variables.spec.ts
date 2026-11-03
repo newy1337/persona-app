@@ -4,6 +4,7 @@ import {
   placeholdersIn,
   variableErrors,
   variableValues,
+  variablesNote,
 } from './variables';
 
 describe('переменные личности', () => {
@@ -107,5 +108,33 @@ it('client travel changes their current city without rewriting the persona homet
   expect(chatVariables({ _persona_home_city: 'Пермь' })).toEqual({
     city: 'Пермь',
     interlocutor_city: '',
+  });
+});
+
+describe('мессенджер переписки', () => {
+  it('во ВКонтакте модель знает, что это не Telegram, — даже если переменных в тексте нет', () => {
+    const note = variablesNote(
+      'Если переписка идёт в Telegram, оставайся в Telegram.',
+      {
+        messenger: 'ВКонтакте',
+      },
+    );
+    expect(note).toContain(
+      'МЕССЕНДЖЕР ЭТОЙ ПЕРЕПИСКИ — ВКонтакте, не Telegram',
+    );
+    expect(note).toContain('оставайся во ВКонтакте');
+  });
+
+  it('в Telegram — одна короткая строка; рядом с переменными диалога — обе части', () => {
+    expect(variablesNote('Привет', { messenger: 'Telegram' })).toBe(
+      'МЕССЕНДЖЕР ЭТОЙ ПЕРЕПИСКИ — Telegram.',
+    );
+    const both = variablesNote('Я из {city}', {
+      messenger: 'ВКонтакте',
+      city: 'Казань',
+    });
+    expect(both).toContain('ВКонтакте, не Telegram');
+    expect(both).toContain('{city} = Казань');
+    expect(variablesNote('Привет', {})).toBe('');
   });
 });

@@ -11,7 +11,20 @@ export const CHAT_VARIABLES: Record<string, string> = {
   city: 'закреплённый город легенды этого диалога',
   interlocutor_city: 'текущее местонахождение собеседника',
   site: 'сайт знакомств лида',
+  messenger: 'мессенджер, в котором идёт эта переписка',
 };
+
+/**
+ * Где идёт переписка — модель должна знать всегда: в инструкциях личностей
+ * написано «если переписка в Telegram, оставайся в Telegram», и без этой
+ * строки бот во ВКонтакте звал собеседника «остаться в телеграме».
+ */
+function messengerLine(messenger: string | undefined): string | null {
+  if (!messenger?.trim()) return null;
+  return messenger.trim() === 'ВКонтакте'
+    ? 'МЕССЕНДЖЕР ЭТОЙ ПЕРЕПИСКИ — ВКонтакте, не Telegram. Правила про «текущую переписку в Telegram» относятся к ней: оставайся во ВКонтакте и не называй Telegram местом, где вы сейчас общаетесь.'
+    : `МЕССЕНДЖЕР ЭТОЙ ПЕРЕПИСКИ — ${messenger.trim()}.`;
+}
 
 export function withoutChatVariables(
   vars: Record<string, string>,
@@ -25,19 +38,23 @@ export function variablesNote(
   text: string,
   vars: Record<string, string>,
 ): string {
+  const messenger = messengerLine(vars.messenger);
   const used = Object.keys(CHAT_VARIABLES).filter((key) =>
     text.includes(`{${key}}`),
   );
-  if (!used.length) return '';
+  if (!used.length) return messenger ?? '';
   const lines = used.map((key) =>
     vars[key]?.trim()
       ? `{${key}} = ${vars[key].trim()}`
       : `{${key}} — не известно (${CHAT_VARIABLES[key]}): не называй конкретное значение, обходи его`,
   );
-  return (
+  return [
+    messenger,
     'ПЕРЕМЕННЫЕ ЭТОГО ДИАЛОГА — в тексте выше и в данных ниже читай так (в ответе пиши само значение, ' +
-    `фигурные скобки не пиши никогда):\n${lines.join('\n')}`
-  );
+      `фигурные скобки не пиши никогда):\n${lines.join('\n')}`,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 export function chatVariables(
