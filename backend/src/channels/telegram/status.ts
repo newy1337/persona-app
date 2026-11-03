@@ -39,7 +39,9 @@ export function accountLoss(
   const msg = errorText(e);
   if (/USER_DEACTIVATED_BAN/i.test(msg))
     return { kind: 'banned', reason: 'Telegram заблокировал аккаунт' };
-  if (/USER_DEACTIVATED/i.test(msg))
+  // INPUT_USER_DEACTIVATED — удалил свой аккаунт собеседник, а не мы:
+  // его чат молчит, наш аккаунт жив. Банить за это свой аккаунт нельзя.
+  if (/(^|[^A-Z_])USER_DEACTIVATED/i.test(msg))
     return { kind: 'banned', reason: 'аккаунт удалён в Telegram' };
   if (
     /AUTH_KEY_UNREGISTERED|SESSION_REVOKED|SESSION_EXPIRED|AUTH_KEY_DUPLICATED/i.test(

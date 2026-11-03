@@ -53,6 +53,18 @@ describe('статусы Telegram', () => {
     expect(accountLoss(new Error('PEER_FLOOD'))).toBeNull();
   });
 
+  it('собеседник удалил свой аккаунт — наш аккаунт не трогаем', () => {
+    expect(
+      accountLoss(
+        new Error('400: INPUT_USER_DEACTIVATED (caused by messages.SetTyping)'),
+      ),
+    ).toBeNull();
+    expect(accountLoss({ errorMessage: 'INPUT_USER_DEACTIVATED' })).toBeNull();
+    expect(accountLoss({ errorMessage: 'USER_DEACTIVATED' })).toMatchObject({
+      kind: 'banned',
+    });
+  });
+
   it('собеседник заблокировал нас', () => {
     expect(blockedByClient({ errorMessage: 'USER_IS_BLOCKED' })).toBe(true);
     expect(
