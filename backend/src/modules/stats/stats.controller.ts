@@ -94,6 +94,17 @@ export class StatsController {
     return this.stats.sources({ from, to, source });
   }
 
+  @ApiOperation({
+    summary:
+      'Аккаунты: сколько добавили и сколько слетело (TG и VK) по менеджерам и командам',
+  })
+  @ApiQuery({ name: 'from', required: false, example: '2026-10-01' })
+  @ApiQuery({ name: 'to', required: false, example: '2026-10-31' })
+  @Get('accounts')
+  accounts(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.stats.accounts({ from, to });
+  }
+
   @ApiOperation({ summary: 'Расход одного чата' })
   @Get('chat/:chatId')
   forChat(

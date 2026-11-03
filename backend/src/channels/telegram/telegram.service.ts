@@ -44,6 +44,7 @@ import {
 } from 'src/shared/presence.service';
 import { VoiceEncoderService } from 'src/modules/media/voice-encoder.service';
 import { closeClient } from './close-client';
+import { markAccountLost } from 'src/shared/account-events';
 import { offlineReason, offlineReasonOf } from 'src/domain/offline-reason';
 import type { ChannelTransport, ResolvedPeer } from 'src/channels/channel';
 
@@ -460,14 +461,15 @@ export class TelegramService
     }
     if (!authorized) {
       await closeClient(client);
-      await this.prisma.channelAccount.update({
-        where: { id: accountId },
-        data: {
+      await markAccountLost(
+        this.prisma,
+        accountId,
+        {
           status: 'unauthorized',
-          bannedAt: this.clock.ts(),
-          banReason: 'сессия завершена — нужно войти заново',
+          reason: 'сессия завершена — нужно войти заново',
         },
-      });
+        this.clock.ts(),
+      );
       throw new Error(
         `account ${accountId} session is not authorized any more`,
       );
@@ -580,15 +582,13 @@ export class TelegramService
     loss: { kind: 'banned' | 'logged_out'; reason: string },
   ): Promise<void> {
     const status = loss.kind === 'banned' ? 'banned' : 'unauthorized';
-    const current = await this.prisma.channelAccount.findUnique({
-      where: { id: accountId },
-      select: { status: true },
-    });
-    if (!current || current.status === status) return;
-    await this.prisma.channelAccount.update({
-      where: { id: accountId },
-      data: { status, bannedAt: this.clock.ts(), banReason: loss.reason },
-    });
+    const marked = await markAccountLost(
+      this.prisma,
+      accountId,
+      { status, reason: loss.reason },
+      this.clock.ts(),
+    );
+    if (!marked) return;
     this.log.error(`account ${accountId}: ${loss.reason} — marked ${status}`);
     await this.disconnect(accountId);
   }

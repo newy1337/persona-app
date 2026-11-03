@@ -582,33 +582,7 @@ export class StatsService {
       b: { cost_usd: number; messages_out: number },
     ) => b.cost_usd - a.cost_usd || b.messages_out - a.messages_out;
 
-    // Команды: тимлид или хед со всеми подчинёнными по цепочке lead_id,
-    // включая себя. Хед видит и тимлидов, и их менеджеров, и прямых менеджеров.
-    const users = await this.prisma.dashboardUser.findMany({
-      where: { role: { in: [Role.TEAMLEAD, Role.HEAD] } },
-      select: { id: true, username: true, role: true, regionCode: true },
-    });
-    const links = await this.prisma.dashboardUser.findMany({
-      where: { leadId: { not: null } },
-      select: { id: true, leadId: true },
-    });
-    const subordinates = new Map<number, number[]>();
-    for (const l of links) {
-      if (!subordinates.has(l.leadId!)) subordinates.set(l.leadId!, []);
-      subordinates.get(l.leadId!)!.push(l.id);
-    }
-    const teamOf = (leadId: number): number[] => {
-      const seen = new Set<number>([leadId]);
-      const queue = [leadId];
-      while (queue.length) {
-        for (const id of subordinates.get(queue.shift()!) ?? [])
-          if (!seen.has(id)) {
-            seen.add(id);
-            queue.push(id);
-          }
-      }
-      return [...seen];
-    };
+    const { users, teamOf } = await this.teamTree();
     const roleRank: Record<string, number> = { head: 0, teamlead: 1 };
     const by_team = users
       .map((u) => {
@@ -776,6 +750,132 @@ export class StatsService {
     return out;
   }
 
+  /**
+   * Команды: тимлид или хед со всеми подчинёнными по цепочке lead_id,
+   * включая себя. Хед видит и тимлидов, и их менеджеров, и прямых менеджеров.
+   */
+  private async teamTree() {
+    const users = await this.prisma.dashboardUser.findMany({
+      where: { role: { in: [Role.TEAMLEAD, Role.HEAD] } },
+      select: { id: true, username: true, role: true, regionCode: true },
+    });
+    const links = await this.prisma.dashboardUser.findMany({
+      where: { leadId: { not: null } },
+      select: { id: true, leadId: true },
+    });
+    const subordinates = new Map<number, number[]>();
+    for (const l of links) {
+      if (!subordinates.has(l.leadId!)) subordinates.set(l.leadId!, []);
+      subordinates.get(l.leadId!)!.push(l.id);
+    }
+    const teamOf = (leadId: number): number[] => {
+      const seen = new Set<number>([leadId]);
+      const queue = [leadId];
+      while (queue.length) {
+        for (const id of subordinates.get(queue.shift()!) ?? [])
+          if (!seen.has(id)) {
+            seen.add(id);
+            queue.push(id);
+          }
+      }
+      return [...seen];
+    };
+    return { users, teamOf };
+  }
+
+  /**
+   * Аккаунты за период: сколько каждый менеджер и команда добавили номеров
+   * Telegram и VK, сколько из них слетело (бан, сессия) и сколько диалогов
+   * было на слетевших. region — только сотрудники этого региона (хед).
+   */
+  async accounts(query: { from?: string; to?: string; region?: string }) {
+    const range = resolveRange(query, this.clock.ts());
+    const events = await this.prisma.accountEvent.findMany({
+      where: { ts: { gte: range.start, lt: range.end } },
+      select: { kind: true, channel: true, managerId: true, chats: true },
+    });
+    const blank = () => ({
+      tg_added: 0,
+      vk_added: 0,
+      tg_lost: 0,
+      vk_lost: 0,
+      lost_chats: 0,
+    });
+    type Row = ReturnType<typeof blank>;
+    const add = (row: Row, e: (typeof events)[number]) => {
+      const ch = e.channel === 'vk' ? 'vk' : 'tg';
+      if (e.kind === 'added') row[`${ch}_added`] += 1;
+      if (e.kind === 'lost') {
+        row[`${ch}_lost`] += 1;
+        row.lost_chats += e.chats;
+      }
+    };
+    const byManager = new Map<number | null, Row>();
+    for (const e of events) {
+      if (!byManager.has(e.managerId)) byManager.set(e.managerId, blank());
+      add(byManager.get(e.managerId)!, e);
+    }
+    const people = await this.prisma.dashboardUser.findMany({
+      select: { id: true, username: true, role: true, regionCode: true },
+    });
+    const person = new Map(people.map((u) => [u.id, u]));
+    const inRegion = (id: number | null) =>
+      !query.region ||
+      (id !== null && person.get(id)?.regionCode === query.region);
+
+    const managers = [...byManager.entries()]
+      .filter(([id]) => inRegion(id))
+      .map(([id, row]) => ({
+        manager_id: id,
+        username:
+          id === null
+            ? 'Без менеджера'
+            : (person.get(id)?.username ?? `#${id}`),
+        region_code: id === null ? null : (person.get(id)?.regionCode ?? null),
+        ...row,
+      }))
+      .sort(
+        (a, b) =>
+          b.tg_added + b.vk_added - (a.tg_added + a.vk_added) ||
+          b.tg_lost + b.vk_lost - (a.tg_lost + a.vk_lost),
+      );
+    const { users, teamOf } = await this.teamTree();
+    const teams = users
+      .filter((u) => !query.region || u.regionCode === query.region)
+      .map((u) => {
+        const row = blank();
+        const members = teamOf(u.id);
+        for (const id of members) {
+          const m = byManager.get(id);
+          if (!m) continue;
+          for (const k of Object.keys(row) as (keyof Row)[]) row[k] += m[k];
+        }
+        return {
+          manager_id: u.id,
+          username: u.username,
+          role: u.role,
+          region_code: u.regionCode,
+          members: members.length - 1,
+          ...row,
+        };
+      })
+      .sort(
+        (a, b) =>
+          (a.role === 'head' ? 0 : 1) - (b.role === 'head' ? 0 : 1) ||
+          (a.region_code ?? '').localeCompare(b.region_code ?? '') ||
+          a.username.localeCompare(b.username),
+      );
+    const total = blank();
+    for (const m of managers)
+      for (const k of Object.keys(total) as (keyof Row)[]) total[k] += m[k];
+    return {
+      range: { from: range.from, to: range.to },
+      total,
+      managers,
+      teams,
+    };
+  }
+
   /** Регионы, где есть сотрудники, — выбор региона админу. */
   async regions(): Promise<string[]> {
     const rows = await this.prisma.dashboardUser.findMany({
@@ -870,6 +970,7 @@ export class StatsService {
       cold,
       traffic: await this.trafficSplit(range, mine, owners),
       sources: await this.sources({ ...query, region: query.region }),
+      accounts: await this.accounts(query),
     };
   }
 

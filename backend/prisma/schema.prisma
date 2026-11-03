@@ -120,6 +120,29 @@ model PersonaVersion {
 }
 
 /// Аккаунт в канале переписки (Telegram, VK): от его имени пишет личность.
+/// Журнал аккаунтов для статистики: добавлен и слетел (бан, сессия завершена).
+/// Аккаунт потом перелогинят или удалят — событие остаётся.
+model AccountEvent {
+  id        Int     @id @default(autoincrement())
+  accountId Int     @map("account_id")
+  /// telegram | vk
+  channel   String
+  /// added | lost
+  kind      String
+  /// у слёта: banned | unauthorized
+  status    String?
+  reason    String?
+  /// менеджер аккаунта в момент события
+  managerId Int?    @map("manager_id")
+  /// у слёта: сколько диалогов было на аккаунте
+  chats     Int     @default(0)
+  ts        Int
+
+  @@index([ts], map: "idx_account_events_ts")
+  @@index([managerId, ts], map: "idx_account_events_manager")
+  @@map("account_events")
+}
+
 model ChannelAccount {
   id                   Int     @id @default(autoincrement())
   /// telegram | vk

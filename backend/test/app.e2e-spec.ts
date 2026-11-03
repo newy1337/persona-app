@@ -4522,6 +4522,142 @@ describe('Manager panel API (e2e)', () => {
       await prisma.contact.delete({ where: { chatId: BigInt(orphan) } });
     });
 
+    it('аккаунты в статистике: сколько добавили и слетело по менеджерам, командам и региону', async () => {
+      const prisma = app.get(PrismaService);
+      const markLost = (await import('../src/shared/account-events'))
+        .markAccountLost;
+      const h = { Authorization: `Bearer ${token}` };
+      const mk = async (body: object) =>
+        (
+          await request(app.getHttpServer())
+            .post('/api/managers')
+            .set(h)
+            .send(body)
+            .expect(200)
+        ).body.created_user_id as number;
+      const lead = await mk({
+        username: 'ae-lead',
+        password: 'lead12345',
+        role: 'teamlead',
+        region_code: '0808',
+      });
+      const man = await mk({
+        username: 'ae-man',
+        password: 'man123456',
+        role: 'manager',
+        region_code: '0808',
+        lead_id: lead,
+      });
+      const other = await mk({
+        username: 'ae-other',
+        password: 'oth123456',
+        role: 'manager',
+        region_code: '0809',
+      });
+      const add = (phone: string, owner: number) =>
+        request(app.getHttpServer())
+          .post('/api/tg-accounts')
+          .set(h)
+          .send({ phone_e164: phone, persona_id: 'nastya', manager_id: owner })
+          .expect(200)
+          .then((r) => r.body.id as number);
+      const a1 = await add('+79001230801', man);
+      const a2 = await add('+79001230802', man);
+      const a3 = await add('+79001230803', other);
+      const now = Math.floor(Date.now() / 1000);
+      for (const [i, chat] of [777000901n, 777000902n].entries())
+        await prisma.contact.create({
+          data: { chatId: chat, accountId: a1, createdAt: now - i },
+        });
+      // слёт: бан с двумя диалогами; второй раз тот же аккаунт не считается
+      expect(
+        await markLost(prisma, a1, { status: 'banned', reason: 'тест' }, now),
+      ).toBe(true);
+      expect(
+        await markLost(
+          prisma,
+          a1,
+          { status: 'unauthorized', reason: 'тест' },
+          now,
+        ),
+      ).toBe(true);
+      expect(
+        await prisma.accountEvent.count({
+          where: { accountId: a1, kind: 'lost' },
+        }),
+      ).toBe(1);
+
+      const all = await request(app.getHttpServer())
+        .get('/api/stats/accounts')
+        .set(h)
+        .expect(200);
+      expect(
+        all.body.managers.find((m: any) => m.manager_id === man),
+      ).toMatchObject({
+        username: 'ae-man',
+        tg_added: 2,
+        tg_lost: 1,
+        vk_added: 0,
+        lost_chats: 2,
+      });
+      expect(
+        all.body.teams.find((t: any) => t.manager_id === lead),
+      ).toMatchObject({ members: 1, tg_added: 2, tg_lost: 1, lost_chats: 2 });
+
+      // хед региона 0808 видит своих, чужой регион — нет
+      const head = await mk({
+        username: 'ae-head',
+        password: 'head12345',
+        role: 'head',
+        region_code: '0808',
+      });
+      const headAuth = {
+        Authorization: `Bearer ${
+          (
+            await request(app.getHttpServer())
+              .post('/auth/login')
+              .send({ username: 'ae-head', password: 'head12345' })
+              .expect(200)
+          ).body.tokens.accessToken
+        }`,
+      };
+      const region = await request(app.getHttpServer())
+        .get('/api/region-stats')
+        .set(headAuth)
+        .expect(200);
+      expect(region.body.accounts.managers.map((m: any) => m.username)).toEqual(
+        ['ae-man'],
+      );
+      expect(region.body.accounts.total).toMatchObject({
+        tg_added: 2,
+        tg_lost: 1,
+      });
+      expect(
+        region.body.accounts.teams.map((t: any) => t.username).sort(),
+      ).toEqual(['ae-head', 'ae-lead']);
+      await request(app.getHttpServer())
+        .get('/api/stats/accounts')
+        .set(headAuth)
+        .expect(403);
+
+      await prisma.contact.deleteMany({
+        where: { chatId: { in: [777000901n, 777000902n] } },
+      });
+      await prisma.accountEvent.deleteMany({
+        where: { accountId: { in: [a1, a2, a3] } },
+      });
+      for (const id of [a1, a2, a3])
+        await request(app.getHttpServer())
+          .delete(`/api/tg-accounts/${id}`)
+          .set(h)
+          .expect(200);
+      for (const id of [man, other, lead, head])
+        await request(app.getHttpServer())
+          .delete(`/api/managers/${id}`)
+          .set(h)
+          .expect(200);
+    });
+
     it('статистика региона: хед видит только свой регион, админская статистика ему закрыта', async () => {
       const prisma = app.get(PrismaService);
       const h = { Authorization: `Bearer ${token}` };

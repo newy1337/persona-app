@@ -57,3 +57,12 @@ export function getTrafficSources({ from, to, source } = {}) {
   const qs = p.toString();
   return api.get(`/api/stats/sources${qs ? `?${qs}` : ''}`);
 }
+
+/** Аккаунты: добавлено и слетело (TG и VK) по менеджерам и командам. */
+export function getAccountStats({ from, to } = {}) {
+  const p = new URLSearchParams();
+  if (from) p.set('from', from);
+  if (to) p.set('to', to);
+  const qs = p.toString();
+  return api.get(`/api/stats/accounts${qs ? `?${qs}` : ''}`);
+}

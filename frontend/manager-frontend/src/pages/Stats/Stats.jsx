@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getUsage, getManagerUsage, getBalance, getDealStages, getColdLeads, getTrafficSources } from '../../api/usage';
+import { getUsage, getManagerUsage, getBalance, getDealStages, getColdLeads, getTrafficSources, getAccountStats } from '../../api/usage';
+import AccountsStats from './AccountsStats';
 import { SourcesByRegion } from './SourcesTable';
 import DailyChart from './DailyChart';
 import DateRangePicker, { mskToday, addDays } from '../../components/DateRangePicker/DateRangePicker';
@@ -77,6 +78,7 @@ export default function Stats() {
   const [stages, setStages] = useState(null);
   const [cold, setCold] = useState(null);
   const [sources, setSources] = useState(null);
+  const [accountStats, setAccountStats] = useState(null);
   const [source, setSource] = useState('');
 
   const load = useCallback(() => {
@@ -112,6 +114,16 @@ export default function Stats() {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
+  }, [tab, range]);
+
+  useEffect(() => {
+    if (tab !== 'accounts') return undefined;
+    let alive = true;
+    setAccountStats(null);
+    getAccountStats({ from: range.from, to: range.to })
+      .then((r) => alive && setAccountStats(r))
+      .catch((e) => alive && setError(e.detail || e.message));
+    return () => { alive = false; };
   }, [tab, range]);
 
   useEffect(() => {
@@ -200,7 +212,7 @@ export default function Stats() {
           {showPrices && <PricesEditor onChanged={load} onError={setError} />}
 
           <div className={p.tabs} role="tablist">
-            {[['overview', 'Обзор'], ['managers', 'По менеджерам'], ['teams', 'По командам'], ['stages', 'Этапы'], ['cold', 'Холодка'], ['sources', 'Источники']].map(([id, label]) => (
+            {[['overview', 'Обзор'], ['managers', 'По менеджерам'], ['teams', 'По командам'], ['stages', 'Этапы'], ['cold', 'Холодка'], ['sources', 'Источники'], ['accounts', 'Аккаунты']].map(([id, label]) => (
               <button
                 key={id}
                 role="tab"
@@ -214,7 +226,9 @@ export default function Stats() {
             ))}
           </div>
 
-          {tab === 'sources' ? (
+          {tab === 'accounts' ? (
+            accountStats ? <AccountsStats data={accountStats} /> : <TableSkeleton rows={5} label="Считаю аккаунты…" />
+          ) : tab === 'sources' ? (
             sources ? <SourcesByRegion data={sources} source={source} onSource={setSource} /> : <TableSkeleton rows={5} label="Считаю источники…" />
           ) : tab === 'cold' ? (
             cold ? <ColdTable data={cold} /> : <TableSkeleton rows={5} label="Считаю холодку…" />

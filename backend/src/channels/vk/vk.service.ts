@@ -49,6 +49,7 @@ import { appConfig } from 'src/config/app.config';
 import { offlineReasonOf } from 'src/domain/offline-reason';
 import { toProxyUrl } from 'src/domain/proxy';
 import { kindForFile } from 'src/domain/attachments';
+import { markAccountLost } from 'src/shared/account-events';
 import {
   DEFAULT_TYPING,
   partPauseMs,
@@ -333,12 +334,12 @@ export class VkService
         : e instanceof VkSessionExpired
           ? 'сессия VK завершена — нужен вход заново'
           : `VK требует действия человека: ${(e as Error).message}`;
-    await this.prisma.channelAccount
-      .update({
-        where: { id: accountId },
-        data: { status, bannedAt: this.clock.ts(), banReason: reason },
-      })
-      .catch(() => undefined);
+    await markAccountLost(
+      this.prisma,
+      accountId,
+      { status, reason },
+      this.clock.ts(),
+    ).catch(() => undefined);
     this.log.error(`vk account ${accountId}: ${reason} — marked ${status}`);
     await this.disconnect(accountId);
   }

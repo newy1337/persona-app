@@ -16,6 +16,7 @@ import { ChannelAccount } from '@prisma/client';
 import { PrismaService } from 'src/prisma.service';
 import { ClockService } from 'src/shared/clock.service';
 import { CryptoService } from 'src/shared/crypto.service';
+import { markAccountLost, recordAccountAdded } from 'src/shared/account-events';
 import { HistoryService } from 'src/shared/history.service';
 import { appConfig } from 'src/config/app.config';
 import { TelegramService } from '../../channels/telegram/telegram.service';
@@ -357,6 +358,7 @@ export class AccountsService {
         await this.prisma.managerAccount.create({
           data: { userId: ownerUserId, accountId: created.id },
         });
+      await recordAccountAdded(this.prisma, created, ownerUserId);
       return this.summary(created);
     } catch (e) {
       if (String(e?.code) === 'P2002')
@@ -419,6 +421,7 @@ export class AccountsService {
       await this.prisma.managerAccount.create({
         data: { userId: ownerUserId, accountId: created.id },
       });
+    await recordAccountAdded(this.prisma, created, ownerUserId);
     let connectError: string | null = null;
     try {
       await (await this.channels.forAccount(created.id)).connect(created.id);
@@ -561,7 +564,14 @@ export class AccountsService {
     await this.get(id);
     const data: any = { status };
     if (status === 'banned') {
-      data.bannedAt = this.clock.ts();
+      // Бан руками — тоже слёт: метка и событие для статистики.
+      await markAccountLost(
+        this.prisma,
+        id,
+        { status: 'banned', reason: reason ?? null },
+        this.clock.ts(),
+      );
+      data.bannedAt = (await this.get(id)).bannedAt;
       data.banReason = reason ?? null;
     }
     if (status === 'active') {

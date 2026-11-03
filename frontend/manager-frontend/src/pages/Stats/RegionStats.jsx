@@ -5,6 +5,7 @@ import ManagersTable from './ManagersTable';
 import StagesTable from './StagesTable';
 import ColdTable from './ColdTable';
 import SourcesTable from './SourcesTable';
+import AccountsStats from './AccountsStats';
 import TableSkeleton from '../../components/TableSkeleton/TableSkeleton';
 import s from '../../styles/AdminPage.module.scss';
 import p from './Stats.module.scss';
@@ -64,7 +65,7 @@ export function TrafficTable({ rows }) {
   );
 }
 
-const TABS = [['managers', 'По менеджерам'], ['stages', 'Этапы'], ['cold', 'Холодка'], ['sources', 'По источнику'], ['traffic', 'По трафику']];
+const TABS = [['managers', 'По менеджерам'], ['stages', 'Этапы'], ['cold', 'Холодка'], ['sources', 'По источнику'], ['traffic', 'По трафику'], ['accounts', 'Аккаунты']];
 
 export default function RegionStats() {
   const [range, setRange] = useState(() => ({ from: addDays(mskToday(), -29), to: mskToday() }));
@@ -128,6 +129,8 @@ export default function RegionStats() {
         <StagesTable data={data.stages} />
       ) : tab === 'cold' ? (
         <ColdTable data={data.cold} />
+      ) : tab === 'accounts' ? (
+        <AccountsStats data={data.accounts} />
       ) : tab === 'sources' ? (
         <div className={p.managers}>
           <p className={s.hint}>
