@@ -17,6 +17,7 @@ import { liveRows } from '../utils/chat';
 import { moscowDay, rangeForFilter } from '../utils/panelTime';
 import { rememberReminder, shouldRemind } from '../utils/stageReminder';
 import { withArchive } from '../utils/search';
+import { rememberDialog, takeDialogAnchor, useViewState } from '../utils/viewState';
 
 const STAT_TILES = [
   { key: 'need_manager', label: 'Ждут менеджера', color: '#00D4FF' },
@@ -40,10 +41,15 @@ function Dashboard() {
   const [rows, setRows] = useState([]);
   const [stats, setStats] = useState([]);
   const [error, setError] = useState(null);
-  const [query, setQuery] = useState('');
-  const [headFilters, setHeadFilters] = useState({ lead: '', account: '' });
-  const [dateFilter, setDateFilter] = useState('');
-  const [showHidden, setShowHidden] = useState(false);
+  // Поиск и фильтры помнятся до закрытия вкладки: вышли из чата — список тот же.
+  const [query, setQuery] = useViewState('query', '');
+  const [headFilters, setHeadFilters] = useViewState('head', { lead: '', account: '' });
+  const [dateFilter, setDateFilter] = useViewState('date', '');
+  const [showHidden, setShowHidden] = useViewState('archive', false);
+  // Откуда открыли чат (карточки сверху или таблица): туда и вернёмся.
+  const [anchorZone, setAnchorZone] = useViewState('zone', 'table');
+  const [initialAnchor] = useState(takeDialogAnchor);
+  const anchor = useRef(initialAnchor);
   const [ready, setReady] = useState(false);
 
   const inFlight = useRef(false);
@@ -162,6 +168,33 @@ function Dashboard() {
     };
   }, [load]);
 
+  // Вернулись из чата — прокрутить к нему и подсветить. Один раз, после первой
+  // загрузки: дальше опрос раз в 10 секунд не должен дёргать прокрутку.
+  useEffect(() => {
+    if (!ready || anchor.current == null) return;
+    const id = anchor.current;
+    anchor.current = null;
+    const frame = requestAnimationFrame(() => {
+      const sel = `[data-chat-id="${CSS.escape(String(id))}"]`;
+      const el = document.querySelector(`[data-anchor-zone="${anchorZone}"] ${sel}`) || document.querySelector(sel);
+      if (!el) return;
+      el.scrollIntoView({ block: 'center' });
+      el.classList.remove('dialog-anchor-flash');
+      void el.offsetWidth;
+      el.classList.add('dialog-anchor-flash');
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [ready, anchorZone]);
+
+  const rememberZone = (e) => {
+    const zone = e.target.closest?.('[data-anchor-zone]')?.dataset.anchorZone;
+    const chat = e.target.closest?.('[data-chat-id]')?.dataset.chatId;
+    // Кнопки строки (архив, этап, ссылки) чат не открывают.
+    if (!zone || !chat || e.target.closest('select, a, .mr-dialog-archive, .mr-dialog-deal')) return;
+    setAnchorZone(zone);
+    rememberDialog(chat);
+  };
+
   const accounts = useMemo(
     () => [...new Set(rows.map((r) => r.account_id).filter((a) => a != null))].sort(),
     [rows],
@@ -177,7 +210,7 @@ function Dashboard() {
   });
 
   return (
-    <>
+    <div onClickCapture={rememberZone}>
           {error && <div className="loadError">Не удалось загрузить: {error}</div>}
           {reminder && (
             <div className="stageReminder" role="status" data-testid="stage-reminder">
@@ -185,10 +218,10 @@ function Dashboard() {
               <button type="button" onClick={dismissReminder} aria-label="Скрыть напоминание">Понятно</button>
             </div>
           )}
-          <NeedManagerAssist agents={managerAgents} query={query} headFilters={headFilters} dateFilter={dateFilter} />
-          <LiveConversations agents={liveAgents} query={query} headFilters={headFilters} dateFilter={dateFilter} />
+          <div data-anchor-zone="queue"><NeedManagerAssist agents={managerAgents} query={query} headFilters={headFilters} dateFilter={dateFilter} /></div>
+          <div data-anchor-zone="live"><LiveConversations agents={liveAgents} query={query} headFilters={headFilters} dateFilter={dateFilter} /></div>
           <StatsBar stats={stats} dateFilter={dateFilter} onDateFilterChange={setDateFilter} />
-          <ConversationsTable
+          <div data-anchor-zone="table"><ConversationsTable
             ready={ready}
             rows={searching && !showHidden ? withArchive(rows, archiveRows) : rows}
             query={query}
@@ -198,8 +231,8 @@ function Dashboard() {
             onToggleShowHidden={setShowHidden}
             onHide={toggleHidden}
             onDealStage={changeDealStage}
-          />
-    </>
+          /></div>
+    </div>
   );
 }
 

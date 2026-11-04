@@ -323,8 +323,6 @@
 
 @container side (max-width: 400px) {
   .agentCard { padding: 16px; }
-  .checkRow { grid-template-columns: 14px minmax(0, 1fr); }
-  .checkNote { grid-column: 2; }
 }
 
 .signals {
@@ -1265,6 +1263,14 @@
 .checkNote {
   color: $text-muted;
   overflow-wrap: anywhere;
+}
+
+/* Узкая панель: значение под названием на всю ширину. Правило стоит после
+   базового .checkRow — раньше база его перебивала, и значение жалось в
+   колонку названия шириной 108px. */
+@container side (max-width: 400px) {
+  .checkRow { grid-template-columns: 14px minmax(0, 1fr); }
+  .checkNote { grid-column: 2; }
 }
 
 .check_ok .checkMark { color: $color-green; }

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import AgentCard from '../AgentCard/AgentCard';
 import styles from './LiveConversations.module.scss';
+import { useViewState } from '../../utils/viewState';
 import { matchesQuery, matchesHeadFilters, matchesDateFilter } from '../../utils/search';
 import { ChevronDownIcon, ChevronPrevIcon, ChevronNextIcon } from '../../assets/icons';
 
@@ -26,9 +27,9 @@ function ShowDropdown({ value, onChange, onClose }) {
 }
 
 function LiveConversations({ agents = [], query = '', headFilters = {}, dateFilter = '' }) {
-  const [showCount, setShowCount] = useState(6);
+  const [showCount, setShowCount] = useViewState('live.count', 6);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useViewState('live.page', 1);
   const wrapRef = useRef(null);
 
   const filtered = agents.filter(
@@ -38,13 +39,18 @@ function LiveConversations({ agents = [], query = '', headFilters = {}, dateFilt
   const totalPages = Math.max(1, Math.ceil(filtered.length / showCount));
   const visible = filtered.slice((page - 1) * showCount, page * showCount);
 
+  // Сброс страницы только при смене «Показать N», не при возврате из чата.
+  const lastCount = useRef(showCount);
   useEffect(() => {
+    if (lastCount.current === showCount) return;
+    lastCount.current = showCount;
     setPage(1);
-  }, [showCount]);
+  }, [showCount, setPage]);
 
   useEffect(() => {
-    if (page > totalPages) setPage(1);
-  }, [page, totalPages]);
+    // Пока список не загрузился, страниц «одна» — сохранённую не трогаем.
+    if (agents.length && page > totalPages) setPage(1);
+  }, [agents.length, page, totalPages, setPage]);
 
   useEffect(() => {
     function handleClick(e) {

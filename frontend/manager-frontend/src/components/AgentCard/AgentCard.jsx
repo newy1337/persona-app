@@ -4,7 +4,7 @@ import styles from './AgentCard.module.scss';
 import { StatusIcon, LightningIcon, ClockIcon } from '../../assets/icons';
 import { priorityColor } from '../../data/stages';
 import { trafficSourceLabel } from '../../utils/trafficSource';
-import { accountContact, channelBadge } from '../../utils/channel';
+import { accountContact, channelBadge, clientContact } from '../../utils/channel';
 
 function waitingFor(ts) {
   if (!ts) return '—';
@@ -48,7 +48,7 @@ function AgentCard({ agent, showAlert = false }) {
   const navigate = useNavigate();
 
   return (
-    <div className={styles.card} onClick={() => navigate(`/conversation/${chatId}`)} style={{ cursor: 'pointer' }}>
+    <div className={styles.card} data-chat-id={chatId} onClick={() => navigate(`/conversation/${chatId}`)} style={{ cursor: 'pointer' }}>
       <div className={styles.top}>
         <div className={styles.info}>
           <span className={styles.name}>{name || `Чат ${chatId}`}</span>
@@ -71,6 +71,9 @@ function AgentCard({ agent, showAlert = false }) {
               </span>
             )}
           </div>
+          {clientContact(agent) && (
+            <div className={styles.nick} title="Ник собеседника">{clientContact(agent).display}</div>
+          )}
         </div>
         {showAlert && vbrosPhase && (
           <div className={styles.tooltipWrap} title={vbrosPhase ? `Вброс: ${vbrosPhase}` : 'Вброса нет'}>

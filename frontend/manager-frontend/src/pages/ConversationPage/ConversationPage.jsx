@@ -102,6 +102,7 @@ import {
 } from '../../assets/icons';
 import { DEAL_STAGES } from '../../data/dealStages';
 import { accountContact, channelBadge, clientContact } from '../../utils/channel';
+import { peekDialogAnchor, rememberDialog } from '../../utils/viewState';
 
 // Блок «Сценарий» в карточке диалога скрыт: сценариев у личностей сейчас нет.
 // Вернуть — собрать панель с VITE_SHOW_SCENARIO=1 (данные и код блока на месте).
@@ -218,6 +219,10 @@ function ConversationPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Пришли из «Диалогов» и листаем чаты стрелками — возврат встанет на последний.
+  useEffect(() => {
+    if (peekDialogAnchor() != null) rememberDialog(id);
+  }, [id]);
   const [data, setData] = useState(null);
   const [pauseStatus, setPauseStatus] = useState(null);
   const [beats, setBeats] = useState(null);
@@ -680,7 +685,7 @@ function ConversationPage() {
         <div className={styles.container}>
           <button className={styles.backBtn} onClick={() => navigate('/')}>
             <BackIcon />
-            К дашборду
+            К диалогам
           </button>
           <div className={styles.subNav}>
             <button

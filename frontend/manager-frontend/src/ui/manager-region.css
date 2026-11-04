@@ -313,3 +313,6 @@
 .mr-channel-option{border:0;background:transparent;color:inherit;opacity:.7;padding:4px 10px;border-radius:6px;font:inherit;font-size:12px;cursor:pointer}
 .mr-channel-option:hover{opacity:1}
 .mr-channel-option-on{opacity:1;background:#ffffff1a;font-weight:600}
+/* Вернулись из чата: строка или карточка этого чата коротко подсвечивается. */
+.dialog-anchor-flash{animation:dialog-anchor-flash 2.4s ease-out}
+@keyframes dialog-anchor-flash{0%,45%{outline:2px solid #00d4ffcc;outline-offset:-2px}100%{outline:2px solid #00d4ff00;outline-offset:-2px}}

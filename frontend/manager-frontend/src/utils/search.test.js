@@ -35,6 +35,16 @@ describe('matchesQuery — поиск по клиенту', () => {
     expect(matchesQuery(ROW, '7')).toBe(true);
   });
 
+  it('находит по нику собеседника с @ и без', () => {
+    const tg = { ...ROW, client_username: 'Ivan_Petrov', contact: { display: '@Ivan_Petrov', url: 'https://t.me/Ivan_Petrov' } };
+    expect(matchesQuery(tg, '@ivan_pe')).toBe(true);
+    expect(matchesQuery(tg, 'petrov')).toBe(true);
+    expect(matchesQuery(tg, 'me')).toBe(false);
+    const vk = { ...ROW, contact: { display: 'durov', url: 'https://vk.com/durov' } };
+    expect(matchesQuery(vk, '@durov')).toBe(true);
+    expect(matchesQuery(vk, 'vk.com')).toBe(false);
+  });
+
   it('не падает на строке без телефона и имени', () => {
     expect(matchesQuery({ chat_id: 1 }, 'сергей')).toBe(false);
     expect(matchesQuery({ chat_id: 1 }, '1')).toBe(true);

@@ -7,6 +7,13 @@ export function matchesQuery(row, query) {
   const phoneDigits = String(row.phone || '').replace(/\D/g, '');
   if (digits && phoneDigits && phoneDigits.includes(digits)) return true;
 
+  // Ник собеседника: «@ivan» и «ivan» находят одно и то же.
+  const nick = q.replace(/^@/, '');
+  const nicks = [row.client_username, row.contact?.display]
+    .filter(Boolean)
+    .map((v) => String(v).toLowerCase().replace(/^@/, ''));
+  if (nick && nicks.some((v) => v.includes(nick))) return true;
+
   return [row.name, row.city, row.chat_id, row.account_id, row.manager_username, row.region_code]
     .filter((v) => v != null && v !== '')
     .some((v) => String(v).toLowerCase().includes(q));

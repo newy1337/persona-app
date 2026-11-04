@@ -126,11 +126,11 @@ describe('ConversationPage: шапка и навигация по чатам', (
     expect(liveCount()).toBe('2');
   });
 
-  it('в sub-header стоят стрелки и «К дашборду», позиция 1 из 3', async () => {
+  it('в sub-header стоят стрелки и «К диалогам», позиция 1 из 3', async () => {
     await renderPage();
     expect(navButton('Предыдущий чат')).toBeTruthy();
     expect(navButton('Следующий чат')).toBeTruthy();
-    expect(container.textContent).toContain('К дашборду');
+    expect(container.textContent).toContain('К диалогам');
     expect(container.querySelector('[class*="navCurrent"]')?.textContent).toBe('1');
     const children = [...container.querySelectorAll('[class*="subHeader"] [class*="container"] > *')];
     expect(children.findIndex((el) => el.className.includes('backBtn')))

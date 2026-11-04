@@ -1,6 +1,7 @@
 import { DialogTable } from '../../ui/ManagerRegion';
 import TableSkeleton from '../TableSkeleton/TableSkeleton';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { useViewState } from '../../utils/viewState';
 import { useNavigate } from 'react-router-dom';
 import styles from './ConversationsTable.module.scss';
 import { stageColors, stageFilters } from '../../data/stages';
@@ -60,16 +61,17 @@ function ConversationsTable({
   onHide = null,
   onDealStage = null,
 }) {
-  const [activeFilter, setActiveFilter] = useState(null);
-  const [dealStage, setDealStage] = useState(null);
-  const [onlyNew, setOnlyNew] = useState(false);
-  const [channel, setChannel] = useState('all');
+  // Фильтры, сортировка и страница помнятся: вышли из чата — таблица та же.
+  const [activeFilter, setActiveFilter] = useViewState('table.stage', null);
+  const [dealStage, setDealStage] = useViewState('table.deal', null);
+  const [onlyNew, setOnlyNew] = useViewState('table.new', false);
+  const [channel, setChannel] = useViewState('table.channel', 'all');
   // Фильтр канала — когда в списке больше одного мессенджера (или он уже выбран).
   const channelCounts = CHANNEL_FILTERS.map(([key, label]) => [key, label, key === 'all' ? rows.length : rows.filter((c) => channelKey(c.channel) === key).length]);
   const multiChannel = channelCounts.filter(([key, , n]) => key !== 'all' && n > 0).length > 1 || channel !== 'all';
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useViewState('table.page', 1);
   const newCount = rows.filter(waitsForManager).length;
-  const [sort, setSort] = useState({ col: null, dir: 'asc' });
+  const [sort, setSort] = useViewState('table.sort', { col: null, dir: 'asc' });
   const navigate = useNavigate();
 
   function handleSort(col) {
@@ -114,11 +116,15 @@ function ConversationsTable({
   const pages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   // Условия отбора сменились — показываем сначала, иначе можно застрять на
   // странице, которой больше нет.
+  // Сравнение с прошлым отбором, а не каждый запуск эффекта: при возврате из
+  // чата сохранённая страница не должна сбрасываться первой же отрисовкой.
+  const selection = JSON.stringify([query, headFilters.lead, headFilters.account, dateFilter, activeFilter, dealStage, onlyNew, showHidden, channel]);
+  const lastSelection = useRef(selection);
   useEffect(() => {
+    if (lastSelection.current === selection) return;
+    lastSelection.current = selection;
     setPage(1);
-    // Зависимости — только значения: объект фильтров пересоздаётся на каждой
-    // отрисовке, и по нему страница сбрасывалась бы сразу после переключения.
-  }, [query, headFilters.lead, headFilters.account, dateFilter, activeFilter, dealStage, onlyNew, showHidden, channel]);
+  }, [selection, setPage]);
   const current = Math.min(page, pages);
   const visible = useMemo(
     () => sorted.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE),
