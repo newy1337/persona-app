@@ -29,6 +29,7 @@ import {
   UpdateTelegramProfileDto,
 } from './dto/account.dto';
 import { proxyLabel, proxyTypeError } from 'src/domain/proxy';
+import { statusOfflineReason } from 'src/domain/offline-reason';
 import { ChannelRegistry } from 'src/channels/registry';
 import {
   hasSession,
@@ -158,6 +159,7 @@ export class AccountsService {
           : null,
       online: this.channels.isOnline(a.id),
       offline_reason:
+        statusOfflineReason(a.status) ??
         offlineWithoutSession(a) ??
         this.channels.offlineReason(a.id, a.channel),
       has_session: Boolean(a.sessionEncrypted),
@@ -649,6 +651,7 @@ export class AccountsService {
           (a.lastHeartbeatAt !== null &&
             now - a.lastHeartbeatAt <= HEARTBEAT_ALIVE_S),
         offline_reason:
+          statusOfflineReason(a.status) ??
           offlineWithoutSession(a) ??
           this.channels.offlineReason(a.id, a.channel),
         purpose: a.purpose,

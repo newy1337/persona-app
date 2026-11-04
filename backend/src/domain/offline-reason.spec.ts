@@ -1,4 +1,8 @@
-import { offlineReason, offlineReasonOf } from './offline-reason';
+import {
+  offlineReason,
+  offlineReasonOf,
+  statusOfflineReason,
+} from './offline-reason';
 import { TelegramTimeoutError } from './timeout';
 
 const base = {
@@ -45,5 +49,11 @@ describe('почему аккаунт не в сети', () => {
       'X',
     );
     expect(offlineReason(base)).toMatch(/после перезапуска сервера/);
+  });
+
+  it('пауза и выведенный — причина по статусу, а не «ждёт подключения»', () => {
+    expect(statusOfflineReason('paused')).toMatch(/на паузе/);
+    expect(statusOfflineReason('retired')).toMatch(/выведен/);
+    expect(statusOfflineReason('active')).toBeNull();
   });
 });

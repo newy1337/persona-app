@@ -61,3 +61,14 @@ export function offlineReason(s: OfflineState): string | null {
   if (s.failure) return s.failure.reason;
   return 'ждёт подключения после перезапуска сервера';
 }
+
+/**
+ * Аккаунт не в сети, потому что так задан его статус: на паузе и выведенные
+ * не подключаются вовсе. null — статус подключению не мешает.
+ */
+export function statusOfflineReason(status: string): string | null {
+  if (status === 'paused')
+    return 'на паузе — не подключается, пока не включите';
+  if (status === 'retired') return 'выведен — не подключается';
+  return null;
+}
