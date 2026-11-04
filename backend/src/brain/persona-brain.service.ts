@@ -139,6 +139,9 @@ import {
   initiativeIsDue,
   checkInGuidance,
   unansweredUnprompted,
+  continueTopicGuidance,
+  RECENT_TOPIC_S,
+  secondsSinceLastMessage,
 } from './dialogue/initiative';
 import { personaGender, voiceOf } from './character/gender';
 import { judgeModelFor } from './config/models';
@@ -2581,6 +2584,16 @@ export class PersonaBrainService implements ReplyBrain {
       judgment.callback_memory_id = '';
       judgment.guidance =
         'Выбери один естественный повод написать: актуальное дело собеседника, общую шутку, собственную согласованную деталь или личное любопытство. Не повторяй недавний вопрос и не присылай отчёт о дне. Учитывай просьбу о тишине и отсутствие связи. Не придумывай событие ради повода; сообщение можно отменить при проверке.';
+    }
+    // Замолчал посреди сегодняшнего разговора — продолжаем его тему, а не
+    // вспоминаем старые дела из памяти.
+    if (
+      secondsSinceLastMessage(state, Math.floor(now.getTime() / 1000)) <
+      RECENT_TOPIC_S
+    ) {
+      judgment.goal = 'respond';
+      judgment.callback_memory_id = '';
+      judgment.guidance = continueTopicGuidance(gender);
     }
     return this.sendUnprompted(chatId, accountId, persona, settings, judgment, {
       author: 'initiative',

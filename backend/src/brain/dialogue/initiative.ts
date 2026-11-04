@@ -35,6 +35,34 @@ export function checkInGuidance(gender: Gender = 'female'): string {
 }
 
 export const CHECK_IN_GUIDANCE = checkInGuidance('female');
+
+/** Разговор был недавно: инициатива продолжает его, а не начинает заново. */
+export const RECENT_TOPIC_S = 12 * 3600;
+
+/** Сколько прошло с последнего сообщения переписки (любой стороны). */
+export function secondsSinceLastMessage(
+  state: ConversationState,
+  nowTs: number,
+): number {
+  const last = (state.history ?? []).at(-1)?.created_at;
+  return typeof last === 'number' ? nowTs - last : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Собеседник замолчал посреди сегодняшнего разговора: пишем дальше по той же
+ * теме. Старые дела из памяти не поднимаем — менеджер мог решить их в
+ * переписке, пока бот молчал (так бот спросил «так и не договорились, когда
+ * созвонимся» после состоявшегося звонка).
+ */
+export function continueTopicGuidance(gender: Gender = 'female'): string {
+  const g = voiceOf(gender);
+  return (
+    `Разговор шёл недавно, и ${g.they.he} не ${g.c('ответил', 'ответила')} на последнее. Продолжи ЭТОТ разговор: ` +
+    'вернись к последней теме — реакцией, мыслью или вопросом по ней, своими словами, не повторяя уже сказанное. ' +
+    'Не здоровайся заново. Не поднимай старые дела, планы и договорённости из памяти и не утверждай, ' +
+    'что что-то «так и не решили»: их могли обсудить без тебя. Без упрёков и давления. Одна строка.'
+  );
+}
 const MIN_HOURS_BETWEEN_SENDS = 4;
 
 type Clock = readonly [hour: number, minute: number];
