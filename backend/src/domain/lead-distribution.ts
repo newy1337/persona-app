@@ -147,3 +147,17 @@ export function skipReason(list: Recipient[], lead: InboundTags): string {
     return 'у подходящих менеджеров исчерпан лимит';
   return 'нет подходящего менеджера';
 }
+
+/** Сайты холодки по-человечески: так их пишут менеджеры и так их скажет бот. */
+const SITE_BY_SOURCE: Record<string, string> = {
+  drug_vokrug: 'Друг Вокруг',
+};
+
+/**
+ * Источник холодки — это сайт знакомств лида: он идёт в «Сайт» карточки и
+ * в {site} диалога. Без этого «Сайт» был пуст, а бот брал запасной сайт личности.
+ */
+export function siteFromSource(source: string): string {
+  const key = source.trim().toLowerCase();
+  return SITE_BY_SOURCE[key] ?? source.trim().replace(/_/g, ' ');
+}

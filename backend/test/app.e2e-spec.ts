@@ -1983,6 +1983,8 @@ describe('Manager panel API (e2e)', () => {
       expect(leads[0]).toMatchObject({
         cold: true,
         source_type: 'beboo',
+        // источник холодки — сайт лида: «Сайт» в карточке и {site} в диалоге
+        site: 'beboo',
         traffic_source: 'cold_leadgen',
         status: 'queued',
         first_name: 'Олег',

@@ -4,6 +4,7 @@ import {
   pickRecipient,
   skipReason,
   type Recipient,
+  siteFromSource,
 } from './lead-distribution';
 
 const r = (over: Partial<Recipient>): Recipient => ({
@@ -209,5 +210,14 @@ describe('холодка', () => {
         persona: 'nastya',
       }),
     ).toBe('у подходящих менеджеров исчерпан лимит');
+  });
+});
+
+describe('сайт холодки из источника', () => {
+  it('известные — по-человечески, прочие — как прислали, без подчёркиваний', () => {
+    expect(siteFromSource('drug_vokrug')).toBe('Друг Вокруг');
+    expect(siteFromSource(' DRUG_VOKRUG ')).toBe('Друг Вокруг');
+    expect(siteFromSource('beboo')).toBe('beboo');
+    expect(siteFromSource('some_site')).toBe('some site');
   });
 });

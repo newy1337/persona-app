@@ -23,6 +23,7 @@ import {
   pickRecipient,
   skipReason,
   type Recipient,
+  siteFromSource,
 } from 'src/domain/lead-distribution';
 import { InboundLeadDto } from './dto/inbound-lead.dto';
 import { ColdLeadDto } from './dto/cold-lead.dto';
@@ -233,6 +234,7 @@ export class InboundService {
               city: isCityName(dto.city) ? dto.city.trim() : null,
               age: dto.age ?? null,
               sourceType: source,
+              site: siteFromSource(source),
               personaId: persona,
               requestedPersona: raw,
               requestedRegion: tags.region,
