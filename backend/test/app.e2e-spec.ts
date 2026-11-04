@@ -4278,8 +4278,47 @@ describe('Manager panel API (e2e)', () => {
       const liveRow = await prisma.lead.findUnique({
         where: { id: live.body.id },
       });
-      expect(liveRow!.status).toBe('dead');
-      expect(liveRow!.lastError).toMatch(/уже есть переписка/);
+      // Человек написал сам, других лидов у чата нет: лид привязан к переписке,
+      // первое сообщение не нужно — ни «недоступен», ни дубля.
+      expect(liveRow).toMatchObject({
+        status: 'replied',
+        lastError: null,
+        firstContactAt: 1,
+        chatId: liveId,
+      });
+      expect(await prisma.message.count({ where: { chatId: liveId } })).toBe(1);
+
+      // Второй лид на тот же чат — это уже чужая переписка: отказ словами.
+      const twin = await request(app.getHttpServer())
+        .post('/api/leads')
+        .set(h)
+        .send({ username: '@live_twin', first_name: 'Лёша' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .post('/api/leads/start')
+        .set(h)
+        .send({ ids: [twin.body.id] })
+        .expect(200);
+      await prisma.lead.updateMany({
+        where: { status: 'queued', id: { not: twin.body.id } },
+        data: { status: 'pending' },
+      });
+      const resolveTwin = jest
+        .spyOn(telegram, 'resolveUsername')
+        .mockResolvedValue({
+          kind: 'found',
+          chatId: 7026943193,
+          userId: 7026943193,
+          username: 'live_twin',
+          deleted: false,
+        });
+      await (worker as any).processOne(acc.body.id, now + 500);
+      resolveTwin.mockRestore();
+      const twinRow = await prisma.lead.findUnique({
+        where: { id: twin.body.id },
+      });
+      expect(twinRow!.status).toBe('dead');
+      expect(twinRow!.lastError).toMatch(/уже есть переписка/);
       expect(await prisma.message.count({ where: { chatId: liveId } })).toBe(1);
 
       // Удаление лида находит чат, даже если связь в лиде уже пуста, — по пометке в карточке.

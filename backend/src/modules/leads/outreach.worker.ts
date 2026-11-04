@@ -155,6 +155,47 @@ export class OutreachWorker implements OnModuleInit {
   }
 
   /** Лид оказался нашим же аккаунтом — невалид, первое сообщение не пишем. */
+  /**
+   * Лид к переписке, которая уже идёт: собеседник написал первым, бот ведёт
+   * диалог, а лида добавили позже. Если на этот чат ссылается другой лид —
+   * false: это чужая живая переписка, решает менеджер.
+   */
+  private async linkToExistingChat(leadId: number): Promise<boolean> {
+    const lead = await this.prisma.lead.findUnique({
+      where: { id: leadId },
+      select: { chatId: true },
+    });
+    if (!lead?.chatId) return false;
+    const other = await this.prisma.lead.findFirst({
+      where: { chatId: lead.chatId, id: { not: leadId } },
+      select: { id: true },
+    });
+    if (other) return false;
+    const [first, replied] = await Promise.all([
+      this.prisma.message.findFirst({
+        where: { chatId: lead.chatId, deletedAt: null },
+        orderBy: { ts: 'asc' },
+        select: { ts: true },
+      }),
+      this.prisma.message.count({
+        where: { chatId: lead.chatId, role: 'user', deletedAt: null },
+      }),
+    ]);
+    await this.prisma.lead.update({
+      where: { id: leadId },
+      data: {
+        status: replied ? 'replied' : 'contacted',
+        firstContactAt: first?.ts ?? this.clock.ts(),
+        nextAttemptAt: null,
+        lastError: null,
+      },
+    });
+    this.log.log(
+      `outreach: lead #${leadId} linked to the conversation already going on in chat ${lead.chatId} — no opener`,
+    );
+    return true;
+  }
+
   private async markOwnAccount(
     leadId: number,
     ownAccountId: number | null,
@@ -516,6 +557,10 @@ export class OutreachWorker implements OnModuleInit {
       const attempts = candidate.attempts + 1;
       const dead = attempts >= MAX_OUTREACH_ATTEMPTS;
       if (/already has a transcript/.test(String(e?.message ?? ''))) {
+        // Клиент уже пишет сам (переписка была до лида) и другого лида у
+        // этого чата нет — первое сообщение не нужно: лид привязываем к
+        // переписке, бот её и так ведёт.
+        if (await this.linkToExistingChat(candidate.id)) return;
         await this.prisma.lead.update({
           where: { id: candidate.id },
           data: {
