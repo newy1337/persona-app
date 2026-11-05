@@ -271,7 +271,10 @@ export class RelayWorker implements OnModuleInit {
             },
           });
         } else {
-          if (!voicer) await dispatch();
+          // VK отмечает отправку после загрузки файла, перед messages.send:
+          // сбой загрузки (504 у pu.vk.com) — сообщение точно не ушло, его
+          // можно повторить. Telegram грузит и шлёт одним вызовом — отметка до.
+          if (!voicer && !vk) await dispatch();
           delivery.ids = await this.deliverMedia(
             chatId,
             { ...claimed, randomId: delivery.randomId },
@@ -280,7 +283,9 @@ export class RelayWorker implements OnModuleInit {
                   await this.voiceDelivery!.beforeDispatch(reply.id);
                   await dispatch();
                 }
-              : undefined,
+              : vk
+                ? dispatch
+                : undefined,
           );
           delivery.confirmedAt = this.clock.ts();
           await this.history.saveManualDelivery(reply.id, delivery);

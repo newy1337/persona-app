@@ -492,6 +492,39 @@ describe('manual outbox recovery against a migrated database', () => {
       ).toBe(2);
     });
 
+    it('голосовое: VK не принял загрузку (504) — сообщение не ушло, повтор сам, без проверки', async () => {
+      const id = await history.enqueueManualReply(vkChat, '', now, {
+        kind: 'voice',
+        filePath: '/synthetic/v.ogg',
+      });
+      vk.sendFile.mockImplementationOnce(async () => {
+        throw new Error('VkApiError: [0] upload.php загрузка HTTP 504');
+      });
+      const worker = vkWorker();
+      await worker.tick();
+      const failed = (await row(id))!;
+      expect(failed.status).toBe('pending');
+      expect(failed.retryAt).toBeGreaterThan(now);
+      now += 120;
+      await worker.tick();
+      expect((await row(id))!.status).toBe('sent');
+      expect(vk.sendFile).toHaveBeenCalledTimes(2);
+    });
+
+    it('голосовое: VK упал уже на отправке — на проверку, без дубля', async () => {
+      const id = await history.enqueueManualReply(vkChat, '', now, {
+        kind: 'voice',
+        filePath: '/synthetic/v.ogg',
+      });
+      vk.sendFile.mockImplementationOnce(async (_c, opts) => {
+        await opts.onDispatch?.();
+        throw new Error('socket hang up');
+      });
+      await vkWorker().tick();
+      expect((await row(id))!.status).toBe('needs_review');
+      expect(vk.sendFile).toHaveBeenCalledTimes(1);
+    });
+
     it('видео по ссылке в VK — сразу на проверку, без пяти повторов', async () => {
       const id = await history.enqueueManualReply(vkChat, '', now, {
         kind: 'video',
