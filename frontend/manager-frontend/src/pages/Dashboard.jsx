@@ -201,8 +201,6 @@ function Dashboard() {
   );
   usePublishHeaderTools({
     liveCount: liveAgents.length,
-    query,
-    onQueryChange: setQuery,
     filters: headFilters,
     onFiltersChange: setHeadFilters,
     accounts,
@@ -225,6 +223,7 @@ function Dashboard() {
             ready={ready}
             rows={searching && !showHidden ? withArchive(rows, archiveRows) : rows}
             query={query}
+            onQueryChange={setQuery}
             headFilters={headFilters}
             dateFilter={dateFilter}
             showHidden={showHidden}

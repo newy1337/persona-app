@@ -2,6 +2,7 @@ import { DialogTable } from '../../ui/ManagerRegion';
 import TableSkeleton from '../TableSkeleton/TableSkeleton';
 import { useEffect, useMemo, useRef } from 'react';
 import { useViewState } from '../../utils/viewState';
+import { SearchIcon } from '../../assets/icons';
 import { useNavigate } from 'react-router-dom';
 import styles from './ConversationsTable.module.scss';
 import { stageColors, stageFilters } from '../../data/stages';
@@ -54,6 +55,7 @@ function ConversationsTable({
   ready = true,
   rows = [],
   query = '',
+  onQueryChange = null,
   headFilters = { lead: '', account: '' },
   dateFilter = '',
   showHidden = false,
@@ -221,6 +223,20 @@ function ConversationsTable({
               </button>
             );
           })}
+          {/* Поиск — у самого списка, рядом с фильтрами; ищет и по карточкам выше. */}
+          {onQueryChange && (
+            <label className={styles.search}>
+              <span className={styles.searchIcon}><SearchIcon /></span>
+              <input
+                className={styles.searchInput}
+                type="search"
+                placeholder="Имя, @ник, номер, город, chat_id…"
+                value={query}
+                onChange={(e) => onQueryChange(e.target.value)}
+                aria-label="Поиск по диалогам"
+              />
+            </label>
+          )}
         </div>
       </div>
 

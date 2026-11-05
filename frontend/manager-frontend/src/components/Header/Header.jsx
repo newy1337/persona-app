@@ -109,6 +109,8 @@ function Header({
   const [leaving, setLeaving] = useState(false);
   const [ownLive, setOwnLive] = useState(null);
   const searchable = typeof onQueryChange === 'function';
+  // Фильтры шапки — и на страницах, где поиск стоит у самого списка.
+  const filterable = searchable || typeof onFiltersChange === 'function';
   const filtersRef = useRef(null);
 
   useEffect(() => {
@@ -181,9 +183,9 @@ function Header({
           </nav>
         )}
 
-        {searchable && (
+        {filterable && (
           <div className={styles.center}>
-            <div className={styles.search}>
+            {searchable && <div className={styles.search}>
               <span className={styles.searchIcon}><SearchIcon /></span>
               <input
                 className={styles.searchInput}
@@ -193,7 +195,7 @@ function Header({
                 onChange={(e) => onQueryChange?.(e.target.value)}
                 aria-label="Поиск по диалогам"
               />
-            </div>
+            </div>}
 
             <div className={styles.filtersWrap} ref={filtersRef}>
               <button

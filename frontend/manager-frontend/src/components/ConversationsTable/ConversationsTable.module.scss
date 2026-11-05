@@ -70,6 +70,39 @@
   align-items: center;
 }
 
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  width: 300px;
+  max-width: 100%;
+  padding: 0 10px;
+  border-radius: $radius-md;
+  border: 1px solid $border-control;
+  background: $bg-input;
+  transition: border-color 0.15s;
+  &:focus-within { border-color: $accent-blue; }
+}
+
+.searchIcon {
+  display: flex;
+  color: $text-secondary;
+  flex-shrink: 0;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: $text-primary;
+  background: none;
+  border: none;
+  outline: none;
+
+  &::placeholder { color: $text-secondary; }
+}
+
 .filtersLabel {
   font-size: 11px;
   letter-spacing: 0.04em;
