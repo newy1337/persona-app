@@ -636,6 +636,8 @@ export class StatsService {
     to?: string;
     source?: string;
     region?: string;
+    /** расход модели на диалоги лидов — только админу */
+    withCost?: boolean;
   }) {
     const range = resolveRange(query, this.clock.ts());
     const source = (TRAFFIC_SOURCE_FILTERS as readonly string[]).includes(
@@ -676,8 +678,12 @@ export class StatsService {
     const reached = await this.reachedByChat(
       leads.flatMap((l) => (l.chatId ? [l.chatId] : [])),
     );
+    const costs = query.withCost
+      ? await this.chatCosts(leads.flatMap((l) => (l.chatId ? [l.chatId] : [])))
+      : null;
     const blank = () => ({
       leads: 0,
+      cost_usd: 0,
       statuses: Object.fromEntries(LEAD_STATUSES.map((st) => [st, 0])),
       stages: zeroStages(),
       by_source: Object.fromEntries(
@@ -699,37 +705,98 @@ export class StatsService {
       const own = bySource.get(l.trafficSource ?? 'none') ?? blank();
       for (const row of [regions.get(region)!, own, total]) {
         row.leads += 1;
+        if (costs && l.chatId) row.cost_usd += costs.get(String(l.chatId)) ?? 0;
         row.statuses[l.status] = (row.statuses[l.status] ?? 0) + 1;
         row.by_source[l.trafficSource ?? 'none'] += 1;
         for (const st of reached.get(String(l.chatId)) ?? [])
           if (st in row.stages) row.stages[st] += 1;
       }
     }
+    // Без флага денег в ответе нет совсем: хед видит те же строки без расхода.
+    const money = <T extends { cost_usd: number }>(row: T) => {
+      if (!costs) {
+        const { cost_usd: _drop, ...rest } = row;
+        return rest;
+      }
+      return { ...row, cost_usd: usd(row.cost_usd) };
+    };
     return {
       range: { from: range.from, to: range.to },
       source: source ?? null,
+      with_cost: Boolean(costs),
       sources: TRAFFIC_SOURCES.map((id) => ({
         id,
         label: TRAFFIC_SOURCE_LABELS[id],
       })),
       stages: DEAL_STAGES.map((id) => ({ id, label: DEAL_STAGE_LABELS[id] })),
       statuses: [...LEAD_STATUSES],
-      total,
+      total: money(total),
       by_source: [...bySource.entries()]
         .map(([id, row]) => ({
           source: id,
           label:
             TRAFFIC_SOURCE_LABELS[id as keyof typeof TRAFFIC_SOURCE_LABELS] ??
             'Не отмечен',
-          leads: row.leads,
-          statuses: row.statuses,
-          stages: row.stages,
+          ...money({
+            leads: row.leads,
+            cost_usd: row.cost_usd,
+            statuses: row.statuses,
+            stages: row.stages,
+          }),
         }))
         .filter((r) => r.leads > 0),
       regions: [...regions.entries()]
-        .map(([region, row]) => ({ region, ...row }))
+        .map(([region, row]) => ({ region, ...money(row) }))
         .sort((a, b) => b.leads - a.leads || a.region.localeCompare(b.region)),
     };
+  }
+
+  /** Расход модели на каждый чат за всё время: id чата → доллары. */
+  private async chatCosts(chatIds: bigint[]): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (!chatIds.length) return out;
+    const price = memoPrice(await this.prices());
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        chat_id: bigint;
+        model: string;
+        input: bigint;
+        output: bigint;
+        cache_write: bigint;
+        cache_read: bigint;
+        cache_write_1h: bigint;
+      }>
+    >(Prisma.sql`
+      SELECT chat_id, model,
+        SUM(GREATEST(0, COALESCE(input_tokens, 0) - COALESCE(cached_tokens, 0) - COALESCE(cache_write_tokens, 0))) AS input,
+        SUM(COALESCE(output_tokens, 0)) AS output,
+        SUM(COALESCE(cache_write_tokens, 0)) AS cache_write,
+        SUM(COALESCE(cached_tokens, 0)) AS cache_read,
+        SUM(COALESCE(cache_write_1h_tokens, 0)) AS cache_write_1h
+      FROM model_usage
+      WHERE chat_id = ANY(${[...new Set(chatIds)]}::bigint[])
+      GROUP BY chat_id, model`);
+    for (const r of rows) {
+      const key = String(r.chat_id);
+      out.set(
+        key,
+        (out.get(key) ?? 0) +
+          costOfSums(
+            [
+              {
+                model: r.model,
+                input: Number(r.input),
+                output: Number(r.output),
+                cache_write: Number(r.cache_write),
+                cache_read: Number(r.cache_read),
+                cache_write_1h: Number(r.cache_write_1h),
+              },
+            ],
+            price,
+          ),
+      );
+    }
+    return out;
   }
 
   /** До каких этапов дошёл каждый чат (deal_reached) и архив — по текущему этапу. */

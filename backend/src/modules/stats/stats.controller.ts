@@ -91,7 +91,7 @@ export class StatsController {
     @Query('to') to?: string,
     @Query('source') source?: string,
   ) {
-    return this.stats.sources({ from, to, source });
+    return this.stats.sources({ from, to, source, withCost: true });
   }
 
   @ApiOperation({
