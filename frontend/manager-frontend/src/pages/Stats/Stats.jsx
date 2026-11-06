@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getUsage, getManagerUsage, getBalance, getDealStages, getColdLeads, getTrafficSources, getAccountStats } from '../../api/usage';
+import { getUsage, getManagerUsage, getBalance, getDealStages, getColdLeads, getTrafficSources, getAccountStats, getStageCosts } from '../../api/usage';
+import StageCosts from './StageCosts';
 import AccountsStats from './AccountsStats';
 import { SourcesByRegion } from './SourcesTable';
 import DailyChart from './DailyChart';
@@ -76,6 +77,7 @@ export default function Stats() {
   const [managersLoading, setManagersLoading] = useState(false);
   const [balance, setBalance] = useState(null);
   const [stages, setStages] = useState(null);
+  const [stageCosts, setStageCosts] = useState(null);
   const [cold, setCold] = useState(null);
   const [sources, setSources] = useState(null);
   const [accountStats, setAccountStats] = useState(null);
@@ -114,6 +116,17 @@ export default function Stats() {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
+  }, [tab, range]);
+
+  // Цена диалога до этапа — тяжелее подсчёта этапов: без опроса, раз на период.
+  useEffect(() => {
+    if (tab !== 'stages') return undefined;
+    let alive = true;
+    setStageCosts(null);
+    getStageCosts({ from: range.from, to: range.to })
+      .then((r) => alive && setStageCosts(r))
+      .catch((e) => alive && setError(e.detail || e.message));
+    return () => { alive = false; };
   }, [tab, range]);
 
   useEffect(() => {
@@ -233,7 +246,10 @@ export default function Stats() {
           ) : tab === 'cold' ? (
             cold ? <ColdTable data={cold} /> : <TableSkeleton rows={5} label="Считаю холодку…" />
           ) : tab === 'stages' ? (
-            stages ? <StagesTable data={stages} /> : <TableSkeleton rows={5} label="Считаю этапы…" />
+            <>
+              {stages ? <StagesTable data={stages} /> : <TableSkeleton rows={5} label="Считаю этапы…" />}
+              {stageCosts ? <StageCosts data={stageCosts} /> : <TableSkeleton rows={5} label="Считаю цену диалогов…" />}
+            </>
           ) : tab === 'managers' ? (
             managersLoading || !managers ? (
               <TableSkeleton rows={5} label="Считаю по менеджерам…" />

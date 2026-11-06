@@ -4,6 +4,7 @@ import {
   Logger,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma.service';
 import { Role } from 'src/enums/roles.enum';
 import { ClockService } from 'src/shared/clock.service';
@@ -23,6 +24,12 @@ import {
 import { dayKey, resolveRange, type DayRange } from './range';
 import { ACTIVE_AFTER, coldFunnel, coldLeadRows } from './cold-funnel';
 import { normalizeModel } from './prices';
+import {
+  costOfSums,
+  dialogCost,
+  stageCostSummary,
+  type ModelTokens,
+} from './dialog-cost';
 import {
   DEAL_REACHED_KEY as DEAL_REACHED_FACT,
   DEAL_STAGES,
@@ -1237,5 +1244,114 @@ export class StatsService {
     const b = bucket();
     for (const u of rows) add(b, u, price(u.model));
     return { chat_id: fromChatId(BigInt(chatId)), days, ...view(b) };
+  }
+
+  /** Сколько стоит диалог сейчас и сколько стоил на каждом этапе сделки. */
+  async chatCost(chatId: number) {
+    const price = memoPrice(await this.prices());
+    const [rows, facts] = await Promise.all([
+      this.prisma.modelUsage.findMany({
+        where: { chatId: BigInt(chatId) },
+        select: {
+          chatId: true,
+          personaId: true,
+          model: true,
+          stage: true,
+          inputTokens: true,
+          outputTokens: true,
+          cachedTokens: true,
+          cacheWriteTokens: true,
+          cacheWrite1hTokens: true,
+          elapsedMs: true,
+          createdAt: true,
+        },
+      }) as Promise<UsageRow[]>,
+      this.prisma.leadFacts.findUnique({
+        where: { chatId: BigInt(chatId) },
+        select: { facts: true },
+      }),
+    ]);
+    let reached: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(facts?.facts || '{}');
+      reached = parsed?.[DEAL_REACHED_FACT] ?? {};
+    } catch {
+      reached = {};
+    }
+    const calls = rows.map((u) => {
+      const b = bucket();
+      add(b, u, price(u.model));
+      return { at: u.createdAt, cost: b.cost };
+    });
+    return {
+      chat_id: fromChatId(BigInt(chatId)),
+      since: rows.length ? Math.min(...rows.map((r) => r.createdAt)) : null,
+      ...dialogCost(calls, reached),
+    };
+  }
+
+  /**
+   * Средняя цена диалога к этапу: по чатам, дошедшим до этапа в периоде,
+   * расход модели от начала диалога до момента, когда этап поставили.
+   */
+  async stageCosts(query: { from?: string; to?: string }) {
+    const range = resolveRange(query, this.clock.ts());
+    const price = memoPrice(await this.prices());
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        chat_id: bigint;
+        stage: string;
+        model: string | null;
+        input: bigint | null;
+        output: bigint | null;
+        cache_write: bigint | null;
+        cache_read: bigint | null;
+        cache_write_1h: bigint | null;
+      }>
+    >(Prisma.sql`
+      WITH reached AS (
+        SELECT p.chat_id, s.key AS stage, s.value::bigint AS ts
+        FROM pinned_facts p,
+          LATERAL jsonb_each_text(
+            CASE WHEN left(ltrim(p.facts), 1) = '{'
+              THEN COALESCE(p.facts::jsonb -> ${DEAL_REACHED_FACT}, '{}'::jsonb)
+              ELSE '{}'::jsonb END
+          ) s
+        WHERE p.facts LIKE ${'%' + DEAL_REACHED_FACT + '%'}
+          AND s.value ~ '^[0-9]+$'
+      )
+      SELECT r.chat_id, r.stage, u.model,
+        SUM(GREATEST(0, COALESCE(u.input_tokens, 0) - COALESCE(u.cached_tokens, 0) - COALESCE(u.cache_write_tokens, 0))) AS input,
+        SUM(COALESCE(u.output_tokens, 0)) AS output,
+        SUM(COALESCE(u.cache_write_tokens, 0)) AS cache_write,
+        SUM(COALESCE(u.cached_tokens, 0)) AS cache_read,
+        SUM(COALESCE(u.cache_write_1h_tokens, 0)) AS cache_write_1h
+      FROM reached r
+      LEFT JOIN model_usage u ON u.chat_id = r.chat_id AND u.created_at <= r.ts
+      WHERE r.ts >= ${range.start} AND r.ts < ${range.end}
+      GROUP BY r.chat_id, r.stage, u.model`);
+    const perChat = new Map<string, { stage: string; tokens: ModelTokens[] }>();
+    for (const r of rows) {
+      const key = `${r.chat_id}:${r.stage}`;
+      if (!perChat.has(key)) perChat.set(key, { stage: r.stage, tokens: [] });
+      if (r.model)
+        perChat.get(key)!.tokens.push({
+          model: r.model,
+          input: Number(r.input ?? 0),
+          output: Number(r.output ?? 0),
+          cache_write: Number(r.cache_write ?? 0),
+          cache_read: Number(r.cache_read ?? 0),
+          cache_write_1h: Number(r.cache_write_1h ?? 0),
+        });
+    }
+    return {
+      range: { from: range.from, to: range.to },
+      stages: stageCostSummary(
+        [...perChat.values()].map((c) => ({
+          stage: c.stage,
+          cost: costOfSums(c.tokens, price),
+        })),
+      ),
+    };
   }
 }

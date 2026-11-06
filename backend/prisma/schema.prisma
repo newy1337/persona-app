@@ -653,6 +653,7 @@ model ModelUsage {
   elapsedMs                Int?    @map("elapsed_ms")
 
   @@index([createdAt], map: "idx_model_usage_created")
+  @@index([chatId, createdAt], map: "idx_model_usage_chat")
   @@map("model_usage")
 }
 
