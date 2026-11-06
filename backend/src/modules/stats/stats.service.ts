@@ -105,6 +105,8 @@ interface UsageRow {
   cacheWrite1hTokens: number | null;
   elapsedMs: number | null;
   createdAt: number;
+  /** сколько вызов стоил по словам OpenRouter; для моделей без цены в таблице */
+  providerEstimatedCostUsd?: number | null;
 }
 
 function tokensOf(u: UsageRow): Tokens {
@@ -146,8 +148,11 @@ function add(b: Bucket, u: UsageRow, price: ModelPrice | null): void {
   const t = tokensOf(u);
   b.calls += 1;
   addTokens(b.tokens, t);
-  b.cost +=
-    costOf(price, t) + cacheWrite1hExtra(price, u.cacheWrite1hTokens ?? 0);
+  // Модели нет в таблице цен (Kimi, GLM через OpenRouter) — берём цену,
+  // которую назвал OpenRouter, а не ноль.
+  b.cost += price
+    ? costOf(price, t) + cacheWrite1hExtra(price, u.cacheWrite1hTokens ?? 0)
+    : (u.providerEstimatedCostUsd ?? 0);
   if (u.elapsedMs !== null) {
     b.latencySum += u.elapsedMs;
     b.latencyN += 1;
@@ -544,6 +549,7 @@ export class StatsService {
         cacheWrite1hTokens: true,
         elapsedMs: true,
         createdAt: true,
+        providerEstimatedCostUsd: true,
       },
     })) as UsageRow[];
 
@@ -765,6 +771,7 @@ export class StatsService {
         cache_write: bigint;
         cache_read: bigint;
         cache_write_1h: bigint;
+        estimated: number | null;
       }>
     >(Prisma.sql`
       SELECT chat_id, model,
@@ -772,7 +779,8 @@ export class StatsService {
         SUM(COALESCE(output_tokens, 0)) AS output,
         SUM(COALESCE(cache_write_tokens, 0)) AS cache_write,
         SUM(COALESCE(cached_tokens, 0)) AS cache_read,
-        SUM(COALESCE(cache_write_1h_tokens, 0)) AS cache_write_1h
+        SUM(COALESCE(cache_write_1h_tokens, 0)) AS cache_write_1h,
+        SUM(COALESCE(provider_estimated_cost_usd, 0)) AS estimated
       FROM model_usage
       WHERE chat_id = ANY(${[...new Set(chatIds)]}::bigint[])
       GROUP BY chat_id, model`);
@@ -790,6 +798,7 @@ export class StatsService {
                 cache_write: Number(r.cache_write),
                 cache_read: Number(r.cache_read),
                 cache_write_1h: Number(r.cache_write_1h),
+                estimated: Number(r.estimated ?? 0),
               },
             ],
             price,
@@ -1093,6 +1102,7 @@ export class StatsService {
         cacheWrite1hTokens: true,
         elapsedMs: true,
         createdAt: true,
+        providerEstimatedCostUsd: true,
       },
     })) as UsageRow[];
     for (const u of usage) {
@@ -1306,6 +1316,7 @@ export class StatsService {
         cacheWrite1hTokens: true,
         elapsedMs: true,
         createdAt: true,
+        providerEstimatedCostUsd: true,
       },
     })) as UsageRow[];
     const b = bucket();
@@ -1331,6 +1342,7 @@ export class StatsService {
           cacheWrite1hTokens: true,
           elapsedMs: true,
           createdAt: true,
+          providerEstimatedCostUsd: true,
         },
       }) as Promise<UsageRow[]>,
       this.prisma.leadFacts.findUnique({
@@ -1374,6 +1386,7 @@ export class StatsService {
         cache_write: bigint | null;
         cache_read: bigint | null;
         cache_write_1h: bigint | null;
+        estimated: number | null;
       }>
     >(Prisma.sql`
       WITH reached AS (
@@ -1392,7 +1405,8 @@ export class StatsService {
         SUM(COALESCE(u.output_tokens, 0)) AS output,
         SUM(COALESCE(u.cache_write_tokens, 0)) AS cache_write,
         SUM(COALESCE(u.cached_tokens, 0)) AS cache_read,
-        SUM(COALESCE(u.cache_write_1h_tokens, 0)) AS cache_write_1h
+        SUM(COALESCE(u.cache_write_1h_tokens, 0)) AS cache_write_1h,
+        SUM(COALESCE(u.provider_estimated_cost_usd, 0)) AS estimated
       FROM reached r
       LEFT JOIN model_usage u ON u.chat_id = r.chat_id AND u.created_at <= r.ts
       WHERE r.ts >= ${range.start} AND r.ts < ${range.end}
@@ -1409,6 +1423,7 @@ export class StatsService {
           cache_write: Number(r.cache_write ?? 0),
           cache_read: Number(r.cache_read ?? 0),
           cache_write_1h: Number(r.cache_write_1h ?? 0),
+          estimated: Number(r.estimated ?? 0),
         });
     }
     return {

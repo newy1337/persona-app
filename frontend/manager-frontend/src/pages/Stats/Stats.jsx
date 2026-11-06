@@ -218,7 +218,7 @@ export default function Stats() {
           )}
           {data?.unpriced_models?.length > 0 && (
             <p className={s.error}>
-              Без цены в таблице: {data.unpriced_models.join(', ')} — их вызовы считаются по нулю.
+              Без цены в таблице: {data.unpriced_models.join(', ')} — их вызовы считаются по цене, которую назвал OpenRouter.
             </p>
           )}
 
