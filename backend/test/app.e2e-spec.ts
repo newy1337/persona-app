@@ -4831,6 +4831,9 @@ describe('Manager panel API (e2e)', () => {
       expect(
         region.body.accounts.teams.map((t: any) => t.username).sort(),
       ).toEqual(['ae-head', 'ae-lead']);
+      // расход по источникам — только админу
+      expect(region.body.sources.with_cost).toBe(false);
+      expect(region.body.sources.total).not.toHaveProperty('cost_usd');
       await request(app.getHttpServer())
         .get('/api/stats/accounts')
         .set(headAuth)
@@ -7337,6 +7340,18 @@ describe('Manager panel API (e2e)', () => {
           }),
         },
       });
+      // расход модели на диалог лида: 1 млн входных токенов по $2
+      await prisma.modelUsage.create({
+        data: {
+          createdAt: 2,
+          chatId: 777000801n,
+          provider: 'test',
+          model: 'claude-sonnet-5',
+          stage: 'generator',
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+        },
+      });
       const all = await request(app.getHttpServer())
         .get('/api/stats/sources')
         .set(h)
@@ -7346,6 +7361,15 @@ describe('Manager panel API (e2e)', () => {
       expect(region.by_source).toMatchObject({ base: 2, hot_leadgen: 1 });
       expect(region.statuses.replied).toBe(1);
       expect(region.stages.vbros).toBe(1);
+      expect(all.body.with_cost).toBe(true);
+      expect(region.cost_usd).toBeCloseTo(2);
+      expect(
+        all.body.by_source.find((r: any) => r.source === 'base').cost_usd,
+      ).toBeCloseTo(2);
+      expect(
+        all.body.by_source.find((r: any) => r.source === 'hot_leadgen')
+          .cost_usd,
+      ).toBe(0);
       expect(all.body.sources.map((x: any) => x.label)).toEqual([
         'Базовик',
         'Горячий лидген',
@@ -7360,6 +7384,7 @@ describe('Manager panel API (e2e)', () => {
         onlyBase.body.regions.find((r: any) => r.region === '0707'),
       ).toMatchObject({ leads: 2 });
 
+      await prisma.modelUsage.deleteMany({ where: { chatId: 777000801n } });
       await prisma.leadFacts.deleteMany({ where: { chatId: 777000801n } });
       await prisma.lead.deleteMany({ where: { id: { in: ids } } });
       await request(app.getHttpServer())
