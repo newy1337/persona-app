@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Logger,
@@ -6,11 +7,19 @@ import {
   Post,
   Req,
   UseGuards,
+  UseInterceptors,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { unknownFields, usernameFrom } from 'src/domain/inbound-fields';
+import {
+  messengerOf,
+  MESSENGER_FIELDS,
+  unknownFields,
+  usernameFrom,
+  VK_USERNAME_ALIASES,
+} from 'src/domain/inbound-fields';
+import { ContactAliasesInterceptor } from './contact-aliases.interceptor';
 import { ApiHeader, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ApiKeyGuard } from 'src/guards/api-key.guard';
 import { InboundLeadDto } from './dto/inbound-lead.dto';
@@ -44,6 +53,8 @@ const COLD_FIELDS = [
   'gender',
   'city',
   'age',
+  ...MESSENGER_FIELDS,
+  ...VK_USERNAME_ALIASES,
 ];
 
 @ApiTags('inbound')
@@ -82,6 +93,21 @@ export class InboundController {
     return dto;
   }
 
+  /**
+   * Мессенджер холодки: перехватчик уже перенёс channel и поле vk в messenger.
+   * Незнакомое название — 400: молча слать в Telegram лида из другого
+   * мессенджера нельзя.
+   */
+  private coldMessenger(dto: ColdLeadDto) {
+    if (dto.messenger === undefined) return;
+    const known = messengerOf(dto.messenger);
+    if (!known)
+      throw new BadRequestException(
+        `messenger — telegram или vk, пришло «${dto.messenger}»`,
+      );
+    dto.messenger = known;
+  }
+
   @ApiOperation({
     summary:
       'Принять лид от внешней системы и раздать менеджеру онлайн по источнику, донору и лимиту',
@@ -101,6 +127,7 @@ export class InboundController {
     description: 'ключ не передан, неверный или отозван',
   })
   @Post('leads')
+  @UseInterceptors(new ContactAliasesInterceptor())
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   accept(@Body() dto: InboundLeadDto, @Req() req: Request) {
     return this.inbound.accept(
@@ -110,7 +137,7 @@ export class InboundController {
 
   @ApiOperation({
     summary:
-      'Холодка: лид с личностью, поровну тем, у кого холодка включена; region сужает до одного региона',
+      'Холодка: лид с личностью, поровну тем, у кого холодка включена; region сужает до одного региона; messenger — telegram или vk',
   })
   @ApiResponse({
     status: 201,
@@ -127,8 +154,10 @@ export class InboundController {
     description: 'ключ не передан, неверный или отозван',
   })
   @Post('cold')
+  @UseInterceptors(new ContactAliasesInterceptor(true))
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   acceptCold(@Body() dto: ColdLeadDto, @Req() req: Request) {
+    this.coldMessenger(dto);
     return this.inbound.acceptCold(
       this.withAliases('/api/post/cold', dto, req, COLD_FIELDS),
     );

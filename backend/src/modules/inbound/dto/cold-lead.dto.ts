@@ -45,7 +45,7 @@ export class ColdLeadDto {
   @ApiPropertyOptional({
     example: '+7-900-123-45-67',
     description:
-      'телефон в любом виде: дефисы, пробелы и скобки убираются, «+» не обязателен; нужен phone или username',
+      'телефон в любом виде: дефисы, пробелы и скобки убираются, «+» не обязателен; нужен phone или username. В VK лида ищут и по номеру',
   })
   // Нет ни телефона, ни ника — проверяем phone, и запрос отбивается с 400.
   @ValidateIf((o) => o.phone !== undefined || o.username === undefined)
@@ -54,7 +54,21 @@ export class ColdLeadDto {
   @MaxLength(64)
   phone?: string;
 
-  @ApiPropertyOptional({ example: '@durov', description: 'ник в Telegram' })
+  @ApiPropertyOptional({
+    enum: ['telegram', 'vk'],
+    default: 'telegram',
+    description:
+      'мессенджер лида: telegram (по умолчанию) или vk; поле channel и названия tg, вк, вконтакте тоже понимаем. Ссылка vk.com/… или t.me/… в username задаёт мессенджер сама',
+  })
+  @IsOptional()
+  @IsString({ message: 'messenger — telegram или vk' })
+  messenger?: string;
+
+  @ApiPropertyOptional({
+    example: '@durov',
+    description:
+      'ник в мессенджере лида: @username в Telegram; в VK — короткий адрес, idN, число VK ID или ссылка vk.com/…. Ник VK можно прислать и в поле vk',
+  })
   @IsOptional()
   @IsString()
   @MinLength(4)
