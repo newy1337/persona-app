@@ -149,6 +149,11 @@ export function resolvePrice(
 ): ModelPrice | null {
   if (Object.prototype.hasOwnProperty.call(table.models, model))
     return table.models[model];
+  // Статистика срезает провайдера («moonshotai/kimi…» → «kimi…»), а в
+  // таблице модели OpenRouter записаны с ним — сравниваем без провайдера.
+  const bare = normalizeModel(model);
+  for (const [name, price] of Object.entries(table.models))
+    if (normalizeModel(name) === bare) return price;
   const lower = model.toLowerCase();
   for (const [family, target] of Object.entries(table.families)) {
     if (

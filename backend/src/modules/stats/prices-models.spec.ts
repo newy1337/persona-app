@@ -11,4 +11,13 @@ describe('цены моделей по умолчанию', () => {
       expect(price!.output).toBeGreaterThan(0);
     },
   );
+
+  it('цена находится и по имени без провайдера — как его хранит статистика', () => {
+    expect(resolvePrice(DEFAULT_PRICES, 'kimi-k3.1-pro')).toEqual(
+      DEFAULT_PRICES.models['moonshotai/kimi-k3.1-pro'],
+    );
+    expect(resolvePrice(DEFAULT_PRICES, 'glm-5.3')).toEqual(
+      DEFAULT_PRICES.models['z-ai/glm-5.3'],
+    );
+  });
 });
