@@ -86,7 +86,11 @@ import { turnTime, type TurnTime } from './kernel/turn-time';
 import { goodnightReason } from './dialogue/goodnight-policy';
 import { characterDate, shiftDate } from './kernel/clock';
 import type { ConversationState, Judgment, RhythmState } from './kernel/types';
-import { generatorModelFor, type PersonaModels } from './config/models';
+import {
+  generatorEffortFor,
+  generatorModelFor,
+  type PersonaModels,
+} from './config/models';
 import { stripMetadata } from './character/config';
 import { prepareTurn } from './character/turn';
 import { applyJudgment } from './character/judgment';
@@ -144,7 +148,7 @@ import {
   secondsSinceLastMessage,
 } from './dialogue/initiative';
 import { personaGender, voiceOf } from './character/gender';
-import { judgeModelFor } from './config/models';
+import { judgeEffortFor, judgeModelFor } from './config/models';
 import {
   ACTIVE_CHAT_DAYS,
   GOODNIGHT_QUIET_BEFORE_SECONDS,
@@ -266,7 +270,7 @@ export class PersonaBrainService implements ReplyBrain {
   ) {
     return {
       ...this.llmDeps(scope, variables, signal),
-      effort: appConfig.judgeEffort,
+      effort: judgeEffortFor(persona, appConfig.judgeEffort),
       model: judgeModelFor(persona, appConfig.judgeModel),
     };
   }
@@ -1935,6 +1939,7 @@ export class PersonaBrainService implements ReplyBrain {
     const draft = await generateDraft(
       {
         model,
+        effort: generatorEffortFor(loaded),
         system: buildCharacterPrompt({
           config,
           runtime,
@@ -2707,6 +2712,7 @@ export class PersonaBrainService implements ReplyBrain {
       const draft = await generateDraft(
         {
           model,
+          effort: generatorEffortFor(persona),
           system,
           history: state.history,
           userText: 'Напиши запланированное инициативное сообщение.',

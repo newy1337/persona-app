@@ -55,6 +55,43 @@ export const JUDGE_MODEL_OPTIONS: ReadonlyArray<
 export interface PersonaModels {
   generatorModel?: string | null;
   judgeModel?: string | null;
+  generatorEffort?: string | null;
+  judgeEffort?: string | null;
+}
+
+export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high';
+
+export const EFFORT_OPTIONS: ReadonlyArray<
+  readonly [id: ReasoningEffort, label: string]
+> = [
+  ['off', 'Без рассуждений'],
+  ['low', 'Низкое'],
+  ['medium', 'Среднее'],
+  ['high', 'Высокое'],
+];
+
+/** Ответ личности по умолчанию — без рассуждений (быстро и дёшево). */
+export const GENERATOR_EFFORT: ReasoningEffort = 'off';
+
+export function isEffort(value: unknown): value is ReasoningEffort {
+  return EFFORT_OPTIONS.some(([id]) => id === value);
+}
+
+/** Рассуждение генератора: личность → умолчание из кода. */
+export function generatorEffortFor(
+  persona: PersonaModels | null | undefined,
+): ReasoningEffort {
+  const value = persona?.generatorEffort;
+  return isEffort(value) ? value : GENERATOR_EFFORT;
+}
+
+/** Рассуждение судей: личность → окружение (JUDGE_EFFORT). */
+export function judgeEffortFor(
+  persona: PersonaModels | null | undefined,
+  envValue: ReasoningEffort,
+): ReasoningEffort {
+  const value = persona?.judgeEffort;
+  return isEffort(value) ? value : envValue;
 }
 
 /** Модель генератора: личность → окружение → умолчание из кода. */

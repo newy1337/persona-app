@@ -71,6 +71,9 @@ export interface LoadedPersona {
   /** пусто — модель из окружения */
   generatorModel?: string | null;
   judgeModel?: string | null;
+  /** пусто — уровень рассуждения по умолчанию */
+  generatorEffort?: string | null;
+  judgeEffort?: string | null;
 }
 
 interface RawPersona {
@@ -415,6 +418,8 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
       enabled?: boolean;
       generatorModel?: string | null;
       judgeModel?: string | null;
+      generatorEffort?: string | null;
+      judgeEffort?: string | null;
     },
     chat: Record<string, string> = {},
   ): LoadedPersona {
@@ -427,6 +432,8 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
     const models = {
       generatorModel: row.generatorModel ?? null,
       judgeModel: row.judgeModel ?? null,
+      generatorEffort: row.generatorEffort ?? null,
+      judgeEffort: row.judgeEffort ?? null,
     };
     const ready = raw.views.get(key);
     if (ready)

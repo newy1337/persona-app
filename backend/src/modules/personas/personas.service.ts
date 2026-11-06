@@ -26,6 +26,9 @@ import {
 } from 'src/brain/config/rhythm';
 import { BUILTIN_VARIABLES, variableErrors } from 'src/brain/config/variables';
 import {
+  EFFORT_OPTIONS,
+  GENERATOR_EFFORT,
+  isEffort,
   JUDGE_MODEL_OPTIONS,
   MODEL_OPTIONS,
   generatorModelFor,
@@ -119,6 +122,8 @@ function summary(row: Persona, accounts = 0) {
     notes: row.notes,
     generator_model: row.generatorModel ?? null,
     judge_model: row.judgeModel ?? null,
+    generator_effort: row.generatorEffort ?? null,
+    judge_effort: row.judgeEffort ?? null,
     traffic_type: row.trafficType ?? null,
     accounts,
     card_lines: Array.isArray(card.card) ? card.card.length : 0,
@@ -263,11 +268,20 @@ export class PersonasService {
       notes?: string | null;
       generator_model?: string | null;
       judge_model?: string | null;
+      generator_effort?: string | null;
+      judge_effort?: string | null;
       traffic_type?: string | null;
     },
   ) {
     const row = await this.mustExist(id);
-    const { generator_model, judge_model, traffic_type, ...rest } = dto;
+    const {
+      generator_model,
+      judge_model,
+      generator_effort,
+      judge_effort,
+      traffic_type,
+      ...rest
+    } = dto;
     const data: Record<string, unknown> = { ...rest };
     if (traffic_type !== undefined) data.trafficType = traffic_type;
     if (generator_model !== undefined) {
@@ -283,6 +297,17 @@ export class PersonasService {
           `неизвестная модель судей «${judge_model}»`,
         );
       data.judgeModel = judge_model;
+    }
+    for (const [key, value] of [
+      ['generatorEffort', generator_effort],
+      ['judgeEffort', judge_effort],
+    ] as const) {
+      if (value === undefined) continue;
+      if (value !== null && !isEffort(value))
+        throw new UnprocessableEntityException(
+          `неизвестный уровень рассуждения «${value}»`,
+        );
+      data[key] = value;
     }
     if (dto.slug && dto.slug !== row.slug) {
       if (await this.prisma.persona.findUnique({ where: { slug: dto.slug } })) {
@@ -309,9 +334,12 @@ export class PersonasService {
     return {
       generator: MODEL_OPTIONS.map(([id, label]) => ({ id, label })),
       judge: JUDGE_MODEL_OPTIONS.map(([id, label]) => ({ id, label })),
+      effort: EFFORT_OPTIONS.map(([id, label]) => ({ id, label })),
       defaults: {
         generator: generatorModelFor(null, appConfig.generatorModel),
         judge: judgeModelFor(null, appConfig.judgeModel),
+        generator_effort: GENERATOR_EFFORT,
+        judge_effort: appConfig.judgeEffort,
       },
     };
   }

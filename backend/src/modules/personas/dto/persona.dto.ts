@@ -90,6 +90,28 @@ export class UpdatePersonaDto {
   @IsString()
   @MaxLength(64)
   judge_model?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    enum: ['off', 'low', 'medium', 'high'],
+    description: 'рассуждение генератора; null — по умолчанию (off)',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  generator_effort?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    enum: ['off', 'low', 'medium', 'high'],
+    description: 'рассуждение судей; null — из окружения (JUDGE_EFFORT)',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  judge_effort?: string | null;
 }
 
 export class PutSectionDto {

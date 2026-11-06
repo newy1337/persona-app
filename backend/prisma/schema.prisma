@@ -78,26 +78,29 @@ model DashboardAuditLog {
 }
 
 model Persona {
-  id             Int     @id @default(autoincrement())
-  slug           String  @unique
-  name           String
-  isDefault      Boolean @default(false) @map("is_default")
-  enabled        Boolean @default(true)
-  persona        String  @default("{}")
-  goals          String  @default("{}")
-  storylines     String  @default("{}")
-  dayConfig      String  @default("{}") @map("day_config")
-  beats          String?
-  prompts        String  @default("{}")
-  rhythm         String  @default("{}")
-  variables      String  @default("{}")
-  notes          String?
-  generatorModel String? @map("generator_model")
-  judgeModel     String? @map("judge_model")
+  id              Int     @id @default(autoincrement())
+  slug            String  @unique
+  name            String
+  isDefault       Boolean @default(false) @map("is_default")
+  enabled         Boolean @default(true)
+  persona         String  @default("{}")
+  goals           String  @default("{}")
+  storylines      String  @default("{}")
+  dayConfig       String  @default("{}") @map("day_config")
+  beats           String?
+  prompts         String  @default("{}")
+  rhythm          String  @default("{}")
+  variables       String  @default("{}")
+  notes           String?
+  generatorModel  String? @map("generator_model")
+  judgeModel      String? @map("judge_model")
+  /// уровень рассуждения: off, low, medium, high; null — по умолчанию
+  generatorEffort String? @map("generator_effort")
+  judgeEffort     String? @map("judge_effort")
   /// тип трафика: cold — холодка, hot — горячий; null — не проставлен
-  trafficType    String? @map("traffic_type")
-  createdAt      Int     @map("created_at")
-  updatedAt      Int     @map("updated_at")
+  trafficType     String? @map("traffic_type")
+  createdAt       Int     @map("created_at")
+  updatedAt       Int     @map("updated_at")
 
   versions PersonaVersion[]
 

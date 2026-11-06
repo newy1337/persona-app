@@ -47,11 +47,11 @@ export const appConfig = {
   anthropicWorkspaceId: process.env.ANTHROPIC_WORKSPACE_ID || '',
   generatorModel: process.env.GENERATOR_MODEL || 'claude-sonnet-5',
   judgeModel: (process.env.JUDGE_MODEL || '').trim(),
-  judgeEffort: (['low', 'medium', 'high'].includes(
+  judgeEffort: (['off', 'low', 'medium', 'high'].includes(
     process.env.JUDGE_EFFORT ?? '',
   )
     ? process.env.JUDGE_EFFORT
-    : 'low') as 'low' | 'medium' | 'high',
+    : 'low') as 'off' | 'low' | 'medium' | 'high',
   adminUsername: process.env.ADMIN_USERNAME || 'admin',
   adminPassword: process.env.ADMIN_PASSWORD || '',
   outreachDailyPerAccount: Number(process.env.OUTREACH_DAILY_PER_ACCOUNT || 10),

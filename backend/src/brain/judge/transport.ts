@@ -11,7 +11,7 @@ import {
 } from '../llm/anthropic';
 
 export interface JudgeDeps extends LlmDeps {
-  effort?: Effort;
+  effort?: Effort | 'off';
   model?: string;
 }
 
@@ -71,12 +71,15 @@ export async function judgeResponseText(
   maxTokens: number,
   stage: string,
 ): Promise<string> {
+  const effort = deps.effort ?? 'low';
+  // Мысли тоже входят в предел токенов: чем глубже рассуждение, тем больше запас.
+  const reserve = effort === 'high' ? 3 : effort === 'medium' ? 2 : 1;
   return completeText(deps, {
     model: deps.model ?? resolveJudgeModel(),
     system,
     messages: [{ role: 'user', content: judgePayloadBlocks(payload) }],
-    maxTokens,
-    effort: deps.effort ?? 'low',
+    maxTokens: maxTokens * reserve,
+    effort,
     stage,
     cacheHistory: true,
   });

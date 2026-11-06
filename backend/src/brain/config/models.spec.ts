@@ -1,12 +1,16 @@
 import {
+  EFFORT_OPTIONS,
   GENERATOR_MODEL,
   JUDGE_MODEL,
   MODEL_OPTIONS,
   OPUS_5_5,
   SONNET_5_5,
+  generatorEffortFor,
   generatorModelFor,
+  isEffort,
   isGeneratorModel,
   isJudgeModel,
+  judgeEffortFor,
   judgeModelFor,
 } from './models';
 
@@ -53,5 +57,27 @@ describe('модель на личность', () => {
     expect(generatorModelFor({ generatorModel: SONNET_5_5 })).toBe(SONNET_5_5);
     expect(judgeModelFor({ judgeModel: SONNET_5_5 })).toBe(SONNET_5_5);
     expect(MODEL_OPTIONS.map(([id]) => id)).toContain(SONNET_5_5);
+  });
+});
+
+describe('рассуждение на личность', () => {
+  it('генератор по умолчанию без рассуждений, судьи — из окружения', () => {
+    expect(generatorEffortFor(null)).toBe('off');
+    expect(generatorEffortFor({ generatorEffort: null })).toBe('off');
+    expect(judgeEffortFor(null, 'low')).toBe('low');
+  });
+
+  it('выбор личности перекрывает умолчание; мусор не принимается', () => {
+    expect(generatorEffortFor({ generatorEffort: 'high' })).toBe('high');
+    expect(judgeEffortFor({ judgeEffort: 'off' }, 'low')).toBe('off');
+    expect(judgeEffortFor({ judgeEffort: 'max' }, 'medium')).toBe('medium');
+    expect(isEffort('medium')).toBe(true);
+    expect(isEffort('max')).toBe(false);
+    expect(EFFORT_OPTIONS.map(([id]) => id)).toEqual([
+      'off',
+      'low',
+      'medium',
+      'high',
+    ]);
   });
 });
