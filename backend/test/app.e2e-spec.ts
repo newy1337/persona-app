@@ -2051,6 +2051,153 @@ describe('Manager panel API (e2e)', () => {
           .set(h)
           .expect(200);
     });
+
+    it('холодка VK: messenger, поле vk и ссылка vk.com, один номер в обоих мессенджерах, личность без аккаунтов VK — 422', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      const prisma = app.get(PrismaService);
+      const made = await request(app.getHttpServer())
+        .post('/api/api-keys')
+        .set(h)
+        .send({ name: 'Холодка VK' })
+        .expect(201);
+      const key = { 'X-Api-Key': made.body.key };
+      const post = (body: Record<string, unknown>) =>
+        request(app.getHttpServer())
+          .post('/api/post/cold')
+          .set(key)
+          .send({ persona: 'nastya', source: 'beboo', ...body });
+      const manager = (
+        await request(app.getHttpServer())
+          .post('/api/managers')
+          .set(h)
+          .send({
+            username: 'cold-vk-m1',
+            password: 'cold123456',
+            role: 'manager',
+            region_code: '0931',
+            online: true,
+          })
+          .expect(200)
+      ).body.created_user_id as number;
+      await request(app.getHttpServer())
+        .put(`/api/managers/${manager}`)
+        .set(h)
+        .send({ cold_leads: true })
+        .expect(200);
+      await request(app.getHttpServer())
+        .put('/api/region-settings/0931')
+        .set(h)
+        .send({ accept_cold: true })
+        .expect(200);
+      const noVk = await request(app.getHttpServer())
+        .post('/api/personas')
+        .set(h)
+        .send({ name: 'Холодка без VK' })
+        .expect(200);
+      const account = await prisma.channelAccount.create({
+        data: {
+          channel: 'vk',
+          login: 'vk-cold-test',
+          personaId: 'nastya',
+          status: 'active',
+          addedAt: 1,
+        },
+      });
+      const ids: number[] = [];
+      try {
+        const lead = async (id: number) =>
+          prisma.lead.findUniqueOrThrow({ where: { id } });
+        // без messenger — Telegram, как раньше
+        const tg = await post({ phone: '+7 901 555-77-01' }).expect(201);
+        ids.push(tg.body.id);
+        expect(tg.body.messenger).toBe('telegram');
+        expect((await lead(tg.body.id)).channel).toBe('telegram');
+        // тот же номер в VK — отдельный лид; повтор в VK — дубль
+        const vkPhone = await post({
+          phone: '+79015557701',
+          messenger: 'ВК',
+        }).expect(201);
+        ids.push(vkPhone.body.id);
+        expect(await lead(vkPhone.body.id)).toMatchObject({
+          channel: 'vk',
+          phoneE164: '+79015557701',
+          cold: true,
+          ownerUserId: manager,
+        });
+        const dup = await post({
+          phone: '+79015557701',
+          messenger: 'vk',
+        }).expect(409);
+        expect(dup.body.message).toContain('VK +79015557701');
+        // ник VK: короткий адрес, ссылка vk.com сама делает лид VK, поле vk с числом — idN
+        const nick = await post({
+          username: 'Ivan.Cold',
+          messenger: 'vk',
+        }).expect(201);
+        ids.push(nick.body.id);
+        expect(await lead(nick.body.id)).toMatchObject({
+          channel: 'vk',
+          usernameKey: 'ivan.cold',
+        });
+        const link = await post({
+          username: 'https://vk.com/petr.cold',
+        }).expect(201);
+        ids.push(link.body.id);
+        expect(link.body.messenger).toBe('vk');
+        const alias = await post({ vk: 123456789 }).expect(201);
+        ids.push(alias.body.id);
+        expect(await lead(alias.body.id)).toMatchObject({
+          channel: 'vk',
+          usernameKey: 'id123456789',
+        });
+        const byChannel = await post({
+          username: 'olga.cold',
+          channel: 'vk',
+        }).expect(201);
+        ids.push(byChannel.body.id);
+        expect(byChannel.body.messenger).toBe('vk');
+        // незнакомый мессенджер и чужой ник — отказ, не молча в Telegram
+        const bad = await post({
+          phone: '+79015557702',
+          messenger: 'max',
+        }).expect(400);
+        expect(bad.body.message).toContain('telegram или vk');
+        await post({ username: 'a', messenger: 'vk' }).expect(400);
+        await post({ username: 'no', messenger: 'vk' }).expect(400);
+        const badNick = await post({
+          username: '!!!bad',
+          messenger: 'vk',
+        }).expect(422);
+        expect(badNick.body.message).toContain('ник VK');
+        // личности без аккаунтов VK лида VK не ставим: писать некому
+        const lonely = await post({
+          phone: '+79015557703',
+          messenger: 'vk',
+          persona: noVk.body.slug,
+        }).expect(422);
+        expect(lonely.body).toMatchObject({ error: 'no_channel_accounts' });
+        expect(
+          await prisma.lead.count({ where: { phoneE164: '+79015557703' } }),
+        ).toBe(0);
+      } finally {
+        await prisma.lead.deleteMany({ where: { id: { in: ids } } });
+        await prisma.channelAccount.delete({ where: { id: account.id } });
+        await request(app.getHttpServer())
+          .delete(`/api/personas/${noVk.body.id}`)
+          .set(h)
+          .expect(200);
+        await request(app.getHttpServer())
+          .put('/api/region-settings/0931')
+          .set(h)
+          .send({ accept_cold: false })
+          .expect(200);
+        await prisma.apiKey.deleteMany({ where: { id: made.body.item.id } });
+        await request(app.getHttpServer())
+          .delete(`/api/managers/${manager}`)
+          .set(h)
+          .expect(200);
+      }
+    });
   });
 
   describe('буфер и перезабив', () => {

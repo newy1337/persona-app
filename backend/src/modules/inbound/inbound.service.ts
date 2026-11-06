@@ -15,7 +15,10 @@ import {
   mskDayStart,
   normalizePhone,
   isCityName,
+  isVkLink,
   normalizeUsername,
+  normalizeVkUsername,
+  type LeadChannel,
 } from 'src/domain/leads';
 import {
   coldSkipReason,
@@ -35,7 +38,11 @@ export interface InboundResult {
   assigned_to: { user_id: number; username: string } | null;
   /** лид только с ником попал в буфер региона */
   buffered: boolean;
+  /** мессенджер лида (холодка): telegram или vk */
+  messenger?: LeadChannel;
 }
+
+const TG_LINK_RE = /t\.me\/|telegram\.(me|dog)\//i;
 
 // Розданный лид из LeadGet сразу встаёт в очередь первых сообщений: менеджеру
 // не нужно жать «В очередь». Лид из буфера сюда не попадает — его берут руками.
@@ -160,17 +167,54 @@ export class InboundService {
   }
 
   /**
+   * Лиду VK пишет только аккаунт VK: у личности без них лид навсегда застрял
+   * бы в очереди. Отбиваем сразу, чтобы отправитель увёл лид в другое место.
+   * Выключенные и на паузе считаются: их включат.
+   */
+  private async requireVkAccounts(persona: string, channel: LeadChannel) {
+    if (channel !== 'vk') return;
+    const count = await this.prisma.channelAccount.count({
+      where: {
+        personaId: persona,
+        channel: 'vk',
+        status: { notIn: ['banned', 'deleted'] },
+      },
+    });
+    if (!count)
+      throw new UnprocessableEntityException({
+        statusCode: 422,
+        error: 'no_channel_accounts',
+        message: `у личности «${persona}» нет аккаунтов VK — лиду VK писать некому`,
+      });
+  }
+
+  /**
    * Холодка: источник, личность и контакт, регион по желанию, без донора.
    * Раздаётся поровну тем, у кого холодка включена (лично и в регионе), кто
    * онлайн, с квотой, с этим источником и этой личностью; region сужает до
    * одного региона. Буфера у холодки нет — лид уходит сразу сотруднику.
    */
   async acceptCold(dto: ColdLeadDto): Promise<InboundResult> {
-    const username = dto.username ? normalizeUsername(dto.username) : null;
+    // Ссылка в нике сама говорит, откуда лид; иначе — messenger, по умолчанию Telegram.
+    const channel: LeadChannel =
+      dto.username && isVkLink(dto.username)
+        ? 'vk'
+        : dto.username && TG_LINK_RE.test(dto.username)
+          ? 'telegram'
+          : dto.messenger === 'vk'
+            ? 'vk'
+            : 'telegram';
+    const username = dto.username
+      ? channel === 'vk'
+        ? normalizeVkUsername(dto.username)
+        : normalizeUsername(dto.username)
+      : null;
     const phone = dto.phone ? normalizePhone(dto.phone) : null;
     if (dto.username && !username)
       throw new UnprocessableEntityException(
-        `не похоже на @username: «${dto.username}»`,
+        channel === 'vk'
+          ? `не похоже на ник VK: «${dto.username}»`
+          : `не похоже на @username: «${dto.username}»`,
       );
     if (dto.phone && !phone)
       throw new UnprocessableEntityException(
@@ -178,7 +222,7 @@ export class InboundService {
       );
     if (!phone && !username)
       throw new BadRequestException('нужен phone или username');
-    const contact = { phone_e164: phone, username };
+    const contact = { phone_e164: phone, username, channel };
     const source = dto.source.trim();
     // Личность привязывается к лиду, поэтому должна существовать: неизвестную
     // не сравниваем «как есть», как в обычных входящих, а отбиваем.
@@ -190,6 +234,7 @@ export class InboundService {
         error: 'persona_not_found',
         message: `личности «${raw}» нет`,
       });
+    await this.requireVkAccounts(persona, channel);
     const tags = { source, persona, region: dto.region?.trim() || null };
     try {
       return await this.prisma.$transaction(
@@ -198,7 +243,7 @@ export class InboundService {
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('inbound_leads'))`;
           const existing = await tx.lead.findFirst({
             where: {
-              channel: 'telegram',
+              channel,
               OR: [
                 ...(phone ? [{ phoneE164: phone }] : []),
                 ...(username ? [{ usernameKey: username }] : []),
@@ -227,6 +272,7 @@ export class InboundService {
           };
           const row = await tx.lead.create({
             data: {
+              channel,
               phoneE164: phone,
               usernameKey: username,
               firstName: dto.name?.trim() || null,
@@ -254,6 +300,7 @@ export class InboundService {
             status: row.status,
             assigned_to: { user_id: owner.id, username: owner.username },
             buffered: false,
+            messenger: channel,
           };
         },
         { maxWait: 10_000, timeout: 15_000 },
