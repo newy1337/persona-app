@@ -117,6 +117,25 @@ export class StatsController {
     );
   }
 
+  @ApiOperation({
+    summary: 'Цена диалога: сейчас и к каждому этапу сделки',
+  })
+  @Get('chat/:chatId/cost')
+  chatCost(@Param('chatId', ParseIntPipe) chatId: number) {
+    return this.stats.chatCost(chatId);
+  }
+
+  @ApiOperation({
+    summary:
+      'Средняя цена диалога к этапу: по чатам, дошедшим до этапа в периоде',
+  })
+  @ApiQuery({ name: 'from', required: false, example: '2026-10-01' })
+  @ApiQuery({ name: 'to', required: false, example: '2026-10-31' })
+  @Get('stage-costs')
+  stageCosts(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.stats.stageCosts({ from, to });
+  }
+
   @ApiOperation({ summary: 'Баланс ключа OpenRouter' })
   @Get('balance')
   balanceOpenRouter() {

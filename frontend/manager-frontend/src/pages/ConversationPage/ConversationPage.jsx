@@ -103,6 +103,8 @@ import {
 import { DEAL_STAGES } from '../../data/dealStages';
 import { accountContact, channelBadge, clientContact } from '../../utils/channel';
 import { peekDialogAnchor, rememberDialog } from '../../utils/viewState';
+import { useMe } from '../../components/AppLayout/me';
+import ChatCost from './ChatCost';
 
 // Блок «Сценарий» в карточке диалога скрыт: сценариев у личностей сейчас нет.
 // Вернуть — собрать панель с VITE_SHOW_SCENARIO=1 (данные и код блока на месте).
@@ -218,6 +220,7 @@ export function canEdit(msg, kind) {
 function ConversationPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const me = useMe();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Пришли из «Диалогов» и листаем чаты стрелками — возврат встанет на последний.
   useEffect(() => {
@@ -877,6 +880,9 @@ function ConversationPage() {
               noteAt={data.note_at}
               onSave={async (text) => { await setChatNote(id, text); load(); }}
             />
+
+            {/* Расход модели на диалог — только админу. */}
+            {me?.role === 'admin' && <ChatCost chatId={id} />}
 
             <div className={styles.summarySection}>
               <div className={styles.summaryHeader}>
