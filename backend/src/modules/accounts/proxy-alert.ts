@@ -74,7 +74,10 @@ export interface ProxyWatchState {
 
 export interface ProxyStep {
   messages: string[];
-  /** аккаунты, которые пора выключить: напоминания кончились, прокси не меняли */
+  /**
+   * Аккаунты, которые пора выключить: напоминания кончились, прокси не меняли.
+   * Пока их не выключили и не передали в forget(), приходят с каждым шагом.
+   */
   disable: Dead[];
 }
 
@@ -94,15 +97,24 @@ export function disabledMessage(
  * напоминаний, если прокси так и не заменили, отдаёт аккаунт на выключение:
  * мёртвый аккаунт держит свои диалоги и очереди. Замена прокси — это меры:
  * отсчёт начинается заново.
+ *
+ * Починившимся аккаунт считается, только когда он в сети подряд recoverSec:
+ * моргающий аккаунт иначе обнулял бы отсчёт и никогда не выключался. Не в
+ * сети по другой причине (перезапуск сервера, сессия) — отсчёт не
+ * сбрасывается, время идёт дальше: после деплоя аккаунты сначала «ждут
+ * подключения». Сколько аккаунт пробыл в сети, не сохраняется: после
+ * перезапуска 30 минут считаются заново.
  */
 export class ProxyWatch {
   private downSince = new Map<number, number>();
   private notices = new Map<number, Notice>();
+  private upSince = new Map<number, number>();
 
   constructor(
     private readonly afterSec: number,
     private readonly repeatSec: number,
     readonly maxReminders = 2,
+    private readonly recoverSec = 30 * 60,
   ) {}
 
   snapshot(): ProxyWatchState {
@@ -115,11 +127,14 @@ export class ProxyWatch {
   restore(state: Partial<ProxyWatchState> | null | undefined): void {
     const ids = (o: object | undefined) =>
       Object.entries(o ?? {}).filter(([k]) => Number.isInteger(Number(k)));
-    this.downSince = new Map(
-      ids(state?.downSince)
-        .filter(([, v]) => typeof v === 'number')
-        .map(([k, v]) => [Number(k), v as number]),
-    );
+    const times = (o: object | undefined) =>
+      new Map(
+        ids(o)
+          .filter(([, v]) => typeof v === 'number')
+          .map(([k, v]) => [Number(k), v as number]),
+      );
+    this.downSince = times(state?.downSince);
+    this.upSince.clear();
     this.notices = new Map(
       ids(state?.notices)
         .filter(([, v]) => v && typeof (v as Notice).at === 'number')
@@ -141,11 +156,22 @@ export class ProxyWatch {
     const dead: Dead[] = [];
     const byId = new Map(probes.map((p) => [p.id, p]));
     const replaced = new Set<number>();
+    const recovered = new Set<number>();
     for (const p of probes) {
-      if (p.online || !isProxyTrouble(p.reason)) {
-        this.downSince.delete(p.id);
+      const known = this.downSince.has(p.id) || this.notices.has(p.id);
+      if (p.online) {
+        if (!known) {
+          this.upSince.delete(p.id);
+          continue;
+        }
+        const up = this.upSince.get(p.id) ?? now;
+        this.upSince.set(p.id, up);
+        if (now - up >= this.recoverSec) recovered.add(p.id);
         continue;
       }
+      // Не в сети не из-за прокси: отсчёт стоит, «в сети подряд» — с начала.
+      this.upSince.delete(p.id);
+      if (!isProxyTrouble(p.reason)) continue;
       const notice = this.notices.get(p.id);
       // Прокси заменили, а аккаунт всё ещё лежит — меры приняты, считаем заново.
       if (notice && notice.proxy !== p.proxy) {
@@ -157,11 +183,16 @@ export class ProxyWatch {
       this.downSince.set(p.id, since);
       if (now - since >= this.afterSec) dead.push({ ...p, since });
     }
-    for (const id of this.downSince.keys())
-      if (!byId.has(id)) this.downSince.delete(id);
+    for (const id of recovered) {
+      this.downSince.delete(id);
+      this.upSince.delete(id);
+    }
+    for (const map of [this.downSince, this.upSince])
+      for (const id of map.keys()) if (!byId.has(id)) map.delete(id);
 
-    const deadIds = new Set(dead.map((p) => p.id));
-    const back = [...this.notices.keys()].filter((id) => !deadIds.has(id));
+    const back = [...this.notices.keys()].filter(
+      (id) => recovered.has(id) || !byId.has(id),
+    );
     for (const id of back) this.notices.delete(id);
 
     const fresh = dead.filter((p) => !this.notices.has(p.id));
@@ -175,10 +206,6 @@ export class ProxyWatch {
     const remind = due.filter(
       (p) => this.notices.get(p.id)!.reminders < this.maxReminders,
     );
-    for (const p of disable) {
-      this.notices.delete(p.id);
-      this.downSince.delete(p.id);
-    }
 
     const messages: string[] = [];
     const after = minutes(this.repeatSec);
@@ -206,10 +233,9 @@ export class ProxyWatch {
         `✅ Прокси больше не мешают:\n${back
           .map((id) => {
             const p = byId.get(id);
-            if (!p) return `• #${id} — выключен или удалён`;
-            return p.online
-              ? `• #${id} ${p.login} — снова в сети`
-              : `• #${id} ${p.login} — не в сети по другой причине: ${p.reason ?? '—'}`;
+            return p
+              ? `• #${id} ${p.login} — снова в сети, уже ${minutes(this.recoverSec)}`
+              : `• #${id} — выключен или удалён`;
           })
           .join('\n')}`,
       );
@@ -222,5 +248,14 @@ export class ProxyWatch {
           .join('\n')}`,
       );
     return { messages, disable };
+  }
+
+  /** Аккаунт выключили: о нём больше не пишем и не напоминаем. */
+  forget(ids: Iterable<number>): void {
+    for (const id of ids) {
+      this.notices.delete(id);
+      this.downSince.delete(id);
+      this.upSince.delete(id);
+    }
   }
 }

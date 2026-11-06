@@ -20,6 +20,8 @@ const DOWN_AFTER_SEC = 15 * 60;
 /** Сколько напоминаний без замены прокси, прежде чем выключить аккаунт. */
 const MAX_REMINDERS = 2;
 const STATE_KEY = 'proxy_watch';
+/** После запуска аккаунты ещё подключаются: их «не в сети» ничего не значит. */
+const BOOT_GRACE_SEC = 10 * 60;
 
 /**
  * Предупреждение в ту же группу, что и баланс: у каких активных аккаунтов
@@ -40,6 +42,7 @@ export class ProxyAlertService {
   );
   private busy = false;
   private loaded = false;
+  private readonly bootAt: number;
 
   constructor(
     private prisma: PrismaService,
@@ -47,20 +50,29 @@ export class ProxyAlertService {
     private crypto: CryptoService,
     private clock: ClockService,
     private accounts: AccountsService,
-  ) {}
+  ) {
+    this.bootAt = clock.ts();
+  }
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async tick(): Promise<void> {
     if (!alertConfigured() || this.busy) return;
+    if (this.clock.ts() - this.bootAt < BOOT_GRACE_SEC) return;
     this.busy = true;
     try {
       await this.load();
       const now = this.clock.ts();
+      const before = this.watch.snapshot();
       const step = this.watch.step(await this.probes(), now);
-      await this.save();
-      for (const text of step.messages) {
-        await sendTelegramAlert(text);
-        this.log.log(`прокси: предупреждение отправлено`);
+      try {
+        for (const text of step.messages) {
+          await sendTelegramAlert(text);
+          this.log.log(`прокси: предупреждение отправлено`);
+        }
+      } catch (e) {
+        // Не дошло — шаг не считается: на следующем предупреждение уйдёт снова.
+        this.watch.restore(before);
+        throw e;
       }
       const off: typeof step.disable = [];
       for (const p of step.disable) {
@@ -71,11 +83,14 @@ export class ProxyAlertService {
             `прокси: аккаунт #${p.id} ${p.login} на паузе — прокси не заменили после ${MAX_REMINDERS} напоминаний`,
           );
         } catch (e) {
+          // Остаётся под наблюдением — попробуем выключить на следующем шаге.
           this.log.warn(
             `прокси: не удалось выключить #${p.id}: ${(e as Error)?.message ?? e}`,
           );
         }
       }
+      this.watch.forget(off.map((p) => p.id));
+      await this.save();
       if (off.length)
         await sendTelegramAlert(disabledMessage(off, MAX_REMINDERS, now));
     } catch (e) {
