@@ -24,6 +24,7 @@ import { CurrentUser } from 'src/decorators/user.decorator';
 import { ScopeService } from 'src/shared/scope.service';
 import { AuditService } from 'src/shared/audit.service';
 import {
+  ChatModelsDto,
   ChatNoteDto,
   EditMessageDto,
   ExportDto,
@@ -464,6 +465,37 @@ export class ConversationsController {
         resource: `chat:${chatId}`,
       },
       () => this.conversations.setHidden(chatId, false),
+    );
+  }
+
+  @ApiOperation({
+    summary:
+      'Модели и рассуждение для этого диалога (админ): перекрывают выбор личности',
+  })
+  @Roles(Role.ADMIN)
+  @Put(':chatId/models')
+  @HttpCode(200)
+  @UsePipes(new ValidationPipe({ whitelist: true }))
+  async setModels(
+    @Param('chatId', ParseIntPipe) chatId: number,
+    @Body() dto: ChatModelsDto,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    await this.scope.requireChatOwned(user, chatId);
+    return this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'conversation.models',
+        resource: `chat:${chatId}`,
+        payload: dto,
+      },
+      () =>
+        this.conversations.setModels(chatId, {
+          generatorModel: dto.generator_model,
+          judgeModel: dto.judge_model,
+          generatorEffort: dto.generator_effort,
+          judgeEffort: dto.judge_effort,
+        }),
     );
   }
 

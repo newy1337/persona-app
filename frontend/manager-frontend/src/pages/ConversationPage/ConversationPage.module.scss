@@ -1674,3 +1674,24 @@
   line-height: 1.4;
   opacity: 0.65;
 }
+
+/* Выбор модели для диалога (админ): подпись слева, список во всю оставшуюся ширину. */
+.modelRow {
+  display: grid;
+  grid-template-columns: 122px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.modelSelect {
+  min-width: 0;
+  width: 100%;
+  font: inherit;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid $border-control;
+  background: transparent;
+  color: inherit;
+}

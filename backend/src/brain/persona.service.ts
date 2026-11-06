@@ -38,7 +38,7 @@ import { UsageRecorderService } from './usage-recorder.service';
 import { LocationResolver, LOCATION_RULES } from './kernel/location-resolver';
 import { type Place, unknownPlace } from './kernel/location';
 import { completeText } from './llm/anthropic';
-import { resolveModel } from './config/models';
+import { resolveModel, withChatModels } from './config/models';
 import { peerOf } from 'src/channels/ids';
 import { parseJsonObject } from './judge/transport';
 
@@ -512,6 +512,31 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
    * диалога: `{city}` и `{site}` берутся из карточки этого лида.
    */
   async forAccount(
+    accountId: number | null | undefined,
+    chatId?: number | null,
+  ): Promise<LoadedPersona> {
+    const loaded = await this.accountPersona(accountId, chatId);
+    return chatId == null
+      ? loaded
+      : withChatModels(loaded, await this.chatModels(chatId));
+  }
+
+  /** Модели, выбранные админом для этого диалога. */
+  private chatModels(chatId: number) {
+    return this.cached(`chat-models:${chatId}`, () =>
+      this.prisma.contact.findUnique({
+        where: { chatId: toChatId(chatId) },
+        select: {
+          generatorModel: true,
+          judgeModel: true,
+          generatorEffort: true,
+          judgeEffort: true,
+        },
+      }),
+    );
+  }
+
+  private async accountPersona(
     accountId: number | null | undefined,
     chatId?: number | null,
   ): Promise<LoadedPersona> {

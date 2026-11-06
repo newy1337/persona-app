@@ -6,6 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  chatModelsView,
+  isEffort,
+  isGeneratorModel,
+  isJudgeModel,
+  type ChatModelsPatch,
+} from 'src/brain/config/models';
+import {
   accountContact,
   chatChannel,
   clientContact,
@@ -238,7 +245,15 @@ export class ConversationsService {
       this.attribution.directory(),
       this.prisma.contact.findUnique({
         where: { chatId: toChatId(chatId) },
-        select: { note: true, noteBy: true, noteAt: true },
+        select: {
+          note: true,
+          noteBy: true,
+          noteAt: true,
+          generatorModel: true,
+          judgeModel: true,
+          generatorEffort: true,
+          judgeEffort: true,
+        },
       }),
     ]);
     const lost = account
@@ -299,6 +314,7 @@ export class ConversationsService {
       note: contact?.note ?? null,
       note_by: contact?.noteBy ?? null,
       note_at: contact?.noteAt ?? null,
+      models: chatModelsView(contact),
     };
   }
 
@@ -730,6 +746,39 @@ export class ConversationsService {
       }
     }
     return { ok: true, chat_id: chatId, hidden };
+  }
+
+  /** Модели и рассуждение для диалога (админ): null — как у личности. */
+  async setModels(chatId: number, patch: ChatModelsPatch) {
+    const checks: Array<[keyof ChatModelsPatch, (v: unknown) => boolean]> = [
+      ['generatorModel', isGeneratorModel],
+      ['judgeModel', isJudgeModel],
+      ['generatorEffort', isEffort],
+      ['judgeEffort', isEffort],
+    ];
+    const data: ChatModelsPatch = {};
+    for (const [key, valid] of checks) {
+      const value = patch[key];
+      if (value === undefined) continue;
+      if (value !== null && !valid(value))
+        throw new UnprocessableEntityException(
+          `недопустимое значение «${value}»`,
+        );
+      data[key] = value;
+    }
+    await this.history.ensureContact(chatId);
+    const row = await this.prisma.contact.update({
+      where: { chatId: toChatId(chatId) },
+      data,
+      select: {
+        generatorModel: true,
+        judgeModel: true,
+        generatorEffort: true,
+        judgeEffort: true,
+      },
+    });
+    this.persona.forgetRows();
+    return chatModelsView(row);
   }
 
   async setNote(chatId: number, text: string, author: string) {

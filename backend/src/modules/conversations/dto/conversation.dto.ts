@@ -11,6 +11,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { DEAL_STAGES, DealStage, MAX_DEAL_NOTE } from 'src/domain/deal-stage';
 
@@ -47,6 +48,43 @@ export class SetDealStageDto {
   @IsString()
   @MaxLength(MAX_DEAL_NOTE)
   note?: string;
+}
+
+/** Модели и рассуждение для диалога; null — как у личности. */
+export class ChatModelsDto {
+  @ApiPropertyOptional({ nullable: true, description: 'модель ответов' })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  generator_model?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'модель судей' })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  judge_model?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'рассуждение ответов: off, low, medium, high',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  generator_effort?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'рассуждение судей: off, low, medium, high',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  judge_effort?: string | null;
 }
 
 export class ChatNoteDto {

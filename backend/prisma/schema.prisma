@@ -213,6 +213,11 @@ model Contact {
   note               String? @map("note")
   noteBy             String? @map("note_by")
   noteAt             Int?    @map("note_at")
+  /// модели и рассуждение для этого диалога (админ); перекрывают выбор личности, null — как у личности
+  generatorModel     String? @map("generator_model")
+  judgeModel         String? @map("judge_model")
+  generatorEffort    String? @map("generator_effort")
+  judgeEffort        String? @map("judge_effort")
 
   /// образ, на котором начался диалог; смена образа в регионе его не меняет
   photoSetId Int? @map("photo_set_id")

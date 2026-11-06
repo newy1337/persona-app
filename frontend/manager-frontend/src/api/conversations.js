@@ -145,3 +145,8 @@ export function markListened(chatId, messageId) {
 export function sendReaction(chatId, messageId, emoji) {
   return api.post(`/api/conversations/${chatId}/reaction`, { message_id: messageId, emoji });
 }
+
+/** Модели и рассуждение для диалога (админ); null — как у личности. */
+export function setChatModels(chatId, patch) {
+  return api.put(`/api/conversations/${chatId}/models`, patch);
+}

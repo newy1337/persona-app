@@ -105,6 +105,7 @@ import { accountContact, channelBadge, clientContact } from '../../utils/channel
 import { peekDialogAnchor, rememberDialog } from '../../utils/viewState';
 import { useMe } from '../../components/AppLayout/me';
 import ChatCost from './ChatCost';
+import ChatModels from './ChatModels';
 
 // Блок «Сценарий» в карточке диалога скрыт: сценариев у личностей сейчас нет.
 // Вернуть — собрать панель с VITE_SHOW_SCENARIO=1 (данные и код блока на месте).
@@ -883,6 +884,7 @@ function ConversationPage() {
 
             {/* Расход модели на диалог — только админу. */}
             {me?.role === 'admin' && <ChatCost chatId={id} />}
+            {me?.role === 'admin' && <ChatModels chatId={id} value={data.models} />}
 
             <div className={styles.summarySection}>
               <div className={styles.summaryHeader}>

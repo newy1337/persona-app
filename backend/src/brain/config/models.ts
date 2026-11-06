@@ -59,6 +59,27 @@ export interface PersonaModels {
   judgeEffort?: string | null;
 }
 
+const MODEL_KEYS = [
+  'generatorModel',
+  'judgeModel',
+  'generatorEffort',
+  'judgeEffort',
+] as const;
+
+/**
+ * Выбор для диалога перекрывает выбор личности — поле за полем: пустое
+ * остаётся как у личности.
+ */
+export function withChatModels<T extends PersonaModels>(
+  persona: T,
+  chat: PersonaModels | null | undefined,
+): T {
+  if (!chat || !MODEL_KEYS.some((key) => chat[key])) return persona;
+  const out = { ...persona };
+  for (const key of MODEL_KEYS) if (chat[key]) out[key] = chat[key];
+  return out;
+}
+
 export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high';
 
 export const EFFORT_OPTIONS: ReadonlyArray<
@@ -129,3 +150,17 @@ export const STAGE_LABELS: Readonly<Record<string, string>> = {
   media_reaction: 'Реакция на GIF',
   interlocutor_info: 'Информация про собеседника',
 };
+
+export type ChatModelsPatch = {
+  [K in (typeof MODEL_KEYS)[number]]?: string | null;
+};
+
+/** Выбор для диалога в ответе API; null — как у личности. */
+export function chatModelsView(row: PersonaModels | null | undefined) {
+  return {
+    generator_model: row?.generatorModel ?? null,
+    judge_model: row?.judgeModel ?? null,
+    generator_effort: row?.generatorEffort ?? null,
+    judge_effort: row?.judgeEffort ?? null,
+  };
+}

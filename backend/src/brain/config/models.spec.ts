@@ -12,6 +12,7 @@ import {
   isJudgeModel,
   judgeEffortFor,
   judgeModelFor,
+  withChatModels,
 } from './models';
 
 describe('модель на личность', () => {
@@ -79,5 +80,30 @@ describe('рассуждение на личность', () => {
       'medium',
       'high',
     ]);
+  });
+});
+
+describe('модели диалога', () => {
+  it('диалог перекрывает личность поле за полем; пустое — как у личности', () => {
+    const persona = {
+      generatorModel: SONNET_5_5,
+      judgeModel: null,
+      generatorEffort: 'low',
+      judgeEffort: null,
+    };
+    expect(withChatModels(persona, null)).toBe(persona);
+    expect(withChatModels(persona, { generatorModel: null })).toBe(persona);
+    expect(
+      withChatModels(persona, {
+        generatorModel: 'z-ai/glm-5.3',
+        judgeModel: null,
+        judgeEffort: 'high',
+      }),
+    ).toEqual({
+      generatorModel: 'z-ai/glm-5.3',
+      judgeModel: null,
+      generatorEffort: 'low',
+      judgeEffort: 'high',
+    });
   });
 });
