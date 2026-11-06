@@ -8317,6 +8317,87 @@ describe('Manager panel API (e2e)', () => {
         .expect(200);
     });
 
+    it('пол и имя собеседника: из диалога и из «Лидов» — в карточку лида и в бота', async () => {
+      const h = { Authorization: `Bearer ${token}` };
+      const prisma = app.get(PrismaService);
+      const chatId = BigInt(424242);
+      const lead = await prisma.lead.create({
+        data: {
+          channel: 'telegram',
+          usernameKey: 'gender_fix_lead',
+          firstName: 'Олег',
+          gender: 'm',
+          chatId,
+          status: 'contacted',
+          insertedAt: 1,
+        },
+      });
+      const stateOf = async () =>
+        JSON.parse(
+          (await prisma.brainState.findUniqueOrThrow({ where: { chatId } }))
+            .stateJson,
+        );
+      const detail = async () =>
+        (
+          await request(app.getHttpServer())
+            .get('/api/conversations/424242')
+            .set(h)
+            .expect(200)
+        ).body;
+      const gender = (value: unknown) =>
+        request(app.getHttpServer())
+          .post('/api/conversations/424242/client-gender')
+          .set(h)
+          .send({ gender: value });
+      try {
+        // отправитель поставил «мужской» женщине — поправили в диалоге
+        expect((await gender('f').expect(200)).body).toMatchObject({
+          ok: true,
+          gender: 'f',
+        });
+        expect(
+          (await prisma.lead.findUniqueOrThrow({ where: { id: lead.id } }))
+            .gender,
+        ).toBe('f');
+        expect((await stateOf()).client_gender).toBe('female');
+        expect((await detail()).client_gender).toBe('f');
+        await gender('woman').expect(400);
+
+        // имя из диалога — и в карточке лида
+        await request(app.getHttpServer())
+          .post('/api/conversations/424242/pin-fact')
+          .set(h)
+          .send({ key: 'name', value: 'Ольга' })
+          .expect(200);
+        expect(
+          (await prisma.lead.findUniqueOrThrow({ where: { id: lead.id } }))
+            .firstName,
+        ).toBe('Ольга');
+        expect((await stateOf()).character.slots.name).toBe('Ольга');
+
+        // правка в «Лидах» доходит до уже идущего диалога
+        await request(app.getHttpServer())
+          .put(`/api/leads/${lead.id}`)
+          .set(h)
+          .send({ first_name: 'Оля', gender: 'm' })
+          .expect(200);
+        const after = await stateOf();
+        expect(after.client_gender).toBe('male');
+        expect(after.character.slots.name).toBe('Оля');
+        expect(after.user_name).toBe('Оля');
+
+        // снять пол — бот снова считает собеседника противоположного пола
+        await gender(null).expect(200);
+        expect((await stateOf()).client_gender).toBeUndefined();
+        expect(
+          (await prisma.lead.findUniqueOrThrow({ where: { id: lead.id } }))
+            .gender,
+        ).toBeNull();
+      } finally {
+        await prisma.lead.delete({ where: { id: lead.id } });
+      }
+    });
+
     it('ручная отметка темы и поля карточки доходит до памяти бота', async () => {
       const h = { Authorization: `Bearer ${token}` };
       const marked = await request(app.getHttpServer())

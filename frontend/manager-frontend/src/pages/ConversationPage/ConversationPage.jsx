@@ -66,6 +66,7 @@ import {
   setDealStage,
   setAiMode as setAiModeApi,
   setSlot,
+  setClientGender,
   sendAttachment,
   sendMessage,
   sendReaction,
@@ -761,6 +762,14 @@ function ConversationPage() {
                   )}
                 </div>
                 <div className={styles.agentMeta}>
+                  <span className={styles.metaRow} data-testid="client-name">
+                    <span className={styles.metaIcon}><AgeIcon />Имя</span>
+                    <EditableValue
+                      value={pins.name || ''}
+                      title="Имя собеседника — так к нему обращается бот; меняется и в «Лидах»"
+                      onSave={async (v) => { await pinFact(id, 'name', v); load(); }}
+                    />
+                  </span>
                   <span className={styles.metaRow} data-testid="deal-stage">
                     <span className={styles.metaIcon}><StatusIcon color="currentColor" />Этап</span>
                     <span className={styles.dealStage}>
@@ -807,7 +816,28 @@ function ConversationPage() {
                   </span>
                   <span className={styles.metaRow} data-testid="client-gender">
                     <span className={styles.metaIcon}><AgeIcon />Пол</span>
-                    {genderLabel(data.client_gender) || '—'}
+                    <select
+                      className={styles.dealSelect}
+                      aria-label="Пол собеседника"
+                      title="В каком роде бот обращается к собеседнику; меняется и в «Лидах»"
+                      value={data.client_gender === 'm' || data.client_gender === 'f' ? data.client_gender : ''}
+                      disabled={busy}
+                      onChange={async (e) => {
+                        setBusy(true);
+                        try {
+                          await setClientGender(id, e.target.value);
+                          load();
+                        } catch {
+                          // всплывашка action-store уже показала причину
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      <option value="">не указан</option>
+                      <option value="m">{genderLabel('m')}</option>
+                      <option value="f">{genderLabel('f')}</option>
+                    </select>
                   </span>
                   <span className={styles.metaRow} data-testid="traffic-source">
                     <span className={styles.metaIcon}><StatusIcon color="currentColor" />Трафик</span>

@@ -134,6 +134,11 @@ export function pinFact(chatId, key, value) {
   return api.post(`/api/conversations/${chatId}/pin-fact`, { key, value: String(value ?? '') });
 }
 
+/** Пол собеседника: 'm', 'f' или null — в карточку лида и в бота. */
+export function setClientGender(chatId, gender) {
+  return api.post(`/api/conversations/${chatId}/client-gender`, { gender: gender || null });
+}
+
 export function setSlot(chatId, slotId, value) {
   return api.post(`/api/conversations/${chatId}/slot`, { slot_id: slotId, value: value || null });
 }

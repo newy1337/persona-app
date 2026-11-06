@@ -121,6 +121,8 @@ export interface ConversationState {
   persona_memory_cursor?: number;
   telegram_control_revision?: number;
   rhythm?: RhythmState;
+  /** пол собеседника, заданный явно (карточка лида или менеджер); нет — противоположный личности */
+  client_gender?: 'female' | 'male';
 }
 
 export interface RhythmState {
@@ -270,6 +272,8 @@ export interface RuntimeSnapshot {
   };
   goal_plan: GoalPlan;
   known_interlocutor: Record<string, string>;
+  /** пол собеседника словами — только когда он задан явно */
+  interlocutor_gender?: string;
   slot_catalog: Slot[];
   available_slots: Slot[];
   deferred_slots: string[];

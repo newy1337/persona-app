@@ -79,6 +79,25 @@ it('actually sends enabled character rules, stage guidance and optional topic ch
   expect(r.goal_plan.suggested_topics).toEqual(['values']);
   expect(r.goal_plan.optional).toBe(true);
 });
+it('пол собеседника из карточки — в промпте автора; без него промпт как был', () => {
+  const c = config();
+  const plain = buildRuntimeSnapshot(c, state(), '2026-09-28');
+  expect(plain.interlocutor_gender).toBeUndefined();
+  const prompt = (runtime: any) =>
+    buildCharacterPrompt({
+      config: c,
+      runtime,
+      judgment: {},
+      name: 'Test',
+      prompts: mergePrompts({}),
+    }).volatile;
+  expect(prompt(plain)).not.toContain('interlocutor_gender');
+  const s = state();
+  s.client_gender = 'female';
+  const r = buildRuntimeSnapshot(c, s, '2026-09-28');
+  expect(r.interlocutor_gender).toContain('Собеседник — женщина');
+  expect(prompt(r)).toContain('Собеседник — женщина');
+});
 it('does not inject the old mandatory smalltalk question or self-disclosure ban into an ongoing conversation', () => {
   const c = config(),
     s = state();

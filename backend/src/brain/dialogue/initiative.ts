@@ -22,8 +22,11 @@ export function unansweredUnprompted(state: ConversationState): number {
   return count;
 }
 
-export function checkInGuidance(gender: Gender = 'female'): string {
-  const g = voiceOf(gender);
+export function checkInGuidance(
+  gender: Gender = 'female',
+  client: Gender | null = null,
+): string {
+  const g = voiceOf(gender, client);
   return (
     `${capital(g.they.he)} давно не отвечает. Напиши ${g.v('сама', 'сам')} ОДНУ короткую живую реплику, как пишут в мессенджере, ` +
     `чтобы просто напомнить о себе и узнать, как ${g.they.he}: например спросить, куда ${g.c('пропал', 'пропала')}, как прошёл день, ` +
@@ -54,8 +57,11 @@ export function secondsSinceLastMessage(
  * переписке, пока бот молчал (так бот спросил «так и не договорились, когда
  * созвонимся» после состоявшегося звонка).
  */
-export function continueTopicGuidance(gender: Gender = 'female'): string {
-  const g = voiceOf(gender);
+export function continueTopicGuidance(
+  gender: Gender = 'female',
+  client: Gender | null = null,
+): string {
+  const g = voiceOf(gender, client);
   return (
     `Разговор шёл недавно, и ${g.they.he} не ${g.c('ответил', 'ответила')} на последнее. Продолжи ЭТОТ разговор: ` +
     'вернись к последней теме — реакцией, мыслью или вопросом по ней, своими словами, не повторяя уже сказанное. ' +

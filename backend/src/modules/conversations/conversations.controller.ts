@@ -29,6 +29,7 @@ import {
   EditMessageDto,
   ExportDto,
   ManualMessageDto,
+  ClientGenderDto,
   PinFactDto,
   SetSlotDto,
   SetStageDto,
@@ -587,6 +588,30 @@ export class ConversationsController {
         resource: `chat:${chatId}`,
       },
       () => this.conversations.pinFact(chatId, dto.key, dto.value),
+    );
+  }
+
+  @ApiOperation({
+    summary:
+      'Пол собеседника вручную: в карточку лида и в бота — он обращается в этом роде',
+  })
+  @Post(':chatId/client-gender')
+  @HttpCode(200)
+  @UsePipes(new ValidationPipe({ whitelist: true }))
+  async setClientGender(
+    @Param('chatId', ParseIntPipe) chatId: number,
+    @Body() dto: ClientGenderDto,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    await this.scope.requireChatOwned(user, chatId);
+    return this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'conversation.client_gender',
+        resource: `chat:${chatId}`,
+        payload: { gender: dto.gender ?? null },
+      },
+      () => this.conversations.setClientGender(chatId, dto.gender ?? null),
     );
   }
 

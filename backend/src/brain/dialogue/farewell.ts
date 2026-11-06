@@ -94,8 +94,9 @@ export function dropRepeatedFarewell(
 export function farewellNote(
   drop: { goodnight: boolean; morning: boolean },
   gender: Gender = 'female',
+  client: Gender | null = null,
 ): string {
-  const g = voiceOf(gender);
+  const g = voiceOf(gender, client);
   const notes: string[] = [];
   if (drop.goodnight) {
     notes.push(

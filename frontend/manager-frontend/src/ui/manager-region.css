@@ -316,3 +316,19 @@
 /* Вернулись из чата: строка или карточка этого чата коротко подсвечивается. */
 .dialog-anchor-flash{animation:dialog-anchor-flash 2.4s ease-out}
 @keyframes dialog-anchor-flash{0%,45%{outline:2px solid #00d4ffcc;outline-offset:-2px}100%{outline:2px solid #00d4ff00;outline-offset:-2px}}
+
+/* Имя и пол лида: правка прямо в строке. */
+.mr-lead-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0;
+}
+.mr-lead-edit input {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.mr-lead-edit select {
+  flex: 0 1 auto;
+}

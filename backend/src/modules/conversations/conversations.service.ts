@@ -271,6 +271,13 @@ export class ConversationsService {
         profile,
         read,
       ),
+      // Пол, которым пользуется бот: поправленный менеджером, иначе из карточки.
+      client_gender:
+        state?.client_gender === 'female'
+          ? 'f'
+          : state?.client_gender === 'male'
+            ? 'm'
+            : (profile?.gender ?? null),
       ...managers.forAccount(owner),
       persona_name: persona.name,
       channel: chatChannel(chatId),
@@ -880,7 +887,29 @@ export class ConversationsService {
     }
     await this.history.mergeLeadFacts(chatId, { [key]: coerced }, false);
     await this.brain.noteOperatorFacts(chatId, { [key]: coerced });
+    // Имя правят и в «Лидах»: карточка лида должна совпадать с диалогом.
+    if (key === 'name')
+      await this.prisma.lead.updateMany({
+        where: { chatId: toChatId(chatId) },
+        data: {
+          firstName: coerced === null ? null : String(coerced).slice(0, 64),
+        },
+      });
     return { ok: true, chat_id: chatId };
+  }
+
+  /**
+   * Пол собеседника вручную: в карточку лида (если чат от лида) и в бота.
+   * Отправитель холодки иногда путает пол — бот тогда обращался к женщине
+   * в мужском роде.
+   */
+  async setClientGender(chatId: number, gender: 'm' | 'f' | null) {
+    await this.prisma.lead.updateMany({
+      where: { chatId: toChatId(chatId) },
+      data: { gender },
+    });
+    await this.brain.setClientGender?.(chatId, gender);
+    return { ok: true, chat_id: chatId, gender };
   }
 
   async setSlot(chatId: number, slotId: string, value: string | null) {

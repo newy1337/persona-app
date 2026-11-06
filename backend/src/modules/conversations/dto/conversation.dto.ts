@@ -94,6 +94,17 @@ export class ChatNoteDto {
   text: string;
 }
 
+export class ClientGenderDto {
+  @ApiProperty({
+    enum: ['m', 'f'],
+    nullable: true,
+    description: 'm — мужской, f — женский, null — не указан',
+  })
+  @IsOptional()
+  @IsIn(['m', 'f'], { message: 'gender — m, f или null' })
+  gender: 'm' | 'f' | null;
+}
+
 export class PinFactDto {
   @ApiProperty()
   @IsString()

@@ -147,7 +147,7 @@ import {
   RECENT_TOPIC_S,
   secondsSinceLastMessage,
 } from './dialogue/initiative';
-import { personaGender, voiceOf } from './character/gender';
+import { clientGenderOf, personaGender, voiceOf } from './character/gender';
 import { judgeEffortFor, judgeModelFor } from './config/models';
 import {
   ACTIVE_CHAT_DAYS,
@@ -863,6 +863,7 @@ export class PersonaBrainService implements ReplyBrain {
             ? lateReplyNote(
                 this.clock.ts() - oldest,
                 personaGender(persona.config.persona),
+                before.client_gender ?? null,
               )
             : '';
         const prepared = await this.generateReply(
@@ -1774,14 +1775,14 @@ export class PersonaBrainService implements ReplyBrain {
     const model = generatorModelFor(loaded, appConfig.generatorModel);
     const today = characterDate(this.clock.now(), config.timeZone);
     const gender = personaGender(config.persona);
+    const baseState = await this.state.reconcile(chatId);
     const customInstructions = [
       (await this.settings.get()).custom_prompt,
       extraNote,
-      farewellNote(farewell, gender),
+      farewellNote(farewell, gender, baseState.client_gender ?? null),
     ]
       .filter((x) => x && x.trim())
       .join('\n\n');
-    const baseState = await this.state.reconcile(chatId);
     const basisState = stateFingerprint(baseState);
     const generatedAt = this.clock.ts();
     const state = structuredClone(baseState);
@@ -1806,7 +1807,7 @@ export class PersonaBrainService implements ReplyBrain {
       (m) => m.role !== 'user' || !pendingIds.has(m.telegram_message_id!),
     );
     const lateMark = extraNote
-      ? `[Это сообщение пришло давно, и ты на него тогда не ${voiceOf(gender).v('ответила', 'ответил')} — см. инструкции]\n`
+      ? `[Это сообщение пришло давно, и ты на него тогда не ${voiceOf(gender, state.client_gender).v('ответила', 'ответил')} — см. инструкции]\n`
       : '';
     const fullText =
       lateMark + withAttachmentContext(userText, attachmentContext);
@@ -2177,6 +2178,20 @@ export class PersonaBrainService implements ReplyBrain {
     });
   }
 
+  async setClientGender(chatId: number, gender: string | null): Promise<void> {
+    await this.withOperatorChange(chatId, async () => {
+      const state = await this.state.load(chatId);
+      const client = clientGenderOf(gender);
+      if ((state.client_gender ?? null) === client) return;
+      if (client) state.client_gender = client;
+      else delete state.client_gender;
+      await this.state.save(chatId, state);
+      this.log.log(
+        `chat=${chatId}: operator set client gender ${client ?? '—'}`,
+      );
+    });
+  }
+
   async setSlot(
     chatId: number,
     slotId: string,
@@ -2387,6 +2402,8 @@ export class PersonaBrainService implements ReplyBrain {
         if (state.history.length)
           throw new Error(`chat ${chatId} already has a transcript`);
         if (lead.firstName) state.user_name = lead.firstName;
+        const client = clientGenderOf(lead.gender);
+        if (client) state.client_gender = client;
         const site =
           lead.site?.trim() ||
           persona.variables['site'] ||
@@ -2567,7 +2584,8 @@ export class PersonaBrainService implements ReplyBrain {
       (m) => m.kind === 'open_loop',
     );
     const gender = personaGender(persona.config.persona);
-    const g = voiceOf(gender);
+    const client = state.client_gender ?? null;
+    const g = voiceOf(gender, client);
     const judgment: Partial<Judgment> = callback
       ? {
           goal: 'callback',
@@ -2581,7 +2599,7 @@ export class PersonaBrainService implements ReplyBrain {
           callback_memory_id: '',
           storyline_id: '',
           question_allowed: true,
-          guidance: checkInGuidance(gender),
+          guidance: checkInGuidance(gender, client),
         };
 
     if (conversational(persona.config)) {
@@ -2598,7 +2616,7 @@ export class PersonaBrainService implements ReplyBrain {
     ) {
       judgment.goal = 'respond';
       judgment.callback_memory_id = '';
-      judgment.guidance = continueTopicGuidance(gender);
+      judgment.guidance = continueTopicGuidance(gender, client);
     }
     return this.sendUnprompted(chatId, accountId, persona, settings, judgment, {
       author: 'initiative',

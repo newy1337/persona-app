@@ -486,6 +486,7 @@ export class OutreachWorker implements OnModuleInit {
         city: isCityName(candidate.city) ? candidate.city : null,
         age: candidate.age,
         site: candidate.site,
+        gender: candidate.gender,
         opener: candidate.firstMessage,
       });
       const ts = this.clock.ts();

@@ -28,6 +28,7 @@ const CONTEXT_KEYS = [
   'relationship',
   'onboarding',
   'known_interlocutor',
+  'interlocutor_gender',
   'memories',
   'agreements',
   'deferred_slots',

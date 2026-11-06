@@ -157,8 +157,36 @@ export function CreateLeadForm({ personas, onDone, onCancel, PersonaSelect }) {
     h('div', { className: `${s.formFull} ${s.actions}` }, button('Отмена', onCancel, { className: s.btn, disabled: busy }), h('button', { type: 'submit', className: s.btnPrimary, disabled: busy || !valid }, busy ? 'Добавляем…' : 'Добавить')));
 }
 
-export function LeadsTable({ ready = true, rows, query, status, selected, onToggle, onSelectVisible, onClearSelection, onChat, onQueue, onUnqueue, onReassign, onDelete, onPersonaChange, personas, helpers }) {
+/**
+ * Имя и пол лида. Отправитель холодки угадывает пол сам и иногда ставит
+ * «мужской» женщине — бот тогда пишет ей как мужчине. Правка уходит и в
+ * уже идущий диалог.
+ */
+function LeadPersonEditor({ row, onSave, onClose }) {
+  const [name, setName] = useState(row.first_name || '');
+  const [gender, setGender] = useState(row.gender === 'm' || row.gender === 'f' ? row.gender : '');
+  const [saving, setSaving] = useState(false);
+  const submit = async e => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await onSave({ first_name: name.trim() || null, gender: gender || 'unknown' });
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+  return h('form', { className: 'mr-lead-edit', onSubmit: submit, 'data-testid': 'lead-edit' },
+    h('input', { className: s.field, value: name, maxLength: 64, placeholder: 'Имя', 'aria-label': 'Имя лида', onChange: e => setName(e.target.value) }),
+    h('select', { className: s.select, value: gender, 'aria-label': 'Пол лида', onChange: e => setGender(e.target.value) },
+      h('option', { value: '' }, 'Пол не указан'), h('option', { value: 'm' }, genderLabel('m')), h('option', { value: 'f' }, genderLabel('f'))),
+    h('button', { type: 'submit', className: s.btnSm, disabled: saving }, 'Сохранить'),
+    h('button', { type: 'button', className: s.btnSm, onClick: onClose }, 'Отмена'));
+}
+
+export function LeadsTable({ ready = true, rows, query, status, selected, onToggle, onSelectVisible, onClearSelection, onChat, onQueue, onUnqueue, onReassign, onDelete, onPersonaChange, onEdit, personas, helpers }) {
   const { PersonaSelect, statusLabels, statusClasses, date, dealStage = null } = helpers;
+  const [editing, setEditing] = useState(null);
   const busy = ux.useActions().pending.some(key => key.includes('/api/leads'));
   const allSelected = rows.length > 0 && rows.every(row => selected.has(row.id));
   const someSelected = rows.some(row => selected.has(row.id));
@@ -184,6 +212,7 @@ export function LeadsTable({ ready = true, rows, query, status, selected, onTogg
             h('td', { className: 'mr-lead-person' },
               h('label', { className: 'mr-lead-identity' }, h('input', { type: 'checkbox', checked: selected.has(row.id), 'aria-label': `Выбрать лид: ${name}`, onChange: () => onToggle(row.id) }), h('span', { className: 'mr-lead-name' }, name), badge.other && h('span', { className: 'mr-channel-badge', 'data-channel': badge.key, 'data-testid': 'lead-channel', title: badge.title }, badge.label)),
               h('div', { className: 'mr-dialog-muted' }, [row.age ? `${row.age} лет` : null, genderLabel(row.gender, true), row.city].filter(Boolean).join(' · ') || 'Возраст и город не указаны'),
+              editing === row.id && onEdit && h(LeadPersonEditor, { row, onSave: patch => onEdit(row.id, patch), onClose: () => setEditing(null) }),
               h('div', { className: 'mr-dialog-contact' }, row.phone_e164 || null, row.username && link(row.contact, row.username)),
               h('div', { className: 'mr-dialog-muted' }, `#${row.id}`, row.site ? ` · Сайт: ${row.site}` : ''),
               row.first_message && h('div', { className: 'mr-dialog-muted', title: row.first_message }, h('span', { className: 'mr-caption' }, row.first_contact_at ? 'Первое сообщение: ' : 'Напишем: '), row.first_message.length > 80 ? `${row.first_message.slice(0, 80)}…` : row.first_message),
@@ -207,6 +236,7 @@ export function LeadsTable({ ready = true, rows, query, status, selected, onTogg
               ['pending', 'dead'].includes(row.status) && action(row.status === 'dead' ? 'Ещё раз' : 'В очередь', () => onQueue([row.id])),
               row.status === 'queued' && action('Снять', () => onUnqueue([row.id])),
               !row.first_contact_at && senderId && ['pending', 'queued', 'assigned', 'dead'].includes(row.status) && action('Написать с другого', () => onReassign(row), 'mr-lead-action', { title: `Отдать лид другому аккаунту — ${senderUsername ? `@${senderUsername}` : `#${senderId}`} его больше не возьмёт` }),
+              onEdit && action('Имя и пол', () => setEditing(editing === row.id ? null : row.id), 'mr-lead-action', { 'aria-expanded': editing === row.id, title: 'Поправить имя и пол — бот обращается к лиду в этом роде' }),
               action('Удалить', () => onDelete(row), 'mr-lead-delete')));
         }))));
 }

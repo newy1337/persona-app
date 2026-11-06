@@ -317,6 +317,7 @@ export default function Leads() {
             onQueue={ids => run(() => startOutreach(ids))} onUnqueue={ids => run(() => stopOutreach(ids))}
             onReassign={row => run(() => writeFromAnother(row.id))} onDelete={setDeleting}
             onPersonaChange={(id, persona_id) => run(() => updateLead(id, { persona_id }))}
+            onEdit={(id, patch) => run(() => updateLead(id, patch))}
             personas={personas} helpers={{ PersonaSelect, statusLabels: LABEL, statusClasses: BADGE, date: fmtTs, dealStage: dealStageLabel }} />
       {importing && <ImportDialog personas={personas} onClose={() => { setImporting(false); load(); }} />}
       {deleting && (

@@ -23,6 +23,7 @@ vi.mock('react-router-dom', async () => {
 });
 
 vi.mock('../../api/conversations', () => ({
+  setClientGender: vi.fn(async () => ({ ok: true })),
   sendAttachment: vi.fn(async () => ({ ok: true })),
   sendReaction: vi.fn(async () => ({ ok: true })),
   uploadFile: vi.fn(async (_id, file) => ({ path: `/tmp/${file?.name ?? 'x'}`, kind: file?.name?.endsWith('.pdf') ? 'document' : 'photo', bytes: 1 })),
@@ -791,16 +792,26 @@ describe('left block: lead card folded into the top card', () => {
     expect(card.textContent).toMatch(/Контакт\s*—/);
   });
 
-  it('пол: из карточки лида', async () => {
+  it('пол: из карточки лида, правится в диалоге', async () => {
     withPins({ name: 'Андрей' }, { client_gender: 'm' });
     await renderPage();
-    expect(container.querySelector('[data-testid="client-gender"]').textContent).toBe('Пол' + 'Мужской');
+    const select = container.querySelector('[data-testid="client-gender"] select');
+    expect(select.value).toBe('m');
+    expect(select.selectedOptions[0].textContent).toBe('Мужской');
   });
 
-  it('пол не указан — прочерк', async () => {
+  it('пол не указан — «не указан»', async () => {
     withPins({ name: 'Андрей' }, { client_gender: 'unknown' });
     await renderPage();
-    expect(container.querySelector('[data-testid="client-gender"]').textContent).toBe('Пол' + '—');
+    const select = container.querySelector('[data-testid="client-gender"] select');
+    expect(select.value).toBe('');
+    expect(select.selectedOptions[0].textContent).toBe('не указан');
+  });
+
+  it('имя собеседника правится в диалоге', async () => {
+    withPins({ name: 'Андрей' }, {});
+    await renderPage();
+    expect(container.querySelector('[data-testid="client-name"]').textContent).toContain('Андрей');
   });
 
   it('город: из БД (phone_numbers), когда в пинах его нет (D-125)', async () => {

@@ -1,11 +1,14 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { REPLY_BRAIN, type ReplyBrain } from 'src/brain/reply-brain.port';
 import { rmSync } from 'fs';
 import { appConfig } from 'src/config/app.config';
 import { join } from 'path';
@@ -170,6 +173,7 @@ export class LeadsService {
     private history: HistoryService,
     private telegram: TelegramService,
     private attribution: ManagerAttributionService,
+    @Optional() @Inject(REPLY_BRAIN) private brain?: ReplyBrain,
   ) {}
 
   /**
@@ -868,12 +872,28 @@ export class LeadsService {
       data.firstMessage = dto.first_message?.trim() || null;
     }
     const row = await this.prisma.lead.update({ where: { id }, data });
+    await this.syncDialog(row, dto);
     const [names, personas, managers] = await Promise.all([
       this.accountNames(),
       this.personaNames(),
       this.attribution.directory(),
     ]);
     return this.toView(row, names, personas, managers);
+  }
+
+  /**
+   * Лиду уже пишут — имя и пол из карточки нужны и боту: иначе он так и
+   * обращается к женщине в мужском роде или по старому имени.
+   */
+  private async syncDialog(row: Lead, dto: UpdateLeadDto) {
+    if (!row.chatId || !this.brain) return;
+    const chatId = fromChatId(row.chatId);
+    if (dto.gender !== undefined)
+      await this.brain.setClientGender?.(chatId, row.gender);
+    if (dto.first_name !== undefined) {
+      await this.history.mergeLeadFacts(chatId, { name: row.firstName }, false);
+      await this.brain.noteOperatorFacts(chatId, { name: row.firstName });
+    }
   }
 
   async remove(

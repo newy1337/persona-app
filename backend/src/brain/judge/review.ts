@@ -30,6 +30,7 @@ const REVIEW_STATE_KEYS = [
   'delivery_context',
   'agreements',
   'known_interlocutor',
+  'interlocutor_gender',
   'memories',
   'deferred_slots',
   'onboarding',
