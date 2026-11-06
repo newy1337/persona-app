@@ -2,6 +2,7 @@ import { completeText } from './anthropic';
 import {
   createOpenRouterClient,
   fromOpenRouterResponse,
+  isClaudeModel,
   OpenRouterError,
   openRouterModel,
   toOpenRouterBody,
@@ -49,6 +50,22 @@ describe('OpenRouter: запрос', () => {
     expect(openRouterModel('anthropic/claude-sonnet-5')).toBe(
       'anthropic/claude-sonnet-5',
     );
+  });
+
+  it('модель не Claude — без закрепления провайдера anthropic', () => {
+    expect(isClaudeModel('claude-opus-5')).toBe(true);
+    expect(isClaudeModel('anthropic/claude-opus-5')).toBe(true);
+    expect(isClaudeModel('z-ai/glm-5.3')).toBe(false);
+    const body: any = toOpenRouterBody(
+      {
+        model: 'z-ai/glm-5.3',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'привет' }],
+      } as any,
+      ['anthropic'],
+    );
+    expect(body.model).toBe('z-ai/glm-5.3');
+    expect(body.provider).toBeUndefined();
   });
 
   it('система — блоки с cache_control и часовым TTL; провайдер закреплён без запасных', () => {
@@ -229,6 +246,43 @@ describe('OpenRouter: клиент', () => {
         cachedTokens: 15000,
       }),
     );
+  });
+
+  it('модель не даёт выключить рассуждение — повтор с минимальным, дальше сразу так', async () => {
+    const sent: any[] = [];
+    const client = createOpenRouterClient({
+      apiKey: 'k',
+      maxRetries: 0,
+      fetch: (async (_url: string, init: any) => {
+        const body = JSON.parse(init.body);
+        sent.push(body.reasoning);
+        return body.reasoning.enabled === false
+          ? reply(
+              {
+                error: {
+                  code: 400,
+                  message:
+                    'Reasoning is mandatory for this endpoint and cannot be disabled.',
+                },
+              },
+              400,
+            )
+          : reply(okBody);
+      }) as any,
+    });
+    const req = {
+      model: 'z-ai/glm-5.3',
+      max_tokens: 10,
+      thinking: { type: 'disabled' },
+      messages: [{ role: 'user', content: 'x' }],
+    };
+    await (client as any).messages.create(req);
+    await (client as any).messages.create(req);
+    expect(sent).toEqual([
+      { enabled: false },
+      { effort: 'minimal', exclude: true },
+      { effort: 'minimal', exclude: true },
+    ]);
   });
 
   it('429 и 5xx повторяются; 402 (нет денег) — сразу ошибка словами', async () => {

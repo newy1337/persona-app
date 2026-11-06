@@ -37,6 +37,11 @@ export function openRouterModel(model: string): string {
   return model.includes('/') ? model : `anthropic/${model}`;
 }
 
+/** Модель Claude — её можно в шлюз и к провайдеру anthropic. */
+export function isClaudeModel(model: string): boolean {
+  return openRouterModel(model).startsWith('anthropic/');
+}
+
 function textPart(block: { text: string; cache_control?: unknown }): ChatPart {
   return {
     type: 'text',
@@ -69,9 +74,17 @@ function convertContent(
   return parts;
 }
 
+/** Модель не даёт выключить рассуждение — просим самое короткое. */
+const MINIMAL_REASONING = { effort: 'minimal', exclude: true };
+
+export function reasoningMandatory(message: string): boolean {
+  return /reasoning is mandatory/i.test(message);
+}
+
 export function toOpenRouterBody(
   params: Params,
   providers: string[] = [],
+  mustReason = false,
 ): Record<string, unknown> {
   const messages: Array<{ role: string; content: string | ChatPart[] }> = [];
   if (typeof params.system === 'string') {
@@ -90,7 +103,9 @@ export function toOpenRouterBody(
   const effort = params.output_config?.effort;
   const reasoning =
     thinking?.type === 'disabled'
-      ? { enabled: false }
+      ? mustReason
+        ? MINIMAL_REASONING
+        : { enabled: false }
       : { ...(effort ? { effort } : { enabled: true }), exclude: true };
 
   return {
@@ -98,7 +113,7 @@ export function toOpenRouterBody(
     max_tokens: params.max_tokens,
     messages,
     reasoning,
-    ...(providers.length
+    ...(providers.length && isClaudeModel(params.model)
       ? { provider: { order: providers, allow_fallbacks: false } }
       : {}),
   };
@@ -166,6 +181,8 @@ export function createOpenRouterClient(options: OpenRouterOptions): Anthropic {
   const doFetch = options.fetch ?? fetch;
   const timeoutMs = options.timeoutMs ?? 180_000;
   const maxRetries = options.maxRetries ?? 2;
+  /** Модели, которым рассуждение не выключить (узнаём по первому отказу). */
+  const mustReason = new Set<string>();
 
   async function create(
     params: Params,
@@ -173,9 +190,15 @@ export function createOpenRouterClient(options: OpenRouterOptions): Anthropic {
   ): Promise<Anthropic.Message> {
     const signal = requestOptions?.signal;
     checkCancelled(signal);
-    const body = JSON.stringify(
-      toOpenRouterBody(params, options.providers ?? []),
-    );
+    const encode = () =>
+      JSON.stringify(
+        toOpenRouterBody(
+          params,
+          options.providers ?? [],
+          mustReason.has(params.model),
+        ),
+      );
+    let body = encode();
     for (let attempt = 0; ; attempt += 1) {
       checkCancelled(signal);
       const controller = new AbortController();
@@ -200,6 +223,15 @@ export function createOpenRouterClient(options: OpenRouterOptions): Anthropic {
         if (!res.ok || error) {
           const status = Number(error?.code) || res.status;
           const message = `OpenRouter ${status}: ${error?.message ?? res.statusText ?? 'ошибка'}`;
+          if (
+            status === 400 &&
+            reasoningMandatory(message) &&
+            !mustReason.has(params.model)
+          ) {
+            mustReason.add(params.model);
+            body = encode();
+            continue;
+          }
           if ((status === 429 || status >= 500) && attempt < maxRetries) {
             await cancellableSleep(1000 * 2 ** attempt, signal);
             continue;

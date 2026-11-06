@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { cancellableSleep, checkCancelled } from 'src/shared/cancellation';
+import { isClaudeModel } from './openrouter';
 
 /** Метка ответа шлюза: учёт расхода пишет его под провайдером `gateway`. */
 export const GATEWAY_ROUTE = 'gateway';
@@ -342,6 +343,8 @@ export function withGateway(
   ): Promise<Anthropic.Message> {
     const { routeKey, ...rest } = options ?? {};
     const sendOptions = options ? rest : undefined;
+    if (!isClaudeModel(params.model))
+      return fallback.messages.create(params, sendOptions);
     if (now() >= pausedUntil && !stuck(routeKey)) {
       const response = await viaGateway(params, sendOptions, now() + waitMs);
       if (response) return response;

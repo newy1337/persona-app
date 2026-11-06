@@ -31,6 +31,16 @@ export const MODEL_OPTIONS: ReadonlyArray<
   [SONNET_5_5, 'Claude Sonnet 5.5'],
   [OPUS_5, 'Claude Opus 5'],
   [OPUS_5_5, 'Claude Opus 5.5'],
+  // Не Claude: только через OpenRouter, мимо шлюза (он лишь к Claude).
+  ['moonshotai/kimi-k3.1-pro', 'Kimi K3.1 Pro'],
+  ['openai/gpt-6-sol', 'GPT-6 Sol'],
+  ['openai/gpt-5.6-sol', 'GPT-5.6 Sol'],
+  ['moonshotai/kimi-k3', 'Kimi K3'],
+  ['z-ai/glm-5.3', 'GLM 5.3'],
+  ['google/gemini-3.7-flash', 'Gemini 3.7 Flash'],
+  ['google/gemini-4-argon', 'Gemini 4 Argon'],
+  ['xiaomi/mimo-v2.6-pro', 'MiMo V2.6 Pro'],
+  ['deepseek/deepseek-v4.1-flash-1017', 'DeepSeek V4.1 Flash'],
 ];
 
 const MODEL_IDS = new Set(MODEL_OPTIONS.map(([id]) => id));
