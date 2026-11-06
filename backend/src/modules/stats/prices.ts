@@ -60,6 +60,62 @@ export const DEFAULT_PRICES: PriceTable = {
       cache_write: 1.25,
       cache_read: 0.1,
     },
+    // Не Claude — через OpenRouter, его прайс на 06.11.2026; запись кеша, где
+    // OpenRouter её не называет, — по цене входа.
+    'moonshotai/kimi-k3.1-pro': {
+      input: 2,
+      output: 10,
+      cache_write: 2,
+      cache_read: 0.2,
+    },
+    'openai/gpt-6-sol': {
+      input: 2,
+      output: 10,
+      cache_write: 2.5,
+      cache_read: 0.2,
+    },
+    'openai/gpt-5.6-sol': {
+      input: 4,
+      output: 20,
+      cache_write: 5,
+      cache_read: 0.4,
+    },
+    'moonshotai/kimi-k3': {
+      input: 0.192,
+      output: 16,
+      cache_write: 0.192,
+      cache_read: 0.182,
+    },
+    'z-ai/glm-5.3': {
+      input: 0.0699,
+      output: 1.4,
+      cache_write: 0.0699,
+      cache_read: 0.0689,
+    },
+    'google/gemini-3.7-flash': {
+      input: 0.75,
+      output: 3.75,
+      cache_write: 0.75,
+      cache_read: 0.075,
+    },
+    'google/gemini-4-argon': {
+      input: 2,
+      output: 10,
+      cache_write: 2,
+      cache_read: 0.1,
+    },
+    'xiaomi/mimo-v2.6-pro': {
+      input: 0.435,
+      output: 0.87,
+      cache_write: 0.435,
+      cache_read: 0.0036,
+    },
+    'deepseek/deepseek-v4.1-flash-1017': {
+      input: 0.15,
+      output: 0.6,
+      cache_write: 0.15,
+      cache_read: 0.003,
+    },
     'gpt-4o-mini-transcribe': {
       input: 3,
       output: 5,
