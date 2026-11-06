@@ -81,4 +81,26 @@ describe('costOfSums', () => {
     );
     expect(cost).toBeCloseTo(2);
   });
+
+  it('модели без цены в таблице — по цене OpenRouter, а не ноль', () => {
+    const price = (m: string) =>
+      m === 'known'
+        ? { input: 1, output: 0, cache_write: 0, cache_read: 0 }
+        : null;
+    const zero = {
+      output: 0,
+      cache_write: 0,
+      cache_read: 0,
+      cache_write_1h: 0,
+    };
+    const cost = costOfSums(
+      [
+        // у модели с ценой оценку OpenRouter не складываем: считаем по таблице
+        { model: 'known', input: 1_000_000, estimated: 5, ...zero },
+        { model: 'moonshotai/kimi', input: 9_000_000, estimated: 0.4, ...zero },
+      ],
+      price as never,
+    );
+    expect(cost).toBeCloseTo(1.4);
+  });
 });

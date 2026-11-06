@@ -9,6 +9,8 @@ export interface ModelTokens {
   cache_write: number;
   cache_read: number;
   cache_write_1h: number;
+  /** цена по словам OpenRouter — для моделей без цены в таблице */
+  estimated?: number;
 }
 
 /** Цена суммы токенов: формула линейна, так что сумма по вызовам — сумма цен. */
@@ -19,6 +21,10 @@ export function costOfSums(
   let total = 0;
   for (const r of rows) {
     const p = price(r.model);
+    if (!p) {
+      total += r.estimated ?? 0;
+      continue;
+    }
     total +=
       costOf(p, {
         input: r.input,
