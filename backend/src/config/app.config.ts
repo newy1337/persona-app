@@ -47,6 +47,9 @@ export const appConfig = {
   anthropicWorkspaceId: process.env.ANTHROPIC_WORKSPACE_ID || '',
   generatorModel: process.env.GENERATOR_MODEL || 'claude-sonnet-5',
   judgeModel: (process.env.JUDGE_MODEL || '').trim(),
+  // Только для дева: менять личность у аккаунта с перепиской (на проде истории
+  // персонажей смешались бы). ALLOW_PERSONA_SWITCH=1.
+  allowPersonaSwitch: (process.env.ALLOW_PERSONA_SWITCH || '').trim() === '1',
   judgeEffort: (['off', 'low', 'medium', 'high'].includes(
     process.env.JUDGE_EFFORT ?? '',
   )
