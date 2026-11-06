@@ -5,13 +5,6 @@ export const OPUS_5_5 = 'claude-opus-5.5';
 export const JUDGE_MODEL = OPUS_5;
 export const VISION_MODEL = 'claude-sonnet-5';
 
-export const JUDGE_MODELS: readonly string[] = [
-  OPUS_5,
-  OPUS_5_5,
-  GENERATOR_MODEL,
-  SONNET_5_5,
-];
-
 export function resolveJudgeModel(value = ''): string {
   const raw = String(value).trim();
   if (!raw) return JUDGE_MODEL;
@@ -44,6 +37,9 @@ export const MODEL_OPTIONS: ReadonlyArray<
 ];
 
 const MODEL_IDS = new Set(MODEL_OPTIONS.map(([id]) => id));
+
+/** Судьи — из того же списка: можно тестировать любые связки. */
+export const JUDGE_MODELS: readonly string[] = [...MODEL_IDS];
 
 export function resolveModel(value = ''): string {
   const model = value || GENERATOR_MODEL;
