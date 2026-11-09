@@ -5,6 +5,7 @@ import {
   stageQuestionReview,
   completeQuestionReview,
   hasUnansweredInbound,
+  unansweredBacklog,
 } from './conversation';
 import { availableSlots, acquaintanceGoalPlan } from './slots';
 import { validateJudgment, validateMemoryUpdates } from '../judge/validate';
@@ -286,6 +287,34 @@ it('a reaction answers wordless inbound: emoji, sticker, gif', () => {
       message('user', 'ты тут?'),
     ]),
   ).toBe(true);
+});
+it('backlog: questions after the bot said goodnight, not closings or stickers', () => {
+  const history = [
+    message('user', 'ну всё, спать?'),
+    message('assistant', 'да, спокойной ночи)'),
+    message('user', 'Спасибо, и тебе'),
+    message('user', '[Стикер: 😌]'),
+    message('assistant', '[Реакция: 🥰]'),
+    message('user', 'а ты завтра работаешь?'),
+    message('user', 'во сколько встаёшь?'),
+  ];
+  expect(unansweredBacklog(history).map((m) => m.content)).toEqual([
+    'а ты завтра работаешь?',
+    'во сколько встаёшь?',
+  ]);
+  expect(
+    unansweredBacklog([
+      message('assistant', 'спокойной ночи)'),
+      message('user', 'Спокойной!)'),
+      message('assistant', '[Реакция: 🥰]'),
+    ]),
+  ).toEqual([]);
+  expect(
+    unansweredBacklog([
+      message('user', 'как дела?'),
+      message('assistant', 'отлично'),
+    ]),
+  ).toEqual([]);
 });
 it('structured weekday plans remain stable and do not invent completion or an hour', () => {
   const day = {

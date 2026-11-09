@@ -129,6 +129,8 @@ export interface RhythmState {
   morning?: Record<string, 'sent' | 'user' | 'skipped'>;
   goodnight?: Record<string, 'sent' | 'user' | 'skipped'>;
   last_goodnight_ts?: number;
+  /** до какого сообщения собеседника (ts) бот уже брался отвечать на хвост без ответа */
+  backlog_answered_ts?: number;
 }
 
 export interface MemoryUpdate {

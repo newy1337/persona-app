@@ -7,6 +7,7 @@ import type {
   Memory,
   RuntimeSnapshot,
 } from '../kernel/types';
+import { isClosingOnly } from '../dialogue/farewell';
 
 export interface QuestionContext {
   id: string;
@@ -172,6 +173,26 @@ const isReaction = (m: Partial<HistoryMessage>) =>
 /** Сообщение без слов: смайлики, стикер, GIF, видео — метки «[…]» не в счёт. */
 const isWordless = (m: Partial<HistoryMessage>) =>
   !/[\p{L}\p{N}]/u.test((m.content ?? '').replace(/\[[^\]]*\]/g, ''));
+
+/**
+ * Сообщения собеседника со словами после последнего настоящего ответа бота
+ * (реакция — не ответ): например, вопросы, заданные после прощания на ночь.
+ * Простое «спасибо», «и тебе спокойной», смайлик или стикер — не в счёт.
+ */
+export function unansweredBacklog(
+  history: readonly Partial<HistoryMessage>[],
+): Partial<HistoryMessage>[] {
+  const out: Partial<HistoryMessage>[] = [];
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const m = history[i];
+    if (isReaction(m)) continue;
+    if (m.role === 'assistant') break;
+    if (m.role !== 'user' || isWordless(m)) continue;
+    const words = (m.content ?? '').replace(/\[[^\]]*\]/g, '').trim();
+    if (!isClosingOnly(words)) out.unshift(m);
+  }
+  return out;
+}
 
 export function hasUnansweredInbound(
   history: readonly Partial<HistoryMessage>[],

@@ -468,6 +468,44 @@ export class HistoryService {
     ).map(row);
   }
 
+  /**
+   * Сообщения собеседника после последнего настоящего ответа бота: реакция
+   * ответом не считается. На них бот отвечает утром, если ночью промолчал.
+   */
+  async messagesSinceReply(chatId: number): Promise<StoredMessage[]> {
+    const id = toChatId(chatId);
+    const window = await this.conversationWindow(chatId);
+    const last = await this.prisma.message.findFirst({
+      where: {
+        chatId: id,
+        role: 'assistant',
+        deletedAt: null,
+        NOT: { text: { startsWith: '[Реакция:' } },
+        ...window,
+      },
+      orderBy: [{ ts: 'desc' }, { id: 'desc' }],
+    });
+    return (
+      await this.prisma.message.findMany({
+        where: {
+          chatId: id,
+          role: 'user',
+          deletedAt: null,
+          ...window,
+          ...(last
+            ? {
+                OR: [
+                  { ts: { gt: last.ts } },
+                  { ts: last.ts, id: { gt: last.id } },
+                ],
+              }
+            : {}),
+        },
+        orderBy: [{ ts: 'asc' }, { id: 'asc' }],
+      })
+    ).map(row);
+  }
+
   async hasProcessedClientMessage(
     chatId: number,
     messageId: number,

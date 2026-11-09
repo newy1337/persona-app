@@ -114,6 +114,7 @@ import { generateDraft } from './llm/generate';
 import {
   conversational,
   hasUnansweredInbound,
+  unansweredBacklog,
   openQuestions,
   stageQuestionReview,
   completeQuestionReview,
@@ -1573,6 +1574,64 @@ export class PersonaBrainService implements ReplyBrain {
     return value;
   }
 
+  /** Чаты, где утренний обход нашёл вопросы без ответа; отвечаем вне блокировки. */
+  private backlog?: Set<number>;
+
+  /**
+   * Есть ли у собеседника сообщения со словами, на которые бот так и не
+   * ответил (например, вопросы после прощания на ночь), и не брался ли он уже
+   * за них. Да — чат ставится в очередь на ответ.
+   */
+  private queueBacklog(chatId: number, state: ConversationState): boolean {
+    const last = unansweredBacklog(state.history).at(-1);
+    if (!last?.created_at) return false;
+    // Только свежий хвост — ночь и утро; старые забытые чаты так не оживляем.
+    if (this.clock.ts() - last.created_at > BACKLOG_MAX_AGE_S) return false;
+    if ((state.rhythm?.backlog_answered_ts ?? 0) >= last.created_at)
+      return false;
+    (this.backlog ??= new Set()).add(chatId);
+    return true;
+  }
+
+  /**
+   * Ответить на сообщения, оставшиеся без ответа, вместо утреннего
+   * приветствия или инициативы: обычный ответ на те же сообщения, как будто
+   * они только что пришли. Берётся за хвост один раз — повторно не
+   * перебирает, даже если модель снова промолчит.
+   */
+  private async answerBacklog(chatId: number): Promise<boolean> {
+    if (!this.backlog?.delete(chatId)) return false;
+    if (this.gate.stopped || !this.persona.ready) return false;
+    if ((await this.pause.status(chatId)).status === 'paused') return false;
+    if (await this.schedule.get(chatId)) return false;
+    const accountId = await this.history.chatOwnerAccount(chatId);
+    if (accountId === null) return false;
+    const tail = (await this.history.messagesSinceReply(chatId)).filter(
+      (m) => m.source_message_id,
+    );
+    const last = tail[tail.length - 1];
+    if (!last) return false;
+    await this.locks.run(chatId, async () => {
+      const state = await this.state.load(chatId);
+      (state.rhythm ??= {}).backlog_answered_ts = last.ts;
+      await this.state.save(chatId, state);
+    });
+    this.log.log(
+      `chat=${chatId}: ${tail.length} message(s) left unanswered — answering instead of a greeting`,
+    );
+    const release = this.activity.receive(
+      chatId,
+      `backlog:${deliveryRandomId()}`,
+    );
+    try {
+      for (const message of tail)
+        await this.handleInbound(restoredTurn(message, accountId));
+    } finally {
+      release();
+    }
+    return true;
+  }
+
   async answerAfterResume(chatId: number): Promise<boolean> {
     await this.locks.run(chatId, () => this.state.reconcile(chatId));
     if (this.gate.stopped || !this.persona.ready) return false;
@@ -2519,6 +2578,7 @@ export class PersonaBrainService implements ReplyBrain {
           this.proactive(chatId, settings),
         );
         if (done) sent += 1;
+        else if (await this.answerBacklog(chatId)) sent += 1;
       } catch (e) {
         this.log.error(`initiative failed chat=${chatId} (${e?.name ?? e})`);
       }
@@ -2550,6 +2610,7 @@ export class PersonaBrainService implements ReplyBrain {
       return false;
 
     const persona = await this.persona.forAccount(accountId, chatId);
+    if (this.queueBacklog(chatId, state)) return false;
     if (
       conversational(persona.config) &&
       (hasUnansweredInbound(state.history) || openQuestions(state).length > 0)
@@ -2921,6 +2982,7 @@ export class PersonaBrainService implements ReplyBrain {
           this.ritual(chatId, settings),
         );
         if (done) sent += 1;
+        else if (await this.answerBacklog(chatId)) sent += 1;
       } catch (e) {
         this.log.error(
           `ritual failed chat=${chatId} (${e?.name ?? e}: ${e?.message ?? ''})`,
@@ -2950,6 +3012,13 @@ export class PersonaBrainService implements ReplyBrain {
       const slot = ritualSlot(now, rhythm[kind], rhythm.timezone, chatId, kind);
       if (!slot.due || slot.windowStartTs === null) continue;
       const state = await this.state.load(chatId);
+      // Утром вместо «доброго утра» — ответ на то, что собеседник написал
+      // после прощания: приветствие за этот день уже не нужно.
+      if (kind === 'morning' && this.queueBacklog(chatId, state)) {
+        if (!state.rhythm?.morning?.[slot.day])
+          await this.markRitual(chatId, state, kind, slot.day, 'skipped');
+        return false;
+      }
       if (
         conversational(persona.config) &&
         (hasUnansweredInbound(state.history) || openQuestions(state).length > 0)
@@ -3040,7 +3109,7 @@ export class PersonaBrainService implements ReplyBrain {
     state: ConversationState,
     kind: RitualKind,
     day: string,
-    who: 'sent' | 'user',
+    who: 'sent' | 'user' | 'skipped',
   ) {
     const r = (state.rhythm ??= {});
     (r[kind] ??= {})[day] = who;
@@ -3050,6 +3119,8 @@ export class PersonaBrainService implements ReplyBrain {
 }
 
 const RHYTHM_RETENTION_DAYS = 14;
+/** Сколько ждёт хвост без ответа, чтобы бот взялся за него вместо приветствия. */
+const BACKLOG_MAX_AGE_S = 18 * 3600;
 
 function pruneRhythm(rhythm: RhythmState, today: string): void {
   const keepFrom = shiftDate(today, -RHYTHM_RETENTION_DAYS);
