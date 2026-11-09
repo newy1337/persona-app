@@ -260,6 +260,33 @@ it('an emoji reaction does not answer an inbound message', () => {
     ]),
   ).toBe(false);
 });
+it('a reaction answers wordless inbound: emoji, sticker, gif', () => {
+  for (const text of ['😊', '[Стикер]', '[Стикер: 👋]', '[GIF]', '👍👍']) {
+    expect(
+      hasUnansweredInbound([
+        message('assistant', 'Как день?'),
+        message('user', text),
+        message('assistant', '[Реакция: 😁]'),
+      ]),
+    ).toBe(false);
+  }
+  // Вопрос до смайлика реакция не закрывает.
+  expect(
+    hasUnansweredInbound([
+      message('user', 'Что делаешь?'),
+      message('user', '😊'),
+      message('assistant', '[Реакция: 😁]'),
+    ]),
+  ).toBe(true);
+  // Новое сообщение после реакции — снова ждёт ответа.
+  expect(
+    hasUnansweredInbound([
+      message('user', '😊'),
+      message('assistant', '[Реакция: 😁]'),
+      message('user', 'ты тут?'),
+    ]),
+  ).toBe(true);
+});
 it('structured weekday plans remain stable and do not invent completion or an hour', () => {
   const day = {
     weekly_plans: {
