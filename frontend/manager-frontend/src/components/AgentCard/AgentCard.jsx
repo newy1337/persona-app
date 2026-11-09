@@ -27,6 +27,7 @@ export const REASON_LABEL = {
   media_video_note: 'Просит кружок',
   media_video: 'Просит видео',
   trigger_phrase: 'Стоп-фраза клиента',
+  vk_friend: 'Просит добавить в друзья ВК',
   manual_mode: 'Ручной режим',
 };
 

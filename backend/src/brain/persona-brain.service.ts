@@ -111,6 +111,8 @@ import type { JudgeDeps } from './judge/transport';
 import { unknownPlace } from './kernel/location';
 import { reviewReply } from './judge/review';
 import { generateDraft } from './llm/generate';
+import { chatChannel } from 'src/channels/contact';
+import { asksVkFriend, VK_FRIEND_PHRASE } from 'src/domain/vk-friend';
 import {
   conversational,
   hasUnansweredInbound,
@@ -429,6 +431,15 @@ export class PersonaBrainService implements ReplyBrain {
     if (trigger) {
       // Стоп-фраза уводит чат на менеджера — читать за него тоже не надо.
       await this.handOverByTrigger(chatId, trigger, turn.ts);
+      return;
+    }
+    if (asksVkFriend(text, chatChannel(chatId))) {
+      // Заявку в друзья бот не примет и не отправит — это делает человек.
+      await this.handOverByTrigger(chatId, VK_FRIEND_PHRASE, turn.ts, {
+        kind: 'vk_friend',
+        reasonText:
+          'клиент просит добавить в друзья ВК — добавьте и ответьте сами',
+      });
       return;
     }
     const facts = await this.history.getLeadFacts(chatId);
@@ -1433,17 +1444,27 @@ export class PersonaBrainService implements ReplyBrain {
     chatId: number,
     phrase: string,
     ts: number,
+    opts: { kind?: string; reasonText?: string } = {},
   ): Promise<void> {
     await this.history.mergeLeadFacts(
       chatId,
-      { [HANDOFF_TRIGGER_KEY]: { phrase, ts } },
+      {
+        [HANDOFF_TRIGGER_KEY]: {
+          phrase,
+          ts,
+          ...(opts.kind ? { kind: opts.kind } : {}),
+        },
+      },
       false,
     );
     await this.pause.pause(
       chatId,
       TakeoverReason.MANUAL_TAKEOVER,
       'bot:trigger',
-      { reasonText: `клиент написал «${phrase}» — ответьте сами` },
+      {
+        reasonText:
+          opts.reasonText ?? `клиент написал «${phrase}» — ответьте сами`,
+      },
     );
     await this.funnel.emit(chatId, 'trigger_handoff', ts, { phrase });
     this.log.log(

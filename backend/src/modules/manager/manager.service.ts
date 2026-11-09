@@ -441,7 +441,10 @@ export class ManagerService {
     ) {
       const media = facts[MEDIA_REQUEST_KEY] as { kind?: string } | undefined;
       if (media?.kind) return [`media_${media.kind}`, n(r.paused_ts)];
-      if (facts[HANDOFF_TRIGGER_KEY]) return ['trigger_phrase', n(r.paused_ts)];
+      const trigger = facts[HANDOFF_TRIGGER_KEY] as
+        { kind?: string } | undefined;
+      if (trigger?.kind === 'vk_friend') return ['vk_friend', n(r.paused_ts)];
+      if (trigger) return ['trigger_phrase', n(r.paused_ts)];
       return [pausedBeforeKeyMove(facts) ?? 'manual_takeover', n(r.paused_ts)];
     }
     if (
