@@ -144,19 +144,119 @@ const bucket = (): Bucket => ({
   latencyN: 0,
 });
 
-function add(b: Bucket, u: UsageRow, price: ModelPrice | null): void {
+/**
+ * Строка-сумма из базы: сколько вызовов в группе и их задержки. Цена линейна
+ * по токенам, так что сумма токенов группы даёт ту же цену, что и вызовы по
+ * одному.
+ */
+interface UsageGroup extends UsageRow {
+  calls: number;
+  latencySum: number;
+  latencyN: number;
+  provider: string | null;
+  manager: string;
+}
+
+function add(
+  b: Bucket,
+  u: UsageRow | UsageGroup,
+  price: ModelPrice | null,
+): void {
   const t = tokensOf(u);
-  b.calls += 1;
+  const group = 'calls' in u ? u : null;
+  b.calls += group ? group.calls : 1;
   addTokens(b.tokens, t);
   // Модели нет в таблице цен (Kimi, GLM через OpenRouter) — берём цену,
   // которую назвал OpenRouter, а не ноль.
   b.cost += price
     ? costOf(price, t) + cacheWrite1hExtra(price, u.cacheWrite1hTokens ?? 0)
     : (u.providerEstimatedCostUsd ?? 0);
-  if (u.elapsedMs !== null) {
+  if (group) {
+    b.latencySum += group.latencySum;
+    b.latencyN += group.latencyN;
+  } else if (u.elapsedMs !== null) {
     b.latencySum += u.elapsedMs;
     b.latencyN += 1;
   }
+}
+
+/** По чему группировать расход модели в базе. */
+type UsageKey = 'day' | 'model' | 'stage' | 'persona' | 'provider' | 'chat';
+
+const USAGE_KEY_SQL: Record<UsageKey | 'manager', string> = {
+  day: '((u.created_at + 10800) / 86400)',
+  model: 'u.model',
+  stage: 'u.stage',
+  persona: 'u.persona_id',
+  provider: 'u.provider',
+  chat: 'u.chat_id',
+  manager: 'ma.user_id',
+};
+
+/**
+ * Расход модели за период, сложенный в базе по нужным полям: в память
+ * приходят суммы, а не каждый вызов (за месяц их сотни тысяч). Менеджер —
+ * владелец аккаунта, с которого идёт чат, как в chatOwners(). В строке
+ * поля, по которым не группировали, пустые.
+ */
+async function usageGroups(
+  prisma: PrismaService,
+  range: DayRange,
+  keys: Array<UsageKey | 'manager'>,
+): Promise<UsageGroup[]> {
+  const cols = [...new Set<UsageKey | 'manager'>(['model', ...keys])];
+  const select = cols.map((k) => `${USAGE_KEY_SQL[k]} AS k_${k}`).join(', ');
+  const group = cols.map((k) => USAGE_KEY_SQL[k]).join(', ');
+  const join = cols.includes('manager')
+    ? `LEFT JOIN contacts c ON c.chat_id = u.chat_id
+       LEFT JOIN manager_accounts ma ON ma.account_id = c.account_id`
+    : '';
+  const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>(
+    Prisma.sql`
+      SELECT ${Prisma.raw(select)},
+        COUNT(*) AS calls,
+        SUM(GREATEST(0, COALESCE(u.input_tokens, 0) - COALESCE(u.cached_tokens, 0) - COALESCE(u.cache_write_tokens, 0))) AS input_net,
+        SUM(COALESCE(u.output_tokens, 0)) AS output,
+        SUM(COALESCE(u.cached_tokens, 0)) AS cache_read,
+        SUM(COALESCE(u.cache_write_tokens, 0)) AS cache_write,
+        SUM(COALESCE(u.cache_write_1h_tokens, 0)) AS cache_write_1h,
+        SUM(COALESCE(u.provider_estimated_cost_usd, 0)) AS estimated,
+        SUM(COALESCE(u.elapsed_ms, 0)) AS latency_sum,
+        COUNT(u.elapsed_ms) AS latency_n
+      FROM model_usage u ${Prisma.raw(join)}
+      WHERE u.created_at >= ${range.start} AND u.created_at < ${range.end}
+      GROUP BY ${Prisma.raw(group)}`,
+  );
+  const num = (v: unknown) => Number(v ?? 0);
+  return rows.map((r) => {
+    const cacheRead = num(r.cache_read);
+    const cacheWrite = num(r.cache_write);
+    const day = r.k_day;
+    return {
+      chatId: (r.k_chat as bigint | null | undefined) ?? null,
+      personaId: (r.k_persona as string | null | undefined) ?? null,
+      model: String(r.k_model),
+      stage: (r.k_stage as string | undefined) ?? '',
+      provider: (r.k_provider as string | null | undefined) ?? null,
+      manager:
+        r.k_manager === null || r.k_manager === undefined
+          ? NO_MANAGER
+          : String(r.k_manager),
+      // tokensOf() вычтет кеш обратно — получится сумма «чистого» входа.
+      inputTokens: num(r.input_net) + cacheRead + cacheWrite,
+      outputTokens: num(r.output),
+      cachedTokens: cacheRead,
+      cacheWriteTokens: cacheWrite,
+      cacheWrite1hTokens: num(r.cache_write_1h),
+      providerEstimatedCostUsd: num(r.estimated),
+      elapsedMs: null,
+      createdAt:
+        day === null || day === undefined ? 0 : num(day) * 86400 - 10800,
+      calls: num(r.calls),
+      latencySum: num(r.latency_sum),
+      latencyN: num(r.latency_n),
+    };
+  });
 }
 
 const avgLatency = (b: Bucket): number | null =>
@@ -402,27 +502,12 @@ export class StatsService {
     const table = await this.prices();
     const price = memoPrice(table);
 
-    const rows = (await this.prisma.modelUsage.findMany({
-      where: { createdAt: { gte: range.start, lt: range.end } },
-      select: {
-        chatId: true,
-        personaId: true,
-        model: true,
-        stage: true,
-        inputTokens: true,
-        outputTokens: true,
-        cachedTokens: true,
-        cacheWriteTokens: true,
-        cacheWrite1hTokens: true,
-        elapsedMs: true,
-        createdAt: true,
-        provider: true,
-        providerEstimatedCostUsd: true,
-      },
-    })) as (UsageRow & {
-      provider: string;
-      providerEstimatedCostUsd: number | null;
-    })[];
+    // Суммы из базы: по дню, модели, этапу, личности и маршруту — и отдельно
+    // по чату для топа. Каждый вызов за месяц в память не тянем.
+    const [rows, chatRows] = await Promise.all([
+      usageGroups(this.prisma, range, ['day', 'stage', 'persona', 'provider']),
+      usageGroups(this.prisma, range, ['chat']),
+    ]);
 
     const total = bucket();
     const byDay = new Map<string, Bucket>(range.days.map((d) => [d, bucket()]));
@@ -445,7 +530,7 @@ export class StatsService {
       if (u.provider === 'openrouter') paid += u.providerEstimatedCostUsd ?? 0;
       if (u.provider === GATEWAY_ROUTE) add(gateway, u, p);
       if (u.provider === 'openrouter' || u.provider === GATEWAY_ROUTE)
-        llmCalls += 1;
+        llmCalls += u.calls;
       const day = byDay.get(dayKey(u.createdAt));
       if (day) add(day, u, p);
       for (const [map, key] of [
@@ -456,11 +541,13 @@ export class StatsService {
         if (!map.has(key)) map.set(key, bucket());
         add(map.get(key)!, u, p);
       }
-      if (u.chatId !== null) {
-        const key = String(u.chatId);
-        if (!byChat.has(key)) byChat.set(key, bucket());
-        add(byChat.get(key)!, u, p);
-      }
+    }
+    for (const u of chatRows) {
+      if (u.chatId === null) continue;
+      u.model = normalizeModel(u.model);
+      const key = String(u.chatId);
+      if (!byChat.has(key)) byChat.set(key, bucket());
+      add(byChat.get(key)!, u, price(u.model));
     }
 
     const messages = await this.messages(range);
@@ -535,23 +622,11 @@ export class StatsService {
     const table = await this.prices();
     const price = memoPrice(table);
     const owners = await this.chatOwners();
-    const rows = (await this.prisma.modelUsage.findMany({
-      where: { createdAt: { gte: range.start, lt: range.end } },
-      select: {
-        chatId: true,
-        personaId: true,
-        model: true,
-        stage: true,
-        inputTokens: true,
-        outputTokens: true,
-        cachedTokens: true,
-        cacheWriteTokens: true,
-        cacheWrite1hTokens: true,
-        elapsedMs: true,
-        createdAt: true,
-        providerEstimatedCostUsd: true,
-      },
-    })) as UsageRow[];
+    // Суммы по менеджеру и дню — в базе; чаты менеджера — парами без повторов.
+    const [rows, chatPairs] = await Promise.all([
+      usageGroups(this.prisma, range, ['manager', 'day']),
+      this.usageChats(range),
+    ]);
 
     const spend = new Map<string, Bucket>();
     const spendDays = new Map<string, Map<string, Bucket>>();
@@ -559,7 +634,7 @@ export class StatsService {
     for (const u of rows) {
       u.model = normalizeModel(u.model);
       const p = price(u.model);
-      const manager = owners.manager(u.chatId);
+      const manager = u.manager;
       if (!spend.has(manager)) spend.set(manager, bucket());
       add(spend.get(manager)!, u, p);
       if (!spendDays.has(manager)) spendDays.set(manager, new Map());
@@ -567,13 +642,13 @@ export class StatsService {
       const key = dayKey(u.createdAt);
       if (!days.has(key)) days.set(key, bucket());
       add(days.get(key)!, u, p);
-      if (u.chatId !== null) {
-        if (!chats.has(manager)) chats.set(manager, new Set());
-        chats.get(manager)!.add(String(u.chatId));
-      }
+    }
+    for (const { manager, chatId } of chatPairs) {
+      if (!chats.has(manager)) chats.set(manager, new Set());
+      chats.get(manager)!.add(chatId);
     }
 
-    const messages = await this.messages(range, owners);
+    const messages = await this.messages(range, true);
     const leads = await this.leadFunnel(range);
     const stages = await this.stageMoves(range, owners);
     const ids = new Set([
@@ -1051,7 +1126,7 @@ export class StatsService {
       total,
       stages,
       cold,
-      traffic: await this.trafficSplit(range, mine, owners),
+      traffic: await this.trafficSplit(range, mine),
       sources: await this.sources({ ...query, region: query.region }),
       accounts: await this.accounts(query),
     };
@@ -1061,7 +1136,6 @@ export class StatsService {
   private async trafficSplit(
     range: DayRange,
     mine: (id: number | null) => boolean,
-    owners: { manager: (chatId: bigint | number | null) => string },
   ) {
     const personas = await this.prisma.persona.findMany({
       select: { slug: true, trafficType: true },
@@ -1088,25 +1162,9 @@ export class StatsService {
       if (l.status === 'replied') row.leads_replied += 1;
     }
     const price = memoPrice(await this.prices());
-    const usage = (await this.prisma.modelUsage.findMany({
-      where: { createdAt: { gte: range.start, lt: range.end } },
-      select: {
-        chatId: true,
-        personaId: true,
-        model: true,
-        stage: true,
-        inputTokens: true,
-        outputTokens: true,
-        cachedTokens: true,
-        cacheWriteTokens: true,
-        cacheWrite1hTokens: true,
-        elapsedMs: true,
-        createdAt: true,
-        providerEstimatedCostUsd: true,
-      },
-    })) as UsageRow[];
+    const usage = await usageGroups(this.prisma, range, ['manager', 'persona']);
     for (const u of usage) {
-      if (!mine(Number(owners.manager(u.chatId)) || null)) continue;
+      if (!mine(Number(u.manager) || null)) continue;
       u.model = normalizeModel(u.model);
       add(out.get(typeOf(u.personaId))!.cost, u, price(u.model));
     }
@@ -1235,14 +1293,61 @@ export class StatsService {
     };
   }
 
-  private async messages(
+  /** Какие чаты у какого менеджера тратили модель за период — пары без повторов. */
+  private async usageChats(
     range: DayRange,
-    owners?: { manager: (chatId: bigint | number | null) => string },
-  ) {
-    const rows = await this.prisma.message.findMany({
-      where: { ts: { gte: range.start, lt: range.end } },
-      select: { ts: true, role: true, author: true, chatId: true },
-    });
+  ): Promise<Array<{ manager: string; chatId: string }>> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ manager: number | null; chat_id: bigint }>
+    >(Prisma.sql`
+      SELECT DISTINCT ma.user_id AS manager, u.chat_id
+      FROM model_usage u
+      LEFT JOIN contacts c ON c.chat_id = u.chat_id
+      LEFT JOIN manager_accounts ma ON ma.account_id = c.account_id
+      WHERE u.created_at >= ${range.start} AND u.created_at < ${range.end}
+        AND u.chat_id IS NOT NULL`);
+    return rows.map((r) => ({
+      manager: r.manager === null ? NO_MANAGER : String(r.manager),
+      chatId: String(r.chat_id),
+    }));
+  }
+
+  /**
+   * Сообщения за период: входящие, исходящие, ручные. Считает база — по дню,
+   * а с byManager ещё по менеджеру чата и самому чату (активные чаты —
+   * те, где писал собеседник). Миллион сообщений за месяц в память не тянем.
+   */
+  private async messages(range: DayRange, byManagerToo = false) {
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        day: number;
+        manager: number | null;
+        chat_id: bigint | null;
+        msg_in: bigint;
+        msg_out: bigint;
+        manual: bigint;
+      }>
+    >(
+      byManagerToo
+        ? Prisma.sql`
+          SELECT ((m.ts + 10800) / 86400) AS day, ma.user_id AS manager, m.chat_id,
+            COUNT(*) FILTER (WHERE m.role = 'user') AS msg_in,
+            COUNT(*) FILTER (WHERE m.role = 'assistant') AS msg_out,
+            COUNT(*) FILTER (WHERE m.role = 'assistant' AND m.author LIKE 'operator%') AS manual
+          FROM messages m
+          LEFT JOIN contacts c ON c.chat_id = m.chat_id
+          LEFT JOIN manager_accounts ma ON ma.account_id = c.account_id
+          WHERE m.ts >= ${range.start} AND m.ts < ${range.end}
+          GROUP BY 1, 2, 3`
+        : Prisma.sql`
+          SELECT ((m.ts + 10800) / 86400) AS day, NULL::int AS manager, NULL::bigint AS chat_id,
+            COUNT(*) FILTER (WHERE m.role = 'user') AS msg_in,
+            COUNT(*) FILTER (WHERE m.role = 'assistant') AS msg_out,
+            COUNT(*) FILTER (WHERE m.role = 'assistant' AND m.author LIKE 'operator%') AS manual
+          FROM messages m
+          WHERE m.ts >= ${range.start} AND m.ts < ${range.end}
+          GROUP BY 1`,
+    );
     const byDay = new Map<string, { in: number; out: number }>(
       range.days.map((d) => [d, { in: 0, out: 0 }]),
     );
@@ -1250,34 +1355,36 @@ export class StatsService {
     let msgIn = 0;
     let msgOut = 0;
     let manual = 0;
-    for (const m of rows) {
-      const key = dayKey(m.ts);
+    for (const r of rows) {
+      const key = dayKey(Number(r.day) * 86400 - 10800);
+      const n = {
+        in: Number(r.msg_in),
+        out: Number(r.msg_out),
+        manual: Number(r.manual),
+      };
+      msgIn += n.in;
+      msgOut += n.out;
+      manual += n.manual;
       const day = byDay.get(key);
-      const manager = owners
-        ? talkOf(byManager, owners.manager(m.chatId))
-        : null;
-      const managerDay = manager ? talkDay(manager, key) : null;
-      if (m.role === 'user') {
-        msgIn += 1;
-        if (day) day.in += 1;
-        if (manager) {
-          manager.in += 1;
-          manager.chats.add(String(m.chatId));
-        }
-        if (managerDay) {
-          managerDay.in += 1;
-          managerDay.chats.add(String(m.chatId));
-        }
-      } else if (m.role === 'assistant') {
-        msgOut += 1;
-        if (day) day.out += 1;
-        if (manager) manager.out += 1;
-        if (managerDay) managerDay.out += 1;
-        if (m.author && m.author.startsWith('operator')) {
-          manual += 1;
-          if (manager) manager.manual += 1;
-          if (managerDay) managerDay.manual += 1;
-        }
+      if (day) {
+        day.in += n.in;
+        day.out += n.out;
+      }
+      if (!byManagerToo) continue;
+      const manager = talkOf(
+        byManager,
+        r.manager === null ? NO_MANAGER : String(r.manager),
+      );
+      const managerDay = talkDay(manager, key);
+      manager.in += n.in;
+      manager.out += n.out;
+      manager.manual += n.manual;
+      managerDay.in += n.in;
+      managerDay.out += n.out;
+      managerDay.manual += n.manual;
+      if (n.in > 0 && r.chat_id !== null) {
+        manager.chats.add(String(r.chat_id));
+        managerDay.chats.add(String(r.chat_id));
       }
     }
     return {
