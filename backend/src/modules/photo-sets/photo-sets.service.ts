@@ -720,30 +720,17 @@ export class PhotoSetsService {
     writeFileSync(filePath, image);
     writeFileSync(thumbPath, thumb);
 
-    const card = await suggestPhotoCard(image, {
-      client: this.persona.anthropic,
-      provider: this.persona.provider,
-      usageDb: this.usage.scoped({}),
-      logger: {
-        info: (m) => this.log.log(m),
-        warn: (m) => this.log.warn(m),
-        error: (m) => this.log.error(m),
-      },
-    }).catch((e) => {
-      this.log.warn(`photo description failed: ${e?.message ?? e}`);
-      return null;
-    });
     const now = this.clock.ts();
     const data_ = {
       filePath,
       thumbPath,
       width,
       height,
-      description: card?.description ?? '',
-      place: card?.place ?? null,
+      description: '',
+      place: null,
       takenOn,
-      details: card?.details ?? '',
-      tags: JSON.stringify(card?.tags ?? []),
+      details: '',
+      tags: '[]',
       autoSend: true,
       reviewed: false,
       updatedAt: now,
@@ -767,11 +754,57 @@ export class PhotoSetsService {
       where: { id: setId },
       data: { updatedAt: now },
     });
+    // Описание предлагает модель — это может занять минуту и больше, если
+    // шлюз занят. Загрузку не держим: снимок сохранён, описание допишется.
+    const described = this.describe(photo.id, image);
+    this.pendingDescriptions.add(described);
+    void described.finally(() => this.pendingDescriptions.delete(described));
     return {
       duplicate: false,
-      described: Boolean(card?.description),
+      described: false,
+      describing: true,
       photo: this.photoView(photo),
     };
+  }
+
+  /** Описания, которые ещё готовятся (для тестов и остановки). */
+  readonly pendingDescriptions = new Set<Promise<void>>();
+
+  /**
+   * Черновик описания от модели. Пишем, только если человек за это время
+   * сам не заполнил карточку: его текст важнее.
+   */
+  private async describe(photoId: number, image: Buffer): Promise<void> {
+    const card = await suggestPhotoCard(image, {
+      client: this.persona.anthropic,
+      provider: this.persona.provider,
+      usageDb: this.usage.scoped({}),
+      logger: {
+        info: (m) => this.log.log(m),
+        warn: (m) => this.log.warn(m),
+        error: (m) => this.log.error(m),
+      },
+    }).catch((e) => {
+      this.log.warn(`photo ${photoId} description failed: ${e?.message ?? e}`);
+      return null;
+    });
+    if (!card?.description) return;
+    await this.prisma.photoSetPhoto
+      .updateMany({
+        where: { id: photoId, reviewed: false, description: '' },
+        data: {
+          description: card.description,
+          place: card.place,
+          details: card.details,
+          tags: JSON.stringify(card.tags),
+          updatedAt: this.clock.ts(),
+        },
+      })
+      .catch((e) =>
+        this.log.warn(
+          `photo ${photoId} description not saved: ${e?.message ?? e}`,
+        ),
+      );
   }
 
   /**
@@ -926,6 +959,8 @@ export class PhotoSetsService {
         deletedAt: null,
         kind: 'photo',
         autoSend: true,
+        // без описания бот снимок не берёт — см. photoAvailability
+        NOT: { description: '' },
       },
       _count: { _all: true },
     });

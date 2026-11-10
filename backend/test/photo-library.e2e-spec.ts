@@ -492,6 +492,9 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
       .toBuffer();
     const first = await service.upload(setId, 'sea.jpg', jpeg);
     expect(first.duplicate).toBe(false);
+    // Загрузка не ждёт модель: описание готовится в фоне.
+    expect(first).toMatchObject({ describing: true });
+    await Promise.all([...service.pendingDescriptions]);
     expect(first.photo).toMatchObject({
       description: '',
       place: null,

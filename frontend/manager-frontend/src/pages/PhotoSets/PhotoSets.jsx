@@ -94,12 +94,13 @@ function Uploader({ setId, onUploaded }) {
     // Видео становится кружком: сервер сам соберёт круглое 480×480 до минуты.
     const list = [...files].filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/') || /\.(jpe?g|png|webp|heic|mp4|mov|m4v|webm)$/i.test(f.name));
     if (!list.length) return;
-    const report = { done: 0, total: list.length, duplicates: 0, errors: [] };
+    const report = { done: 0, total: list.length, duplicates: 0, describing: 0, errors: [] };
     setProgress({ ...report });
     for (const file of list) {
       try {
         const r = await uploadSetPhoto(setId, file);
         if (r.duplicate) report.duplicates += 1;
+        if (r.describing) report.describing += 1;
       } catch (e) {
         report.errors.push(`${file.name}: ${e.detail || e.message}`);
       }
@@ -107,6 +108,8 @@ function Uploader({ setId, onUploaded }) {
       setProgress({ ...report });
       onUploaded();
     }
+    // Описания модель дописывает уже после загрузки — подтягиваем их.
+    if (report.describing) for (const ms of [15000, 45000, 90000]) setTimeout(onUploaded, ms);
   }
 
   return (
@@ -125,7 +128,7 @@ function Uploader({ setId, onUploaded }) {
         <p className={s.hint} role="status" style={{ marginTop: 8 }}>
           {progress.done < progress.total
             ? `${progress.done + 1} из ${progress.total}…`
-            : `Загружено: ${progress.total - progress.errors.length - progress.duplicates}${progress.duplicates ? `, повторов: ${progress.duplicates}` : ''}`}
+            : `Загружено: ${progress.total - progress.errors.length - progress.duplicates}${progress.duplicates ? `, повторов: ${progress.duplicates}` : ''}${progress.describing ? '. Описания появятся в течение пары минут — пока их нет, бот эти снимки не отправляет' : ''}`}
           {progress.errors.map((e) => <span key={e} className={s.error} style={{ display: 'block' }}>{e}</span>)}
         </p>
       )}

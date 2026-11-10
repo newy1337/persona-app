@@ -197,6 +197,18 @@ describe('photo library', () => {
     expect(afterAlbum.candidates.map((c) => c.id)).toEqual(['1']);
   });
 
+  it('never offers a photo that has no description yet', () => {
+    const view = photoAvailability({
+      rules,
+      accountAutoSend: true,
+      photos: [photo(1), photo(2, { description: '  ' })],
+      sends: [],
+      now: NOW,
+      today: '2026-10-14',
+    });
+    expect(view.candidates.map((c) => c.id)).toEqual(['1']);
+  });
+
   it('sends at most an album worth of unseen series photos', () => {
     const many = Array.from({ length: 12 }, (_, i) => ({
       id: i + 1,

@@ -252,6 +252,14 @@ export const ALBUM_MAX = 10;
 export const SERIES_MIN = 2;
 const SERIES_PREFIX = 's';
 
+/**
+ * Снимок без описания бот не берёт: подписать его честно не из чего. Такой
+ * бывает сразу после загрузки, пока модель готовит черновик описания.
+ */
+const described = (p: object): boolean =>
+  !('description' in p) ||
+  String((p as { description?: unknown }).description ?? '').trim() !== '';
+
 export const seriesCandidateId = (id: number) => `${SERIES_PREFIX}${id}`;
 
 /** Номер серии из id кандидата («s12» → 12); у одиночного снимка — null. */
@@ -274,7 +282,9 @@ export function seriesToSend<T extends { id: number; autoSend: boolean }>(
 ): T[] {
   if (!series.autoSend) return [];
   const left = series.photos
-    .filter((p) => p.autoSend && !(noRepeat && shownIds.has(p.id)))
+    .filter(
+      (p) => p.autoSend && described(p) && !(noRepeat && shownIds.has(p.id)),
+    )
     .slice(0, ALBUM_MAX);
   return left.length >= SERIES_MIN ? left : [];
 }
@@ -373,7 +383,10 @@ export function photoAvailability(input: {
     ];
   });
   const single = photos
-    .filter((p) => p.autoSend && !(rules.noRepeat && shownIds.has(p.id)))
+    .filter(
+      (p) =>
+        p.autoSend && described(p) && !(rules.noRepeat && shownIds.has(p.id)),
+    )
     .map((p) => ({
       id: String(p.id),
       description: p.description,
