@@ -147,6 +147,15 @@ export class ImportLeadsDto {
   @MaxLength(64)
   persona_id?: string | null;
 
+  @ApiPropertyOptional({
+    description:
+      'аккаунт, который напишет всем из списка; сверх дневного лимита лиды ждут его сброса',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  preferred_account_id?: number;
+
   @ApiPropertyOptional({ default: false }) @IsOptional() queue?: boolean;
 }
 

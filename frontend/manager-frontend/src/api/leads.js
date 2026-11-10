@@ -21,8 +21,15 @@ export function createLead(body) {
   return api.post('/api/leads', body);
 }
 
-export function importLeads({ text, queue, persona_id, channel, traffic_source }) {
-  return api.post('/api/leads/import', { text, queue, persona_id: persona_id || undefined, channel: channel || undefined, traffic_source });
+export function importLeads({ text, queue, persona_id, channel, traffic_source, preferred_account_id }) {
+  return api.post('/api/leads/import', {
+    text,
+    queue,
+    persona_id: persona_id || undefined,
+    channel: channel || undefined,
+    traffic_source,
+    preferred_account_id: preferred_account_id ? Number(preferred_account_id) : undefined,
+  });
 }
 
 export function getLeadPersonas() {

@@ -723,13 +723,30 @@ export class LeadsService {
     ownerUserId: number | null = null,
     scope: LeadScope | null = null,
   ): Promise<ImportResult> {
-    const batchPersona = await this.personaOf(dto.persona_id);
+    let batchPersona = await this.personaOf(dto.persona_id);
     const drafts: Array<LeadDraft & { preferred_account_id?: number | null }> =
       [];
     const errors: string[] = [];
     let duplicates = 0;
     const batchChannel = (dto.channel ?? 'telegram') as LeadChannel;
-    if (dto.text) await this.requireChannelAccounts(batchPersona, batchChannel);
+    // Один аккаунт на весь список: пишет только он, сверх дневного лимита
+    // лиды ждут в очереди его сброса — другим аккаунтам не отдаются.
+    let batchAccount: number | null = null;
+    if (dto.preferred_account_id) {
+      const sender = await this.senderOf(
+        {
+          persona_id: batchPersona,
+          preferred_account_id: dto.preferred_account_id,
+        } as CreateLeadDto,
+        scope,
+        ownerUserId,
+        batchChannel,
+      );
+      batchAccount = sender.preferredAccountId;
+      batchPersona = sender.personaId;
+    }
+    if (dto.text && batchAccount === null)
+      await this.requireChannelAccounts(batchPersona, batchChannel);
     if (dto.text) {
       const parsed = parseLeadLines(dto.text, batchChannel);
       drafts.push(...parsed.items);
@@ -749,7 +766,11 @@ export class LeadsService {
         continue;
       }
       const sender = await this.senderOf(
-        { ...item, persona_id: item.persona_id || batchPersona },
+        {
+          ...item,
+          persona_id: item.persona_id || batchPersona,
+          preferred_account_id: item.preferred_account_id ?? batchAccount,
+        },
         scope,
         null,
         contact.channel,
@@ -802,7 +823,7 @@ export class LeadsService {
           age: d.age ?? null,
           site: d.site?.trim() || null,
           personaId: d.persona_id || batchPersona,
-          preferredAccountId: d.preferred_account_id ?? null,
+          preferredAccountId: d.preferred_account_id ?? batchAccount,
           sourceType: dto.source_type?.trim() || 'import',
           trafficSource: dto.traffic_source ?? null,
           status: dto.queue ? 'queued' : 'pending',
