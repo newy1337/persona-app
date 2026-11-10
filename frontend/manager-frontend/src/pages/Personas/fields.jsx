@@ -131,7 +131,7 @@ function itemTitle(item, index) {
 
 /** Поля, которые форма показывает у элементов списка, даже если их ещё нет. */
 const ITEM_FIELDS = {
-  slots: { name: 'Название цели (вместо id)' },
+  slots: { name: 'Название цели' },
 };
 
 function ArrayEditor({ value, onChange, field }) {
