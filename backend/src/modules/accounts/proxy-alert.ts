@@ -104,17 +104,24 @@ export function disabledMessage(
  * сбрасывается, время идёт дальше: после деплоя аккаунты сначала «ждут
  * подключения». Сколько аккаунт пробыл в сети, не сохраняется: после
  * перезапуска 30 минут считаются заново.
+ *
+ * Аккаунт, пропавший из активных (пауза руками, вывод), держится в памяти
+ * holdSec: включат обратно — отсчёт и напоминания продолжаются, а не
+ * начинаются с нуля. Пауза с включением — не замена прокси. За один шаг —
+ * одно сообщение: всё, что случилось, в нём разделами.
  */
 export class ProxyWatch {
   private downSince = new Map<number, number>();
   private notices = new Map<number, Notice>();
   private upSince = new Map<number, number>();
+  private absentSince = new Map<number, number>();
 
   constructor(
     private readonly afterSec: number,
     private readonly repeatSec: number,
     readonly maxReminders = 2,
     private readonly recoverSec = 30 * 60,
+    private readonly holdSec = 60 * 60,
   ) {}
 
   snapshot(): ProxyWatchState {
@@ -135,6 +142,7 @@ export class ProxyWatch {
       );
     this.downSince = times(state?.downSince);
     this.upSince.clear();
+    this.absentSince.clear();
     this.notices = new Map(
       ids(state?.notices)
         .filter(([, v]) => v && typeof (v as Notice).at === 'number')
@@ -187,12 +195,23 @@ export class ProxyWatch {
       this.downSince.delete(id);
       this.upSince.delete(id);
     }
-    for (const map of [this.downSince, this.upSince])
-      for (const id of map.keys()) if (!byId.has(id)) map.delete(id);
+    // Пропавшие из активных: ждём holdSec, вдруг включат обратно.
+    for (const id of new Set([
+      ...this.downSince.keys(),
+      ...this.notices.keys(),
+    ])) {
+      if (byId.has(id)) {
+        this.absentSince.delete(id);
+        continue;
+      }
+      const absent = this.absentSince.get(id) ?? now;
+      this.absentSince.set(id, absent);
+      if (now - absent >= this.holdSec) this.forget([id]);
+    }
+    for (const id of this.upSince.keys())
+      if (!byId.has(id)) this.upSince.delete(id);
 
-    const back = [...this.notices.keys()].filter(
-      (id) => recovered.has(id) || !byId.has(id),
-    );
+    const back = [...this.notices.keys()].filter((id) => recovered.has(id));
     for (const id of back) this.notices.delete(id);
 
     const fresh = dead.filter((p) => !this.notices.has(p.id));
@@ -207,12 +226,12 @@ export class ProxyWatch {
       (p) => this.notices.get(p.id)!.reminders < this.maxReminders,
     );
 
-    const messages: string[] = [];
+    const parts: string[] = [];
     const after = minutes(this.repeatSec);
     if (fresh.length) {
       for (const p of fresh)
         this.notices.set(p.id, { at: now, reminders: 0, proxy: p.proxy });
-      messages.push(
+      parts.push(
         `⚠️ Не работают прокси: ${fresh.length === 1 ? 'аккаунт не в сети' : `${fresh.length} акк. не в сети`} дольше ${minutes(this.afterSec)}. Замените прокси или выключите аккаунт в «Аккаунтах». Без замены после ${this.maxReminders} напоминаний аккаунт выключится сам.\n${deadList(fresh, now)}${dead.length > fresh.length ? `\n\nВсего с нерабочим прокси: ${dead.length}.` : ''}`,
       );
     }
@@ -224,30 +243,25 @@ export class ProxyWatch {
         n.at = now;
         if (n.reminders >= this.maxReminders) last.push(p.id);
       }
-      messages.push(
+      parts.push(
         `⏰ Напоминание: прокси всё ещё не работают у ${remind.length} акк.\n${deadList(remind, now)}${last.length ? `\n\nПоследнее напоминание для ${last.map((id) => `#${id}`).join(', ')}: не заменят прокси за ${after} — выключатся сами.` : ''}`,
       );
     }
     if (back.length)
-      messages.push(
-        `✅ Прокси больше не мешают:\n${back
-          .map((id) => {
-            const p = byId.get(id);
-            return p
-              ? `• #${id} ${p.login} — снова в сети, уже ${minutes(this.recoverSec)}`
-              : `• #${id} — выключен или удалён`;
-          })
+      parts.push(
+        `✅ Снова в сети, уже ${minutes(this.recoverSec)}:\n${back
+          .map((id) => `• #${id} ${byId.get(id)?.login ?? ''}`.trimEnd())
           .join('\n')}`,
       );
     if (replaced.size)
-      messages.push(
+      parts.push(
         `🔄 Прокси заменили, аккаунт ещё не в сети — отсчёт заново:\n${[
           ...replaced,
         ]
           .map((id) => `• #${id} ${byId.get(id)?.login ?? ''}`.trimEnd())
           .join('\n')}`,
       );
-    return { messages, disable };
+    return { messages: parts.length ? [parts.join('\n\n')] : [], disable };
   }
 
   /** Аккаунт выключили: о нём больше не пишем и не напоминаем. */
@@ -256,6 +270,7 @@ export class ProxyWatch {
       this.notices.delete(id);
       this.downSince.delete(id);
       this.upSince.delete(id);
+      this.absentSince.delete(id);
     }
   }
 }

@@ -79,14 +79,52 @@ describe('предупреждения о нерабочих прокси', () =
 
     const up = probe({ online: true, reason: null });
     const t = 900 + 12 * 3600 + 300;
-    const [gone] = msgs(watch, [up], t);
-    expect(gone).toContain('• #2 — выключен или удалён');
-    expect(gone).not.toContain('#1');
+    // #2 пропал из активных (пауза руками) — молча
+    expect(msgs(watch, [up], t)).toEqual([]);
     // «починился» — только после 30 минут в сети подряд
     expect(msgs(watch, [up], t + 1500)).toEqual([]);
     const [back] = msgs(watch, [up], t + 1800);
-    expect(back).toContain('• #1 +79001112233 — снова в сети, уже 30 мин');
+    expect(back).toContain('✅ Снова в сети, уже 30 мин:\n• #1 +79001112233');
+    expect(back).not.toContain('#2');
     expect(msgs(watch, [up], 99999)).toEqual([]);
+  });
+
+  it('пауза руками и включение обратно не сбивают отсчёт; час на паузе — забыли', () => {
+    const R = 3600;
+    const watch = new ProxyWatch(900, R, 2);
+    watch.step([probe({})], 0);
+    watch.step([probe({})], 900);
+    watch.step([probe({})], 900 + R);
+    // поставили на паузу, через 20 минут включили: напоминание по старому сроку
+    expect(watch.step([], 900 + R + 600).messages).toEqual([]);
+    expect(watch.step([probe({})], 900 + R + 1200).messages).toEqual([]);
+    const last = watch.step([probe({})], 900 + 2 * R);
+    expect(last.messages[0]).toContain('Последнее напоминание');
+    expect(watch.step([probe({})], 900 + 3 * R).disable).toHaveLength(1);
+    // на паузе дольше часа — забыли, после включения всё с начала
+    const fresh = new ProxyWatch(900, R, 2);
+    fresh.step([probe({})], 0);
+    fresh.step([probe({})], 900);
+    fresh.step([], 1200);
+    expect(fresh.step([], 1200 + 3600).messages).toEqual([]);
+    expect(fresh.step([probe({})], 1200 + 3600 + 300).messages).toEqual([]);
+    expect(
+      fresh.step([probe({})], 1200 + 3600 + 300 + 900).messages[0],
+    ).toContain('Не работают прокси');
+  });
+
+  it('за один шаг — одно сообщение с разделами', () => {
+    const R = 3600;
+    const watch = new ProxyWatch(900, R, 2);
+    const up = probe({ online: true, reason: null });
+    const two = probe({ id: 2, login: 'x2' });
+    watch.step([probe({}), two], 0);
+    watch.step([probe({}), two], 900);
+    watch.step([up, two], 1200);
+    const step = watch.step([up, two], 900 + R);
+    expect(step.messages).toHaveLength(1);
+    expect(step.messages[0]).toContain('⏰ Напоминание');
+    expect(step.messages[0]).toContain('✅ Снова в сети');
   });
 
   it('короткий обрыв не считается; починился — после 30 минут в сети подряд', () => {
@@ -209,7 +247,7 @@ describe('предупреждения о нерабочих прокси', () =
     // процесс лежал час: это не «в сети 30 минут»
     expect(second.step([up], 1200 + 3600).messages).toEqual([]);
     expect(second.step([up], 1200 + 3600 + 1800).messages[0]).toContain(
-      'снова в сети',
+      'Снова в сети',
     );
   });
 

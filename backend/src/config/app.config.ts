@@ -61,6 +61,11 @@ export const appConfig = {
   // Сколько аккаунтов одновременно сочиняют ответы (у одного аккаунта — по одному чату за раз).
   replyLanes: Math.max(1, Number(process.env.REPLY_LANES || 12)),
   outreachMinGapS: Number(process.env.OUTREACH_MIN_GAP_S || 180),
+  // Предупреждения о нерабочих прокси: в ту же группу, что и баланс.
+  proxyAlert: {
+    // Напоминать раз в N часов; после двух напоминаний аккаунт на паузу.
+    repeatHours: Math.max(1, Number(process.env.PROXY_ALERT_REPEAT_HOURS || 4)),
+  },
   // Предупреждение в группу Telegram о низком балансе OpenRouter.
   balanceAlert: {
     threshold: Number(process.env.BALANCE_ALERT_THRESHOLD || 300),
