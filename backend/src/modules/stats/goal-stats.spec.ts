@@ -18,7 +18,16 @@ describe('goalStats', () => {
     const [row] = goalStats(
       [persona],
       new Map([['nastya', 4]]),
-      new Map([['nastya', new Map([['name', 4], ['age', 1], ['old', 3]])]]),
+      new Map([
+        [
+          'nastya',
+          new Map([
+            ['name', 4],
+            ['age', 1],
+            ['old', 3],
+          ]),
+        ],
+      ]),
     );
     expect(row.chats).toBe(4);
     expect(row.goals.map((g) => [g.id, g.title, g.known, g.percent])).toEqual([
@@ -32,6 +41,11 @@ describe('goalStats', () => {
 
   it('личность без настроек в базе — по slug и без целей', () => {
     const [row] = goalStats([], new Map([['ghost', 2]]), new Map());
-    expect(row).toMatchObject({ name: 'ghost', chats: 2, percent: 0, goals: [] });
+    expect(row).toMatchObject({
+      name: 'ghost',
+      chats: 2,
+      percent: 0,
+      goals: [],
+    });
   });
 });
