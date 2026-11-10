@@ -59,7 +59,7 @@ export default function DocEditor({ doc, onChange }) {
                     {hint && <span className={p.fieldHint}>{hint}</span>}
                   </div>
                   <div className={p.fieldValue}>
-                    <ValueEditor value={doc[k]} onChange={(v) => onChange({ ...doc, [k]: v })} />
+                    <ValueEditor value={doc[k]} field={k} onChange={(v) => onChange({ ...doc, [k]: v })} />
                   </div>
                 </div>
               );
@@ -68,7 +68,7 @@ export default function DocEditor({ doc, onChange }) {
         ) : active && active in doc ? (
           <>
             {hintFor(doc, active) && <p className={p.groupHint}>{hintFor(doc, active)}</p>}
-            <ValueEditor value={doc[active]} onChange={(v) => onChange({ ...doc, [active]: v })} />
+            <ValueEditor value={doc[active]} field={active} onChange={(v) => onChange({ ...doc, [active]: v })} />
           </>
         ) : null}
       </div>

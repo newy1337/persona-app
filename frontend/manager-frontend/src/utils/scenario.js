@@ -405,7 +405,7 @@ export function goalPercent(goals) {
 export function goalRows(goals) {
   return (goals?.slots || []).map((row) => ({
     key: row.id,
-    label: row.id,
+    label: row.name || row.id,
     title: row.title,
     topic: row.topic || null,
     value: row.value ?? null,

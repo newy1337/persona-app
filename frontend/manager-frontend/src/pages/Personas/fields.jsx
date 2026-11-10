@@ -124,11 +124,17 @@ function ScalarField({ value, onChange }) {
 
 function itemTitle(item, index) {
   if (isPlain(item)) return String(item ?? '').slice(0, 80) || `— ${index + 1}`;
-  const named = item.id ?? item.title ?? item.name ?? item.topic ?? item.text ?? item.story;
+  const own = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : null;
+  const named = own ?? item.id ?? item.title ?? item.topic ?? item.text ?? item.story;
   return named ? String(named).slice(0, 80) : `${index + 1}`;
 }
 
-function ArrayEditor({ value, onChange }) {
+/** Поля, которые форма показывает у элементов списка, даже если их ещё нет. */
+const ITEM_FIELDS = {
+  slots: { name: 'Название цели (вместо id)' },
+};
+
+function ArrayEditor({ value, onChange, field }) {
   const [open, setOpen] = useState(() => new Set());
   const allPlain = value.every(isPlain);
 
@@ -179,7 +185,7 @@ function ArrayEditor({ value, onChange }) {
               </div>
               {open.has(i) && (
                 <div className={p.cardBody}>
-                  <ValueEditor value={item} onChange={(v) => replace(i, v)} />
+                  <ValueEditor value={item} onChange={(v) => replace(i, v)} extra={ITEM_FIELDS[field]} />
                 </div>
               )}
             </>
@@ -191,8 +197,11 @@ function ArrayEditor({ value, onChange }) {
   );
 }
 
-function ObjectEditor({ value, onChange }) {
-  const keys = Object.keys(value).filter((k) => !k.startsWith('_'));
+function ObjectEditor({ value, onChange, extra = null }) {
+  const own = Object.keys(value).filter((k) => !k.startsWith('_'));
+  const added = Object.keys(extra ?? {}).filter((k) => !(k in value));
+  const keys = [...added, ...own];
+  const nameOf = (k) => extra?.[k] ?? label(k);
   if (!keys.length) return <p className={s.muted}>Пусто — добавьте поля в режиме JSON.</p>;
   return (
     <div className={p.fields}>
@@ -201,12 +210,12 @@ function ObjectEditor({ value, onChange }) {
         return (
           <div key={k} className={p.field}>
             <div className={p.fieldLabel}>
-              <span className={p.fieldName}>{label(k)}</span>
-              {label(k) !== k && <span className={p.fieldKey}>{k}</span>}
+              <span className={p.fieldName}>{nameOf(k)}</span>
+              {nameOf(k) !== k && <span className={p.fieldKey}>{k}</span>}
               {hint && <span className={p.fieldHint}>{hint}</span>}
             </div>
             <div className={p.fieldValue}>
-              <ValueEditor value={value[k]} onChange={(v) => onChange({ ...value, [k]: v })} />
+              <ValueEditor value={value[k] ?? (added.includes(k) ? '' : value[k])} field={k} onChange={(v) => onChange({ ...value, [k]: v })} />
             </div>
           </div>
         );
@@ -215,8 +224,8 @@ function ObjectEditor({ value, onChange }) {
   );
 }
 
-export function ValueEditor({ value, onChange }) {
-  if (Array.isArray(value)) return <ArrayEditor value={value} onChange={onChange} />;
-  if (value && typeof value === 'object') return <ObjectEditor value={value} onChange={onChange} />;
+export function ValueEditor({ value, onChange, field, extra }) {
+  if (Array.isArray(value)) return <ArrayEditor value={value} onChange={onChange} field={field} />;
+  if (value && typeof value === 'object') return <ObjectEditor value={value} onChange={onChange} extra={extra} />;
   return <ScalarField value={value} onChange={onChange} />;
 }

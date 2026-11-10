@@ -13,6 +13,8 @@ export type GoalSlotState = 'known' | 'open' | 'asked' | 'deferred' | 'locked';
 
 export interface GoalSlotView {
   id: string;
+  /** название цели из настроек (name), без него — id */
+  name: string;
   title: string;
   state: GoalSlotState;
   value: string | null;
@@ -44,6 +46,11 @@ export interface GoalsView {
 }
 
 const MAX_ASKS_PER_SLOT = 2;
+
+/** Как цель называется в панели: name из настроек, без него — id. */
+export function goalName(slot: Slot): string {
+  return String((slot as any).name ?? '').trim() || slot.id;
+}
 
 function titleOf(slot: Slot): string {
   const hint = String((slot as any).hint ?? '').trim();
@@ -87,6 +94,7 @@ export function goalProgress(
     } else slotState = 'open';
     return {
       id: slot.id,
+      name: goalName(slot),
       title: titleOf(slot),
       state: slotState,
       value: slot.id in known ? String(known[slot.id]) : null,

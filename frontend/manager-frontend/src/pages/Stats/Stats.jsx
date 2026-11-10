@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getUsage, getManagerUsage, getBalance, getDealStages, getColdLeads, getTrafficSources, getAccountStats, getStageCosts } from '../../api/usage';
+import { getUsage, getManagerUsage, getBalance, getDealStages, getColdLeads, getTrafficSources, getAccountStats, getStageCosts, getGoalStats } from '../../api/usage';
+import GoalsStats from './GoalsStats';
 import StageCosts from './StageCosts';
 import AccountsStats from './AccountsStats';
 import { SourcesByRegion } from './SourcesTable';
@@ -81,6 +82,7 @@ export default function Stats() {
   const [cold, setCold] = useState(null);
   const [sources, setSources] = useState(null);
   const [accountStats, setAccountStats] = useState(null);
+  const [goalStats, setGoalStats] = useState(null);
   const [source, setSource] = useState('');
 
   const load = useCallback(() => {
@@ -135,6 +137,16 @@ export default function Stats() {
     setAccountStats(null);
     getAccountStats({ from: range.from, to: range.to })
       .then((r) => alive && setAccountStats(r))
+      .catch((e) => alive && setError(e.detail || e.message));
+    return () => { alive = false; };
+  }, [tab, range]);
+
+  useEffect(() => {
+    if (tab !== 'goals') return undefined;
+    let alive = true;
+    setGoalStats(null);
+    getGoalStats({ from: range.from, to: range.to })
+      .then((r) => alive && setGoalStats(r))
       .catch((e) => alive && setError(e.detail || e.message));
     return () => { alive = false; };
   }, [tab, range]);
@@ -225,7 +237,7 @@ export default function Stats() {
           {showPrices && <PricesEditor onChanged={load} onError={setError} />}
 
           <div className={p.tabs} role="tablist">
-            {[['overview', 'Обзор'], ['managers', 'По менеджерам'], ['teams', 'По командам'], ['stages', 'Этапы'], ['cold', 'Холодка'], ['sources', 'Источники'], ['accounts', 'Аккаунты']].map(([id, label]) => (
+            {[['overview', 'Обзор'], ['managers', 'По менеджерам'], ['teams', 'По командам'], ['stages', 'Этапы'], ['cold', 'Холодка'], ['sources', 'Источники'], ['accounts', 'Аккаунты'], ['goals', 'Цели']].map(([id, label]) => (
               <button
                 key={id}
                 role="tab"
@@ -239,7 +251,9 @@ export default function Stats() {
             ))}
           </div>
 
-          {tab === 'accounts' ? (
+          {tab === 'goals' ? (
+            goalStats ? <GoalsStats data={goalStats} /> : <TableSkeleton rows={5} label="Считаю цели…" />
+          ) : tab === 'accounts' ? (
             accountStats ? <AccountsStats data={accountStats} /> : <TableSkeleton rows={5} label="Считаю аккаунты…" />
           ) : tab === 'sources' ? (
             sources ? <SourcesByRegion data={sources} source={source} onSource={setSource} /> : <TableSkeleton rows={5} label="Считаю источники…" />
