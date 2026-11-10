@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getChatLibrary, photoUrl, sendLibraryPhoto } from '../../api/photoSets';
-import PhotoCard, { fmtDate } from './PhotoCard';
+import PhotoCard, { fmtDate, isRound } from './PhotoCard';
 import { TagFilter } from './PhotoSets';
 import s from '../../styles/AdminPage.module.scss';
 import p from './PhotoSets.module.scss';
@@ -31,7 +31,7 @@ export default function LibraryPicker({ chatId, replyTo, onClose, onSent }) {
     setBusy(true);
     setError('');
     try {
-      await sendLibraryPhoto(chatId, { photoId: picked.id, caption: caption.trim(), replyTo });
+      await sendLibraryPhoto(chatId, { photoId: picked.id, caption: isRound(picked) ? '' : caption.trim(), replyTo });
       onSent?.();
       onClose();
     } catch (e) {
@@ -42,8 +42,8 @@ export default function LibraryPicker({ chatId, replyTo, onClose, onSent }) {
 
   return (
     <div className={s.overlay} onClick={onClose}>
-      <div className={`${s.modal} ${p.picker}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Фото из образа">
-        <h3 className={s.modalTitle}>Фото из образа{lib?.set ? ` · ${lib.set.name}` : ''}</h3>
+      <div className={`${s.modal} ${p.picker}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Фото и кружки из образа">
+        <h3 className={s.modalTitle}>Фото и кружки из образа{lib?.set ? ` · ${lib.set.name}` : ''}</h3>
         {!lib && !error && <p className={s.modalText} role="status">Загружаем…</p>}
         {lib && !lib.set && <p className={s.modalText}>Образ не назначен</p>}
         {lib?.set && (
@@ -63,11 +63,17 @@ export default function LibraryPicker({ chatId, replyTo, onClose, onSent }) {
         )}
         {picked && (
           <div className={p.editorBody} style={{ gridTemplateColumns: '96px 1fr' }}>
-            <img className={p.preview} src={photoUrl(picked.id, true)} alt="" />
-            <label className={s.label}>
-              Подпись {picked.sent_at && <span className={p.flagWarn}>уже отправляли {fmtDate(picked.sent_at)}</span>}
-              <textarea className={`${s.field} ${p.textarea}`} value={caption} maxLength={1024} onChange={(e) => setCaption(e.target.value)} placeholder={picked.taken_label} />
-            </label>
+            {isRound(picked)
+              ? <video className={p.preview} src={photoUrl(picked.id, false)} controls playsInline preload="metadata" style={{ borderRadius: '50%' }} />
+              : <img className={p.preview} src={photoUrl(picked.id, true)} alt="" />}
+            {isRound(picked)
+              ? <p className={s.hint}>Кружок уйдёт без подписи{picked.sent_at ? ` · уже отправляли ${fmtDate(picked.sent_at)}` : ''}</p>
+              : (
+                <label className={s.label}>
+                  Подпись {picked.sent_at && <span className={p.flagWarn}>уже отправляли {fmtDate(picked.sent_at)}</span>}
+                  <textarea className={`${s.field} ${p.textarea}`} value={caption} maxLength={1024} onChange={(e) => setCaption(e.target.value)} placeholder={picked.taken_label} />
+                </label>
+              )}
           </div>
         )}
         {error && <p className={s.error} role="alert">{error}</p>}

@@ -527,16 +527,18 @@ export class ConversationsService {
   /** Снимок из образа вручную: через ту же очередь, что и вложения, с отметкой о показе. */
   async sendLibraryPhoto(
     chatId: number,
-    photo: { id: number; filePath: string },
+    photo: { id: number; filePath: string; kind?: string },
     dto: { caption?: string; reply_to?: number },
   ) {
     const ts = this.clock.ts();
+    // Кружок из библиотеки уходит кружком; подписи у кружка не бывает.
+    const kind = photo.kind === 'video_note' ? 'video_note' : 'photo';
     const replyId = await this.history.enqueueManualReply(
       chatId,
-      (dto.caption ?? '').trim(),
+      kind === 'video_note' ? '' : (dto.caption ?? '').trim(),
       ts,
       {
-        kind: 'photo',
+        kind,
         filePath: photo.filePath,
         replyTo: dto.reply_to,
         photoId: photo.id,
@@ -546,7 +548,7 @@ export class ConversationsService {
     return {
       ok: true,
       pending_reply_id: replyId,
-      kind: 'photo',
+      kind,
       photo_id: photo.id,
       scheduled_ts: ts,
     };

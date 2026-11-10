@@ -142,8 +142,9 @@ export class PhotoLibraryService {
     ]);
     if (!account || !set) return undefined;
     const [photos, sends] = await Promise.all([
+      // Кружки бот сам не шлёт: в подборку для ответа идут только снимки.
       this.prisma.photoSetPhoto.findMany({
-        where: { setId: set.id, deletedAt: null },
+        where: { setId: set.id, deletedAt: null, kind: 'photo' },
         orderBy: { id: 'asc' },
       }),
       this.sends(chatId),

@@ -54,7 +54,9 @@ export default function PhotoEditor({ photo, canEdit, onClose, onSaved, onDelete
       <form className={`${s.modal} ${p.editor}`} onClick={(e) => e.stopPropagation()} onSubmit={save} aria-label="Карточка снимка">
         <h3 className={s.modalTitle}>Фото #{photo.id}</h3>
         <div className={p.editorBody}>
-          <img className={p.preview} src={photoUrl(photo.id, true)} alt="" />
+          {photo.kind === 'video_note'
+            ? <video className={p.preview} src={photoUrl(photo.id, false)} controls playsInline preload="metadata" style={{ borderRadius: '50%' }} />
+            : <img className={p.preview} src={photoUrl(photo.id, true)} alt="" />}
           <div className={p.fields}>
             <label className={s.label}>
               Что изображено

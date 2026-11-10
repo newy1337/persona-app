@@ -237,7 +237,8 @@ export class PhotoSetsController {
     @Res() res: Response,
   ) {
     const path = await this.sets.photoFile(user, photoId, thumb === '1');
-    res.type('image/jpeg');
+    // Кружок хранится видеофайлом; превью у него — кадр в JPEG.
+    res.type(path.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg');
     res.setHeader('cache-control', 'private, max-age=31536000, immutable');
     res.sendFile(path);
   }

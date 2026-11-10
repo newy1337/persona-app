@@ -89,7 +89,8 @@ function Uploader({ setId, onUploaded }) {
   const [progress, setProgress] = useState(null);
 
   async function upload(files) {
-    const list = [...files].filter((f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|heic)$/i.test(f.name));
+    // Видео становится кружком: сервер сам соберёт круглое 480×480 до минуты.
+    const list = [...files].filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/') || /\.(jpe?g|png|webp|heic|mp4|mov|m4v|webm)$/i.test(f.name));
     if (!list.length) return;
     const report = { done: 0, total: list.length, duplicates: 0, errors: [] };
     setProgress({ ...report });
@@ -113,10 +114,10 @@ function Uploader({ setId, onUploaded }) {
       onDragLeave={() => setOver(false)}
       onDrop={(e) => { e.preventDefault(); setOver(false); upload(e.dataTransfer.files); }}
     >
-      <p style={{ margin: '0 0 8px' }}>Перетащите снимки сюда или</p>
+      <p style={{ margin: '0 0 8px' }}>Перетащите снимки или видео для кружков сюда или</p>
       <label className={s.btnPrimary} style={{ display: 'inline-flex', cursor: 'pointer' }}>
         Выбрать файлы
-        <input type="file" accept="image/*" multiple hidden onChange={(e) => { upload(e.target.files); e.target.value = ''; }} />
+        <input type="file" accept="image/*,video/*" multiple hidden onChange={(e) => { upload(e.target.files); e.target.value = ''; }} />
       </label>
       {progress && (
         <p className={s.hint} role="status" style={{ marginTop: 8 }}>

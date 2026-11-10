@@ -23,7 +23,10 @@ async function bootstrap() {
   );
   app.use(
     '/api/photo-sets',
-    raw({ type: ['application/octet-stream', 'image/*'], limit: '25mb' }),
+    raw({
+      type: ['application/octet-stream', 'image/*', 'video/*'],
+      limit: '25mb',
+    }),
   );
   app.use('/api/personas', json({ limit: '8mb' }));
   app.use(json({ limit: '2mb' }));

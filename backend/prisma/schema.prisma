@@ -459,6 +459,10 @@ model PhotoSetPhoto {
   setId       Int     @map("set_id")
   filePath    String  @map("file_path")
   thumbPath   String  @map("thumb_path")
+  /// photo — снимок; video_note — кружок (бот сам не отправляет, только менеджер)
+  kind        String  @default("photo")
+  /// длительность кружка, с
+  duration    Int     @default(0)
   sha256      String
   width       Int     @default(0)
   height      Int     @default(0)

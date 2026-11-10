@@ -3,11 +3,14 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import type { DashboardUser, PhotoSet, PhotoSetPhoto } from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'fs';
+import { VoiceEncoderService } from 'src/modules/media/voice-encoder.service';
+import { ROUND_SIDE } from 'src/domain/round-video';
 import { join, resolve, sep } from 'path';
 import sharp from 'sharp';
 import { PrismaService } from 'src/prisma.service';
@@ -52,6 +55,7 @@ export class PhotoSetsService {
     private persona: PersonaService,
     private usage: UsageRecorderService,
     private library: PhotoLibraryService,
+    @Optional() private encoder?: VoiceEncoderService,
   ) {}
 
   // ── Права ────────────────────────────────────────────────────────────────
@@ -299,7 +303,12 @@ export class PhotoSetsService {
   async update(setId: number, dto: UpdatePhotoSetDto) {
     if (dto.cover_photo_id != null) {
       const cover = await this.prisma.photoSetPhoto.findFirst({
-        where: { id: dto.cover_photo_id, setId, deletedAt: null },
+        where: {
+          id: dto.cover_photo_id,
+          setId,
+          deletedAt: null,
+          kind: 'photo',
+        },
       });
       if (!cover)
         throw new UnprocessableEntityException(
@@ -619,6 +628,8 @@ export class PhotoSetsService {
     return {
       id: p.id,
       set_id: p.setId,
+      kind: p.kind,
+      duration: p.duration,
       width: p.width,
       height: p.height,
       description: p.description,
@@ -655,6 +666,8 @@ export class PhotoSetsService {
     });
     if (existing && !existing.deletedAt)
       return { duplicate: true, photo: this.photoView(existing) };
+    if (isVideo(name, data))
+      return this.uploadVideoNote(setId, name, data, sha256, existing);
 
     let image: Buffer, thumb: Buffer, width: number, height: number;
     let takenOn: string | null = null;
@@ -749,6 +762,76 @@ export class PhotoSetsService {
       described: Boolean(card?.description),
       photo: this.photoView(photo),
     };
+  }
+
+  /**
+   * Кружок в библиотеку: видео сразу собирается в круглое 480×480 до минуты
+   * (как при ручной отправке) и получает превью-кадр. Бот кружки сам не шлёт —
+   * их отправляет менеджер из библиотеки, поэтому автоотправка выключена.
+   */
+  private async uploadVideoNote(
+    setId: number,
+    name: string,
+    data: Buffer,
+    sha256: string,
+    existing: PhotoSetPhoto | null,
+  ) {
+    if (!this.encoder)
+      throw new UnprocessableEntityException(
+        'на сервере нет ffmpeg — кружок собрать не из чего',
+      );
+    const dir = join(PHOTO_SETS_DIR, String(setId));
+    mkdirSync(dir, { recursive: true });
+    const stem = randomUUID();
+    const source = join(dir, `${stem}_source${videoExt(name)}`);
+    const filePath = join(dir, `${stem}.mp4`);
+    const thumbPath = join(dir, `${stem}_thumb.jpg`);
+    writeFileSync(source, data);
+    let duration: number;
+    try {
+      const round = await this.encoder.prepareRound(source);
+      renameSync(round.path, filePath);
+      duration = round.duration;
+    } finally {
+      rmSync(source, { force: true });
+    }
+    if (!(await this.encoder.snapshot(filePath, thumbPath, THUMB_SIDE))) {
+      rmSync(filePath, { force: true });
+      throw new UnprocessableEntityException(
+        `«${name || 'файл'}» — не получилось взять кадр из видео`,
+      );
+    }
+    const now = this.clock.ts();
+    const row = {
+      filePath,
+      thumbPath,
+      kind: 'video_note',
+      duration,
+      width: ROUND_SIDE,
+      height: ROUND_SIDE,
+      description: '',
+      place: null,
+      takenOn: null,
+      details: '',
+      tags: '[]',
+      autoSend: false,
+      reviewed: true,
+      updatedAt: now,
+      deletedAt: null,
+    };
+    const photo = existing
+      ? await this.prisma.photoSetPhoto.update({
+          where: { id: existing.id },
+          data: row,
+        })
+      : await this.prisma.photoSetPhoto.create({
+          data: { ...row, setId, sha256, createdAt: now },
+        });
+    await this.prisma.photoSet.update({
+      where: { id: setId },
+      data: { updatedAt: now },
+    });
+    return { duplicate: false, described: false, photo: this.photoView(photo) };
   }
 
   async updatePhoto(photoId: number, dto: UpdatePhotoDto) {
@@ -886,6 +969,22 @@ export class PhotoSetsService {
     return photo;
   }
 }
+
+const VIDEO_EXT = /\.(mp4|mov|m4v|webm|mkv|avi|3gp)$/i;
+
+/** Видео по имени или по сигнатуре файла (MP4/MOV — «ftyp», WebM/MKV — EBML). */
+export function isVideo(name: string, data: Buffer): boolean {
+  if (VIDEO_EXT.test(name ?? '')) return true;
+  if (data.length >= 12 && data.toString('latin1', 4, 8) === 'ftyp') {
+    // HEIC/AVIF — тоже «ftyp», но это снимки.
+    const brand = data.toString('latin1', 8, 12);
+    return !/^(heic|heix|hevc|mif1|msf1|avif)$/i.test(brand);
+  }
+  return data.length >= 4 && data.readUInt32BE(0) === 0x1a45dfa3;
+}
+
+const videoExt = (name: string) =>
+  (VIDEO_EXT.exec(name ?? '')?.[0] ?? '.mp4').toLowerCase();
 
 function plural(n: number, one: string, few: string, many: string) {
   const m10 = n % 10,

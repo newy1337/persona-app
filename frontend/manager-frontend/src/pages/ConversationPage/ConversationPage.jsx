@@ -1631,7 +1631,7 @@ function ConversationPage() {
                       <button type="button" className={composer.toolBtn} title="Гифка по ссылке" disabled={busy} onClick={sendGifLink}>
                         GIF
                       </button>
-                      <button type="button" className={composer.toolBtn} title="Фото из образа" aria-label="Фото из образа" disabled={busy} onClick={() => setLibraryOpen(true)}>
+                      <button type="button" className={composer.toolBtn} title="Фото и кружки из образа" aria-label="Фото и кружки из образа" disabled={busy} onClick={() => setLibraryOpen(true)}>
                         🖼
                       </button>
                       {libraryOpen && (

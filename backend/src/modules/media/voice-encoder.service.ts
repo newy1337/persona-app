@@ -94,6 +94,35 @@ export class VoiceEncoderService {
     }
   }
 
+  /** Кадр из видео в JPEG — превью кружка в библиотеке. */
+  async snapshot(path: string, target: string, side = 320): Promise<boolean> {
+    try {
+      await run(
+        'ffmpeg',
+        [
+          '-y',
+          '-hide_banner',
+          '-loglevel',
+          'error',
+          '-ss',
+          '0.3',
+          '-i',
+          path,
+          '-frames:v',
+          '1',
+          '-vf',
+          `scale=${side}:${side}`,
+          target,
+        ],
+        { timeout: ROUND_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 },
+      );
+      return existsSync(target) && statSync(target).size > 0;
+    } catch (e) {
+      this.log.warn(`snapshot failed for ${path}: ${e?.message ?? e}`);
+      return false;
+    }
+  }
+
   async prepareRound(path: string): Promise<VoiceFile> {
     const probe = await this.probeVideo(path);
     if (!probe)
