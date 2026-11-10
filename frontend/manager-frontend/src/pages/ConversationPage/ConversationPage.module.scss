@@ -1265,6 +1265,27 @@
   overflow-wrap: anywhere;
 }
 
+/* Что бот выясняет этой темой — под названием, на всю ширину. */
+.checkTopic {
+  grid-column: 2 / -1;
+  margin-top: -2px;
+  font-size: 11px;
+  line-height: 15px;
+  color: $text-muted;
+  overflow-wrap: anywhere;
+}
+
+/* Общий прогресс целей — полоса над «сейчас». */
+.goalTrack {
+  display: block;
+  height: 4px;
+  margin-bottom: 8px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.goalTrack .progressFill { display: block; height: 100%; }
+
 /* Узкая панель: значение под названием на всю ширину. Правило стоит после
    базового .checkRow — раньше база его перебивала, и значение жалось в
    колонку названия шириной 108px. */

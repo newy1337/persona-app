@@ -62,6 +62,11 @@ export const LABELS = {
   day: 'День',
   note: 'Заметка',
   hint: 'Подсказка',
+  topic: 'Тема (что выяснить)',
+  revisit: 'Как вернуться к теме',
+  followups: 'Уточняющие вопросы',
+  priority: 'Приоритет',
+  suggest_when_unknown: 'Предлагать, пока неизвестно',
   story: 'История',
   source_anchor: 'Источник',
 };

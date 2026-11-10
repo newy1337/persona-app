@@ -42,21 +42,36 @@ const character = (extra: Partial<CharacterState> = {}): CharacterState => ({
 });
 
 describe('ход знакомства для панели', () => {
-  it('в списке — темы плана, без тем «по случаю»', () => {
+  it('в списке — все темы личности, с темой словами и способом спрашивать', () => {
     const view = goalProgress(goals, character());
     expect(view.slots.map((s) => s.id)).toEqual([
       'name',
       'age',
       'work',
       'family',
+      'weekend',
     ]);
-    expect(view.slots.find((s) => s.id === 'weekend')).toBeUndefined();
+    // Тема без дня — тоже в списке: видно, что бот её поднимает по ходу разговора.
+    expect(view.slots.find((s) => s.id === 'weekend')).toMatchObject({
+      topic: 'как проводит выходные; чем занят вечером',
+      required_by_day: null,
+      desired_by_day: null,
+    });
+    expect(view.percent).toBe(0);
     expect(view.stage).toMatchObject({
       id: 'knock',
       title: 'первое касание',
       index: 1,
       total: 2,
     });
+  });
+
+  it('общий прогресс — доля узнанного в процентах', () => {
+    const view = goalProgress(
+      goals,
+      character({ slots: { name: 'Сергей', age: '30' } }),
+    );
+    expect(view).toMatchObject({ known: 2, total: 5, percent: 40 });
   });
 
   it('узнанное считается и показывается ответом собеседника', () => {

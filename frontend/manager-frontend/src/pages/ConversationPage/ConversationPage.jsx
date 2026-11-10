@@ -17,6 +17,7 @@ import EditableValue from '../../components/EditableValue/EditableValue';
 import {
   goalRows,
   goalNow,
+  goalPercent,
   nextActionLabel,
   searchMessages,
   leadSignals,
@@ -922,11 +923,17 @@ function ConversationPage() {
                   <span className={styles.summaryIcon}><ShortIcon /></span>
                   Цели знакомства{goals?.stage?.title ? ` · ${goals.stage.title}` : ''}
                 </span>
-                <span className={styles.summaryTag}>
-                  {goals ? `${goals.known} / ${goals.total}` : '—'}
+                <span className={styles.summaryTag} title={goals ? `узнали ${goals.known} из ${goals.total} тем` : undefined}>
+                  {goals ? `${goalPercent(goals)}% · ${goals.known} / ${goals.total}` : '—'}
                 </span>
               </div>
               <div className={styles.cardBody}>
+                {goals?.total > 0 && (
+                  <span className={styles.goalTrack} role="progressbar" aria-label="Прогресс целей"
+                    aria-valuemin={0} aria-valuemax={100} aria-valuenow={goalPercent(goals)}>
+                    <span className={styles.progressFill} style={{ width: `${goalPercent(goals)}%` }} />
+                  </span>
+                )}
                 <div className={`${styles.nextBeat} ${styles['next_' + now.tone]}`}>
                   <span className={styles.nextLabel}>сейчас</span>
                   <p className={styles.nextText}>{now.text}</p>
@@ -946,6 +953,7 @@ function ConversationPage() {
                         onSave={async (v) => { await setSlot(id, h.key, v); load(); }}
                       />
                     </span>
+                    {h.topic && <span className={styles.checkTopic}>{h.topic}</span>}
                   </span>
                 ))}
               </div>

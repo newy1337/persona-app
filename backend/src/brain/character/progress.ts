@@ -19,6 +19,11 @@ export interface GoalSlotView {
   asks: number;
   priority: number | null;
   required_by_day: number | null;
+  desired_by_day: number | null;
+  /** что именно бот выясняет — понятнее, чем id */
+  topic: string | null;
+  /** как бот поднимает тему: null — по плану, contextual — к месту, topic_only — по словам-поводам, derive_only — сам не спрашивает */
+  policy: string | null;
 }
 
 export interface GoalsView {
@@ -32,6 +37,8 @@ export interface GoalsView {
   };
   known: number;
   total: number;
+  /** доля известного, 0–100 */
+  percent: number;
   next: { id: string; title: string } | null;
   slots: GoalSlotView[];
 }
@@ -44,15 +51,6 @@ function titleOf(slot: Slot): string {
   const topic = String((slot as any).topic ?? '').trim();
   if (topic) return topic.split(/[;.]/)[0]!.trim();
   return slot.id;
-}
-
-function planned(slots: Slot[], known: Record<string, string>): Slot[] {
-  return slots.filter(
-    (slot) =>
-      asInt(slot.required_by_day) ||
-      asInt(slot.desired_by_day) ||
-      slot.id in known,
-  );
 }
 
 export function goalProgress(
@@ -73,7 +71,8 @@ export function goalProgress(
   const available = availableSlots(goals, state, dayNumber, '');
   const askable = new Set(available.map((slot) => slot.id));
 
-  const rows: GoalSlotView[] = planned(catalog, known).map((slot) => {
+  // Все слоты личности: и с днём, и те, что бот поднимает по ходу разговора.
+  const rows: GoalSlotView[] = catalog.map((slot) => {
     const count = asInt(asks[slot.id]);
     let slotState: GoalSlotState;
     if (slot.id in known) slotState = 'known';
@@ -94,6 +93,9 @@ export function goalProgress(
       asks: count,
       priority: asInt(slot.priority) || null,
       required_by_day: asInt(slot.required_by_day) || null,
+      desired_by_day: asInt(slot.desired_by_day) || null,
+      topic: String((slot as any).topic ?? '').trim() || null,
+      policy: String((slot as any).ask_policy ?? '').trim() || null,
     };
   });
 
@@ -110,6 +112,7 @@ export function goalProgress(
       a.id.localeCompare(b.id),
   );
 
+  const knownCount = rows.filter((row) => row.state === 'known').length;
   const nextId = acquaintanceGoalPlan(
     state,
     available,
@@ -125,8 +128,9 @@ export function goalProgress(
       turns: asInt(state.turns),
       days: state.days?.length ?? 0,
     },
-    known: rows.filter((row) => row.state === 'known').length,
+    known: knownCount,
     total: rows.length,
+    percent: rows.length ? Math.round((knownCount / rows.length) * 100) : 0,
     next: nextSlot ? { id: nextSlot.id, title: titleOf(nextSlot) } : null,
     slots: rows,
   };
