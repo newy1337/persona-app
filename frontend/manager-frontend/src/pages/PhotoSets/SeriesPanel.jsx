@@ -11,8 +11,12 @@ export const ALBUM_MAX = 10;
 
 export function seriesHint(x) {
   if (!x.auto_send) return 'только вручную';
-  if (x.photos < SERIES_MIN) return `добавьте ещё ${SERIES_MIN - x.photos} фото`;
-  if (x.photos > ALBUM_MAX) return `бот отправит первые ${ALBUM_MAX}`;
+  const ready = x.ready ?? x.photos;
+  if (ready < SERIES_MIN)
+    return x.photos > ready
+      ? `боту можно отправлять только ${ready} из ${x.photos} фото — нужно хотя бы ${SERIES_MIN}`
+      : `добавьте ещё ${SERIES_MIN - ready} фото`;
+  if (ready > ALBUM_MAX) return `бот отправит первые ${ALBUM_MAX}`;
   return 'бот может отправить альбомом';
 }
 

@@ -882,7 +882,8 @@ export class PhotoSetsService {
 
   // ── Серии ────────────────────────────────────────────────────────────────
 
-  seriesView(x: PhotoSeries, photos = 0) {
+  /** photos — снимков в серии; ready — из них бот может отправить сам. */
+  seriesView(x: PhotoSeries, photos = 0, ready = photos) {
     return {
       id: x.id,
       set_id: x.setId,
@@ -893,6 +894,7 @@ export class PhotoSetsService {
       taken_label: formatTakenOn(x.takenOn),
       auto_send: x.autoSend,
       photos,
+      ready,
     };
   }
 
@@ -906,7 +908,28 @@ export class PhotoSetsService {
         },
       },
     });
-    return { items: rows.map((x) => this.seriesView(x, x._count.photos)) };
+    const ready = await this.seriesReady(rows.map((x) => x.id));
+    return {
+      items: rows.map((x) =>
+        this.seriesView(x, x._count.photos, ready.get(x.id) ?? 0),
+      ),
+    };
+  }
+
+  /** Сколько снимков каждой серии бот может отправить сам. */
+  private async seriesReady(ids: number[]): Promise<Map<number, number>> {
+    if (!ids.length) return new Map();
+    const rows = await this.prisma.photoSetPhoto.groupBy({
+      by: ['seriesId'],
+      where: {
+        seriesId: { in: ids },
+        deletedAt: null,
+        kind: 'photo',
+        autoSend: true,
+      },
+      _count: { _all: true },
+    });
+    return new Map(rows.map((r) => [r.seriesId!, r._count._all]));
   }
 
   async createSeries(setId: number, dto: PhotoSeriesDto) {
@@ -961,7 +984,8 @@ export class PhotoSetsService {
     const photos = await this.prisma.photoSetPhoto.count({
       where: { seriesId, deletedAt: null, kind: 'photo' },
     });
-    return this.seriesView(row, photos);
+    const ready = await this.seriesReady([seriesId]);
+    return this.seriesView(row, photos, ready.get(seriesId) ?? 0);
   }
 
   /** Серию убираем, снимки остаются в образе — просто без серии. */

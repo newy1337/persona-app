@@ -23,6 +23,7 @@ test('подсказка говорит, уйдёт ли серия альбом
   expect(seriesHint({ ...trip, photos: 1 })).toBe('добавьте ещё 1 фото');
   expect(seriesHint({ ...trip, photos: 14 })).toBe('бот отправит первые 10');
   expect(seriesHint({ ...trip, auto_send: false })).toBe('только вручную');
+  expect(seriesHint({ ...trip, photos: 5, ready: 1 })).toBe('боту можно отправлять только 1 из 5 фото — нужно хотя бы 2');
 });
 
 test('серию создают по названию, клик по серии фильтрует снимки', async () => {
