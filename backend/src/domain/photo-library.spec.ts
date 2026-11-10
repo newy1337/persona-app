@@ -54,6 +54,9 @@ describe('photo library', () => {
     const text = 'Вот, только что сфоткала своего Барсика';
     expect(hasFalseFreshClaim(text, 'archive')).toBe(true);
     expect(hasFalseFreshClaim(text, 'today')).toBe(false);
+    // Снимок без даты подаётся как сделанный сейчас — «только что» у него не ложь.
+    expect(hasFalseFreshClaim(text, 'unknown')).toBe(false);
+    expect(hasFalseFreshClaim(text, 'recent')).toBe(true);
     expect(hasFalseFreshClaim('Это мой Барсик, прошлым летом', 'archive')).toBe(
       false,
     );

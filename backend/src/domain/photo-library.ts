@@ -113,8 +113,16 @@ export const FRESHNESS_LABEL: Record<Freshness, string> = {
   today: 'снято сегодня',
   recent: 'снято на этой неделе',
   archive: 'архивный снимок',
-  unknown: 'дата съёмки неизвестна',
+  unknown: 'дата не указана — можно как снятое сейчас',
 };
+
+/**
+ * Можно ли подать снимок как только что сделанный: сегодняшний — да; без даты
+ * — тоже (дату не указали, значит, снимок «вне времени»), если это не
+ * противоречит часам, сезону и месту — за этим следят генератор и проверка.
+ */
+export const canBeFresh = (freshness: Freshness): boolean =>
+  freshness === 'today' || freshness === 'unknown';
 
 /** «Только что», «прямо сейчас», «сегодня сняла» — уместно только у сегодняшнего фото. */
 const FRESH_CLAIM_RX =
@@ -129,7 +137,7 @@ export function hasFalseFreshClaim(
   text: string,
   freshness: Freshness,
 ): boolean {
-  return freshness !== 'today' && freshClaims(text).length > 0;
+  return !canBeFresh(freshness) && freshClaims(text).length > 0;
 }
 
 /**
