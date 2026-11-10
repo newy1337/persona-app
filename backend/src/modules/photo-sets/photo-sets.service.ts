@@ -6,7 +6,12 @@ import {
   Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import type { DashboardUser, PhotoSet, PhotoSetPhoto } from '@prisma/client';
+import type {
+  DashboardUser,
+  PhotoSeries,
+  PhotoSet,
+  PhotoSetPhoto,
+} from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'fs';
 import { VoiceEncoderService } from 'src/modules/media/voice-encoder.service';
@@ -31,7 +36,11 @@ import {
 import { PersonaService } from 'src/brain/persona.service';
 import { UsageRecorderService } from 'src/brain/usage-recorder.service';
 import { suggestPhotoCard } from 'src/brain/media/library-photo';
-import type { UpdatePhotoDto, UpdatePhotoSetDto } from './photo-sets.dto';
+import type {
+  PhotoSeriesDto,
+  UpdatePhotoDto,
+  UpdatePhotoSetDto,
+} from './photo-sets.dto';
 
 export const PHOTO_SETS_DIR = resolve(join(appConfig.dataDir, 'photo-sets'));
 const MAX_PHOTO_BYTES = 25 * 1024 * 1024;
@@ -639,6 +648,7 @@ export class PhotoSetsService {
       details: p.details,
       tags: parseTags(p.tags),
       auto_send: p.autoSend,
+      series_id: p.seriesId,
       reviewed: p.reviewed,
       created_at: p.createdAt,
       updated_at: p.updatedAt,
@@ -835,16 +845,18 @@ export class PhotoSetsService {
   }
 
   async updatePhoto(photoId: number, dto: UpdatePhotoDto) {
-    const takenOn =
-      dto.taken_on === undefined
-        ? undefined
-        : dto.taken_on === null || !dto.taken_on.trim()
-          ? null
-          : normalizeTakenOn(dto.taken_on);
-    if (takenOn === null && dto.taken_on && dto.taken_on.trim())
-      throw new UnprocessableEntityException(
-        'дата: ГГГГ, ГГГГ-ММ или ГГГГ-ММ-ДД, либо пусто — «дата неизвестна»',
-      );
+    const takenOn = takenOnInput(dto.taken_on);
+    if (dto.series_id != null) {
+      const current = await this.prisma.photoSetPhoto.findUnique({
+        where: { id: photoId },
+        select: { setId: true },
+      });
+      const series = await this.prisma.photoSeries.findFirst({
+        where: { id: dto.series_id, setId: current?.setId, deletedAt: null },
+      });
+      if (!series)
+        throw new UnprocessableEntityException('такой серии в образе нет');
+    }
     const photo = await this.prisma.photoSetPhoto.update({
       where: { id: photoId },
       data: {
@@ -860,11 +872,112 @@ export class PhotoSetsService {
           ? { tags: JSON.stringify(parseTags(dto.tags)) }
           : {}),
         ...(dto.auto_send !== undefined ? { autoSend: dto.auto_send } : {}),
+        ...(dto.series_id !== undefined ? { seriesId: dto.series_id } : {}),
         reviewed: true,
         updatedAt: this.clock.ts(),
       },
     });
     return this.photoView(photo);
+  }
+
+  // ── Серии ────────────────────────────────────────────────────────────────
+
+  seriesView(x: PhotoSeries, photos = 0) {
+    return {
+      id: x.id,
+      set_id: x.setId,
+      title: x.title,
+      description: x.description,
+      place: x.place,
+      taken_on: x.takenOn,
+      taken_label: formatTakenOn(x.takenOn),
+      auto_send: x.autoSend,
+      photos,
+    };
+  }
+
+  async seriesList(setId: number) {
+    const rows = await this.prisma.photoSeries.findMany({
+      where: { setId, deletedAt: null },
+      orderBy: { id: 'asc' },
+      include: {
+        _count: {
+          select: { photos: { where: { deletedAt: null, kind: 'photo' } } },
+        },
+      },
+    });
+    return { items: rows.map((x) => this.seriesView(x, x._count.photos)) };
+  }
+
+  async createSeries(setId: number, dto: PhotoSeriesDto) {
+    const title = dto.title?.trim();
+    if (!title) throw new UnprocessableEntityException('назовите серию');
+    const ts = this.clock.ts();
+    const row = await this.prisma.photoSeries.create({
+      data: {
+        setId,
+        title,
+        description: dto.description?.trim() ?? '',
+        place: dto.place?.trim() || null,
+        takenOn: takenOnInput(dto.taken_on) ?? null,
+        autoSend: dto.auto_send ?? true,
+        createdAt: ts,
+        updatedAt: ts,
+      },
+    });
+    return this.seriesView(row);
+  }
+
+  /** Серия образа, который пользователь видит (edit — может править). */
+  async requireSeries(user: DashboardUser, seriesId: number, edit: boolean) {
+    const row = await this.prisma.photoSeries.findFirst({
+      where: { id: seriesId, deletedAt: null },
+    });
+    if (!row) throw new NotFoundException('серия не найдена');
+    if (edit) await this.requireEditable(user, row.setId);
+    else await this.requireVisible(user, row.setId);
+    return row;
+  }
+
+  async updateSeries(seriesId: number, dto: PhotoSeriesDto) {
+    if (dto.title !== undefined && !dto.title.trim())
+      throw new UnprocessableEntityException('назовите серию');
+    const takenOn = takenOnInput(dto.taken_on);
+    const row = await this.prisma.photoSeries.update({
+      where: { id: seriesId },
+      data: {
+        ...(dto.title !== undefined ? { title: dto.title.trim() } : {}),
+        ...(dto.description !== undefined
+          ? { description: dto.description.trim() }
+          : {}),
+        ...(dto.place !== undefined
+          ? { place: dto.place?.trim() || null }
+          : {}),
+        ...(takenOn !== undefined ? { takenOn } : {}),
+        ...(dto.auto_send !== undefined ? { autoSend: dto.auto_send } : {}),
+        updatedAt: this.clock.ts(),
+      },
+    });
+    const photos = await this.prisma.photoSetPhoto.count({
+      where: { seriesId, deletedAt: null, kind: 'photo' },
+    });
+    return this.seriesView(row, photos);
+  }
+
+  /** Серию убираем, снимки остаются в образе — просто без серии. */
+  async removeSeries(seriesId: number) {
+    const ts = this.clock.ts();
+    await this.prisma.$transaction([
+      this.prisma.photoSetPhoto.updateMany({
+        where: { seriesId },
+        data: { seriesId: null, updatedAt: ts },
+      }),
+      this.prisma.photoSeries.update({
+        where: { id: seriesId },
+        data: { deletedAt: ts },
+      }),
+    ]);
+    return { ok: true };
   }
 
   /** Мягкое удаление: файл и отметки о показах остаются для истории диалогов. */
@@ -1009,4 +1122,18 @@ export function filterPhotos<T extends PhotoSetPhoto>(
       .toLowerCase()
       .includes(q);
   });
+}
+
+/** Дата из формы: undefined — не трогать, null — неизвестна; кривая — ошибка. */
+function takenOnInput(
+  raw: string | null | undefined,
+): string | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null || !raw.trim()) return null;
+  const takenOn = normalizeTakenOn(raw);
+  if (takenOn === null)
+    throw new UnprocessableEntityException(
+      'дата: ГГГГ, ГГГГ-ММ или ГГГГ-ММ-ДД, либо пусто — «дата неизвестна»',
+    );
+  return takenOn;
 }

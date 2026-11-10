@@ -58,6 +58,7 @@ import { matchTrigger } from 'src/domain/handoff-triggers';
 import { mentionsMedia } from 'src/domain/media-request';
 import {
   acceptPhotoChoice,
+  seriesIdOf,
   dropFreshClaims,
   hasFalseFreshClaim,
   splitPhotoCaption,
@@ -966,7 +967,11 @@ export class PersonaBrainService implements ReplyBrain {
           throw new StaleReply('Reply changed or expired before dispatch');
         checkCancelled(signal);
       };
-      const confirm = async (index: number, peerMsgId: number) => {
+      const confirm = async (
+        index: number,
+        peerMsgId: number,
+        albumIds: number[] = [],
+      ) => {
         if (index < confirmed) return;
         if (index !== confirmed)
           throw new Error('Out-of-order delivery acknowledgment');
@@ -979,6 +984,15 @@ export class PersonaBrainService implements ReplyBrain {
                 filePath: next.photo.file_path,
                 note: next.photo.note,
                 accountId: due.accountId,
+                ...(next.photo.album?.length
+                  ? {
+                      album: next.photo.album.map((p, i) => ({
+                        photoId: p.photo_id,
+                        filePath: p.file_path,
+                        peerMsgId: albumIds[i] ?? peerMsgId,
+                      })),
+                    }
+                  : {}),
               }
             : undefined;
         appendAssistantMessage(
@@ -1036,6 +1050,23 @@ export class PersonaBrainService implements ReplyBrain {
           if (!this.transport.sendPhoto)
             throw new Error('Transport cannot send photos');
           await beforePart();
+          const album = delivery.photo!.album ?? [];
+          if (album.length && this.transport.sendPhotos) {
+            const ids = await this.transport.sendPhotos(chatId, {
+              paths: [
+                delivery.photo!.file_path,
+                ...album.map((p) => p.file_path),
+              ],
+              caption: remaining[start].text,
+              accountId: due.accountId,
+              typing: persona.rhythm.typing,
+              signal,
+              randomId: remaining[start].randomId,
+              onDispatch: () => dispatched(start),
+            });
+            await confirm(start, ids[0], ids.slice(1));
+            continue;
+          }
           const id = await this.transport.sendPhoto(chatId, {
             path: delivery.photo!.file_path,
             caption: remaining[start].text,
@@ -1992,8 +2023,18 @@ export class PersonaBrainService implements ReplyBrain {
     const photoCard = photoAvailability?.candidates.find(
       (c) => c.id === photoId,
     );
+    // Серия — альбом: первый снимок несёт подпись, остальные идут с ним.
+    const seriesId = seriesIdOf(photoId);
+    const series =
+      seriesId !== null && photoCard && photoAccount
+        ? await this.seriesForReply(chatId, photoAccount, seriesId, today)
+        : null;
     const libraryPhoto =
-      photoId && photoCard ? await this.photos!.photo(Number(photoId)) : null;
+      seriesId !== null
+        ? (series?.photos[0] ?? null)
+        : photoId && photoCard
+          ? await this.photos!.photo(Number(photoId))
+          : null;
     if (judgment.photo_reply?.photo_id && !libraryPhoto)
       this.log.log(
         `chat=${chatId}: photo ${judgment.photo_reply.photo_id} rejected (${photoAvailability?.reason || 'not a candidate'})`,
@@ -2112,8 +2153,16 @@ export class PersonaBrainService implements ReplyBrain {
             photo: {
               photo_id: libraryPhoto.id,
               file_path: libraryPhoto.filePath,
-              note: this.photos!.note(libraryPhoto, today),
+              note: series?.note ?? this.photos!.note(libraryPhoto, today),
               account_id: photoAccount,
+              ...(series
+                ? {
+                    album: series.photos.slice(1).map((p) => ({
+                      photo_id: p.id,
+                      file_path: p.filePath,
+                    })),
+                  }
+                : {}),
               ...photoText,
             },
           }
@@ -2126,6 +2175,18 @@ export class PersonaBrainService implements ReplyBrain {
       basisPersona: personaFingerprint(loaded),
       generatedAt,
     };
+  }
+
+  /** Снимки выбранной серии для этого диалога; серия уже не годится — null. */
+  private async seriesForReply(
+    chatId: number,
+    accountId: number,
+    seriesId: number,
+    today: string,
+  ) {
+    const set = await this.photos!.setForChat(chatId, accountId);
+    if (!set) return null;
+    return this.photos!.seriesForSend(seriesId, chatId, set, today);
   }
 
   private bookkeep(

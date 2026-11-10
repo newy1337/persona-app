@@ -103,3 +103,20 @@ export function photoUrl(photoId, thumb = false) {
   const s = params.toString();
   return `/api/photo-sets/photos/${photoId}/file${s ? `?${s}` : ''}`;
 }
+
+/** Серии образа: бот может отправить серию целиком, одним альбомом. */
+export function getSetSeries(setId) {
+  return api.get(`/api/photo-sets/${setId}/series`);
+}
+
+export function createSeries(setId, body) {
+  return api.post(`/api/photo-sets/${setId}/series`, body);
+}
+
+export function updateSeries(seriesId, patch) {
+  return api.put(`/api/photo-sets/series/${seriesId}`, patch);
+}
+
+export function deleteSeries(seriesId) {
+  return api.delete(`/api/photo-sets/series/${seriesId}`);
+}

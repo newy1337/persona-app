@@ -141,6 +141,19 @@ export interface OutboundTransport {
       onDispatch?: () => Promise<void>;
     },
   ): Promise<number>;
+  /** Альбом снимков, подпись у первого → номера сообщений по порядку файлов. */
+  sendPhotos?(
+    chatId: number,
+    opts: {
+      paths: string[];
+      caption: string;
+      randomId: string;
+      accountId?: number | null;
+      typing?: TypingStyle;
+      signal?: AbortSignal;
+      onDispatch?: () => Promise<void>;
+    },
+  ): Promise<number[]>;
   isOnline?(accountId: number): boolean;
   editText?(chatId: number, peerMsgId: number, text: string): Promise<void>;
 }

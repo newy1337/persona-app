@@ -14,6 +14,8 @@ export interface PhotoReplyPlan {
   file_path: string;
   note: string;
   account_id: number;
+  /** Серия: остальные снимки альбома — уходят вместе с первым. */
+  album?: Array<{ photo_id: number; file_path: string }>;
   /** Текст до фото, подпись к нему и текст после — в таком порядке и уходят. */
   before?: string;
   caption?: string;

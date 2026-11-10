@@ -296,6 +296,91 @@ describe('photo library: the bot shows a photo from the assigned set (real datab
     expect(later?.shown_before.map((c) => Number(c.id))).toEqual([catId]);
   });
 
+  it('a series goes as one album: every photo recorded as shown, counted as one send', async () => {
+    const series = await prisma.photoSeries.create({
+      data: {
+        setId,
+        title: 'Путешествие',
+        description: 'неделя в Грузии',
+        place: 'Тбилиси',
+        takenOn: '2026-08',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    });
+    const trip = [];
+    for (const d of ['горы Казбеги', 'старый Тбилиси', 'хинкали в кафе'])
+      trip.push(
+        await prisma.photoSetPhoto.create({
+          data: {
+            setId,
+            seriesId: series.id,
+            filePath: join(dir, `${d}.jpg`),
+            thumbPath: join(dir, `${d}_t.jpg`),
+            sha256: d,
+            description: d,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        }),
+      );
+    try {
+      judgeChooses((runtime) => {
+        const card = runtime.photo_availability.candidates[0];
+        expect(card).toMatchObject({ id: `s${series.id}`, photos: 3 });
+        return card.id;
+      });
+      (generateDraft as jest.Mock).mockResolvedValue(
+        '[ФОТО] Это я летом в Грузии',
+      );
+      transport.sendPhotos = jest.fn(async (_chat, opts) => {
+        await opts.onDispatch?.();
+        return [600, 601, 602];
+      });
+      expect(await turn('Ты путешествовать любишь?')).toBe(1);
+
+      expect(transport.sendPhoto).not.toHaveBeenCalled();
+      const [, album] = transport.sendPhotos.mock.calls[0];
+      expect(album.paths).toEqual(trip.map((p) => p.filePath));
+      expect(album.caption).toBe('Это я летом в Грузии');
+
+      const rows = await prisma.message.findMany({
+        where: { chatId: BigInt(chatId), role: 'assistant' },
+        orderBy: { id: 'asc' },
+      });
+      expect(rows.map((r) => [r.mediaKind, r.peerMsgId, r.text])).toEqual([
+        ['photo', 600, 'Это я летом в Грузии'],
+        ['photo', 601, '[фото]'],
+        ['photo', 602, '[фото]'],
+      ]);
+      expect(rows[0].mediaNote).toContain('серия «Путешествие» из 3 фото');
+      const recorded = await sends();
+      expect(recorded.map((s) => s.photoId).sort()).toEqual(
+        trip.map((p) => p.id).sort(),
+      );
+
+      // Альбом — одна отправка из двух в день; показанная серия больше не предлагается.
+      const later = await photos.context(
+        chatId,
+        1,
+        'Europe/Moscow',
+        now + 2 * 3600,
+      );
+      expect(later?.sent_today).toBe(1);
+      expect(later?.available).toBe(true);
+      expect(later?.candidates.some((c) => c.id.startsWith('s'))).toBe(false);
+    } finally {
+      await prisma.photoSetPhoto.updateMany({
+        where: { seriesId: series.id },
+        data: { deletedAt: 1 },
+      });
+      await prisma.photoSeries.update({
+        where: { id: series.id },
+        data: { deletedAt: 1 },
+      });
+    }
+  });
+
   it('the photo goes where its caption line is: text first, then the photo with its own caption', async () => {
     judgeChooses((runtime) => runtime.photo_availability.candidates[0].id);
     (generateDraft as jest.Mock).mockResolvedValue(

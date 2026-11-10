@@ -8,12 +8,14 @@ import {
   getMyPhotoSets,
   getPhotoSets,
   getSetPhotos,
+  getSetSeries,
   photoUrl,
   updatePhotoSet,
   uploadSetPhoto,
 } from '../../api/photoSets';
 import PhotoCard from './PhotoCard';
 import PhotoEditor from './PhotoEditor';
+import SeriesPanel from './SeriesPanel';
 import s from '../../styles/AdminPage.module.scss';
 import p from './PhotoSets.module.scss';
 
@@ -224,6 +226,8 @@ export default function PhotoSets() {
   const [open, setOpen] = useState(null);
   const [error, setError] = useState('');
   const [newName, setNewName] = useState('');
+  const [series, setSeries] = useState([]);
+  const [seriesId, setSeriesId] = useState(null);
 
   const loadSets = useCallback(() => getPhotoSets().then(setData).catch((e) => setError(e.detail || e.message)), []);
   const loadPhotos = useCallback(() => {
@@ -235,7 +239,11 @@ export default function PhotoSets() {
   useEffect(() => {
     if (!current && data.items.length) setCurrent(data.items[0].id);
   }, [data.items, current]);
-  useEffect(() => { setPhotos([]); setTag(''); setQ(''); loadPhotos(); }, [loadPhotos]);
+  const loadSeries = useCallback(() => {
+    if (!current) return;
+    getSetSeries(current).then((r) => setSeries(r.items ?? [])).catch((e) => setError(e.detail || e.message));
+  }, [current]);
+  useEffect(() => { setPhotos([]); setTag(''); setQ(''); setSeriesId(null); setSeries([]); loadPhotos(); loadSeries(); }, [loadPhotos, loadSeries]);
 
   const set = data.items.find((x) => x.id === current) ?? null;
   // У хеда регион есть всегда; создавать без своего региона может только администратор.
@@ -244,9 +252,11 @@ export default function PhotoSets() {
   const tags = useMemo(() => [...new Set(photos.flatMap((ph) => ph.tags))].sort(), [photos]);
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return photos.filter((ph) => (!tag || ph.tags.includes(tag)) &&
-      (!needle || [ph.description, ph.place ?? '', ph.details, ph.tags.join(' ')].join(' ').toLowerCase().includes(needle)));
-  }, [photos, q, tag]);
+    const titles = new Map(series.map((x) => [x.id, x.title]));
+    return photos.filter((ph) => (!tag || ph.tags.includes(tag)) && (!seriesId || ph.series_id === seriesId) &&
+      (!needle || [ph.description, ph.place ?? '', ph.details, ph.tags.join(' ')].join(' ').toLowerCase().includes(needle)))
+      .map((ph) => (ph.series_id && titles.has(ph.series_id) ? { ...ph, series_title: titles.get(ph.series_id) } : ph));
+  }, [photos, q, tag, series, seriesId]);
 
   async function create(e) {
     e.preventDefault();
@@ -333,6 +343,7 @@ export default function PhotoSets() {
                 <input className={`${s.field} ${p.search}`} placeholder="Поиск" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Поиск по снимкам" />
                 {set.can_edit && <button type="button" className={s.btnSmDanger} onClick={remove} disabled={Boolean(blocker)} title={blocker ?? undefined}>Удалить образ</button>}
               </div>
+              <SeriesPanel setId={set.id} series={series} canEdit={set.can_edit} value={seriesId} onChange={setSeriesId} onChanged={() => { loadSeries(); loadPhotos(); }} />
               <TagFilter tags={tags} value={tag} onChange={setTag} />
               <PhotoGrid photos={shown} onOpen={setOpen} />
             </section>
@@ -340,9 +351,10 @@ export default function PhotoSets() {
       {open && (
         <PhotoEditor
           photo={open}
+          series={series}
           canEdit={Boolean(set?.can_edit)}
           onClose={() => setOpen(null)}
-          onSaved={() => { setOpen(null); loadPhotos(); loadSets(); }}
+          onSaved={() => { setOpen(null); loadPhotos(); loadSets(); loadSeries(); }}
           onDelete={removePhoto}
           onCover={makeCover}
         />

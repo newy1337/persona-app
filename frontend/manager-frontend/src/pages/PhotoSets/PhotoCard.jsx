@@ -30,6 +30,7 @@ export default function PhotoCard({ photo, onOpen, picked = false, withSent = fa
         {facts && <span className={p.facts}>{facts}</span>}
         {photo.details && <span className={p.facts}>{photo.details}</span>}
         <div className={p.badges}>
+          {photo.series_title && <span className={p.flagSeries} data-testid="series-badge">Серия: {photo.series_title}</span>}
           {round && <span className={p.flag} data-testid="round-badge">Кружок · {photo.duration} с</span>}
           {withSent && (photo.sent_at
             ? <span className={p.flagSent}>Отправляли {fmtDate(photo.sent_at)}</span>

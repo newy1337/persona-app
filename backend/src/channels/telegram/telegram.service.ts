@@ -1961,6 +1961,33 @@ export class TelegramService
     return sent.id;
   }
 
+  /** Серия из образа от лица бота: печатает подпись, потом альбом. */
+  async sendPhotos(
+    chatId: number,
+    opts: {
+      paths: string[];
+      caption: string;
+      randomId: string;
+      accountId?: number | null;
+      typing?: TypingStyle;
+      signal?: AbortSignal;
+      onDispatch?: () => Promise<void>;
+    },
+  ): Promise<number[]> {
+    const style = opts.typing ?? DEFAULT_TYPING;
+    if (style.enabled && opts.caption) {
+      const account = await this.accountFor(chatId, opts.accountId);
+      await this.typeLike(account, chatId, opts.caption, style, opts.signal);
+    }
+    checkCancelled(opts.signal);
+    return this.sendAlbum(chatId, opts.paths, {
+      caption: opts.caption,
+      accountId: opts.accountId,
+      signal: opts.signal,
+      onDispatch: opts.onDispatch,
+    });
+  }
+
   /**
    * Несколько фото и видео одним альбомом, как из приложения Telegram. Подпись — у
    * первого. Возвращает id сообщений альбома по порядку файлов.
@@ -1972,6 +1999,9 @@ export class TelegramService
       caption?: string;
       replyTo?: number | null;
       accountId?: number | null;
+      signal?: AbortSignal;
+      /** перед самой отправкой — отметка «ушло в канал» */
+      onDispatch?: () => Promise<void>;
     } = {},
   ): Promise<number[]> {
     const account = await this.accountFor(chatId, opts.accountId);
@@ -1995,15 +2025,18 @@ export class TelegramService
       this.call(
         account,
         'sendFile album',
-        () =>
-          account.client.sendFile(chatId, {
+        async () => {
+          checkCancelled(opts.signal);
+          await opts.onDispatch?.();
+          return account.client.sendFile(chatId, {
             file: files as never,
             caption: [
               opts.caption ?? '',
               ...files.slice(1).map(() => ''),
             ] as never,
             ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
-          }),
+          });
+        },
         TG_FILE_TIMEOUT_MS * 2,
       ),
     )) as unknown as Api.Message | Api.Message[];

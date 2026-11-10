@@ -31,6 +31,7 @@ import {
   ChoosePhotoPersonaDto,
   RegionStopDto,
   CreatePhotoSetDto,
+  PhotoSeriesDto,
   UpdatePhotoDto,
   UpdatePhotoSetDto,
 } from './photo-sets.dto';
@@ -278,6 +279,75 @@ export class PhotoSetsController {
         resource: `photo:${photoId}`,
       },
       () => this.sets.removePhoto(photoId),
+    );
+  }
+
+  @ApiOperation({ summary: 'Серии образа: бот отправляет серию альбомом' })
+  @Get(':id/series')
+  async series(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    await this.sets.requireVisible(user, id);
+    return this.sets.seriesList(id);
+  }
+
+  @ApiOperation({ summary: 'Создать серию в образе' })
+  @Post(':id/series')
+  @HttpCode(200)
+  @UsePipes(ValidationPipe)
+  async createSeries(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: PhotoSeriesDto,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    await this.sets.requireEditable(user, id);
+    return this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'photo_set.series_create',
+        resource: `photo_set:${id}`,
+        payload: dto,
+      },
+      () => this.sets.createSeries(id, dto),
+    );
+  }
+
+  @ApiOperation({ summary: 'Исправить серию: название, описание, место, дату' })
+  @Put('series/:seriesId')
+  @HttpCode(200)
+  @UsePipes(ValidationPipe)
+  async updateSeries(
+    @Param('seriesId', ParseIntPipe) seriesId: number,
+    @Body() dto: PhotoSeriesDto,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    await this.sets.requireSeries(user, seriesId, true);
+    return this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'photo_set.series_update',
+        resource: `photo_series:${seriesId}`,
+        payload: dto,
+      },
+      () => this.sets.updateSeries(seriesId, dto),
+    );
+  }
+
+  @ApiOperation({ summary: 'Удалить серию; снимки остаются в образе' })
+  @Delete('series/:seriesId')
+  async removeSeries(
+    @Param('seriesId', ParseIntPipe) seriesId: number,
+    @CurrentUser() user: DashboardUser,
+  ) {
+    await this.sets.requireSeries(user, seriesId, true);
+    return this.audit.wrap(
+      {
+        userId: user.id,
+        action: 'photo_set.series_remove',
+        resource: `photo_series:${seriesId}`,
+      },
+      () => this.sets.removeSeries(seriesId),
     );
   }
 

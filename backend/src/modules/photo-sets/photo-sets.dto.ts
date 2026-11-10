@@ -163,6 +163,49 @@ export class UpdatePhotoDto {
   @IsOptional()
   @IsBoolean()
   auto_send?: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Серия образа; null — убрать из серии',
+  })
+  @IsOptional()
+  @IsInt()
+  series_id?: number | null;
+}
+
+/** Серия снимков: бот может отправить её целиком, альбомом. */
+export class PhotoSeriesDto {
+  @ApiPropertyOptional({ description: 'Название: «Путешествие»' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  title?: string;
+
+  @ApiPropertyOptional({ description: 'О чём серия: что за поездка, с кем' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  description?: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  place?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'YYYY, YYYY-MM или YYYY-MM-DD; пусто — дата неизвестна',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  taken_on?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  auto_send?: boolean;
 }
 
 export class AccountAutoSendDto {
