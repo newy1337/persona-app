@@ -50,6 +50,8 @@ import {
 
 const TOP_CHATS = 12;
 const NO_MANAGER = '—';
+/** Платные посредники: их счёт — факт расходов. */
+const PAID_ROUTES = new Set<string | null>(['openrouter', 'nanogpt']);
 
 interface LeadCounts {
   uploaded: number;
@@ -577,9 +579,9 @@ export class StatsService {
       const p = price(u.model);
       if (!p) unpriced.add(u.model);
       add(total, u, p);
-      if (u.provider === 'openrouter') paid += u.providerEstimatedCostUsd ?? 0;
+      if (PAID_ROUTES.has(u.provider)) paid += u.providerEstimatedCostUsd ?? 0;
       if (u.provider === GATEWAY_ROUTE) add(gateway, u, p);
-      if (u.provider === 'openrouter' || u.provider === GATEWAY_ROUTE)
+      if (PAID_ROUTES.has(u.provider) || u.provider === GATEWAY_ROUTE)
         llmCalls += u.calls;
       const day = byDay.get(dayKey(u.createdAt));
       if (day) add(day, u, p);

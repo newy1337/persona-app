@@ -9,9 +9,16 @@ export const appConfig = {
   tgApiHash: process.env.TG_API_HASH || '',
   sessionEncKey: process.env.SESSION_ENC_KEY || '',
   anthropicApiKey: (process.env.ANTHROPIC_API_KEY || '').trim(),
-  llmProvider: ((process.env.LLM_PROVIDER || '').trim() === 'openrouter'
-    ? 'openrouter'
-    : 'anthropic') as 'anthropic' | 'openrouter',
+  llmProvider: (['openrouter', 'nanogpt'].includes(
+    (process.env.LLM_PROVIDER || '').trim(),
+  )
+    ? (process.env.LLM_PROVIDER || '').trim()
+    : 'anthropic') as 'anthropic' | 'openrouter' | 'nanogpt',
+  // NanoGPT: OpenAI-совместимый API, как у OpenRouter (LLM_PROVIDER=nanogpt).
+  nanogptApiKey: (process.env.NANOGPT_API_KEY || '').trim(),
+  nanogptBaseUrl: (
+    process.env.NANOGPT_BASE_URL || 'https://nano-gpt.com/api/v1'
+  ).trim(),
   openrouterApiKey: (process.env.OPENROUTER_API_KEY || '').trim(),
   openaiApiKey: (process.env.OPENAI_API_KEY || '').trim(),
   openaiBaseUrl: (

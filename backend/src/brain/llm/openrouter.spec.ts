@@ -1,6 +1,7 @@
 import { completeText } from './anthropic';
 import {
   createOpenRouterClient,
+  dottedModel,
   fromOpenRouterResponse,
   isClaudeModel,
   OpenRouterError,
@@ -408,4 +409,65 @@ it('external cancellation aborts the in-flight request without retrying', async 
   controller.abort(new Error('new input'));
   await expect(result).rejects.toThrow('new input');
   expect(fakeFetch).toHaveBeenCalledTimes(1);
+});
+
+describe('NanoGPT', () => {
+  it('имена моделей с версией через точку', () => {
+    expect(dottedModel('claude-sonnet-5-5')).toBe(
+      'anthropic/claude-sonnet-5.5',
+    );
+    expect(dottedModel('claude-fable-5-2')).toBe('anthropic/claude-fable-5.2');
+    expect(dottedModel('claude-sonnet-5')).toBe('anthropic/claude-sonnet-5');
+    expect(dottedModel('openai/gpt-5-mini')).toBe('openai/gpt-5-mini');
+    const body = toOpenRouterBody(
+      { model: 'claude-opus-5-5', max_tokens: 10, messages: [] },
+      [],
+      false,
+      true,
+    );
+    expect(body.model).toBe('anthropic/claude-opus-5.5');
+    expect(body).not.toHaveProperty('provider');
+  });
+
+  it('кеш и цена в полях NanoGPT', () => {
+    const message = fromOpenRouterResponse(
+      {
+        choices: [{ message: { content: 'ок' }, finish_reason: 'stop' }],
+        usage: {
+          prompt_tokens: 1000,
+          completion_tokens: 50,
+          cache_read_input_tokens: 600,
+          cache_creation_input_tokens: 300,
+          estimated_cost: '0.0123',
+        },
+      },
+      { model: 'claude-sonnet-5-5', max_tokens: 10, messages: [] },
+    );
+    const usage = message.usage as any;
+    expect(usage.cache_read_input_tokens).toBe(600);
+    expect(usage.cache_creation_input_tokens).toBe(300);
+    expect(usage.input_tokens).toBe(100);
+    expect(usage.openrouter_cost).toBeCloseTo(0.0123);
+  });
+
+  it('ошибки подписаны именем посредника', async () => {
+    const client = createOpenRouterClient({
+      apiKey: 'test',
+      label: 'NanoGPT',
+      maxRetries: 0,
+      fetch: (async () => ({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        json: async () => ({ error: { message: 'bad key' } }),
+      })) as any,
+    });
+    await expect(
+      client.messages.create({
+        model: 'claude-sonnet-5-5',
+        max_tokens: 10,
+        messages: [],
+      }),
+    ).rejects.toThrow('NanoGPT 401: bad key');
+  });
 });

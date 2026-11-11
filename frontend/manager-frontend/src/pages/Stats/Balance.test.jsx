@@ -56,4 +56,9 @@ describe('баланс OpenRouter', () => {
     const host = render({ ...full, left: null, days_left: null });
     expect(host.textContent).toContain('—');
   });
+
+  it('подписан именем посредника', () => {
+    expect(render({ ...full, provider: 'NanoGPT' }).textContent).toContain('NanoGPT');
+    expect(render({ ...full }).textContent).toContain('OpenRouter');
+  });
 });

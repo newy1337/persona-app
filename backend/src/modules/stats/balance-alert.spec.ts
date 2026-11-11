@@ -43,7 +43,7 @@ describe('предупреждение о балансе OpenRouter', () => {
       });
     (global as any).fetch = fetchMock;
     svc = new BalanceAlertService(
-      { openRouter: async () => current } as any,
+      { current: async () => current } as any,
       { ts: () => now } as any,
     );
   });

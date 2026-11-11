@@ -141,27 +141,36 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
   readonly provider = appConfig.llmProvider;
 
   private readonly direct: Anthropic =
-    appConfig.llmProvider === 'openrouter'
+    appConfig.llmProvider === 'nanogpt'
       ? createOpenRouterClient({
-          apiKey: appConfig.openrouterApiKey || 'missing',
-          baseUrl: appConfig.openrouterBaseUrl,
-          providers: appConfig.openrouterProviders,
+          apiKey: appConfig.nanogptApiKey || 'missing',
+          baseUrl: appConfig.nanogptBaseUrl,
+          dottedVersions: true,
+          label: 'NanoGPT',
           timeoutMs: 180_000,
           maxRetries: 2,
-          title: 'Nastya panel',
         })
-      : new Anthropic({
-          apiKey: appConfig.anthropicApiKey || 'missing',
-          timeout: 180_000,
-          maxRetries: 2,
-          ...(appConfig.anthropicWorkspaceId
-            ? {
-                defaultHeaders: {
-                  'anthropic-workspace-id': appConfig.anthropicWorkspaceId,
-                },
-              }
-            : {}),
-        });
+      : appConfig.llmProvider === 'openrouter'
+        ? createOpenRouterClient({
+            apiKey: appConfig.openrouterApiKey || 'missing',
+            baseUrl: appConfig.openrouterBaseUrl,
+            providers: appConfig.openrouterProviders,
+            timeoutMs: 180_000,
+            maxRetries: 2,
+            title: 'Nastya panel',
+          })
+        : new Anthropic({
+            apiKey: appConfig.anthropicApiKey || 'missing',
+            timeout: 180_000,
+            maxRetries: 2,
+            ...(appConfig.anthropicWorkspaceId
+              ? {
+                  defaultHeaders: {
+                    'anthropic-workspace-id': appConfig.anthropicWorkspaceId,
+                  },
+                }
+              : {}),
+          });
 
   private readonly gatewayCapacity = appConfig.llmGatewayUrl
     ? watchGatewayCapacity({
@@ -265,17 +274,21 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
 
   get ready(): boolean {
     return Boolean(
-      appConfig.llmProvider === 'openrouter'
-        ? appConfig.openrouterApiKey
-        : appConfig.anthropicApiKey,
+      appConfig.llmProvider === 'nanogpt'
+        ? appConfig.nanogptApiKey
+        : appConfig.llmProvider === 'openrouter'
+          ? appConfig.openrouterApiKey
+          : appConfig.anthropicApiKey,
     );
   }
 
   async onModuleInit(): Promise<void> {
     this.log.log(
-      appConfig.llmProvider === 'openrouter'
-        ? `LLM via OpenRouter (providers: ${appConfig.openrouterProviders.join(', ') || 'any'})${appConfig.openrouterApiKey ? '' : ' — OPENROUTER_API_KEY is empty'}`
-        : `LLM via Anthropic API${appConfig.anthropicApiKey ? '' : ' — ANTHROPIC_API_KEY is empty'}`,
+      appConfig.llmProvider === 'nanogpt'
+        ? `LLM via NanoGPT (${appConfig.nanogptBaseUrl})${appConfig.nanogptApiKey ? '' : ' — NANOGPT_API_KEY is empty'}`
+        : appConfig.llmProvider === 'openrouter'
+          ? `LLM via OpenRouter (providers: ${appConfig.openrouterProviders.join(', ') || 'any'})${appConfig.openrouterApiKey ? '' : ' — OPENROUTER_API_KEY is empty'}`
+          : `LLM via Anthropic API${appConfig.anthropicApiKey ? '' : ' — ANTHROPIC_API_KEY is empty'}`,
     );
     if (appConfig.llmGatewayUrl)
       this.log.log(

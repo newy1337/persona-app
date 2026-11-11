@@ -26,6 +26,7 @@ export class BalanceAlertService {
   private low = false;
   private lastAlertAt = 0;
   private busy = false;
+  private provider = 'OpenRouter';
 
   constructor(
     private balance: BalanceService,
@@ -44,7 +45,7 @@ export class BalanceAlertService {
       await this.check();
     } catch (e) {
       this.log.warn(
-        `проверка баланса OpenRouter: ${(e as Error)?.message ?? e}`,
+        `проверка баланса ${this.provider}: ${(e as Error)?.message ?? e}`,
       );
     } finally {
       this.busy = false;
@@ -53,7 +54,8 @@ export class BalanceAlertService {
 
   /** Одна проверка. Возвращает, что отправлено: 'low', 'recovered' или null. */
   async check(): Promise<'low' | 'recovered' | null> {
-    const value = await this.balance.openRouter();
+    const value = await this.balance.current();
+    this.provider = value.provider ?? 'OpenRouter';
     // Баланс не прочитался — ничего не решаем: молчание лучше ложной тревоги.
     if (value.error || value.left === null) return null;
     const { threshold, repeatHours } = appConfig.balanceAlert;
@@ -72,7 +74,7 @@ export class BalanceAlertService {
       this.low = false;
       this.lastAlertAt = 0;
       await this.send(
-        `✅ OpenRouter пополнен: на счёте ${usd(value.left)} (порог ${usd(threshold)}).`,
+        `✅ ${this.provider} пополнен: на счёте ${usd(value.left)} (порог ${usd(threshold)}).`,
       );
       return 'recovered';
     }
@@ -82,7 +84,7 @@ export class BalanceAlertService {
   private async send(text: string): Promise<void> {
     await sendTelegramAlert(text);
     this.log.log(
-      `баланс OpenRouter: отправлено в чат ${appConfig.balanceAlert.chatId}`,
+      `баланс ${this.provider}: отправлено в чат ${appConfig.balanceAlert.chatId}`,
     );
   }
 }
@@ -93,7 +95,7 @@ export function lowText(
   again: boolean,
 ): string {
   const lines = [
-    `${again ? '⏰ Напоминание: б' : '⚠️ Б'}аланс OpenRouter ниже ${usd(threshold)} — осталось ${usd(value.left ?? 0)}.`,
+    `${again ? '⏰ Напоминание: б' : '⚠️ Б'}аланс ${value.provider ?? 'OpenRouter'} ниже ${usd(threshold)} — осталось ${usd(value.left ?? 0)}.`,
   ];
   if (value.days_left !== null)
     lines.push(`При текущем расходе хватит примерно на ${value.days_left} дн.`);

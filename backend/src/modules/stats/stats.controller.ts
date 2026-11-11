@@ -147,10 +147,10 @@ export class StatsController {
     return this.stats.stageCosts({ from, to });
   }
 
-  @ApiOperation({ summary: 'Баланс ключа OpenRouter' })
+  @ApiOperation({ summary: 'Баланс ключа OpenRouter или NanoGPT' })
   @Get('balance')
   balanceOpenRouter() {
-    return this.balance.openRouter();
+    return this.balance.current();
   }
 
   @ApiOperation({ summary: 'Таблица цен (или умолчания)' })

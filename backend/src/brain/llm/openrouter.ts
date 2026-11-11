@@ -5,6 +5,10 @@ export interface OpenRouterOptions {
   apiKey: string;
   baseUrl?: string;
   providers?: string[];
+  /** Версии моделей через точку: claude-sonnet-5-5 → claude-sonnet-5.5 (NanoGPT). */
+  dottedVersions?: boolean;
+  /** Имя в сообщениях об ошибках. */
+  label?: string;
   timeoutMs?: number;
   maxRetries?: number;
   referer?: string;
@@ -35,6 +39,14 @@ export class OpenRouterError extends Error {
 
 export function openRouterModel(model: string): string {
   return model.includes('/') ? model : `anthropic/${model}`;
+}
+
+/** anthropic/claude-sonnet-5-5 → anthropic/claude-sonnet-5.5 (так модели называет NanoGPT). */
+export function dottedModel(model: string): string {
+  return openRouterModel(model).replace(
+    /^(anthropic\/claude-[a-z]+-\d+)-(\d+)(?=$|:)/,
+    '$1.$2',
+  );
 }
 
 /** Модель Claude — её можно в шлюз и к провайдеру anthropic. */
@@ -85,6 +97,7 @@ export function toOpenRouterBody(
   params: Params,
   providers: string[] = [],
   mustReason = false,
+  dotted = false,
 ): Record<string, unknown> {
   const messages: Array<{ role: string; content: string | ChatPart[] }> = [];
   if (typeof params.system === 'string') {
@@ -109,7 +122,7 @@ export function toOpenRouterBody(
       : { ...(effort ? { effort } : { enabled: true }), exclude: true };
 
   return {
-    model: openRouterModel(params.model),
+    model: dotted ? dottedModel(params.model) : openRouterModel(params.model),
     max_tokens: params.max_tokens,
     messages,
     reasoning,
@@ -146,9 +159,18 @@ export function fromOpenRouterResponse(
 
   const usage = json?.usage ?? {};
   const prompt = Number(usage.prompt_tokens ?? 0) || 0;
-  const cached = Number(usage.prompt_tokens_details?.cached_tokens ?? 0) || 0;
+  const cached =
+    Number(
+      usage.prompt_tokens_details?.cached_tokens ??
+        usage.cache_read_input_tokens ??
+        0,
+    ) || 0;
   const written =
-    Number(usage.prompt_tokens_details?.cache_write_tokens ?? 0) || 0;
+    Number(
+      usage.prompt_tokens_details?.cache_write_tokens ??
+        usage.cache_creation_input_tokens ??
+        0,
+    ) || 0;
   const hourCache = JSON.stringify(params.system ?? '').includes('"ttl":"1h"');
 
   return {
@@ -168,9 +190,17 @@ export function fromOpenRouterResponse(
         ephemeral_1h_input_tokens: hourCache ? written : 0,
         ephemeral_5m_input_tokens: hourCache ? 0 : written,
       },
-      openrouter_cost: typeof usage.cost === 'number' ? usage.cost : null,
+      openrouter_cost: billedCost(usage),
     } as unknown as Anthropic.Usage,
   } as Anthropic.Message;
+}
+
+function billedCost(usage: Record<string, unknown>): number | null {
+  for (const value of [usage.cost, usage.estimated_cost]) {
+    const n = typeof value === 'string' ? Number(value) : value;
+    if (typeof n === 'number' && Number.isFinite(n)) return n;
+  }
+  return null;
 }
 
 export function createOpenRouterClient(options: OpenRouterOptions): Anthropic {
@@ -179,6 +209,7 @@ export function createOpenRouterClient(options: OpenRouterOptions): Anthropic {
     '',
   );
   const doFetch = options.fetch ?? fetch;
+  const name = options.label ?? 'OpenRouter';
   const timeoutMs = options.timeoutMs ?? 180_000;
   const maxRetries = options.maxRetries ?? 2;
   /** Модели, которым рассуждение не выключить (узнаём по первому отказу). */
@@ -196,6 +227,7 @@ export function createOpenRouterClient(options: OpenRouterOptions): Anthropic {
           params,
           options.providers ?? [],
           mustReason.has(params.model),
+          options.dottedVersions ?? false,
         ),
       );
     let body = encode();
@@ -222,7 +254,7 @@ export function createOpenRouterClient(options: OpenRouterOptions): Anthropic {
         const error = json?.error;
         if (!res.ok || error) {
           const status = Number(error?.code) || res.status;
-          const message = `OpenRouter ${status}: ${error?.message ?? res.statusText ?? 'ошибка'}`;
+          const message = `${name} ${status}: ${error?.message ?? res.statusText ?? 'ошибка'}`;
           if (
             status === 400 &&
             reasoningMandatory(message) &&
@@ -250,13 +282,13 @@ export function createOpenRouterClient(options: OpenRouterOptions): Anthropic {
         if (aborted)
           throw new OpenRouterError(
             408,
-            `OpenRouter: нет ответа за ${Math.round(timeoutMs / 1000)} с`,
+            `${name}: нет ответа за ${Math.round(timeoutMs / 1000)} с`,
           );
         const cause = (e as { cause?: { code?: string; message?: string } })
           ?.cause;
         throw new OpenRouterError(
           503,
-          `OpenRouter: нет связи (${cause?.code ?? cause?.message ?? (e as Error)?.message ?? e})`,
+          `${name}: нет связи (${cause?.code ?? cause?.message ?? (e as Error)?.message ?? e})`,
         );
       } finally {
         clearTimeout(timer);
