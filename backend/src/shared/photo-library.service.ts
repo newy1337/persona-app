@@ -8,6 +8,8 @@ import {
   parseTags,
   photoAvailability,
   photoNote,
+  seriesNote,
+  seriesToSend,
   type PhotoAvailability,
   type PhotoFacts,
 } from 'src/domain/photo-library';
@@ -141,12 +143,17 @@ export class PhotoLibraryService {
       this.setForChat(chatId, accountId),
     ]);
     if (!account || !set) return undefined;
-    const [photos, sends] = await Promise.all([
+    const [photos, sends, series] = await Promise.all([
+      // Кружки бот сам не шлёт: в подборку для ответа идут только снимки.
       this.prisma.photoSetPhoto.findMany({
-        where: { setId: set.id, deletedAt: null },
+        where: { setId: set.id, deletedAt: null, kind: 'photo' },
         orderBy: { id: 'asc' },
       }),
       this.sends(chatId),
+      this.prisma.photoSeries.findMany({
+        where: { setId: set.id, deletedAt: null },
+        orderBy: { id: 'asc' },
+      }),
     ]);
     // Показанное из прошлых наборов тоже считается: описания берём из самих снимков.
     const shownElsewhere = sends.some(
@@ -173,7 +180,49 @@ export class PhotoLibraryService {
       })),
       now,
       today: characterDate(new Date(now * 1000), timeZone),
+      series: series.map((x) => ({
+        ...x,
+        photos: photos
+          .filter((p) => p.seriesId === x.id)
+          .map((p) => ({ ...facts(p), autoSend: p.autoSend })),
+      })),
     });
+  }
+
+  /**
+   * Что уйдёт альбомом, если бот выбрал серию: те же снимки, что видел судья.
+   * Серия не этого образа, удалённая или уже почти показанная — null.
+   */
+  async seriesForSend(
+    seriesId: number,
+    chatId: number,
+    set: Pick<PhotoSet, 'id' | 'noRepeat'>,
+    today?: string,
+  ): Promise<{ photos: LibraryPhoto[]; note: string } | null> {
+    const series = await this.prisma.photoSeries.findFirst({
+      where: { id: seriesId, setId: set.id, deletedAt: null },
+      include: {
+        photos: {
+          where: { deletedAt: null, kind: 'photo' },
+          orderBy: { id: 'asc' },
+        },
+      },
+    });
+    if (!series) return null;
+    const shown = new Set((await this.sends(chatId)).map((s) => s.photoId));
+    const send = seriesToSend(
+      {
+        autoSend: series.autoSend,
+        photos: series.photos.map((p) => ({
+          ...facts(p),
+          autoSend: p.autoSend,
+        })),
+      },
+      shown,
+      set.noRepeat,
+    );
+    if (!send.length) return null;
+    return { photos: send, note: seriesNote(series, send, today) };
   }
 
   async photo(id: number): Promise<LibraryPhoto | null> {

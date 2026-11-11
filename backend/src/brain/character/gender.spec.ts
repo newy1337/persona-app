@@ -1,4 +1,9 @@
-import { personaGender } from './gender';
+import {
+  clientGenderOf,
+  interlocutorGenderNote,
+  personaGender,
+  voiceOf,
+} from './gender';
 import { greetingNote } from './snapshot';
 import { farewellNote } from '../dialogue/farewell';
 import { checkInGuidance, CHECK_IN_GUIDANCE } from '../dialogue/initiative';
@@ -69,5 +74,42 @@ describe('род личности в инструкциях из кода', () =
 
   it('судья про фото и голосовые — без имени Насти', () => {
     expect(MEDIA_REQUEST_RULE).not.toMatch(/Наст/);
+  });
+});
+
+describe('пол собеседника из карточки лида', () => {
+  it('m / f — явный пол; прочее — не указан', () => {
+    expect(clientGenderOf('f')).toBe('female');
+    expect(clientGenderOf('m')).toBe('male');
+    expect(clientGenderOf('unknown')).toBeNull();
+    expect(clientGenderOf(null)).toBeNull();
+  });
+
+  it('женщина у женской личности: «она», а не «он»', () => {
+    const g = voiceOf('female', 'female');
+    expect(g.they.he).toBe('она');
+    expect(g.c('пропал', 'пропала')).toBe('пропала');
+    expect(g.v('сама', 'сам')).toBe('сама');
+    expect(checkInGuidance('female', 'female')).toContain(
+      'Она давно не отвечает. Напиши сама',
+    );
+    expect(greetingNote('female', true, false, 'female')).toContain(
+      'просто поздоровалась',
+    );
+    expect(lateReplyNote(7200, 'female', 'female')).toContain(
+      'Её последние сообщения',
+    );
+  });
+
+  it('мужчина у мужской личности: «он»; без явного пола — как было', () => {
+    expect(voiceOf('male', 'male').they.he).toBe('он');
+    expect(voiceOf('male').they.he).toBe('она');
+    expect(voiceOf('female', null).they.he).toBe('он');
+  });
+
+  it('строка для промпта прямо называет род обращения', () => {
+    expect(interlocutorGenderNote('female')).toContain('женщина');
+    expect(interlocutorGenderNote('female')).toContain('ты пришла');
+    expect(interlocutorGenderNote('male')).toContain('ты пришёл');
   });
 });

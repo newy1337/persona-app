@@ -14,7 +14,7 @@ export function parseTagsText(text) {
 export const TAKEN_HINT = 'ГГГГ, ГГГГ-ММ или ГГГГ-ММ-ДД';
 
 /** Карточка снимка: что на нём, где и когда снято, что важно не перепутать. */
-export default function PhotoEditor({ photo, canEdit, onClose, onSaved, onDelete, onCover }) {
+export default function PhotoEditor({ photo, series = [], canEdit, onClose, onSaved, onDelete, onCover }) {
   const [f, setF] = useState({
     description: photo.description ?? '',
     place: photo.place ?? '',
@@ -22,6 +22,7 @@ export default function PhotoEditor({ photo, canEdit, onClose, onSaved, onDelete
     details: photo.details ?? '',
     tags: tagsText(photo.tags),
     auto_send: photo.auto_send,
+    series_id: photo.series_id ?? '',
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -40,6 +41,7 @@ export default function PhotoEditor({ photo, canEdit, onClose, onSaved, onDelete
         details: f.details,
         tags: parseTagsText(f.tags),
         auto_send: f.auto_send,
+        ...(series.length || photo.series_id ? { series_id: f.series_id ? Number(f.series_id) : null } : {}),
       });
       onSaved(saved);
     } catch (err) {
@@ -54,7 +56,9 @@ export default function PhotoEditor({ photo, canEdit, onClose, onSaved, onDelete
       <form className={`${s.modal} ${p.editor}`} onClick={(e) => e.stopPropagation()} onSubmit={save} aria-label="Карточка снимка">
         <h3 className={s.modalTitle}>Фото #{photo.id}</h3>
         <div className={p.editorBody}>
-          <img className={p.preview} src={photoUrl(photo.id, true)} alt="" />
+          {photo.kind === 'video_note'
+            ? <video className={p.preview} src={photoUrl(photo.id, false)} controls playsInline preload="metadata" style={{ borderRadius: '50%' }} />
+            : <img className={p.preview} src={photoUrl(photo.id, true)} alt="" />}
           <div className={p.fields}>
             <label className={s.label}>
               Что изображено
@@ -76,6 +80,15 @@ export default function PhotoEditor({ photo, canEdit, onClose, onSaved, onDelete
               Теги через запятую
               <input className={s.field} disabled={!canEdit} value={f.tags} onChange={(e) => set({ tags: e.target.value })} />
             </label>
+            {photo.kind !== 'video_note' && (series.length > 0 || photo.series_id) && (
+              <label className={s.label}>
+                Серия
+                <select className={s.select} disabled={!canEdit} value={f.series_id} onChange={(e) => set({ series_id: e.target.value })}>
+                  <option value="">— без серии —</option>
+                  {series.map((x) => <option key={x.id} value={x.id}>{x.title}</option>)}
+                </select>
+              </label>
+            )}
             <label className={s.check} style={{ flexDirection: 'row', alignItems: 'center' }}>
               <input type="checkbox" disabled={!canEdit} checked={f.auto_send} onChange={(e) => set({ auto_send: e.target.checked })} />
               Бот может отправлять сам

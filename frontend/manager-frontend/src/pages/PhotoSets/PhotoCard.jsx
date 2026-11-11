@@ -14,23 +14,29 @@ export function fmtDate(ts) {
 }
 
 /** Снимок с описанием под ним; withSent — отметка, видел ли его собеседник. */
+/** Кружок из библиотеки: хранится видео, превью — кадр; бот его сам не шлёт. */
+export const isRound = (photo) => photo?.kind === 'video_note';
+
 export default function PhotoCard({ photo, onOpen, picked = false, withSent = false }) {
+  const round = isRound(photo);
   const facts = [photo.place, photo.taken_label].filter(Boolean).join(' · ');
   return (
     <article className={`${p.photo} ${picked ? p.photoPicked : ''}`} data-photo-id={photo.id}>
-      <button type="button" className={p.photoButton} onClick={() => onOpen?.(photo)} aria-label={photo.description || `Фото #${photo.id}`}>
-        <img className={p.thumb} src={photoUrl(photo.id, true)} alt="" loading="lazy" />
+      <button type="button" className={p.photoButton} onClick={() => onOpen?.(photo)} aria-label={photo.description || (round ? `Кружок #${photo.id}` : `Фото #${photo.id}`)}>
+        <img className={p.thumb} src={photoUrl(photo.id, true)} alt="" loading="lazy" style={round ? { borderRadius: '50%' } : undefined} />
       </button>
       <div className={p.caption}>
-        <span className={photo.description ? p.desc : p.descEmpty}>{photo.description || 'Без описания'}</span>
+        <span className={photo.description ? p.desc : p.descEmpty}>{photo.description || (round ? 'Кружок' : 'Без описания')}</span>
         {facts && <span className={p.facts}>{facts}</span>}
         {photo.details && <span className={p.facts}>{photo.details}</span>}
         <div className={p.badges}>
+          {photo.series_title && <span className={p.flagSeries} data-testid="series-badge">Серия: {photo.series_title}</span>}
+          {round && <span className={p.flag} data-testid="round-badge">Кружок · {photo.duration} с</span>}
           {withSent && (photo.sent_at
             ? <span className={p.flagSent}>Отправляли {fmtDate(photo.sent_at)}</span>
             : <span className={p.flag}>Ещё не отправляли</span>)}
           {!photo.reviewed && <span className={p.flagWarn}>Проверить описание</span>}
-          {!photo.auto_send && <span className={p.flagOff}>Только вручную</span>}
+          {!photo.auto_send && !round && <span className={p.flagOff}>Только вручную</span>}
           {photo.tags.map((t) => <span key={t} className={p.flag}>#{t}</span>)}
         </div>
       </div>

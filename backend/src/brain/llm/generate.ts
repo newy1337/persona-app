@@ -2,7 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { HistoryMessage } from '../kernel/types';
 import { ModelResponseError } from '../kernel/errors';
 import { asText } from '../kernel/coerce';
-import { resolveModel } from '../config/models';
+import { resolveModel, type ReasoningEffort } from '../config/models';
 import { normalizeReply } from '../character/reply';
 import { completeText, type LlmDeps, type SplitPrompt } from './anthropic';
 import { cacheMark, windowStart } from './cache';
@@ -10,6 +10,8 @@ import { withReplyQuote } from '../memory/reply-quote';
 
 const HISTORY_LIMIT = 40;
 const MAX_TOKENS = 2048;
+/** С рассуждением токены мыслей тоже входят в предел — даём запас. */
+const MAX_TOKENS_REASONING = 16_000;
 
 /**
  * История и реплика собеседника. Каждое сообщение — свой блок: границы блоков
@@ -56,6 +58,8 @@ export interface GenerateDraftInput {
   system: SplitPrompt;
   history: readonly Partial<HistoryMessage>[];
   userText: string;
+  /** по умолчанию — без рассуждений */
+  effort?: ReasoningEffort;
 }
 
 export type GenerateDraftDeps = LlmDeps;
@@ -64,12 +68,13 @@ export async function generateDraft(
   input: GenerateDraftInput,
   deps: GenerateDraftDeps,
 ): Promise<string> {
+  const effort = input.effort ?? 'off';
   const text = await completeText(deps, {
     model: resolveModel(input.model),
     system: input.system,
     messages: buildMessages(input.history, input.userText),
-    maxTokens: MAX_TOKENS,
-    effort: 'off',
+    maxTokens: effort === 'off' ? MAX_TOKENS : MAX_TOKENS_REASONING,
+    effort,
     stage: 'generator',
     cacheHistory: true,
   });

@@ -290,6 +290,8 @@ export class AccountsService {
         select: { chatId: true },
       });
       if (
+        // Дев (ALLOW_PERSONA_SWITCH=1) разрешает смену и с перепиской — для тестов.
+        !appConfig.allowPersonaSwitch &&
         chats.length &&
         (await this.prisma.message.count({
           where: { chatId: { in: chats.map((c) => c.chatId) } },

@@ -1265,6 +1265,27 @@
   overflow-wrap: anywhere;
 }
 
+/* Что бот выясняет этой темой — под названием, на всю ширину. */
+.checkTopic {
+  grid-column: 2 / -1;
+  margin-top: -2px;
+  font-size: 11px;
+  line-height: 15px;
+  color: $text-muted;
+  overflow-wrap: anywhere;
+}
+
+/* Общий прогресс целей — полоса над «сейчас». */
+.goalTrack {
+  display: block;
+  height: 4px;
+  margin-bottom: 8px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.goalTrack .progressFill { display: block; height: 100%; }
+
 /* Узкая панель: значение под названием на всю ширину. Правило стоит после
    базового .checkRow — раньше база его перебивала, и значение жалось в
    колонку названия шириной 108px. */
@@ -1673,4 +1694,31 @@
   font-size: 11px;
   line-height: 1.4;
   opacity: 0.65;
+}
+
+/* Выбор модели для диалога (админ): подпись слева, список во всю оставшуюся ширину. */
+.modelRow {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.modelSelect {
+  min-width: 0;
+  width: 100%;
+  font: inherit;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid $border-control;
+  background: $bg-card;
+  color: $text-primary;
+
+  /* Список открывается системным: без своего фона пункты белым по белому. */
+  option {
+    background: $bg-card;
+    color: $text-primary;
+  }
 }

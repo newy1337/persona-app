@@ -163,6 +163,27 @@ test('строка лида: имя вместо номера, пол рядом
   expect(host.textContent).toContain('48 лет · муж. · Москва');
 });
 
+test('имя и пол лида правятся прямо в строке: пол ушёл в запрос, «не указан» — unknown', async () => {
+  const onEdit = vi.fn(async () => {});
+  await render(<LeadsTable rows={[{ id: 90, status: 'contacted', first_name: 'Олег', gender: 'm', phone_e164: '+79261994455' }]} selected={new Set()} personas={[]}
+    onToggle={() => {}} onSelectVisible={() => {}} onClearSelection={() => {}} onChat={() => {}} onQueue={() => {}} onUnqueue={() => {}} onReassign={() => {}} onDelete={() => {}} onPersonaChange={() => {}} onEdit={onEdit}
+    helpers={{ PersonaSelect: () => null, statusLabels: {}, statusClasses: {}, date: () => '' }} />);
+  await click('Имя и пол');
+  const form = host.querySelector('[data-testid="lead-edit"]');
+  await input(form.querySelector('input'), 'Ольга');
+  const gender = form.querySelector('select');
+  expect(gender.value).toBe('m');
+  await act(async () => { gender.value = 'f'; gender.dispatchEvent(new Event('change', { bubbles: true })); });
+  await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  expect(onEdit).toHaveBeenCalledWith(90, { first_name: 'Ольга', gender: 'f' });
+  expect(host.querySelector('[data-testid="lead-edit"]')).toBeNull();
+  await click('Имя и пол');
+  const again = host.querySelector('[data-testid="lead-edit"]');
+  await act(async () => { const g = again.querySelector('select'); g.value = ''; g.dispatchEvent(new Event('change', { bubbles: true })); });
+  await act(async () => again.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  expect(onEdit).toHaveBeenLastCalledWith(90, { first_name: 'Олег', gender: 'unknown' });
+});
+
 test('лид VK: ссылка vk.com сама выбирает ВКонтакте, в списке отправителей только аккаунты VK, channel уходит в запрос', async () => {
   api.get.mockImplementation(async path => path === '/api/tg-accounts'
     ? [...accounts, { id: 9, channel: 'vk', username: 'vk_sender', status: 'active', persona_id: 'nastya' }]

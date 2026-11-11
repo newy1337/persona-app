@@ -1,7 +1,9 @@
 import { completeText } from './anthropic';
 import {
   createOpenRouterClient,
+  dottedModel,
   fromOpenRouterResponse,
+  isClaudeModel,
   OpenRouterError,
   openRouterModel,
   toOpenRouterBody,
@@ -49,6 +51,22 @@ describe('OpenRouter: запрос', () => {
     expect(openRouterModel('anthropic/claude-sonnet-5')).toBe(
       'anthropic/claude-sonnet-5',
     );
+  });
+
+  it('модель не Claude — без закрепления провайдера anthropic', () => {
+    expect(isClaudeModel('claude-opus-5')).toBe(true);
+    expect(isClaudeModel('anthropic/claude-opus-5')).toBe(true);
+    expect(isClaudeModel('z-ai/glm-5.3')).toBe(false);
+    const body: any = toOpenRouterBody(
+      {
+        model: 'z-ai/glm-5.3',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'привет' }],
+      } as any,
+      ['anthropic'],
+    );
+    expect(body.model).toBe('z-ai/glm-5.3');
+    expect(body.provider).toBeUndefined();
   });
 
   it('система — блоки с cache_control и часовым TTL; провайдер закреплён без запасных', () => {
@@ -231,6 +249,43 @@ describe('OpenRouter: клиент', () => {
     );
   });
 
+  it('модель не даёт выключить рассуждение — повтор с минимальным, дальше сразу так', async () => {
+    const sent: any[] = [];
+    const client = createOpenRouterClient({
+      apiKey: 'k',
+      maxRetries: 0,
+      fetch: (async (_url: string, init: any) => {
+        const body = JSON.parse(init.body);
+        sent.push(body.reasoning);
+        return body.reasoning.enabled === false
+          ? reply(
+              {
+                error: {
+                  code: 400,
+                  message:
+                    'Reasoning is mandatory for this endpoint and cannot be disabled.',
+                },
+              },
+              400,
+            )
+          : reply(okBody);
+      }) as any,
+    });
+    const req = {
+      model: 'z-ai/glm-5.3',
+      max_tokens: 10,
+      thinking: { type: 'disabled' },
+      messages: [{ role: 'user', content: 'x' }],
+    };
+    await (client as any).messages.create(req);
+    await (client as any).messages.create(req);
+    expect(sent).toEqual([
+      { enabled: false },
+      { effort: 'minimal', exclude: true },
+      { effort: 'minimal', exclude: true },
+    ]);
+  });
+
   it('429 и 5xx повторяются; 402 (нет денег) — сразу ошибка словами', async () => {
     let n = 0;
     const flaky = createOpenRouterClient({
@@ -354,4 +409,65 @@ it('external cancellation aborts the in-flight request without retrying', async 
   controller.abort(new Error('new input'));
   await expect(result).rejects.toThrow('new input');
   expect(fakeFetch).toHaveBeenCalledTimes(1);
+});
+
+describe('NanoGPT', () => {
+  it('имена моделей с версией через точку', () => {
+    expect(dottedModel('claude-sonnet-5-5')).toBe(
+      'anthropic/claude-sonnet-5.5',
+    );
+    expect(dottedModel('claude-fable-5-2')).toBe('anthropic/claude-fable-5.2');
+    expect(dottedModel('claude-sonnet-5')).toBe('anthropic/claude-sonnet-5');
+    expect(dottedModel('openai/gpt-5-mini')).toBe('openai/gpt-5-mini');
+    const body = toOpenRouterBody(
+      { model: 'claude-opus-5-5', max_tokens: 10, messages: [] },
+      [],
+      false,
+      true,
+    );
+    expect(body.model).toBe('anthropic/claude-opus-5.5');
+    expect(body).not.toHaveProperty('provider');
+  });
+
+  it('кеш и цена в полях NanoGPT', () => {
+    const message = fromOpenRouterResponse(
+      {
+        choices: [{ message: { content: 'ок' }, finish_reason: 'stop' }],
+        usage: {
+          prompt_tokens: 1000,
+          completion_tokens: 50,
+          cache_read_input_tokens: 600,
+          cache_creation_input_tokens: 300,
+          estimated_cost: '0.0123',
+        },
+      },
+      { model: 'claude-sonnet-5-5', max_tokens: 10, messages: [] },
+    );
+    const usage = message.usage as any;
+    expect(usage.cache_read_input_tokens).toBe(600);
+    expect(usage.cache_creation_input_tokens).toBe(300);
+    expect(usage.input_tokens).toBe(100);
+    expect(usage.openrouter_cost).toBeCloseTo(0.0123);
+  });
+
+  it('ошибки подписаны именем посредника', async () => {
+    const client = createOpenRouterClient({
+      apiKey: 'test',
+      label: 'NanoGPT',
+      maxRetries: 0,
+      fetch: (async () => ({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        json: async () => ({ error: { message: 'bad key' } }),
+      })) as any,
+    });
+    await expect(
+      client.messages.create({
+        model: 'claude-sonnet-5-5',
+        max_tokens: 10,
+        messages: [],
+      }),
+    ).rejects.toThrow('NanoGPT 401: bad key');
+  });
 });

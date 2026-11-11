@@ -78,26 +78,29 @@ model DashboardAuditLog {
 }
 
 model Persona {
-  id             Int     @id @default(autoincrement())
-  slug           String  @unique
-  name           String
-  isDefault      Boolean @default(false) @map("is_default")
-  enabled        Boolean @default(true)
-  persona        String  @default("{}")
-  goals          String  @default("{}")
-  storylines     String  @default("{}")
-  dayConfig      String  @default("{}") @map("day_config")
-  beats          String?
-  prompts        String  @default("{}")
-  rhythm         String  @default("{}")
-  variables      String  @default("{}")
-  notes          String?
-  generatorModel String? @map("generator_model")
-  judgeModel     String? @map("judge_model")
+  id              Int     @id @default(autoincrement())
+  slug            String  @unique
+  name            String
+  isDefault       Boolean @default(false) @map("is_default")
+  enabled         Boolean @default(true)
+  persona         String  @default("{}")
+  goals           String  @default("{}")
+  storylines      String  @default("{}")
+  dayConfig       String  @default("{}") @map("day_config")
+  beats           String?
+  prompts         String  @default("{}")
+  rhythm          String  @default("{}")
+  variables       String  @default("{}")
+  notes           String?
+  generatorModel  String? @map("generator_model")
+  judgeModel      String? @map("judge_model")
+  /// уровень рассуждения: off, low, medium, high; null — по умолчанию
+  generatorEffort String? @map("generator_effort")
+  judgeEffort     String? @map("judge_effort")
   /// тип трафика: cold — холодка, hot — горячий; null — не проставлен
-  trafficType    String? @map("traffic_type")
-  createdAt      Int     @map("created_at")
-  updatedAt      Int     @map("updated_at")
+  trafficType     String? @map("traffic_type")
+  createdAt       Int     @map("created_at")
+  updatedAt       Int     @map("updated_at")
 
   versions PersonaVersion[]
 
@@ -210,6 +213,11 @@ model Contact {
   note               String? @map("note")
   noteBy             String? @map("note_by")
   noteAt             Int?    @map("note_at")
+  /// модели и рассуждение для этого диалога (админ); перекрывают выбор личности, null — как у личности
+  generatorModel     String? @map("generator_model")
+  judgeModel         String? @map("judge_model")
+  generatorEffort    String? @map("generator_effort")
+  judgeEffort        String? @map("judge_effort")
 
   /// образ, на котором начался диалог; смена образа в регионе его не меняет
   photoSetId Int? @map("photo_set_id")
@@ -404,6 +412,7 @@ model PhotoSet {
   updatedAt      Int     @map("updated_at")
 
   photos      PhotoSetPhoto[]
+  series      PhotoSeries[]
   accounts    ChannelAccount[]
   contacts    Contact[]
   assignments ManagerPhotoSet[]
@@ -451,7 +460,13 @@ model PhotoSetPhoto {
   setId       Int     @map("set_id")
   filePath    String  @map("file_path")
   thumbPath   String  @map("thumb_path")
+  /// photo — снимок; video_note — кружок (бот сам не отправляет, только менеджер)
+  kind        String  @default("photo")
+  /// длительность кружка, с
+  duration    Int     @default(0)
   sha256      String
+  /// серия внутри образа («Путешествие»): бот может отправить её альбомом
+  seriesId    Int?    @map("series_id")
   width       Int     @default(0)
   height      Int     @default(0)
   description String  @default("")
@@ -467,12 +482,37 @@ model PhotoSetPhoto {
   updatedAt   Int     @map("updated_at")
   deletedAt   Int?    @map("deleted_at")
 
-  set   PhotoSet    @relation(fields: [setId], references: [id], onDelete: Cascade)
-  sends PhotoSend[]
+  set    PhotoSet     @relation(fields: [setId], references: [id], onDelete: Cascade)
+  series PhotoSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  sends  PhotoSend[]
 
   @@unique([setId, sha256], map: "uq_photo_set_sha")
   @@index([setId, deletedAt], map: "idx_photo_set_photos")
+  @@index([seriesId], map: "idx_photo_set_photos_series")
   @@map("photo_set_photos")
+}
+
+/// Серия снимков образа («Путешествие»): бот может отправить её целиком,
+/// одним альбомом — это одна отправка в лимитах образа.
+model PhotoSeries {
+  id          Int     @id @default(autoincrement())
+  setId       Int     @map("set_id")
+  title       String
+  /// о чём серия: что за поездка, с кем, что было
+  description String  @default("")
+  place       String?
+  /// YYYY, YYYY-MM или YYYY-MM-DD; NULL — дата неизвестна.
+  takenOn     String? @map("taken_on")
+  autoSend    Boolean @default(true) @map("auto_send")
+  createdAt   Int     @map("created_at")
+  updatedAt   Int     @map("updated_at")
+  deletedAt   Int?    @map("deleted_at")
+
+  set    PhotoSet        @relation(fields: [setId], references: [id], onDelete: Cascade)
+  photos PhotoSetPhoto[]
+
+  @@index([setId, deletedAt], map: "idx_photo_series_set")
+  @@map("photo_series")
 }
 
 /// Какие снимки уже видел собеседник. Хранится по чату и фото, а не по

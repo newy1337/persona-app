@@ -5,6 +5,7 @@ import {
   stageQuestionReview,
   completeQuestionReview,
   hasUnansweredInbound,
+  unansweredBacklog,
 } from './conversation';
 import { availableSlots, acquaintanceGoalPlan } from './slots';
 import { validateJudgment, validateMemoryUpdates } from '../judge/validate';
@@ -78,6 +79,25 @@ it('actually sends enabled character rules, stage guidance and optional topic ch
   expect(p.volatile).toContain('Mutual curiosity');
   expect(r.goal_plan.suggested_topics).toEqual(['values']);
   expect(r.goal_plan.optional).toBe(true);
+});
+it('пол собеседника из карточки — в промпте автора; без него промпт как был', () => {
+  const c = config();
+  const plain = buildRuntimeSnapshot(c, state(), '2026-09-28');
+  expect(plain.interlocutor_gender).toBeUndefined();
+  const prompt = (runtime: any) =>
+    buildCharacterPrompt({
+      config: c,
+      runtime,
+      judgment: {},
+      name: 'Test',
+      prompts: mergePrompts({}),
+    }).volatile;
+  expect(prompt(plain)).not.toContain('interlocutor_gender');
+  const s = state();
+  s.client_gender = 'female';
+  const r = buildRuntimeSnapshot(c, s, '2026-09-28');
+  expect(r.interlocutor_gender).toContain('Собеседник — женщина');
+  expect(prompt(r)).toContain('Собеседник — женщина');
 });
 it('does not inject the old mandatory smalltalk question or self-disclosure ban into an ongoing conversation', () => {
   const c = config(),
@@ -240,6 +260,61 @@ it('an emoji reaction does not answer an inbound message', () => {
       message('assistant', 'Думаю иначе'),
     ]),
   ).toBe(false);
+});
+it('a reaction answers wordless inbound: emoji, sticker, gif', () => {
+  for (const text of ['😊', '[Стикер]', '[Стикер: 👋]', '[GIF]', '👍👍']) {
+    expect(
+      hasUnansweredInbound([
+        message('assistant', 'Как день?'),
+        message('user', text),
+        message('assistant', '[Реакция: 😁]'),
+      ]),
+    ).toBe(false);
+  }
+  // Вопрос до смайлика реакция не закрывает.
+  expect(
+    hasUnansweredInbound([
+      message('user', 'Что делаешь?'),
+      message('user', '😊'),
+      message('assistant', '[Реакция: 😁]'),
+    ]),
+  ).toBe(true);
+  // Новое сообщение после реакции — снова ждёт ответа.
+  expect(
+    hasUnansweredInbound([
+      message('user', '😊'),
+      message('assistant', '[Реакция: 😁]'),
+      message('user', 'ты тут?'),
+    ]),
+  ).toBe(true);
+});
+it('backlog: questions after the bot said goodnight, not closings or stickers', () => {
+  const history = [
+    message('user', 'ну всё, спать?'),
+    message('assistant', 'да, спокойной ночи)'),
+    message('user', 'Спасибо, и тебе'),
+    message('user', '[Стикер: 😌]'),
+    message('assistant', '[Реакция: 🥰]'),
+    message('user', 'а ты завтра работаешь?'),
+    message('user', 'во сколько встаёшь?'),
+  ];
+  expect(unansweredBacklog(history).map((m) => m.content)).toEqual([
+    'а ты завтра работаешь?',
+    'во сколько встаёшь?',
+  ]);
+  expect(
+    unansweredBacklog([
+      message('assistant', 'спокойной ночи)'),
+      message('user', 'Спокойной!)'),
+      message('assistant', '[Реакция: 🥰]'),
+    ]),
+  ).toEqual([]);
+  expect(
+    unansweredBacklog([
+      message('user', 'как дела?'),
+      message('assistant', 'отлично'),
+    ]),
+  ).toEqual([]);
 });
 it('structured weekday plans remain stable and do not invent completion or an hour', () => {
   const day = {

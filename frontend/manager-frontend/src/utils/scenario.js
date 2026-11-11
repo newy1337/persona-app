@@ -381,18 +381,33 @@ export function nextActionLabel(action, nowTs = Math.floor(Date.now() / 1000), {
   }
 }
 
+/** Как бот поднимает тему без дня в плане — словами для панели. */
+const POLICY_NOTE = {
+  derive_only: 'сам не спрашивает — понимает из разговора',
+  topic_only: 'спросит, только если зайдёт речь',
+  contextual: 'спросит к месту',
+};
+
 function goalNote(row) {
   if (row.state === 'known') return String(row.value || 'узнали');
   if (row.state === 'deferred') return 'отложена собеседником';
+  if (row.policy && POLICY_NOTE[row.policy] && row.asks === 0) return POLICY_NOTE[row.policy];
   if (row.state === 'locked') return row.asks >= 2 ? 'спрашивали дважды' : 'ещё рано';
   return row.asks > 0 ? `спросили ${row.asks} раз` : 'не спрошена';
+}
+
+/** Общий прогресс целей в процентах (старый бэк процента не присылает — считаем сами). */
+export function goalPercent(goals) {
+  if (!goals?.total) return 0;
+  return typeof goals.percent === 'number' ? goals.percent : Math.round((goals.known / goals.total) * 100);
 }
 
 export function goalRows(goals) {
   return (goals?.slots || []).map((row) => ({
     key: row.id,
-    label: row.id,
+    label: row.name || row.id,
     title: row.title,
+    topic: row.topic || null,
     value: row.value ?? null,
     state: GOAL_STATE[row.state] || 'ask',
     note: goalNote(row),

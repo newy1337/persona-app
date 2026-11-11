@@ -1961,6 +1961,126 @@ export class TelegramService
     return sent.id;
   }
 
+  /** Серия из образа от лица бота: печатает подпись, потом альбом. */
+  async sendPhotos(
+    chatId: number,
+    opts: {
+      paths: string[];
+      caption: string;
+      randomId: string;
+      accountId?: number | null;
+      typing?: TypingStyle;
+      signal?: AbortSignal;
+      onDispatch?: () => Promise<void>;
+    },
+  ): Promise<number[]> {
+    const style = opts.typing ?? DEFAULT_TYPING;
+    const account = await this.accountFor(chatId, opts.accountId);
+    if (style.enabled && opts.caption)
+      await this.typeLike(account, chatId, opts.caption, style, opts.signal);
+    checkCancelled(opts.signal);
+    await this.call(
+      account,
+      'setTyping',
+      () =>
+        account.client.invoke(
+          new Api.messages.SetTyping({
+            peer: chatId,
+            action: new Api.SendMessageUploadPhotoAction({ progress: 0 }),
+          }),
+        ),
+      TG_TYPING_TIMEOUT_MS,
+    ).catch(() => undefined);
+    // Сначала загружаем все снимки: сбой загрузки — честный повтор, а не
+    // «альбом мог уйти». Отметка об отправке — только перед самим запросом.
+    const peer = await account.client.getInputEntity(chatId);
+    const media: Api.InputMediaPhoto[] = [];
+    for (const path of opts.paths) {
+      checkCancelled(opts.signal);
+      media.push(
+        await this.call(
+          account,
+          'uploadMedia album',
+          async () => {
+            const buffer = readFileSync(path);
+            const file = await account.client.uploadFile({
+              file: new CustomFile(basename(path), buffer.length, path, buffer),
+              workers: 1,
+            });
+            const uploaded = await account.client.invoke(
+              new Api.messages.UploadMedia({
+                peer,
+                media: new Api.InputMediaUploadedPhoto({ file }),
+              }),
+            );
+            const photo =
+              uploaded instanceof Api.MessageMediaPhoto ? uploaded.photo : null;
+            if (!(photo instanceof Api.Photo))
+              throw new Error('Telegram не принял фото для альбома');
+            return new Api.InputMediaPhoto({
+              id: new Api.InputPhoto({
+                id: photo.id,
+                accessHash: photo.accessHash,
+                fileReference: photo.fileReference,
+              }),
+            });
+          },
+          TG_FILE_TIMEOUT_MS,
+        ),
+      );
+    }
+    const [message, entities] = await _parseMessageText(
+      account.client,
+      opts.caption,
+      undefined,
+    );
+    // Свой randomId у каждого снимка — повтор запроса не задвоит альбом.
+    const randomIds = media.map((_, i) => bigInt(opts.randomId).add(i));
+    const sent = await this.deliver(chatId, () =>
+      this.call(
+        account,
+        'sendMultiMedia',
+        async () => {
+          checkCancelled(opts.signal);
+          const request = new Api.messages.SendMultiMedia({
+            peer,
+            multiMedia: media.map(
+              (m, i) =>
+                new Api.InputSingleMedia({
+                  media: m,
+                  randomId: randomIds[i],
+                  message: i === 0 ? message : '',
+                  ...(i === 0 && entities?.length ? { entities } : {}),
+                }),
+            ),
+          });
+          await opts.onDispatch?.();
+          // После отправки ждём подтверждения, даже если ход отменят.
+          const result = await account.client.invoke(request);
+          const updates =
+            result instanceof Api.Updates ||
+            result instanceof Api.UpdatesCombined
+              ? result.updates
+              : [];
+          const ids = new Map(
+            updates
+              .filter(
+                (u): u is Api.UpdateMessageID =>
+                  u instanceof Api.UpdateMessageID,
+              )
+              .map((u) => [u.randomId.toString(), u.id]),
+          );
+          const list = randomIds.map((r) => ({ id: ids.get(r.toString()) }));
+          if (list.some((m) => !m.id))
+            throw new Error('Telegram не подтвердил альбом');
+          return list as Array<{ id: number }>;
+        },
+        TG_FILE_TIMEOUT_MS,
+      ),
+    );
+    return sent.map((m) => m.id);
+  }
+
   /**
    * Несколько фото и видео одним альбомом, как из приложения Telegram. Подпись — у
    * первого. Возвращает id сообщений альбома по порядку файлов.

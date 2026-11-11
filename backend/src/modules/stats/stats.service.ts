@@ -22,6 +22,7 @@ import {
   type Tokens,
 } from './prices';
 import { dayKey, resolveRange, type DayRange } from './range';
+import { goalStats } from './goal-stats';
 import { ACTIVE_AFTER, coldFunnel, coldLeadRows } from './cold-funnel';
 import { normalizeModel } from './prices';
 import {
@@ -49,6 +50,8 @@ import {
 
 const TOP_CHATS = 12;
 const NO_MANAGER = '—';
+/** Платные посредники: их счёт — факт расходов. */
+const PAID_ROUTES = new Set<string | null>(['openrouter', 'nanogpt']);
 
 interface LeadCounts {
   uploaded: number;
@@ -406,6 +409,55 @@ export class StatsService {
    * назад ничего не снимает. Архив отдельно: по дням — сколько чатов
    * отправили в архив, «всего» — сколько чатов в архиве сейчас.
    */
+  /**
+   * Цели по личностям: в какой доле диалогов личности узнана каждая цель.
+   * Диалоги — начатые в периоде, где бот уже разговаривал. Считает база:
+   * из состояния бота берутся только ключи узнанных целей.
+   */
+  async goalsByPersona(query: { from?: string; to?: string }) {
+    const range = resolveRange(query, this.clock.ts());
+    const scope = Prisma.sql`
+      SELECT a.persona_id AS persona, b.state_json::jsonb #> '{character}' AS ch
+      FROM brain_state b
+      JOIN contacts c ON c.chat_id = b.chat_id
+      JOIN channel_accounts a ON a.id = c.account_id
+      WHERE c.created_at >= ${range.start} AND c.created_at < ${range.end}`;
+    const [totals, slots, personas] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ persona: string; chats: number }>>(
+        Prisma.sql`
+          SELECT persona, COUNT(*)::int AS chats FROM (${scope}) d
+          WHERE jsonb_typeof(d.ch -> 'turns') = 'number' AND (d.ch ->> 'turns')::numeric > 0
+          GROUP BY persona`,
+      ),
+      this.prisma.$queryRaw<
+        Array<{ persona: string; slot: string; chats: number }>
+      >(Prisma.sql`
+        SELECT d.persona, k AS slot, COUNT(*)::int AS chats FROM (${scope}) d,
+          LATERAL jsonb_object_keys(
+            CASE WHEN jsonb_typeof(d.ch -> 'slots') = 'object'
+              THEN d.ch -> 'slots' ELSE '{}'::jsonb END) k
+        WHERE jsonb_typeof(d.ch -> 'turns') = 'number' AND (d.ch ->> 'turns')::numeric > 0
+        GROUP BY d.persona, k`),
+      this.prisma.persona.findMany({
+        select: { slug: true, name: true, goals: true, variables: true },
+      }),
+    ]);
+    const known = new Map<string, Map<string, number>>();
+    for (const r of slots) {
+      const m = known.get(r.persona) ?? new Map<string, number>();
+      m.set(r.slot, r.chats);
+      known.set(r.persona, m);
+    }
+    return {
+      range: { from: range.from, to: range.to },
+      personas: goalStats(
+        personas,
+        new Map(totals.map((r) => [r.persona, r.chats])),
+        known,
+      ),
+    };
+  }
+
   /** Холодка за период: получено, написали, ответили, активные — всего и по менеджерам. */
   async coldLeads(query: { from?: string; to?: string }) {
     const range = resolveRange(query, this.clock.ts());
@@ -527,9 +579,9 @@ export class StatsService {
       const p = price(u.model);
       if (!p) unpriced.add(u.model);
       add(total, u, p);
-      if (u.provider === 'openrouter') paid += u.providerEstimatedCostUsd ?? 0;
+      if (PAID_ROUTES.has(u.provider)) paid += u.providerEstimatedCostUsd ?? 0;
       if (u.provider === GATEWAY_ROUTE) add(gateway, u, p);
-      if (u.provider === 'openrouter' || u.provider === GATEWAY_ROUTE)
+      if (PAID_ROUTES.has(u.provider) || u.provider === GATEWAY_ROUTE)
         llmCalls += u.calls;
       const day = byDay.get(dayKey(u.createdAt));
       if (day) add(day, u, p);

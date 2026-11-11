@@ -131,6 +131,33 @@ export class ChannelRegistry implements OutboundTransport {
     return t.sendPhoto(chatId, opts);
   }
 
+  /** Альбом снимков; в VK это одно сообщение — номер у всех частей общий. */
+  async sendPhotos(
+    chatId: number,
+    opts: {
+      paths: string[];
+      caption: string;
+      randomId: string;
+      accountId?: number | null;
+      typing?: TypingStyle;
+      signal?: AbortSignal;
+      onDispatch?: () => Promise<void>;
+    },
+  ): Promise<number[]> {
+    const t = this.forChat(chatId);
+    if (t.sendPhotos) return t.sendPhotos(chatId, opts);
+    if (!t.sendFiles)
+      throw new Error(`канал ${t.channel} не умеет отправлять альбомы`);
+    const id = await t.sendFiles(chatId, {
+      paths: opts.paths,
+      caption: opts.caption,
+      randomId: opts.randomId,
+      accountId: opts.accountId,
+      ...(opts.onDispatch ? { onDispatch: opts.onDispatch } : {}),
+    });
+    return opts.paths.map(() => id);
+  }
+
   editText(chatId: number, peerMsgId: number, text: string): Promise<void> {
     const t = this.forChat(chatId);
     if (!t.editText)

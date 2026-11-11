@@ -486,6 +486,7 @@ export class OutreachWorker implements OnModuleInit {
         city: isCityName(candidate.city) ? candidate.city : null,
         age: candidate.age,
         site: candidate.site,
+        gender: candidate.gender,
         opener: candidate.firstMessage,
       });
       const ts = this.clock.ts();
@@ -642,7 +643,7 @@ export class OutreachWorker implements OnModuleInit {
       this.prisma.persona.findMany({
         where: { enabled: true },
         orderBy: [{ isDefault: 'desc' }, { id: 'asc' }],
-        select: { slug: true, name: true, isDefault: true },
+        select: { slug: true, name: true, isDefault: true, trafficType: true },
       }),
       this.prisma.channelAccount.findMany({
         where: {
@@ -668,6 +669,7 @@ export class OutreachWorker implements OnModuleInit {
           slug: p.slug,
           name: p.name,
           is_default: p.isDefault,
+          traffic_type: p.trafficType ?? null,
           accounts: mine.length,
           accounts_ready: mine.filter(ready).length,
           by_channel: { telegram: of('telegram'), vk: of('vk') },

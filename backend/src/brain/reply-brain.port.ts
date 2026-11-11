@@ -89,6 +89,8 @@ export interface ReplyBrain {
     messageId?: number,
   ): Promise<void>;
   openLead(chatId: number, accountId: number, lead: LeadIntro): Promise<string>;
+  /** Пол собеседника задали явно (m / f); null — снова «противоположный личности». */
+  setClientGender?(chatId: number, gender: string | null): Promise<void>;
   cacheSizes?(): Record<string, number>;
 }
 
@@ -97,6 +99,8 @@ export interface LeadIntro {
   city?: string | null;
   age?: number | null;
   site?: string | null;
+  /** пол из карточки: m / f; иначе — противоположный личности */
+  gender?: string | null;
   /** Первое сообщение, написанное менеджером; пусто — шаблон личности. */
   opener?: string | null;
 }
@@ -137,6 +141,19 @@ export interface OutboundTransport {
       onDispatch?: () => Promise<void>;
     },
   ): Promise<number>;
+  /** Альбом снимков, подпись у первого → номера сообщений по порядку файлов. */
+  sendPhotos?(
+    chatId: number,
+    opts: {
+      paths: string[];
+      caption: string;
+      randomId: string;
+      accountId?: number | null;
+      typing?: TypingStyle;
+      signal?: AbortSignal;
+      onDispatch?: () => Promise<void>;
+    },
+  ): Promise<number[]>;
   isOnline?(accountId: number): boolean;
   editText?(chatId: number, peerMsgId: number, text: string): Promise<void>;
 }

@@ -58,6 +58,7 @@ import { matchTrigger } from 'src/domain/handoff-triggers';
 import { mentionsMedia } from 'src/domain/media-request';
 import {
   acceptPhotoChoice,
+  seriesIdOf,
   dropFreshClaims,
   hasFalseFreshClaim,
   splitPhotoCaption,
@@ -86,7 +87,11 @@ import { turnTime, type TurnTime } from './kernel/turn-time';
 import { goodnightReason } from './dialogue/goodnight-policy';
 import { characterDate, shiftDate } from './kernel/clock';
 import type { ConversationState, Judgment, RhythmState } from './kernel/types';
-import { generatorModelFor, type PersonaModels } from './config/models';
+import {
+  generatorEffortFor,
+  generatorModelFor,
+  type PersonaModels,
+} from './config/models';
 import { stripMetadata } from './character/config';
 import { prepareTurn } from './character/turn';
 import { applyJudgment } from './character/judgment';
@@ -107,9 +112,12 @@ import type { JudgeDeps } from './judge/transport';
 import { unknownPlace } from './kernel/location';
 import { reviewReply } from './judge/review';
 import { generateDraft } from './llm/generate';
+import { chatChannel } from 'src/channels/contact';
+import { asksVkFriend, VK_FRIEND_PHRASE } from 'src/domain/vk-friend';
 import {
   conversational,
   hasUnansweredInbound,
+  unansweredBacklog,
   openQuestions,
   stageQuestionReview,
   completeQuestionReview,
@@ -143,8 +151,8 @@ import {
   RECENT_TOPIC_S,
   secondsSinceLastMessage,
 } from './dialogue/initiative';
-import { personaGender, voiceOf } from './character/gender';
-import { judgeModelFor } from './config/models';
+import { clientGenderOf, personaGender, voiceOf } from './character/gender';
+import { judgeEffortFor, judgeModelFor } from './config/models';
 import {
   ACTIVE_CHAT_DAYS,
   GOODNIGHT_QUIET_BEFORE_SECONDS,
@@ -266,7 +274,7 @@ export class PersonaBrainService implements ReplyBrain {
   ) {
     return {
       ...this.llmDeps(scope, variables, signal),
-      effort: appConfig.judgeEffort,
+      effort: judgeEffortFor(persona, appConfig.judgeEffort),
       model: judgeModelFor(persona, appConfig.judgeModel),
     };
   }
@@ -424,6 +432,15 @@ export class PersonaBrainService implements ReplyBrain {
     if (trigger) {
       // Стоп-фраза уводит чат на менеджера — читать за него тоже не надо.
       await this.handOverByTrigger(chatId, trigger, turn.ts);
+      return;
+    }
+    if (asksVkFriend(text, chatChannel(chatId))) {
+      // Заявку в друзья бот не примет и не отправит — это делает человек.
+      await this.handOverByTrigger(chatId, VK_FRIEND_PHRASE, turn.ts, {
+        kind: 'vk_friend',
+        reasonText:
+          'клиент просит добавить в друзья ВК — добавьте и ответьте сами',
+      });
       return;
     }
     const facts = await this.history.getLeadFacts(chatId);
@@ -859,6 +876,7 @@ export class PersonaBrainService implements ReplyBrain {
             ? lateReplyNote(
                 this.clock.ts() - oldest,
                 personaGender(persona.config.persona),
+                before.client_gender ?? null,
               )
             : '';
         const prepared = await this.generateReply(
@@ -949,7 +967,11 @@ export class PersonaBrainService implements ReplyBrain {
           throw new StaleReply('Reply changed or expired before dispatch');
         checkCancelled(signal);
       };
-      const confirm = async (index: number, peerMsgId: number) => {
+      const confirm = async (
+        index: number,
+        peerMsgId: number,
+        albumIds: number[] = [],
+      ) => {
         if (index < confirmed) return;
         if (index !== confirmed)
           throw new Error('Out-of-order delivery acknowledgment');
@@ -962,6 +984,15 @@ export class PersonaBrainService implements ReplyBrain {
                 filePath: next.photo.file_path,
                 note: next.photo.note,
                 accountId: due.accountId,
+                ...(next.photo.album?.length
+                  ? {
+                      album: next.photo.album.map((p, i) => ({
+                        photoId: p.photo_id,
+                        filePath: p.file_path,
+                        peerMsgId: albumIds[i] ?? peerMsgId,
+                      })),
+                    }
+                  : {}),
               }
             : undefined;
         appendAssistantMessage(
@@ -1019,6 +1050,23 @@ export class PersonaBrainService implements ReplyBrain {
           if (!this.transport.sendPhoto)
             throw new Error('Transport cannot send photos');
           await beforePart();
+          const album = delivery.photo!.album ?? [];
+          if (album.length && this.transport.sendPhotos) {
+            const ids = await this.transport.sendPhotos(chatId, {
+              paths: [
+                delivery.photo!.file_path,
+                ...album.map((p) => p.file_path),
+              ],
+              caption: remaining[start].text,
+              accountId: due.accountId,
+              typing: persona.rhythm.typing,
+              signal,
+              randomId: remaining[start].randomId,
+              onDispatch: () => dispatched(start),
+            });
+            await confirm(start, ids[0], ids.slice(1));
+            continue;
+          }
           const id = await this.transport.sendPhoto(chatId, {
             path: delivery.photo!.file_path,
             caption: remaining[start].text,
@@ -1427,17 +1475,27 @@ export class PersonaBrainService implements ReplyBrain {
     chatId: number,
     phrase: string,
     ts: number,
+    opts: { kind?: string; reasonText?: string } = {},
   ): Promise<void> {
     await this.history.mergeLeadFacts(
       chatId,
-      { [HANDOFF_TRIGGER_KEY]: { phrase, ts } },
+      {
+        [HANDOFF_TRIGGER_KEY]: {
+          phrase,
+          ts,
+          ...(opts.kind ? { kind: opts.kind } : {}),
+        },
+      },
       false,
     );
     await this.pause.pause(
       chatId,
       TakeoverReason.MANUAL_TAKEOVER,
       'bot:trigger',
-      { reasonText: `клиент написал «${phrase}» — ответьте сами` },
+      {
+        reasonText:
+          opts.reasonText ?? `клиент написал «${phrase}» — ответьте сами`,
+      },
     );
     await this.funnel.emit(chatId, 'trigger_handoff', ts, { phrase });
     this.log.log(
@@ -1566,6 +1624,64 @@ export class PersonaBrainService implements ReplyBrain {
     });
     this.nextActionCache.set(chatId, { at: nowTs, value });
     return value;
+  }
+
+  /** Чаты, где утренний обход нашёл вопросы без ответа; отвечаем вне блокировки. */
+  private backlog?: Set<number>;
+
+  /**
+   * Есть ли у собеседника сообщения со словами, на которые бот так и не
+   * ответил (например, вопросы после прощания на ночь), и не брался ли он уже
+   * за них. Да — чат ставится в очередь на ответ.
+   */
+  private queueBacklog(chatId: number, state: ConversationState): boolean {
+    const last = unansweredBacklog(state.history).at(-1);
+    if (!last?.created_at) return false;
+    // Только свежий хвост — ночь и утро; старые забытые чаты так не оживляем.
+    if (this.clock.ts() - last.created_at > BACKLOG_MAX_AGE_S) return false;
+    if ((state.rhythm?.backlog_answered_ts ?? 0) >= last.created_at)
+      return false;
+    (this.backlog ??= new Set()).add(chatId);
+    return true;
+  }
+
+  /**
+   * Ответить на сообщения, оставшиеся без ответа, вместо утреннего
+   * приветствия или инициативы: обычный ответ на те же сообщения, как будто
+   * они только что пришли. Берётся за хвост один раз — повторно не
+   * перебирает, даже если модель снова промолчит.
+   */
+  private async answerBacklog(chatId: number): Promise<boolean> {
+    if (!this.backlog?.delete(chatId)) return false;
+    if (this.gate.stopped || !this.persona.ready) return false;
+    if ((await this.pause.status(chatId)).status === 'paused') return false;
+    if (await this.schedule.get(chatId)) return false;
+    const accountId = await this.history.chatOwnerAccount(chatId);
+    if (accountId === null) return false;
+    const tail = (await this.history.messagesSinceReply(chatId)).filter(
+      (m) => m.source_message_id,
+    );
+    const last = tail[tail.length - 1];
+    if (!last) return false;
+    await this.locks.run(chatId, async () => {
+      const state = await this.state.load(chatId);
+      (state.rhythm ??= {}).backlog_answered_ts = last.ts;
+      await this.state.save(chatId, state);
+    });
+    this.log.log(
+      `chat=${chatId}: ${tail.length} message(s) left unanswered — answering instead of a greeting`,
+    );
+    const release = this.activity.receive(
+      chatId,
+      `backlog:${deliveryRandomId()}`,
+    );
+    try {
+      for (const message of tail)
+        await this.handleInbound(restoredTurn(message, accountId));
+    } finally {
+      release();
+    }
+    return true;
   }
 
   async answerAfterResume(chatId: number): Promise<boolean> {
@@ -1770,14 +1886,14 @@ export class PersonaBrainService implements ReplyBrain {
     const model = generatorModelFor(loaded, appConfig.generatorModel);
     const today = characterDate(this.clock.now(), config.timeZone);
     const gender = personaGender(config.persona);
+    const baseState = await this.state.reconcile(chatId);
     const customInstructions = [
       (await this.settings.get()).custom_prompt,
       extraNote,
-      farewellNote(farewell, gender),
+      farewellNote(farewell, gender, baseState.client_gender ?? null),
     ]
       .filter((x) => x && x.trim())
       .join('\n\n');
-    const baseState = await this.state.reconcile(chatId);
     const basisState = stateFingerprint(baseState);
     const generatedAt = this.clock.ts();
     const state = structuredClone(baseState);
@@ -1802,7 +1918,7 @@ export class PersonaBrainService implements ReplyBrain {
       (m) => m.role !== 'user' || !pendingIds.has(m.telegram_message_id!),
     );
     const lateMark = extraNote
-      ? `[Это сообщение пришло давно, и ты на него тогда не ${voiceOf(gender).v('ответила', 'ответил')} — см. инструкции]\n`
+      ? `[Это сообщение пришло давно, и ты на него тогда не ${voiceOf(gender, state.client_gender).v('ответила', 'ответил')} — см. инструкции]\n`
       : '';
     const fullText =
       lateMark + withAttachmentContext(userText, attachmentContext);
@@ -1907,8 +2023,18 @@ export class PersonaBrainService implements ReplyBrain {
     const photoCard = photoAvailability?.candidates.find(
       (c) => c.id === photoId,
     );
+    // Серия — альбом: первый снимок несёт подпись, остальные идут с ним.
+    const seriesId = seriesIdOf(photoId);
+    const series =
+      seriesId !== null && photoCard && photoAccount
+        ? await this.seriesForReply(chatId, photoAccount, seriesId, today)
+        : null;
     const libraryPhoto =
-      photoId && photoCard ? await this.photos!.photo(Number(photoId)) : null;
+      seriesId !== null
+        ? (series?.photos[0] ?? null)
+        : photoId && photoCard
+          ? await this.photos!.photo(Number(photoId))
+          : null;
     if (judgment.photo_reply?.photo_id && !libraryPhoto)
       this.log.log(
         `chat=${chatId}: photo ${judgment.photo_reply.photo_id} rejected (${photoAvailability?.reason || 'not a candidate'})`,
@@ -1935,6 +2061,7 @@ export class PersonaBrainService implements ReplyBrain {
     const draft = await generateDraft(
       {
         model,
+        effort: generatorEffortFor(loaded),
         system: buildCharacterPrompt({
           config,
           runtime,
@@ -2026,8 +2153,16 @@ export class PersonaBrainService implements ReplyBrain {
             photo: {
               photo_id: libraryPhoto.id,
               file_path: libraryPhoto.filePath,
-              note: this.photos!.note(libraryPhoto, today),
+              note: series?.note ?? this.photos!.note(libraryPhoto, today),
               account_id: photoAccount,
+              ...(series
+                ? {
+                    album: series.photos.slice(1).map((p) => ({
+                      photo_id: p.id,
+                      file_path: p.filePath,
+                    })),
+                  }
+                : {}),
               ...photoText,
             },
           }
@@ -2040,6 +2175,18 @@ export class PersonaBrainService implements ReplyBrain {
       basisPersona: personaFingerprint(loaded),
       generatedAt,
     };
+  }
+
+  /** Снимки выбранной серии для этого диалога; серия уже не годится — null. */
+  private async seriesForReply(
+    chatId: number,
+    accountId: number,
+    seriesId: number,
+    today: string,
+  ) {
+    const set = await this.photos!.setForChat(chatId, accountId);
+    if (!set) return null;
+    return this.photos!.seriesForSend(seriesId, chatId, set, today);
   }
 
   private bookkeep(
@@ -2169,6 +2316,20 @@ export class PersonaBrainService implements ReplyBrain {
       if (!changed.length) return;
       await this.state.save(chatId, state);
       this.log.log(`chat=${chatId}: operator set ${changed.join(', ')}`);
+    });
+  }
+
+  async setClientGender(chatId: number, gender: string | null): Promise<void> {
+    await this.withOperatorChange(chatId, async () => {
+      const state = await this.state.load(chatId);
+      const client = clientGenderOf(gender);
+      if ((state.client_gender ?? null) === client) return;
+      if (client) state.client_gender = client;
+      else delete state.client_gender;
+      await this.state.save(chatId, state);
+      this.log.log(
+        `chat=${chatId}: operator set client gender ${client ?? '—'}`,
+      );
     });
   }
 
@@ -2382,6 +2543,8 @@ export class PersonaBrainService implements ReplyBrain {
         if (state.history.length)
           throw new Error(`chat ${chatId} already has a transcript`);
         if (lead.firstName) state.user_name = lead.firstName;
+        const client = clientGenderOf(lead.gender);
+        if (client) state.client_gender = client;
         const site =
           lead.site?.trim() ||
           persona.variables['site'] ||
@@ -2497,6 +2660,7 @@ export class PersonaBrainService implements ReplyBrain {
           this.proactive(chatId, settings),
         );
         if (done) sent += 1;
+        else if (await this.answerBacklog(chatId)) sent += 1;
       } catch (e) {
         this.log.error(`initiative failed chat=${chatId} (${e?.name ?? e})`);
       }
@@ -2528,6 +2692,7 @@ export class PersonaBrainService implements ReplyBrain {
       return false;
 
     const persona = await this.persona.forAccount(accountId, chatId);
+    if (this.queueBacklog(chatId, state)) return false;
     if (
       conversational(persona.config) &&
       (hasUnansweredInbound(state.history) || openQuestions(state).length > 0)
@@ -2562,7 +2727,8 @@ export class PersonaBrainService implements ReplyBrain {
       (m) => m.kind === 'open_loop',
     );
     const gender = personaGender(persona.config.persona);
-    const g = voiceOf(gender);
+    const client = state.client_gender ?? null;
+    const g = voiceOf(gender, client);
     const judgment: Partial<Judgment> = callback
       ? {
           goal: 'callback',
@@ -2576,7 +2742,7 @@ export class PersonaBrainService implements ReplyBrain {
           callback_memory_id: '',
           storyline_id: '',
           question_allowed: true,
-          guidance: checkInGuidance(gender),
+          guidance: checkInGuidance(gender, client),
         };
 
     if (conversational(persona.config)) {
@@ -2593,7 +2759,7 @@ export class PersonaBrainService implements ReplyBrain {
     ) {
       judgment.goal = 'respond';
       judgment.callback_memory_id = '';
-      judgment.guidance = continueTopicGuidance(gender);
+      judgment.guidance = continueTopicGuidance(gender, client);
     }
     return this.sendUnprompted(chatId, accountId, persona, settings, judgment, {
       author: 'initiative',
@@ -2707,6 +2873,7 @@ export class PersonaBrainService implements ReplyBrain {
       const draft = await generateDraft(
         {
           model,
+          effort: generatorEffortFor(persona),
           system,
           history: state.history,
           userText: 'Напиши запланированное инициативное сообщение.',
@@ -2897,6 +3064,7 @@ export class PersonaBrainService implements ReplyBrain {
           this.ritual(chatId, settings),
         );
         if (done) sent += 1;
+        else if (await this.answerBacklog(chatId)) sent += 1;
       } catch (e) {
         this.log.error(
           `ritual failed chat=${chatId} (${e?.name ?? e}: ${e?.message ?? ''})`,
@@ -2926,6 +3094,13 @@ export class PersonaBrainService implements ReplyBrain {
       const slot = ritualSlot(now, rhythm[kind], rhythm.timezone, chatId, kind);
       if (!slot.due || slot.windowStartTs === null) continue;
       const state = await this.state.load(chatId);
+      // Утром вместо «доброго утра» — ответ на то, что собеседник написал
+      // после прощания: приветствие за этот день уже не нужно.
+      if (kind === 'morning' && this.queueBacklog(chatId, state)) {
+        if (!state.rhythm?.morning?.[slot.day])
+          await this.markRitual(chatId, state, kind, slot.day, 'skipped');
+        return false;
+      }
       if (
         conversational(persona.config) &&
         (hasUnansweredInbound(state.history) || openQuestions(state).length > 0)
@@ -3016,7 +3191,7 @@ export class PersonaBrainService implements ReplyBrain {
     state: ConversationState,
     kind: RitualKind,
     day: string,
-    who: 'sent' | 'user',
+    who: 'sent' | 'user' | 'skipped',
   ) {
     const r = (state.rhythm ??= {});
     (r[kind] ??= {})[day] = who;
@@ -3026,6 +3201,8 @@ export class PersonaBrainService implements ReplyBrain {
 }
 
 const RHYTHM_RETENTION_DAYS = 14;
+/** Сколько ждёт хвост без ответа, чтобы бот взялся за него вместо приветствия. */
+const BACKLOG_MAX_AGE_S = 18 * 3600;
 
 function pruneRhythm(rhythm: RhythmState, today: string): void {
   const keepFrom = shiftDate(today, -RHYTHM_RETENTION_DAYS);

@@ -1,11 +1,14 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { REPLY_BRAIN, type ReplyBrain } from 'src/brain/reply-brain.port';
 import { rmSync } from 'fs';
 import { appConfig } from 'src/config/app.config';
 import { join } from 'path';
@@ -170,6 +173,7 @@ export class LeadsService {
     private history: HistoryService,
     private telegram: TelegramService,
     private attribution: ManagerAttributionService,
+    @Optional() @Inject(REPLY_BRAIN) private brain?: ReplyBrain,
   ) {}
 
   /**
@@ -719,13 +723,30 @@ export class LeadsService {
     ownerUserId: number | null = null,
     scope: LeadScope | null = null,
   ): Promise<ImportResult> {
-    const batchPersona = await this.personaOf(dto.persona_id);
+    let batchPersona = await this.personaOf(dto.persona_id);
     const drafts: Array<LeadDraft & { preferred_account_id?: number | null }> =
       [];
     const errors: string[] = [];
     let duplicates = 0;
     const batchChannel = (dto.channel ?? 'telegram') as LeadChannel;
-    if (dto.text) await this.requireChannelAccounts(batchPersona, batchChannel);
+    // Один аккаунт на весь список: пишет только он, сверх дневного лимита
+    // лиды ждут в очереди его сброса — другим аккаунтам не отдаются.
+    let batchAccount: number | null = null;
+    if (dto.preferred_account_id) {
+      const sender = await this.senderOf(
+        {
+          persona_id: batchPersona,
+          preferred_account_id: dto.preferred_account_id,
+        } as CreateLeadDto,
+        scope,
+        ownerUserId,
+        batchChannel,
+      );
+      batchAccount = sender.preferredAccountId;
+      batchPersona = sender.personaId;
+    }
+    if (dto.text && batchAccount === null)
+      await this.requireChannelAccounts(batchPersona, batchChannel);
     if (dto.text) {
       const parsed = parseLeadLines(dto.text, batchChannel);
       drafts.push(...parsed.items);
@@ -745,7 +766,11 @@ export class LeadsService {
         continue;
       }
       const sender = await this.senderOf(
-        { ...item, persona_id: item.persona_id || batchPersona },
+        {
+          ...item,
+          persona_id: item.persona_id || batchPersona,
+          preferred_account_id: item.preferred_account_id ?? batchAccount,
+        },
         scope,
         null,
         contact.channel,
@@ -798,7 +823,7 @@ export class LeadsService {
           age: d.age ?? null,
           site: d.site?.trim() || null,
           personaId: d.persona_id || batchPersona,
-          preferredAccountId: d.preferred_account_id ?? null,
+          preferredAccountId: d.preferred_account_id ?? batchAccount,
           sourceType: dto.source_type?.trim() || 'import',
           trafficSource: dto.traffic_source ?? null,
           status: dto.queue ? 'queued' : 'pending',
@@ -868,12 +893,28 @@ export class LeadsService {
       data.firstMessage = dto.first_message?.trim() || null;
     }
     const row = await this.prisma.lead.update({ where: { id }, data });
+    await this.syncDialog(row, dto);
     const [names, personas, managers] = await Promise.all([
       this.accountNames(),
       this.personaNames(),
       this.attribution.directory(),
     ]);
     return this.toView(row, names, personas, managers);
+  }
+
+  /**
+   * Лиду уже пишут — имя и пол из карточки нужны и боту: иначе он так и
+   * обращается к женщине в мужском роде или по старому имени.
+   */
+  private async syncDialog(row: Lead, dto: UpdateLeadDto) {
+    if (!row.chatId || !this.brain) return;
+    const chatId = fromChatId(row.chatId);
+    if (dto.gender !== undefined)
+      await this.brain.setClientGender?.(chatId, row.gender);
+    if (dto.first_name !== undefined) {
+      await this.history.mergeLeadFacts(chatId, { name: row.firstName }, false);
+      await this.brain.noteOperatorFacts(chatId, { name: row.firstName });
+    }
   }
 
   async remove(

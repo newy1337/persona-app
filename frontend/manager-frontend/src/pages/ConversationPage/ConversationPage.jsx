@@ -17,6 +17,7 @@ import EditableValue from '../../components/EditableValue/EditableValue';
 import {
   goalRows,
   goalNow,
+  goalPercent,
   nextActionLabel,
   searchMessages,
   leadSignals,
@@ -66,6 +67,7 @@ import {
   setDealStage,
   setAiMode as setAiModeApi,
   setSlot,
+  setClientGender,
   sendAttachment,
   sendMessage,
   sendReaction,
@@ -105,6 +107,7 @@ import { accountContact, channelBadge, clientContact } from '../../utils/channel
 import { peekDialogAnchor, rememberDialog } from '../../utils/viewState';
 import { useMe } from '../../components/AppLayout/me';
 import ChatCost from './ChatCost';
+import ChatModels from './ChatModels';
 
 // Блок «Сценарий» в карточке диалога скрыт: сценариев у личностей сейчас нет.
 // Вернуть — собрать панель с VITE_SHOW_SCENARIO=1 (данные и код блока на месте).
@@ -760,6 +763,14 @@ function ConversationPage() {
                   )}
                 </div>
                 <div className={styles.agentMeta}>
+                  <span className={styles.metaRow} data-testid="client-name">
+                    <span className={styles.metaIcon}><AgeIcon />Имя</span>
+                    <EditableValue
+                      value={pins.name || ''}
+                      title="Имя собеседника — так к нему обращается бот; меняется и в «Лидах»"
+                      onSave={async (v) => { await pinFact(id, 'name', v); load(); }}
+                    />
+                  </span>
                   <span className={styles.metaRow} data-testid="deal-stage">
                     <span className={styles.metaIcon}><StatusIcon color="currentColor" />Этап</span>
                     <span className={styles.dealStage}>
@@ -806,7 +817,28 @@ function ConversationPage() {
                   </span>
                   <span className={styles.metaRow} data-testid="client-gender">
                     <span className={styles.metaIcon}><AgeIcon />Пол</span>
-                    {genderLabel(data.client_gender) || '—'}
+                    <select
+                      className={styles.dealSelect}
+                      aria-label="Пол собеседника"
+                      title="В каком роде бот обращается к собеседнику; меняется и в «Лидах»"
+                      value={data.client_gender === 'm' || data.client_gender === 'f' ? data.client_gender : ''}
+                      disabled={busy}
+                      onChange={async (e) => {
+                        setBusy(true);
+                        try {
+                          await setClientGender(id, e.target.value);
+                          load();
+                        } catch {
+                          // всплывашка action-store уже показала причину
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      <option value="">не указан</option>
+                      <option value="m">{genderLabel('m')}</option>
+                      <option value="f">{genderLabel('f')}</option>
+                    </select>
                   </span>
                   <span className={styles.metaRow} data-testid="traffic-source">
                     <span className={styles.metaIcon}><StatusIcon color="currentColor" />Трафик</span>
@@ -883,6 +915,7 @@ function ConversationPage() {
 
             {/* Расход модели на диалог — только админу. */}
             {me?.role === 'admin' && <ChatCost chatId={id} />}
+            {me?.role === 'admin' && <ChatModels chatId={id} value={data.models} />}
 
             <div className={styles.summarySection}>
               <div className={styles.summaryHeader}>
@@ -890,11 +923,17 @@ function ConversationPage() {
                   <span className={styles.summaryIcon}><ShortIcon /></span>
                   Цели знакомства{goals?.stage?.title ? ` · ${goals.stage.title}` : ''}
                 </span>
-                <span className={styles.summaryTag}>
-                  {goals ? `${goals.known} / ${goals.total}` : '—'}
+                <span className={styles.summaryTag} title={goals ? `узнали ${goals.known} из ${goals.total} тем` : undefined}>
+                  {goals ? `${goalPercent(goals)}% · ${goals.known} / ${goals.total}` : '—'}
                 </span>
               </div>
               <div className={styles.cardBody}>
+                {goals?.total > 0 && (
+                  <span className={styles.goalTrack} role="progressbar" aria-label="Прогресс целей"
+                    aria-valuemin={0} aria-valuemax={100} aria-valuenow={goalPercent(goals)}>
+                    <span className={styles.progressFill} style={{ width: `${goalPercent(goals)}%` }} />
+                  </span>
+                )}
                 <div className={`${styles.nextBeat} ${styles['next_' + now.tone]}`}>
                   <span className={styles.nextLabel}>сейчас</span>
                   <p className={styles.nextText}>{now.text}</p>
@@ -914,6 +953,7 @@ function ConversationPage() {
                         onSave={async (v) => { await setSlot(id, h.key, v); load(); }}
                       />
                     </span>
+                    {h.topic && <span className={styles.checkTopic}>{h.topic}</span>}
                   </span>
                 ))}
               </div>
@@ -1599,7 +1639,7 @@ function ConversationPage() {
                       <button type="button" className={composer.toolBtn} title="Гифка по ссылке" disabled={busy} onClick={sendGifLink}>
                         GIF
                       </button>
-                      <button type="button" className={composer.toolBtn} title="Фото из образа" aria-label="Фото из образа" disabled={busy} onClick={() => setLibraryOpen(true)}>
+                      <button type="button" className={composer.toolBtn} title="Фото и кружки из образа" aria-label="Фото и кружки из образа" disabled={busy} onClick={() => setLibraryOpen(true)}>
                         🖼
                       </button>
                       {libraryOpen && (

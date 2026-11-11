@@ -65,6 +65,17 @@ export class StatsController {
 
   @ApiOperation({
     summary:
+      'Цели по личностям: в какой доле диалогов личности узнана каждая цель',
+  })
+  @ApiQuery({ name: 'from', required: false, example: '2026-10-01' })
+  @ApiQuery({ name: 'to', required: false, example: '2026-10-31' })
+  @Get('goals')
+  goals(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.stats.goalsByPersona({ from, to });
+  }
+
+  @ApiOperation({
+    summary:
       'Холодка: получено, написали, ответили, активные — всего и по менеджерам',
   })
   @ApiQuery({ name: 'from', required: false, example: '2026-09-01' })
@@ -136,10 +147,10 @@ export class StatsController {
     return this.stats.stageCosts({ from, to });
   }
 
-  @ApiOperation({ summary: 'Баланс ключа OpenRouter' })
+  @ApiOperation({ summary: 'Баланс ключа OpenRouter или NanoGPT' })
   @Get('balance')
   balanceOpenRouter() {
-    return this.balance.openRouter();
+    return this.balance.current();
   }
 
   @ApiOperation({ summary: 'Таблица цен (или умолчания)' })

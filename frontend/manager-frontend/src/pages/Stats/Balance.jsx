@@ -12,7 +12,7 @@ export default function Balance({ data }) {
   if (data.error) {
     return (
       <section className={`${p.card} ${p.balance}`}>
-        <h3 className={p.cardTitle}>Баланс OpenRouter</h3>
+        <h3 className={p.cardTitle}>Баланс {data.provider || 'OpenRouter'}</h3>
         <p className={s.muted}>{data.error}</p>
       </section>
     );
@@ -21,7 +21,7 @@ export default function Balance({ data }) {
   return (
     <section className={`${p.card} ${p.balance} ${tone(data.days_left)}`} data-testid="balance-card">
       <div className={p.balanceMain}>
-        <span className={p.balanceLabel}>OpenRouter</span>
+        <span className={p.balanceLabel}>{data.provider || 'OpenRouter'}</span>
         <span className={p.balanceValue}>{money(data.left)}</span>
       </div>
       <div className={p.balanceSide}>

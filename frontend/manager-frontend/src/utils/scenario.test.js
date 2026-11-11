@@ -5,6 +5,7 @@ import {
   searchMessages,
   goalRows,
   goalNow,
+  goalPercent,
   nextActionLabel,
   groupByDay,
   dayProgress,
@@ -843,5 +844,22 @@ describe('beatComment — улика доставки, разобранная д
     expect(beatComment({ evidence: '' })).toBeNull();
     expect(beatComment({ evidence: null })).toBeNull();
     expect(beatComment(undefined)).toBeNull();
+  });
+});
+
+describe('цели: все темы, тема словами и общий процент', () => {
+  it('строка несёт тему, тема без дня подписана способом', () => {
+    const rows = goalRows({ slots: [
+      { id: 'weekend', title: 'А выходные как?', topic: 'как проводит выходные', state: 'locked', asks: 0, policy: 'contextual' },
+      { id: 'common', title: 'common', topic: null, state: 'locked', asks: 0, policy: 'derive_only' },
+    ] });
+    expect(rows[0]).toMatchObject({ key: 'weekend', topic: 'как проводит выходные', note: 'спросит к месту' });
+    expect(rows[1].note).toBe('сам не спрашивает — понимает из разговора');
+  });
+
+  it('процент — от бэка, иначе считаем сами', () => {
+    expect(goalPercent({ known: 1, total: 4, percent: 25 })).toBe(25);
+    expect(goalPercent({ known: 1, total: 3 })).toBe(33);
+    expect(goalPercent(null)).toBe(0);
   });
 });

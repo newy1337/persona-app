@@ -1,5 +1,10 @@
 import { conversational, conversationContext } from './conversation';
-import { personaGender, voiceOf, type Gender } from './gender';
+import {
+  interlocutorGenderNote,
+  personaGender,
+  voiceOf,
+  type Gender,
+} from './gender';
 import type {
   CharacterConfig,
   CharacterState,
@@ -37,10 +42,11 @@ export function greetingNote(
   gender: Gender = 'female',
   oneQuestionOnly = true,
   contextDriven = false,
+  client: Gender | null = null,
 ): string {
   if (contextDriven)
     return 'Разговор уже идёт: не представляйся и не здоровайся повторно. Продолжай по смыслу сообщения; вопрос и рассказ о себе выбирай по контексту, они не обязательны.';
-  const g = voiceOf(gender);
+  const g = voiceOf(gender, client);
   const followup = oneQuestionOnly
     ? `поддержи разговор ровно одним лёгким вопросом ${g.they.about} — про день или настроение, не два вопроса подряд.`
     : `поддержи разговор по ситуации; уместные вопросы ${g.they.about} допустимы, но не обязательны.`;
@@ -136,6 +142,9 @@ export function buildRuntimeSnapshot(
     },
     goal_plan: acquaintanceGoalPlan(character, available, oneQuestionOnly),
     known_interlocutor: knownSlots,
+    ...(state.client_gender
+      ? { interlocutor_gender: interlocutorGenderNote(state.client_gender) }
+      : {}),
     slot_catalog: ((goals['slots'] ?? []) as any[]).map((slot) =>
       stripMetadata(slot),
     ),
@@ -169,7 +178,12 @@ export function greeting(
   return {
     already_greeted: already,
     greeting_note: already
-      ? greetingNote(gender, oneQuestionOnly, contextDriven)
+      ? greetingNote(
+          gender,
+          oneQuestionOnly,
+          contextDriven,
+          state.client_gender ?? null,
+        )
       : '',
   };
 }

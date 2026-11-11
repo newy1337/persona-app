@@ -15,8 +15,8 @@ import {
   type ProxyWatchState,
 } from './proxy-alert';
 
-/** Сколько аккаунт лежит, прежде чем предупреждать: переподключения короче. */
-const DOWN_AFTER_SEC = 15 * 60;
+/** Сколько аккаунт лежит, прежде чем предупреждать: переподключения и сбои Telegram короче. */
+const DOWN_AFTER_SEC = 30 * 60;
 /** Сколько напоминаний без замены прокси, прежде чем выключить аккаунт. */
 const MAX_REMINDERS = 2;
 const STATE_KEY = 'proxy_watch';
@@ -37,7 +37,7 @@ export class ProxyAlertService {
   private readonly log = new Logger(ProxyAlertService.name);
   private readonly watch = new ProxyWatch(
     DOWN_AFTER_SEC,
-    appConfig.balanceAlert.repeatHours * 3600,
+    appConfig.proxyAlert.repeatHours * 3600,
     MAX_REMINDERS,
   );
   private busy = false;
@@ -67,7 +67,13 @@ export class ProxyAlertService {
       try {
         for (const text of step.messages) {
           await sendTelegramAlert(text);
-          this.log.log(`прокси: предупреждение отправлено`);
+          this.log.log(
+            `прокси: отправлено — ${text
+              .split('\n')
+              .filter((l) => /^[⚠⏰✅🔄]/u.test(l))
+              .map((l) => l.slice(0, 70))
+              .join(' | ')}`,
+          );
         }
       } catch (e) {
         // Не дошло — шаг не считается: на следующем предупреждение уйдёт снова.

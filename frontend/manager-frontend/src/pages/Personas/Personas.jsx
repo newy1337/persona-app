@@ -362,6 +362,26 @@ export default function Personas() {
                       />
                     </div>
                   )}
+                  {models?.effort && (
+                    <div className={p.modelRow}>
+                      <ModelSelect
+                        label="Рассуждение ответов"
+                        hint="глубже — умнее, но дольше и дороже"
+                        value={persona.generator_effort}
+                        options={models.effort}
+                        fallback={models.defaults.generator_effort}
+                        onChange={(v) => run(() => updatePersona(persona.id, { generator_effort: v }))}
+                      />
+                      <ModelSelect
+                        label="Рассуждение судей"
+                        hint="для плана диалога и проверки ответа"
+                        value={persona.judge_effort}
+                        options={models.effort}
+                        fallback={models.defaults.judge_effort}
+                        onChange={(v) => run(() => updatePersona(persona.id, { judge_effort: v }))}
+                      />
+                    </div>
+                  )}
 
                   <div className={p.tabs}>
                     {TABS.map((t) => (

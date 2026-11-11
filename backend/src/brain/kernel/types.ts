@@ -121,12 +121,16 @@ export interface ConversationState {
   persona_memory_cursor?: number;
   telegram_control_revision?: number;
   rhythm?: RhythmState;
+  /** пол собеседника, заданный явно (карточка лида или менеджер); нет — противоположный личности */
+  client_gender?: 'female' | 'male';
 }
 
 export interface RhythmState {
   morning?: Record<string, 'sent' | 'user' | 'skipped'>;
   goodnight?: Record<string, 'sent' | 'user' | 'skipped'>;
   last_goodnight_ts?: number;
+  /** до какого сообщения собеседника (ts) бот уже брался отвечать на хвост без ответа */
+  backlog_answered_ts?: number;
 }
 
 export interface MemoryUpdate {
@@ -270,6 +274,8 @@ export interface RuntimeSnapshot {
   };
   goal_plan: GoalPlan;
   known_interlocutor: Record<string, string>;
+  /** пол собеседника словами — только когда он задан явно */
+  interlocutor_gender?: string;
   slot_catalog: Slot[];
   available_slots: Slot[];
   deferred_slots: string[];

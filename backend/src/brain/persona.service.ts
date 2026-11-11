@@ -38,7 +38,7 @@ import { UsageRecorderService } from './usage-recorder.service';
 import { LocationResolver, LOCATION_RULES } from './kernel/location-resolver';
 import { type Place, unknownPlace } from './kernel/location';
 import { completeText } from './llm/anthropic';
-import { resolveModel } from './config/models';
+import { resolveModel, withChatModels } from './config/models';
 import { peerOf } from 'src/channels/ids';
 import { parseJsonObject } from './judge/transport';
 
@@ -71,6 +71,9 @@ export interface LoadedPersona {
   /** пусто — модель из окружения */
   generatorModel?: string | null;
   judgeModel?: string | null;
+  /** пусто — уровень рассуждения по умолчанию */
+  generatorEffort?: string | null;
+  judgeEffort?: string | null;
 }
 
 interface RawPersona {
@@ -138,27 +141,36 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
   readonly provider = appConfig.llmProvider;
 
   private readonly direct: Anthropic =
-    appConfig.llmProvider === 'openrouter'
+    appConfig.llmProvider === 'nanogpt'
       ? createOpenRouterClient({
-          apiKey: appConfig.openrouterApiKey || 'missing',
-          baseUrl: appConfig.openrouterBaseUrl,
-          providers: appConfig.openrouterProviders,
+          apiKey: appConfig.nanogptApiKey || 'missing',
+          baseUrl: appConfig.nanogptBaseUrl,
+          dottedVersions: true,
+          label: 'NanoGPT',
           timeoutMs: 180_000,
           maxRetries: 2,
-          title: 'Nastya panel',
         })
-      : new Anthropic({
-          apiKey: appConfig.anthropicApiKey || 'missing',
-          timeout: 180_000,
-          maxRetries: 2,
-          ...(appConfig.anthropicWorkspaceId
-            ? {
-                defaultHeaders: {
-                  'anthropic-workspace-id': appConfig.anthropicWorkspaceId,
-                },
-              }
-            : {}),
-        });
+      : appConfig.llmProvider === 'openrouter'
+        ? createOpenRouterClient({
+            apiKey: appConfig.openrouterApiKey || 'missing',
+            baseUrl: appConfig.openrouterBaseUrl,
+            providers: appConfig.openrouterProviders,
+            timeoutMs: 180_000,
+            maxRetries: 2,
+            title: 'Nastya panel',
+          })
+        : new Anthropic({
+            apiKey: appConfig.anthropicApiKey || 'missing',
+            timeout: 180_000,
+            maxRetries: 2,
+            ...(appConfig.anthropicWorkspaceId
+              ? {
+                  defaultHeaders: {
+                    'anthropic-workspace-id': appConfig.anthropicWorkspaceId,
+                  },
+                }
+              : {}),
+          });
 
   private readonly gatewayCapacity = appConfig.llmGatewayUrl
     ? watchGatewayCapacity({
@@ -262,17 +274,21 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
 
   get ready(): boolean {
     return Boolean(
-      appConfig.llmProvider === 'openrouter'
-        ? appConfig.openrouterApiKey
-        : appConfig.anthropicApiKey,
+      appConfig.llmProvider === 'nanogpt'
+        ? appConfig.nanogptApiKey
+        : appConfig.llmProvider === 'openrouter'
+          ? appConfig.openrouterApiKey
+          : appConfig.anthropicApiKey,
     );
   }
 
   async onModuleInit(): Promise<void> {
     this.log.log(
-      appConfig.llmProvider === 'openrouter'
-        ? `LLM via OpenRouter (providers: ${appConfig.openrouterProviders.join(', ') || 'any'})${appConfig.openrouterApiKey ? '' : ' — OPENROUTER_API_KEY is empty'}`
-        : `LLM via Anthropic API${appConfig.anthropicApiKey ? '' : ' — ANTHROPIC_API_KEY is empty'}`,
+      appConfig.llmProvider === 'nanogpt'
+        ? `LLM via NanoGPT (${appConfig.nanogptBaseUrl})${appConfig.nanogptApiKey ? '' : ' — NANOGPT_API_KEY is empty'}`
+        : appConfig.llmProvider === 'openrouter'
+          ? `LLM via OpenRouter (providers: ${appConfig.openrouterProviders.join(', ') || 'any'})${appConfig.openrouterApiKey ? '' : ' — OPENROUTER_API_KEY is empty'}`
+          : `LLM via Anthropic API${appConfig.anthropicApiKey ? '' : ' — ANTHROPIC_API_KEY is empty'}`,
     );
     if (appConfig.llmGatewayUrl)
       this.log.log(
@@ -415,6 +431,8 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
       enabled?: boolean;
       generatorModel?: string | null;
       judgeModel?: string | null;
+      generatorEffort?: string | null;
+      judgeEffort?: string | null;
     },
     chat: Record<string, string> = {},
   ): LoadedPersona {
@@ -427,6 +445,8 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
     const models = {
       generatorModel: row.generatorModel ?? null,
       judgeModel: row.judgeModel ?? null,
+      generatorEffort: row.generatorEffort ?? null,
+      judgeEffort: row.judgeEffort ?? null,
     };
     const ready = raw.views.get(key);
     if (ready)
@@ -505,6 +525,31 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
    * диалога: `{city}` и `{site}` берутся из карточки этого лида.
    */
   async forAccount(
+    accountId: number | null | undefined,
+    chatId?: number | null,
+  ): Promise<LoadedPersona> {
+    const loaded = await this.accountPersona(accountId, chatId);
+    return chatId == null
+      ? loaded
+      : withChatModels(loaded, await this.chatModels(chatId));
+  }
+
+  /** Модели, выбранные админом для этого диалога. */
+  private chatModels(chatId: number) {
+    return this.cached(`chat-models:${chatId}`, () =>
+      this.prisma.contact.findUnique({
+        where: { chatId: toChatId(chatId) },
+        select: {
+          generatorModel: true,
+          judgeModel: true,
+          generatorEffort: true,
+          judgeEffort: true,
+        },
+      }),
+    );
+  }
+
+  private async accountPersona(
     accountId: number | null | undefined,
     chatId?: number | null,
   ): Promise<LoadedPersona> {

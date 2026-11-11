@@ -134,6 +134,11 @@ export function pinFact(chatId, key, value) {
   return api.post(`/api/conversations/${chatId}/pin-fact`, { key, value: String(value ?? '') });
 }
 
+/** Пол собеседника: 'm', 'f' или null — в карточку лида и в бота. */
+export function setClientGender(chatId, gender) {
+  return api.post(`/api/conversations/${chatId}/client-gender`, { gender: gender || null });
+}
+
 export function setSlot(chatId, slotId, value) {
   return api.post(`/api/conversations/${chatId}/slot`, { slot_id: slotId, value: value || null });
 }
@@ -144,4 +149,9 @@ export function markListened(chatId, messageId) {
 
 export function sendReaction(chatId, messageId, emoji) {
   return api.post(`/api/conversations/${chatId}/reaction`, { message_id: messageId, emoji });
+}
+
+/** Модели и рассуждение для диалога (админ); null — как у личности. */
+export function setChatModels(chatId, patch) {
+  return api.put(`/api/conversations/${chatId}/models`, patch);
 }

@@ -307,8 +307,9 @@ export function ageText(seconds: number): string {
 export function lateReplyNote(
   ageSeconds: number,
   gender: Gender = 'female',
+  client: Gender | null = null,
 ): string {
-  const g = voiceOf(gender);
+  const g = voiceOf(gender, client);
   return (
     `${capital(g.they.him)} последние сообщения пришли ${ageText(ageSeconds)} назад, и ты тогда не ${g.v('ответила', 'ответил')}. ` +
     'Не отвечай так, будто они пришли только что, и не делай вид, что паузы не было: коротко и по-человечески ' +

@@ -9,9 +9,16 @@ export const appConfig = {
   tgApiHash: process.env.TG_API_HASH || '',
   sessionEncKey: process.env.SESSION_ENC_KEY || '',
   anthropicApiKey: (process.env.ANTHROPIC_API_KEY || '').trim(),
-  llmProvider: ((process.env.LLM_PROVIDER || '').trim() === 'openrouter'
-    ? 'openrouter'
-    : 'anthropic') as 'anthropic' | 'openrouter',
+  llmProvider: (['openrouter', 'nanogpt'].includes(
+    (process.env.LLM_PROVIDER || '').trim(),
+  )
+    ? (process.env.LLM_PROVIDER || '').trim()
+    : 'anthropic') as 'anthropic' | 'openrouter' | 'nanogpt',
+  // NanoGPT: OpenAI-совместимый API, как у OpenRouter (LLM_PROVIDER=nanogpt).
+  nanogptApiKey: (process.env.NANOGPT_API_KEY || '').trim(),
+  nanogptBaseUrl: (
+    process.env.NANOGPT_BASE_URL || 'https://nano-gpt.com/api/v1'
+  ).trim(),
   openrouterApiKey: (process.env.OPENROUTER_API_KEY || '').trim(),
   openaiApiKey: (process.env.OPENAI_API_KEY || '').trim(),
   openaiBaseUrl: (
@@ -47,17 +54,25 @@ export const appConfig = {
   anthropicWorkspaceId: process.env.ANTHROPIC_WORKSPACE_ID || '',
   generatorModel: process.env.GENERATOR_MODEL || 'claude-sonnet-5',
   judgeModel: (process.env.JUDGE_MODEL || '').trim(),
-  judgeEffort: (['low', 'medium', 'high'].includes(
+  // Только для дева: менять личность у аккаунта с перепиской (на проде истории
+  // персонажей смешались бы). ALLOW_PERSONA_SWITCH=1.
+  allowPersonaSwitch: (process.env.ALLOW_PERSONA_SWITCH || '').trim() === '1',
+  judgeEffort: (['off', 'low', 'medium', 'high'].includes(
     process.env.JUDGE_EFFORT ?? '',
   )
     ? process.env.JUDGE_EFFORT
-    : 'low') as 'low' | 'medium' | 'high',
+    : 'low') as 'off' | 'low' | 'medium' | 'high',
   adminUsername: process.env.ADMIN_USERNAME || 'admin',
   adminPassword: process.env.ADMIN_PASSWORD || '',
   outreachDailyPerAccount: Number(process.env.OUTREACH_DAILY_PER_ACCOUNT || 10),
   // Сколько аккаунтов одновременно сочиняют ответы (у одного аккаунта — по одному чату за раз).
   replyLanes: Math.max(1, Number(process.env.REPLY_LANES || 12)),
   outreachMinGapS: Number(process.env.OUTREACH_MIN_GAP_S || 180),
+  // Предупреждения о нерабочих прокси: в ту же группу, что и баланс.
+  proxyAlert: {
+    // Напоминать раз в N часов; после двух напоминаний аккаунт на паузу.
+    repeatHours: Math.max(1, Number(process.env.PROXY_ALERT_REPEAT_HOURS || 4)),
+  },
   // Предупреждение в группу Telegram о низком балансе OpenRouter.
   balanceAlert: {
     threshold: Number(process.env.BALANCE_ALERT_THRESHOLD || 300),

@@ -17,6 +17,8 @@ export interface PartPhoto {
   filePath: string;
   note: string;
   accountId: number;
+  /** Остальные снимки альбома: своё сообщение в ленте и отметка о показе. */
+  album?: Array<{ photoId: number; filePath: string; peerMsgId: number }>;
 }
 
 @Injectable()
@@ -155,6 +157,46 @@ export class BrainStateService {
           create: { ...send, chatId: id },
           update: {},
         });
+        // Остальные снимки альбома: в Telegram у каждого свой номер, в VK
+        // альбом — одно сообщение, и номер есть только у первой части.
+        for (const extra of photo.album ?? []) {
+          const peer = extra.peerMsgId === peerMsgId ? null : extra.peerMsgId;
+          const row =
+            (await tx.message.findFirst({
+              where: peer
+                ? { chatId: id, role: 'assistant', peerMsgId: peer }
+                : {
+                    chatId: id,
+                    role: 'assistant',
+                    filePath: extra.filePath,
+                    ts,
+                  },
+            })) ??
+            (await tx.message.create({
+              data: {
+                chatId: id,
+                role: 'assistant',
+                text: '[фото]',
+                author,
+                ts,
+                peerMsgId: peer,
+                mediaKind: 'photo',
+                filePath: extra.filePath,
+              },
+            }));
+          await tx.photoSend.upsert({
+            where: { messageId: row.id },
+            create: {
+              ...send,
+              chatId: id,
+              photoId: extra.photoId,
+              messageId: row.id,
+              peerMsgId: peer,
+              caption: '',
+            },
+            update: {},
+          });
+        }
       }
       const own = [...state.history]
         .reverse()

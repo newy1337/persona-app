@@ -6,6 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  chatModelsView,
+  isEffort,
+  isGeneratorModel,
+  isJudgeModel,
+  type ChatModelsPatch,
+} from 'src/brain/config/models';
+import {
   accountContact,
   chatChannel,
   clientContact,
@@ -238,7 +245,15 @@ export class ConversationsService {
       this.attribution.directory(),
       this.prisma.contact.findUnique({
         where: { chatId: toChatId(chatId) },
-        select: { note: true, noteBy: true, noteAt: true },
+        select: {
+          note: true,
+          noteBy: true,
+          noteAt: true,
+          generatorModel: true,
+          judgeModel: true,
+          generatorEffort: true,
+          judgeEffort: true,
+        },
       }),
     ]);
     const lost = account
@@ -256,6 +271,13 @@ export class ConversationsService {
         profile,
         read,
       ),
+      // Пол, которым пользуется бот: поправленный менеджером, иначе из карточки.
+      client_gender:
+        state?.client_gender === 'female'
+          ? 'f'
+          : state?.client_gender === 'male'
+            ? 'm'
+            : (profile?.gender ?? null),
       ...managers.forAccount(owner),
       persona_name: persona.name,
       channel: chatChannel(chatId),
@@ -299,6 +321,7 @@ export class ConversationsService {
       note: contact?.note ?? null,
       note_by: contact?.noteBy ?? null,
       note_at: contact?.noteAt ?? null,
+      models: chatModelsView(contact),
     };
   }
 
@@ -504,16 +527,18 @@ export class ConversationsService {
   /** Снимок из образа вручную: через ту же очередь, что и вложения, с отметкой о показе. */
   async sendLibraryPhoto(
     chatId: number,
-    photo: { id: number; filePath: string },
+    photo: { id: number; filePath: string; kind?: string },
     dto: { caption?: string; reply_to?: number },
   ) {
     const ts = this.clock.ts();
+    // Кружок из библиотеки уходит кружком; подписи у кружка не бывает.
+    const kind = photo.kind === 'video_note' ? 'video_note' : 'photo';
     const replyId = await this.history.enqueueManualReply(
       chatId,
-      (dto.caption ?? '').trim(),
+      kind === 'video_note' ? '' : (dto.caption ?? '').trim(),
       ts,
       {
-        kind: 'photo',
+        kind,
         filePath: photo.filePath,
         replyTo: dto.reply_to,
         photoId: photo.id,
@@ -523,7 +548,7 @@ export class ConversationsService {
     return {
       ok: true,
       pending_reply_id: replyId,
-      kind: 'photo',
+      kind,
       photo_id: photo.id,
       scheduled_ts: ts,
     };
@@ -732,6 +757,39 @@ export class ConversationsService {
     return { ok: true, chat_id: chatId, hidden };
   }
 
+  /** Модели и рассуждение для диалога (админ): null — как у личности. */
+  async setModels(chatId: number, patch: ChatModelsPatch) {
+    const checks: Array<[keyof ChatModelsPatch, (v: unknown) => boolean]> = [
+      ['generatorModel', isGeneratorModel],
+      ['judgeModel', isJudgeModel],
+      ['generatorEffort', isEffort],
+      ['judgeEffort', isEffort],
+    ];
+    const data: ChatModelsPatch = {};
+    for (const [key, valid] of checks) {
+      const value = patch[key];
+      if (value === undefined) continue;
+      if (value !== null && !valid(value))
+        throw new UnprocessableEntityException(
+          `недопустимое значение «${value}»`,
+        );
+      data[key] = value;
+    }
+    await this.history.ensureContact(chatId);
+    const row = await this.prisma.contact.update({
+      where: { chatId: toChatId(chatId) },
+      data,
+      select: {
+        generatorModel: true,
+        judgeModel: true,
+        generatorEffort: true,
+        judgeEffort: true,
+      },
+    });
+    this.persona.forgetRows();
+    return chatModelsView(row);
+  }
+
   async setNote(chatId: number, text: string, author: string) {
     const note = text.trim();
     await this.history.ensureContact(chatId);
@@ -831,7 +889,29 @@ export class ConversationsService {
     }
     await this.history.mergeLeadFacts(chatId, { [key]: coerced }, false);
     await this.brain.noteOperatorFacts(chatId, { [key]: coerced });
+    // Имя правят и в «Лидах»: карточка лида должна совпадать с диалогом.
+    if (key === 'name')
+      await this.prisma.lead.updateMany({
+        where: { chatId: toChatId(chatId) },
+        data: {
+          firstName: coerced === null ? null : String(coerced).slice(0, 64),
+        },
+      });
     return { ok: true, chat_id: chatId };
+  }
+
+  /**
+   * Пол собеседника вручную: в карточку лида (если чат от лида) и в бота.
+   * Отправитель холодки иногда путает пол — бот тогда обращался к женщине
+   * в мужском роде.
+   */
+  async setClientGender(chatId: number, gender: 'm' | 'f' | null) {
+    await this.prisma.lead.updateMany({
+      where: { chatId: toChatId(chatId) },
+      data: { gender },
+    });
+    await this.brain.setClientGender?.(chatId, gender);
+    return { ok: true, chat_id: chatId, gender };
   }
 
   async setSlot(chatId: number, slotId: string, value: string | null) {

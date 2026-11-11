@@ -8,12 +8,14 @@ import {
   getMyPhotoSets,
   getPhotoSets,
   getSetPhotos,
+  getSetSeries,
   photoUrl,
   updatePhotoSet,
   uploadSetPhoto,
 } from '../../api/photoSets';
 import PhotoCard from './PhotoCard';
 import PhotoEditor from './PhotoEditor';
+import SeriesPanel from './SeriesPanel';
 import s from '../../styles/AdminPage.module.scss';
 import p from './PhotoSets.module.scss';
 
@@ -89,14 +91,16 @@ function Uploader({ setId, onUploaded }) {
   const [progress, setProgress] = useState(null);
 
   async function upload(files) {
-    const list = [...files].filter((f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|heic)$/i.test(f.name));
+    // Видео становится кружком: сервер сам соберёт круглое 480×480 до минуты.
+    const list = [...files].filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/') || /\.(jpe?g|png|webp|heic|mp4|mov|m4v|webm)$/i.test(f.name));
     if (!list.length) return;
-    const report = { done: 0, total: list.length, duplicates: 0, errors: [] };
+    const report = { done: 0, total: list.length, duplicates: 0, describing: 0, errors: [] };
     setProgress({ ...report });
     for (const file of list) {
       try {
         const r = await uploadSetPhoto(setId, file);
         if (r.duplicate) report.duplicates += 1;
+        if (r.describing) report.describing += 1;
       } catch (e) {
         report.errors.push(`${file.name}: ${e.detail || e.message}`);
       }
@@ -104,6 +108,8 @@ function Uploader({ setId, onUploaded }) {
       setProgress({ ...report });
       onUploaded();
     }
+    // Описания модель дописывает уже после загрузки — подтягиваем их.
+    if (report.describing) for (const ms of [15000, 45000, 90000]) setTimeout(onUploaded, ms);
   }
 
   return (
@@ -113,16 +119,16 @@ function Uploader({ setId, onUploaded }) {
       onDragLeave={() => setOver(false)}
       onDrop={(e) => { e.preventDefault(); setOver(false); upload(e.dataTransfer.files); }}
     >
-      <p style={{ margin: '0 0 8px' }}>Перетащите снимки сюда или</p>
+      <p style={{ margin: '0 0 8px' }}>Перетащите снимки или видео для кружков сюда или</p>
       <label className={s.btnPrimary} style={{ display: 'inline-flex', cursor: 'pointer' }}>
         Выбрать файлы
-        <input type="file" accept="image/*" multiple hidden onChange={(e) => { upload(e.target.files); e.target.value = ''; }} />
+        <input type="file" accept="image/*,video/*" multiple hidden onChange={(e) => { upload(e.target.files); e.target.value = ''; }} />
       </label>
       {progress && (
         <p className={s.hint} role="status" style={{ marginTop: 8 }}>
           {progress.done < progress.total
             ? `${progress.done + 1} из ${progress.total}…`
-            : `Загружено: ${progress.total - progress.errors.length - progress.duplicates}${progress.duplicates ? `, повторов: ${progress.duplicates}` : ''}`}
+            : `Загружено: ${progress.total - progress.errors.length - progress.duplicates}${progress.duplicates ? `, повторов: ${progress.duplicates}` : ''}${progress.describing ? '. Описания появятся в течение пары минут — пока их нет, бот эти снимки не отправляет' : ''}`}
           {progress.errors.map((e) => <span key={e} className={s.error} style={{ display: 'block' }}>{e}</span>)}
         </p>
       )}
@@ -223,6 +229,8 @@ export default function PhotoSets() {
   const [open, setOpen] = useState(null);
   const [error, setError] = useState('');
   const [newName, setNewName] = useState('');
+  const [series, setSeries] = useState([]);
+  const [seriesId, setSeriesId] = useState(null);
 
   const loadSets = useCallback(() => getPhotoSets().then(setData).catch((e) => setError(e.detail || e.message)), []);
   const loadPhotos = useCallback(() => {
@@ -234,7 +242,11 @@ export default function PhotoSets() {
   useEffect(() => {
     if (!current && data.items.length) setCurrent(data.items[0].id);
   }, [data.items, current]);
-  useEffect(() => { setPhotos([]); setTag(''); setQ(''); loadPhotos(); }, [loadPhotos]);
+  const loadSeries = useCallback(() => {
+    if (!current) return;
+    getSetSeries(current).then((r) => setSeries(r.items ?? [])).catch((e) => setError(e.detail || e.message));
+  }, [current]);
+  useEffect(() => { setPhotos([]); setTag(''); setQ(''); setSeriesId(null); setSeries([]); loadPhotos(); loadSeries(); }, [loadPhotos, loadSeries]);
 
   const set = data.items.find((x) => x.id === current) ?? null;
   // У хеда регион есть всегда; создавать без своего региона может только администратор.
@@ -243,9 +255,11 @@ export default function PhotoSets() {
   const tags = useMemo(() => [...new Set(photos.flatMap((ph) => ph.tags))].sort(), [photos]);
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return photos.filter((ph) => (!tag || ph.tags.includes(tag)) &&
-      (!needle || [ph.description, ph.place ?? '', ph.details, ph.tags.join(' ')].join(' ').toLowerCase().includes(needle)));
-  }, [photos, q, tag]);
+    const titles = new Map(series.map((x) => [x.id, x.title]));
+    return photos.filter((ph) => (!tag || ph.tags.includes(tag)) && (!seriesId || ph.series_id === seriesId) &&
+      (!needle || [ph.description, ph.place ?? '', ph.details, ph.tags.join(' ')].join(' ').toLowerCase().includes(needle)))
+      .map((ph) => (ph.series_id && titles.has(ph.series_id) ? { ...ph, series_title: titles.get(ph.series_id) } : ph));
+  }, [photos, q, tag, series, seriesId]);
 
   async function create(e) {
     e.preventDefault();
@@ -332,6 +346,7 @@ export default function PhotoSets() {
                 <input className={`${s.field} ${p.search}`} placeholder="Поиск" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Поиск по снимкам" />
                 {set.can_edit && <button type="button" className={s.btnSmDanger} onClick={remove} disabled={Boolean(blocker)} title={blocker ?? undefined}>Удалить образ</button>}
               </div>
+              <SeriesPanel setId={set.id} series={series} canEdit={set.can_edit} value={seriesId} onChange={setSeriesId} onChanged={() => { loadSeries(); loadPhotos(); }} />
               <TagFilter tags={tags} value={tag} onChange={setTag} />
               <PhotoGrid photos={shown} onOpen={setOpen} />
             </section>
@@ -339,9 +354,10 @@ export default function PhotoSets() {
       {open && (
         <PhotoEditor
           photo={open}
+          series={series}
           canEdit={Boolean(set?.can_edit)}
           onClose={() => setOpen(null)}
-          onSaved={() => { setOpen(null); loadPhotos(); loadSets(); }}
+          onSaved={() => { setOpen(null); loadPhotos(); loadSets(); loadSeries(); }}
           onDelete={removePhoto}
           onCover={makeCover}
         />

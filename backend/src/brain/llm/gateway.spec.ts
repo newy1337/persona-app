@@ -75,6 +75,15 @@ describe('шлюз LLM с откатом на OpenRouter', () => {
     );
   });
 
+  it('модель не Claude — сразу в OpenRouter, шлюз не трогаем', async () => {
+    const { client, gateway, fallback } = setup(async () => reply('шлюз'));
+    const kimi = { ...params, model: 'moonshotai/kimi-k3' };
+    const res = await client.messages.create(kimi);
+    expect(text(res)).toBe('openrouter');
+    expect(gateway.messages.create).not.toHaveBeenCalled();
+    expect(fallback.messages.create).toHaveBeenCalledWith(kimi, undefined);
+  });
+
   it('шлюз упал — тот же запрос уходит в OpenRouter', async () => {
     const { client, fallback, log } = setup(async () => {
       throw new Error('OpenRouter 503: gateway down');

@@ -113,8 +113,16 @@ export const FRESHNESS_LABEL: Record<Freshness, string> = {
   today: 'снято сегодня',
   recent: 'снято на этой неделе',
   archive: 'архивный снимок',
-  unknown: 'дата съёмки неизвестна',
+  unknown: 'дата не указана — можно как снятое сейчас',
 };
+
+/**
+ * Можно ли подать снимок как только что сделанный: сегодняшний — да; без даты
+ * — тоже (дату не указали, значит, снимок «вне времени»), если это не
+ * противоречит часам, сезону и месту — за этим следят генератор и проверка.
+ */
+export const canBeFresh = (freshness: Freshness): boolean =>
+  freshness === 'today' || freshness === 'unknown';
 
 /** «Только что», «прямо сейчас», «сегодня сняла» — уместно только у сегодняшнего фото. */
 const FRESH_CLAIM_RX =
@@ -129,7 +137,7 @@ export function hasFalseFreshClaim(
   text: string,
   freshness: Freshness,
 ): boolean {
-  return freshness !== 'today' && freshClaims(text).length > 0;
+  return !canBeFresh(freshness) && freshClaims(text).length > 0;
 }
 
 /**
@@ -218,11 +226,90 @@ export interface PhotoAvailability {
     freshness: Freshness;
     details: string;
     tags: string[];
+    /** у серии — сколько снимков уйдёт одним альбомом */
+    photos?: number;
   }>;
   shown_before: Array<{ id: string; description: string; when: string }>;
 }
 
 export const MAX_CANDIDATES = 60;
+
+/** Серия снимков образа: бот может отправить её целиком, одним альбомом. */
+export interface SeriesFacts {
+  id: number;
+  title: string;
+  description: string;
+  place: string | null;
+  takenOn: string | null;
+  autoSend: boolean;
+  /** снимки серии по порядку */
+  photos: Array<PhotoFacts & { autoSend: boolean }>;
+}
+
+/** Альбом Telegram и сообщение VK — до 10 вложений. */
+export const ALBUM_MAX = 10;
+/** Серия из одного оставшегося снимка — уже не серия. */
+export const SERIES_MIN = 2;
+const SERIES_PREFIX = 's';
+
+/**
+ * Снимок без описания бот не берёт: подписать его честно не из чего. Такой
+ * бывает сразу после загрузки, пока модель готовит черновик описания.
+ */
+const described = (p: object): boolean =>
+  !('description' in p) ||
+  String((p as { description?: unknown }).description ?? '').trim() !== '';
+
+export const seriesCandidateId = (id: number) => `${SERIES_PREFIX}${id}`;
+
+/** Номер серии из id кандидата («s12» → 12); у одиночного снимка — null. */
+export function seriesIdOf(
+  candidateId: string | null | undefined,
+): number | null {
+  const m = /^s(\d+)$/.exec(String(candidateId ?? ''));
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Какие снимки серии уйдут альбомом: разрешённые к автоотправке и, если
+ * образ не повторяет показанное, ещё не виденные — не больше ALBUM_MAX.
+ * Меньше SERIES_MIN — серию не отправляем.
+ */
+export function seriesToSend<T extends { id: number; autoSend: boolean }>(
+  series: { autoSend: boolean; photos: T[] },
+  shownIds: Set<number>,
+  noRepeat: boolean,
+): T[] {
+  if (!series.autoSend) return [];
+  const left = series.photos
+    .filter(
+      (p) => p.autoSend && described(p) && !(noRepeat && shownIds.has(p.id)),
+    )
+    .slice(0, ALBUM_MAX);
+  return left.length >= SERIES_MIN ? left : [];
+}
+
+/** Как серия выглядит для модели: о чём она и что на каждом снимке. */
+export function seriesNote(
+  series: Pick<SeriesFacts, 'title' | 'description' | 'place' | 'takenOn'>,
+  photos: PhotoFacts[],
+  today?: string,
+): string {
+  const parts = [
+    `серия «${series.title.trim()}» из ${photos.length} фото одним альбомом`,
+  ];
+  if (series.description.trim()) parts.push(series.description.trim());
+  if (series.place?.trim()) parts.push(`где: ${series.place.trim()}`);
+  parts.push(`когда: ${formatTakenOn(series.takenOn)}`);
+  if (today && series.takenOn)
+    parts.push(FRESHNESS_LABEL[photoFreshness(series.takenOn, today)]);
+  parts.push(
+    `снимки: ${photos
+      .map((p, i) => `${i + 1}) ${p.description.trim() || 'без описания'}`)
+      .join('; ')}`,
+  );
+  return parts.join('; ');
+}
 
 /**
  * Решает, может ли бот прямо сейчас отправить фото, и какие снимки ему
@@ -235,11 +322,15 @@ export function photoAvailability(input: {
   sends: SendRecord[];
   now: number;
   today: string;
+  series?: SeriesFacts[];
 }): PhotoAvailability {
   const { rules, photos, sends, now, today } = input;
   const mode: SendMode =
     rules.sendMode === 'request' ? 'request' : 'initiative';
-  const sentToday = sends.filter((s) => s.date === today).length;
+  // Серия уходит альбомом — снимки с одной отметкой времени: это одна отправка.
+  const sentToday = new Set(
+    sends.filter((s) => s.date === today).map((s) => s.sentAt),
+  ).size;
   const last = Math.max(0, ...sends.map((s) => s.sentAt));
   const shownIds = new Set(sends.map((s) => s.photoId));
   const byId = new Map(photos.map((p) => [p.id, p]));
@@ -272,9 +363,30 @@ export function photoAvailability(input: {
     return blocked('дневной лимит фото исчерпан');
   if (last && now - last < rules.minIntervalMin * 60)
     return blocked('с прошлого фото прошло слишком мало времени');
-  const candidates = photos
-    .filter((p) => p.autoSend && !(rules.noRepeat && shownIds.has(p.id)))
-    .slice(0, MAX_CANDIDATES)
+  // Серии — первыми: их мало, и обрезка длинного списка их не задевает.
+  const seriesCandidates = (input.series ?? []).flatMap((series) => {
+    const send = seriesToSend(series, shownIds, rules.noRepeat);
+    if (!send.length) return [];
+    return [
+      {
+        id: seriesCandidateId(series.id),
+        description: `Серия «${series.title.trim()}»: ${send.length} фото одним альбомом${series.description.trim() ? ` — ${series.description.trim()}` : ''}`,
+        place: series.place ?? '',
+        taken: formatTakenOn(series.takenOn),
+        freshness: photoFreshness(series.takenOn, today),
+        details: send
+          .map((p, i) => `${i + 1}) ${p.description.trim() || 'без описания'}`)
+          .join('; '),
+        tags: [] as string[],
+        photos: send.length,
+      },
+    ];
+  });
+  const single = photos
+    .filter(
+      (p) =>
+        p.autoSend && described(p) && !(rules.noRepeat && shownIds.has(p.id)),
+    )
     .map((p) => ({
       id: String(p.id),
       description: p.description,
@@ -284,6 +396,7 @@ export function photoAvailability(input: {
       details: p.details,
       tags: p.tags,
     }));
+  const candidates = [...seriesCandidates, ...single].slice(0, MAX_CANDIDATES);
   if (!candidates.length) return blocked('новых снимков для автоотправки нет');
   return { ...base, available: true, reason: '', candidates };
 }

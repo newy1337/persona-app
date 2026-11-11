@@ -11,6 +11,9 @@ import {
   photoFreshness,
   photoNote,
   withPhotoNote,
+  seriesIdOf,
+  seriesNote,
+  seriesToSend,
 } from './photo-library';
 
 const rules = {
@@ -54,6 +57,9 @@ describe('photo library', () => {
     const text = 'Вот, только что сфоткала своего Барсика';
     expect(hasFalseFreshClaim(text, 'archive')).toBe(true);
     expect(hasFalseFreshClaim(text, 'today')).toBe(false);
+    // Снимок без даты подаётся как сделанный сейчас — «только что» у него не ложь.
+    expect(hasFalseFreshClaim(text, 'unknown')).toBe(false);
+    expect(hasFalseFreshClaim(text, 'recent')).toBe(true);
     expect(hasFalseFreshClaim('Это мой Барсик, прошлым летом', 'archive')).toBe(
       false,
     );
@@ -146,6 +152,100 @@ describe('photo library', () => {
         sends: [{ photoId: 1, sentAt: NOW - 86400 * 3, date: '2026-10-11' }],
       }).available,
     ).toBe(false);
+  });
+
+  it('offers a series as one album candidate and counts it as one send', () => {
+    const trip = {
+      id: 7,
+      title: 'Путешествие',
+      description: 'неделя в Грузии с подругой',
+      place: 'Тбилиси',
+      takenOn: '2026-08',
+      autoSend: true,
+      photos: [photo(11), photo(12), photo(13, { autoSend: false })],
+    };
+    const base = {
+      rules: { ...rules, minIntervalMin: 0 },
+      accountAutoSend: true,
+      photos: [photo(1), photo(11), photo(12)],
+      now: NOW,
+      today: '2026-10-14',
+      series: [trip],
+    };
+    const view = photoAvailability({ ...base, sends: [] });
+    expect(view.candidates[0]).toMatchObject({
+      id: 's7',
+      photos: 2,
+      place: 'Тбилиси',
+      freshness: 'archive',
+    });
+    expect(view.candidates[0].description).toContain('Путешествие');
+    expect(seriesIdOf('s7')).toBe(7);
+    expect(seriesIdOf('7')).toBeNull();
+
+    // Альбом из двух снимков в одну секунду — одна отправка из двух в день.
+    const afterAlbum = photoAvailability({
+      ...base,
+      sends: [
+        { photoId: 11, sentAt: NOW - 600, date: '2026-10-14' },
+        { photoId: 12, sentAt: NOW - 600, date: '2026-10-14' },
+      ],
+    });
+    expect(afterAlbum.available).toBe(true);
+    expect(afterAlbum.sent_today).toBe(1);
+    // Показанное выпало — от серии остаётся меньше двух снимков, её нет.
+    expect(afterAlbum.candidates.map((c) => c.id)).toEqual(['1']);
+  });
+
+  it('never offers a photo that has no description yet', () => {
+    const view = photoAvailability({
+      rules,
+      accountAutoSend: true,
+      photos: [photo(1), photo(2, { description: '  ' })],
+      sends: [],
+      now: NOW,
+      today: '2026-10-14',
+    });
+    expect(view.candidates.map((c) => c.id)).toEqual(['1']);
+  });
+
+  it('sends at most an album worth of unseen series photos', () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      id: i + 1,
+      autoSend: true,
+    }));
+    const left = seriesToSend(
+      { autoSend: true, photos: many },
+      new Set([1]),
+      true,
+    );
+    expect(left.map((p) => p.id)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(
+      seriesToSend({ autoSend: false, photos: many }, new Set(), true),
+    ).toEqual([]);
+    expect(
+      seriesNote(
+        { title: 'Путешествие', description: '', place: null, takenOn: null },
+        [
+          {
+            id: 1,
+            description: 'горы',
+            place: null,
+            takenOn: null,
+            details: '',
+            tags: [],
+          },
+          {
+            id: 2,
+            description: 'море',
+            place: null,
+            takenOn: null,
+            details: '',
+            tags: [],
+          },
+        ],
+      ),
+    ).toContain('снимки: 1) горы; 2) море');
   });
 
   it('accepts only a listed photo, and in request mode only on request', () => {

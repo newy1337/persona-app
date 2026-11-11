@@ -1,4 +1,5 @@
 import { CreateLeadForm, LeadsTable } from '../../ui/ManagerRegion';
+import { personaLabel } from '../../utils/persona';
 import { PanelUX } from '../../ui/PanelUX';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -13,6 +14,7 @@ import {
   updateLead,
   writeFromAnother,
 } from '../../api/leads';
+import { getAccounts } from '../../api/accounts';
 import s from '../../styles/AdminPage.module.scss';
 import { DEAL_STAGE_FILTERS, dealStageLabel } from '../../data/dealStages';
 import { MANUAL_TRAFFIC_SOURCES } from '../../utils/trafficSource';
@@ -53,7 +55,7 @@ export function PersonaSelect({ personas, value, onChange, className, channel = 
         const none = p.by_channel && !c.accounts;
         return (
           <option key={p.slug} value={p.slug} disabled={none && p.slug !== value}>
-            {p.name}
+            {personaLabel(p)}
             {c.ready ? ` · ${c.ready} акк.${tag} в сети` : none ? ` · нет аккаунтов${tag}` : ` · нет аккаунтов${tag} в сети`}
           </option>
         );
@@ -64,16 +66,49 @@ export function PersonaSelect({ personas, value, onChange, className, channel = 
 
 function AddForm(props) { return <CreateLeadForm {...props} PersonaSelect={PersonaSelect} />; }
 
+const accountName = (a) =>
+  a.username ? (a.channel === 'vk' ? a.username : `@${a.username}`) : a.first_name || a.phone_e164 || `Аккаунт #${a.id}`;
+
+/**
+ * Сколько из списка аккаунт напишет сегодня и за сколько дней разойдутся
+ * остальные: сверх дневного лимита лиды ждут его сброса в 00:00 МСК.
+ */
+export function limitHint(lines, outreach, accountId) {
+  const limit = outreach?.daily_per_account;
+  if (!limit || !lines) return null;
+  const sent = outreach.accounts?.find((a) => a.account_id === accountId)?.sent_today ?? 0;
+  const today = Math.max(0, limit - sent);
+  if (lines <= today) return `Лимит аккаунта ${limit} в день, сегодня осталось ${today} — напишет всем ${lines} сегодня.`;
+  const days = Math.ceil((lines - today) / limit);
+  return `Лимит аккаунта ${limit} в день, сегодня осталось ${today}. Остальные ${lines - today} ждут в очереди сброса лимита (00:00 МСК) — ещё ${days} дн. Другие аккаунты им не пишут.`;
+}
+
 function ImportDialog({ personas, onClose }) {
   const [text, setText] = useState('');
   const [queue, setQueue] = useState(false);
   const [personaId, setPersonaId] = useState('');
   const [channel, setChannel] = useState('telegram');
   const [trafficSource, setTrafficSource] = useState('');
+  const [accountId, setAccountId] = useState('');
+  const [accounts, setAccounts] = useState([]);
+  const [outreach, setOutreach] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const lines = text.split('\n').filter((l) => l.trim()).length;
+
+  useEffect(() => {
+    let alive = true;
+    getAccounts().then((rows) => alive && setAccounts(Array.isArray(rows) ? rows : [])).catch(() => {});
+    getOutreachStatus().then((r) => alive && setOutreach(r)).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const available = accounts.filter(
+    (a) => a.status === 'active' && (a.channel === 'vk' ? 'vk' : 'telegram') === channel
+      && personas.some((p) => p.slug === a.persona_id) && (!personaId || a.persona_id === personaId),
+  );
+  const chosen = available.find((a) => String(a.id) === accountId) ?? null;
+  const hint = chosen ? limitHint(lines, outreach, chosen.id) : null;
 
   async function submit(e) {
     e.preventDefault();
@@ -81,7 +116,7 @@ function ImportDialog({ personas, onClose }) {
     setBusy(true);
     setError(null);
     try {
-      setResult(await importLeads({ text, queue, persona_id: personaId, channel, traffic_source: trafficSource }));
+      setResult(await importLeads({ text, queue, persona_id: personaId, channel, traffic_source: trafficSource, preferred_account_id: chosen?.id }));
     } catch (err) {
       setError(err.detail || err.message);
     } finally {
@@ -133,15 +168,31 @@ function ImportDialog({ personas, onClose }) {
             </label>
             <label className={s.label}>
               Мессенджер
-              <select className={s.select} aria-label="Мессенджер" value={channel} onChange={(e) => setChannel(e.target.value)}>
+              <select className={s.select} aria-label="Мессенджер" value={channel} onChange={(e) => { setChannel(e.target.value); setAccountId(''); }}>
                 <option value="telegram">Telegram</option>
                 <option value="vk">ВКонтакте</option>
               </select>
             </label>
             <label className={s.label}>
               С какой личности писать всем из списка
-              <PersonaSelect personas={personas} value={personaId} onChange={setPersonaId} channel={channel} />
+              <PersonaSelect personas={personas} value={personaId} onChange={(v) => { setPersonaId(v); setAccountId(''); }} channel={channel} />
             </label>
+            <label className={s.label}>
+              С какого аккаунта писать всем из списка
+              <select className={s.select} aria-label="Аккаунт для импорта" value={accountId} onChange={(e) => {
+                setAccountId(e.target.value);
+                const a = available.find((x) => String(x.id) === e.target.value);
+                if (a && !personaId) setPersonaId(a.persona_id);
+              }}>
+                <option value="">Автоматически — любой подходящий</option>
+                {available.map((a) => (
+                  <option key={a.id} value={String(a.id)}>
+                    {[accountName(a), personas.find((p) => p.slug === a.persona_id)?.name, `#${a.id}`].filter(Boolean).join(' · ')}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {chosen && <p className={s.muted} data-testid="import-limit-hint">{hint ?? 'Напишет только этот аккаунт; сверх дневного лимита лиды ждут его сброса.'}</p>}
             <label className={s.check}>
               <input type="checkbox" checked={queue} onChange={(e) => setQueue(e.target.checked)} />
               Сразу поставить в очередь прозвона
@@ -317,6 +368,7 @@ export default function Leads() {
             onQueue={ids => run(() => startOutreach(ids))} onUnqueue={ids => run(() => stopOutreach(ids))}
             onReassign={row => run(() => writeFromAnother(row.id))} onDelete={setDeleting}
             onPersonaChange={(id, persona_id) => run(() => updateLead(id, { persona_id }))}
+            onEdit={(id, patch) => run(() => updateLead(id, patch))}
             personas={personas} helpers={{ PersonaSelect, statusLabels: LABEL, statusClasses: BADGE, date: fmtTs, dealStage: dealStageLabel }} />
       {importing && <ImportDialog personas={personas} onClose={() => { setImporting(false); load(); }} />}
       {deleting && (

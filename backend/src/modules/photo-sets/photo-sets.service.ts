@@ -3,11 +3,19 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import type { DashboardUser, PhotoSet, PhotoSetPhoto } from '@prisma/client';
+import type {
+  DashboardUser,
+  PhotoSeries,
+  PhotoSet,
+  PhotoSetPhoto,
+} from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'fs';
+import { VoiceEncoderService } from 'src/modules/media/voice-encoder.service';
+import { ROUND_SIDE } from 'src/domain/round-video';
 import { join, resolve, sep } from 'path';
 import sharp from 'sharp';
 import { PrismaService } from 'src/prisma.service';
@@ -28,7 +36,11 @@ import {
 import { PersonaService } from 'src/brain/persona.service';
 import { UsageRecorderService } from 'src/brain/usage-recorder.service';
 import { suggestPhotoCard } from 'src/brain/media/library-photo';
-import type { UpdatePhotoDto, UpdatePhotoSetDto } from './photo-sets.dto';
+import type {
+  PhotoSeriesDto,
+  UpdatePhotoDto,
+  UpdatePhotoSetDto,
+} from './photo-sets.dto';
 
 export const PHOTO_SETS_DIR = resolve(join(appConfig.dataDir, 'photo-sets'));
 const MAX_PHOTO_BYTES = 25 * 1024 * 1024;
@@ -52,6 +64,7 @@ export class PhotoSetsService {
     private persona: PersonaService,
     private usage: UsageRecorderService,
     private library: PhotoLibraryService,
+    @Optional() private encoder?: VoiceEncoderService,
   ) {}
 
   // ── Права ────────────────────────────────────────────────────────────────
@@ -299,7 +312,12 @@ export class PhotoSetsService {
   async update(setId: number, dto: UpdatePhotoSetDto) {
     if (dto.cover_photo_id != null) {
       const cover = await this.prisma.photoSetPhoto.findFirst({
-        where: { id: dto.cover_photo_id, setId, deletedAt: null },
+        where: {
+          id: dto.cover_photo_id,
+          setId,
+          deletedAt: null,
+          kind: 'photo',
+        },
       });
       if (!cover)
         throw new UnprocessableEntityException(
@@ -619,6 +637,8 @@ export class PhotoSetsService {
     return {
       id: p.id,
       set_id: p.setId,
+      kind: p.kind,
+      duration: p.duration,
       width: p.width,
       height: p.height,
       description: p.description,
@@ -628,6 +648,7 @@ export class PhotoSetsService {
       details: p.details,
       tags: parseTags(p.tags),
       auto_send: p.autoSend,
+      series_id: p.seriesId,
       reviewed: p.reviewed,
       created_at: p.createdAt,
       updated_at: p.updatedAt,
@@ -655,6 +676,8 @@ export class PhotoSetsService {
     });
     if (existing && !existing.deletedAt)
       return { duplicate: true, photo: this.photoView(existing) };
+    if (isVideo(name, data))
+      return this.uploadVideoNote(setId, name, data, sha256, existing);
 
     let image: Buffer, thumb: Buffer, width: number, height: number;
     let takenOn: string | null = null;
@@ -697,30 +720,17 @@ export class PhotoSetsService {
     writeFileSync(filePath, image);
     writeFileSync(thumbPath, thumb);
 
-    const card = await suggestPhotoCard(image, {
-      client: this.persona.anthropic,
-      provider: this.persona.provider,
-      usageDb: this.usage.scoped({}),
-      logger: {
-        info: (m) => this.log.log(m),
-        warn: (m) => this.log.warn(m),
-        error: (m) => this.log.error(m),
-      },
-    }).catch((e) => {
-      this.log.warn(`photo description failed: ${e?.message ?? e}`);
-      return null;
-    });
     const now = this.clock.ts();
     const data_ = {
       filePath,
       thumbPath,
       width,
       height,
-      description: card?.description ?? '',
-      place: card?.place ?? null,
+      description: '',
+      place: null,
       takenOn,
-      details: card?.details ?? '',
-      tags: JSON.stringify(card?.tags ?? []),
+      details: '',
+      tags: '[]',
       autoSend: true,
       reviewed: false,
       updatedAt: now,
@@ -744,24 +754,142 @@ export class PhotoSetsService {
       where: { id: setId },
       data: { updatedAt: now },
     });
+    // Описание предлагает модель — это может занять минуту и больше, если
+    // шлюз занят. Загрузку не держим: снимок сохранён, описание допишется.
+    const described = this.describe(photo.id, image);
+    this.pendingDescriptions.add(described);
+    void described.finally(() => this.pendingDescriptions.delete(described));
     return {
       duplicate: false,
-      described: Boolean(card?.description),
+      described: false,
+      describing: true,
       photo: this.photoView(photo),
     };
   }
 
-  async updatePhoto(photoId: number, dto: UpdatePhotoDto) {
-    const takenOn =
-      dto.taken_on === undefined
-        ? undefined
-        : dto.taken_on === null || !dto.taken_on.trim()
-          ? null
-          : normalizeTakenOn(dto.taken_on);
-    if (takenOn === null && dto.taken_on && dto.taken_on.trim())
-      throw new UnprocessableEntityException(
-        'дата: ГГГГ, ГГГГ-ММ или ГГГГ-ММ-ДД, либо пусто — «дата неизвестна»',
+  /** Описания, которые ещё готовятся (для тестов и остановки). */
+  readonly pendingDescriptions = new Set<Promise<void>>();
+
+  /**
+   * Черновик описания от модели. Пишем, только если человек за это время
+   * сам не заполнил карточку: его текст важнее.
+   */
+  private async describe(photoId: number, image: Buffer): Promise<void> {
+    const card = await suggestPhotoCard(image, {
+      client: this.persona.anthropic,
+      provider: this.persona.provider,
+      usageDb: this.usage.scoped({}),
+      logger: {
+        info: (m) => this.log.log(m),
+        warn: (m) => this.log.warn(m),
+        error: (m) => this.log.error(m),
+      },
+    }).catch((e) => {
+      this.log.warn(`photo ${photoId} description failed: ${e?.message ?? e}`);
+      return null;
+    });
+    if (!card?.description) return;
+    await this.prisma.photoSetPhoto
+      .updateMany({
+        where: { id: photoId, reviewed: false, description: '' },
+        data: {
+          description: card.description,
+          place: card.place,
+          details: card.details,
+          tags: JSON.stringify(card.tags),
+          updatedAt: this.clock.ts(),
+        },
+      })
+      .catch((e) =>
+        this.log.warn(
+          `photo ${photoId} description not saved: ${e?.message ?? e}`,
+        ),
       );
+  }
+
+  /**
+   * Кружок в библиотеку: видео сразу собирается в круглое 480×480 до минуты
+   * (как при ручной отправке) и получает превью-кадр. Бот кружки сам не шлёт —
+   * их отправляет менеджер из библиотеки, поэтому автоотправка выключена.
+   */
+  private async uploadVideoNote(
+    setId: number,
+    name: string,
+    data: Buffer,
+    sha256: string,
+    existing: PhotoSetPhoto | null,
+  ) {
+    if (!this.encoder)
+      throw new UnprocessableEntityException(
+        'на сервере нет ffmpeg — кружок собрать не из чего',
+      );
+    const dir = join(PHOTO_SETS_DIR, String(setId));
+    mkdirSync(dir, { recursive: true });
+    const stem = randomUUID();
+    const source = join(dir, `${stem}_source${videoExt(name)}`);
+    const filePath = join(dir, `${stem}.mp4`);
+    const thumbPath = join(dir, `${stem}_thumb.jpg`);
+    writeFileSync(source, data);
+    let duration: number;
+    try {
+      const round = await this.encoder.prepareRound(source);
+      renameSync(round.path, filePath);
+      duration = round.duration;
+    } finally {
+      rmSync(source, { force: true });
+    }
+    if (!(await this.encoder.snapshot(filePath, thumbPath, THUMB_SIDE))) {
+      rmSync(filePath, { force: true });
+      throw new UnprocessableEntityException(
+        `«${name || 'файл'}» — не получилось взять кадр из видео`,
+      );
+    }
+    const now = this.clock.ts();
+    const row = {
+      filePath,
+      thumbPath,
+      kind: 'video_note',
+      duration,
+      width: ROUND_SIDE,
+      height: ROUND_SIDE,
+      description: '',
+      place: null,
+      takenOn: null,
+      details: '',
+      tags: '[]',
+      autoSend: false,
+      reviewed: true,
+      updatedAt: now,
+      deletedAt: null,
+    };
+    const photo = existing
+      ? await this.prisma.photoSetPhoto.update({
+          where: { id: existing.id },
+          data: row,
+        })
+      : await this.prisma.photoSetPhoto.create({
+          data: { ...row, setId, sha256, createdAt: now },
+        });
+    await this.prisma.photoSet.update({
+      where: { id: setId },
+      data: { updatedAt: now },
+    });
+    return { duplicate: false, described: false, photo: this.photoView(photo) };
+  }
+
+  async updatePhoto(photoId: number, dto: UpdatePhotoDto) {
+    const takenOn = takenOnInput(dto.taken_on);
+    if (dto.series_id != null) {
+      const current = await this.prisma.photoSetPhoto.findUnique({
+        where: { id: photoId },
+        select: { setId: true },
+      });
+      const series = await this.prisma.photoSeries.findFirst({
+        where: { id: dto.series_id, setId: current?.setId, deletedAt: null },
+      });
+      if (!series)
+        throw new UnprocessableEntityException('такой серии в образе нет');
+    }
     const photo = await this.prisma.photoSetPhoto.update({
       where: { id: photoId },
       data: {
@@ -777,11 +905,138 @@ export class PhotoSetsService {
           ? { tags: JSON.stringify(parseTags(dto.tags)) }
           : {}),
         ...(dto.auto_send !== undefined ? { autoSend: dto.auto_send } : {}),
+        ...(dto.series_id !== undefined ? { seriesId: dto.series_id } : {}),
         reviewed: true,
         updatedAt: this.clock.ts(),
       },
     });
     return this.photoView(photo);
+  }
+
+  // ── Серии ────────────────────────────────────────────────────────────────
+
+  /** photos — снимков в серии; ready — из них бот может отправить сам. */
+  seriesView(x: PhotoSeries, photos = 0, ready = photos) {
+    return {
+      id: x.id,
+      set_id: x.setId,
+      title: x.title,
+      description: x.description,
+      place: x.place,
+      taken_on: x.takenOn,
+      taken_label: formatTakenOn(x.takenOn),
+      auto_send: x.autoSend,
+      photos,
+      ready,
+    };
+  }
+
+  async seriesList(setId: number) {
+    const rows = await this.prisma.photoSeries.findMany({
+      where: { setId, deletedAt: null },
+      orderBy: { id: 'asc' },
+      include: {
+        _count: {
+          select: { photos: { where: { deletedAt: null, kind: 'photo' } } },
+        },
+      },
+    });
+    const ready = await this.seriesReady(rows.map((x) => x.id));
+    return {
+      items: rows.map((x) =>
+        this.seriesView(x, x._count.photos, ready.get(x.id) ?? 0),
+      ),
+    };
+  }
+
+  /** Сколько снимков каждой серии бот может отправить сам. */
+  private async seriesReady(ids: number[]): Promise<Map<number, number>> {
+    if (!ids.length) return new Map();
+    const rows = await this.prisma.photoSetPhoto.groupBy({
+      by: ['seriesId'],
+      where: {
+        seriesId: { in: ids },
+        deletedAt: null,
+        kind: 'photo',
+        autoSend: true,
+        // без описания бот снимок не берёт — см. photoAvailability
+        NOT: { description: '' },
+      },
+      _count: { _all: true },
+    });
+    return new Map(rows.map((r) => [r.seriesId!, r._count._all]));
+  }
+
+  async createSeries(setId: number, dto: PhotoSeriesDto) {
+    const title = dto.title?.trim();
+    if (!title) throw new UnprocessableEntityException('назовите серию');
+    const ts = this.clock.ts();
+    const row = await this.prisma.photoSeries.create({
+      data: {
+        setId,
+        title,
+        description: dto.description?.trim() ?? '',
+        place: dto.place?.trim() || null,
+        takenOn: takenOnInput(dto.taken_on) ?? null,
+        autoSend: dto.auto_send ?? true,
+        createdAt: ts,
+        updatedAt: ts,
+      },
+    });
+    return this.seriesView(row);
+  }
+
+  /** Серия образа, который пользователь видит (edit — может править). */
+  async requireSeries(user: DashboardUser, seriesId: number, edit: boolean) {
+    const row = await this.prisma.photoSeries.findFirst({
+      where: { id: seriesId, deletedAt: null },
+    });
+    if (!row) throw new NotFoundException('серия не найдена');
+    if (edit) await this.requireEditable(user, row.setId);
+    else await this.requireVisible(user, row.setId);
+    return row;
+  }
+
+  async updateSeries(seriesId: number, dto: PhotoSeriesDto) {
+    if (dto.title !== undefined && !dto.title.trim())
+      throw new UnprocessableEntityException('назовите серию');
+    const takenOn = takenOnInput(dto.taken_on);
+    const row = await this.prisma.photoSeries.update({
+      where: { id: seriesId },
+      data: {
+        ...(dto.title !== undefined ? { title: dto.title.trim() } : {}),
+        ...(dto.description !== undefined
+          ? { description: dto.description.trim() }
+          : {}),
+        ...(dto.place !== undefined
+          ? { place: dto.place?.trim() || null }
+          : {}),
+        ...(takenOn !== undefined ? { takenOn } : {}),
+        ...(dto.auto_send !== undefined ? { autoSend: dto.auto_send } : {}),
+        updatedAt: this.clock.ts(),
+      },
+    });
+    const photos = await this.prisma.photoSetPhoto.count({
+      where: { seriesId, deletedAt: null, kind: 'photo' },
+    });
+    const ready = await this.seriesReady([seriesId]);
+    return this.seriesView(row, photos, ready.get(seriesId) ?? 0);
+  }
+
+  /** Серию убираем, снимки остаются в образе — просто без серии. */
+  async removeSeries(seriesId: number) {
+    const ts = this.clock.ts();
+    await this.prisma.$transaction([
+      this.prisma.photoSetPhoto.updateMany({
+        where: { seriesId },
+        data: { seriesId: null, updatedAt: ts },
+      }),
+      this.prisma.photoSeries.update({
+        where: { id: seriesId },
+        data: { deletedAt: ts },
+      }),
+    ]);
+    return { ok: true };
   }
 
   /** Мягкое удаление: файл и отметки о показах остаются для истории диалогов. */
@@ -887,6 +1142,22 @@ export class PhotoSetsService {
   }
 }
 
+const VIDEO_EXT = /\.(mp4|mov|m4v|webm|mkv|avi|3gp)$/i;
+
+/** Видео по имени или по сигнатуре файла (MP4/MOV — «ftyp», WebM/MKV — EBML). */
+export function isVideo(name: string, data: Buffer): boolean {
+  if (VIDEO_EXT.test(name ?? '')) return true;
+  if (data.length >= 12 && data.toString('latin1', 4, 8) === 'ftyp') {
+    // HEIC/AVIF — тоже «ftyp», но это снимки.
+    const brand = data.toString('latin1', 8, 12);
+    return !/^(heic|heix|hevc|mif1|msf1|avif)$/i.test(brand);
+  }
+  return data.length >= 4 && data.readUInt32BE(0) === 0x1a45dfa3;
+}
+
+const videoExt = (name: string) =>
+  (VIDEO_EXT.exec(name ?? '')?.[0] ?? '.mp4').toLowerCase();
+
 function plural(n: number, one: string, few: string, many: string) {
   const m10 = n % 10,
     m100 = n % 100;
@@ -910,4 +1181,18 @@ export function filterPhotos<T extends PhotoSetPhoto>(
       .toLowerCase()
       .includes(q);
   });
+}
+
+/** Дата из формы: undefined — не трогать, null — неизвестна; кривая — ошибка. */
+function takenOnInput(
+  raw: string | null | undefined,
+): string | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null || !raw.trim()) return null;
+  const takenOn = normalizeTakenOn(raw);
+  if (takenOn === null)
+    throw new UnprocessableEntityException(
+      'дата: ГГГГ, ГГГГ-ММ или ГГГГ-ММ-ДД, либо пусто — «дата неизвестна»',
+    );
+  return takenOn;
 }
