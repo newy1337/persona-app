@@ -14,6 +14,7 @@ import { VoicerService } from './voicer.service';
 import { VoicerBriefService } from './voicer-brief.service';
 
 const MAX_BYTES = 20 * 1024 * 1024;
+const BLOCKED_RETRY = 3600;
 export class TelegramBotError extends Error {
   constructor(
     public code: number,
@@ -506,43 +507,7 @@ export class VoicerBotService implements OnModuleInit {
           data: { nextUpdateId: update.update_id + 1 },
         });
       }
-      const tasks = await this.prisma.voiceTask.findMany({
-        where: {
-          notifiedVersion: { lt: this.prisma.voiceTask.fields.notifyVersion },
-          notifyAfter: { lte: this.clock.ts() },
-          OR: [
-            { status: { in: ['queued', 'in_progress', 'cancelled'] } },
-            { kind: 'call', status: 'completed' },
-          ],
-          voicer: {
-            role: 'voice',
-            voiceProfile: { telegramId: { not: null } },
-          },
-        },
-        orderBy: [{ priority: 'desc' }, { id: 'asc' }],
-        take: 5,
-        include: { voicer: { include: { voiceProfile: true } } },
-      });
-      for (const task of tasks) {
-        try {
-          await this.deliver(task, task.voicer!.voiceProfile!.telegramId!);
-          await this.prisma.voiceTask.updateMany({
-            where: { id: task.id, notifyVersion: task.notifyVersion },
-            data: { notifiedVersion: task.notifyVersion, notifyError: null },
-          });
-        } catch (e) {
-          await this.prisma.voiceTask.update({
-            where: { id: task.id },
-            data: {
-              notifyAfter: this.clock.ts() + Math.max(60, e?.retryAfter ?? 60),
-              notifyError:
-                e?.code === 403
-                  ? 'Бот заблокирован войсером. Откройте бот и нажмите /start'
-                  : 'Telegram временно недоступен. Повторим автоматически',
-            },
-          });
-        }
-      }
+      await this.notifyPending();
       this.health = '';
     } catch (e) {
       if (e?.code === 429)
@@ -554,6 +519,79 @@ export class VoicerBotService implements OnModuleInit {
       this.log.warn(this.health);
     } finally {
       this.busy = false;
+    }
+  }
+
+  /**
+   * Уведомления войсерам о новых и изменённых заданиях, по 5 за проход.
+   *
+   * Отмену задания, о котором войсер так и не узнал, не шлём — просто
+   * закрываем. Войсер заблокировал бота — откладываем на час все его
+   * уведомления разом: иначе его старые задания по кругу занимают все места в
+   * проходе и остальные войсеры не получают ничего.
+   */
+  async notifyPending() {
+    const now = this.clock.ts();
+    const pendingNotice = {
+      notifiedVersion: { lt: this.prisma.voiceTask.fields.notifyVersion },
+    };
+    const unseen = await this.prisma.voiceTask.findMany({
+      where: {
+        AND: [pendingNotice, { notifiedVersion: 0 }],
+        status: 'cancelled',
+      },
+      select: { id: true, notifyVersion: true },
+      take: 500,
+    });
+    for (const task of unseen)
+      await this.prisma.voiceTask.updateMany({
+        where: { id: task.id, notifyVersion: task.notifyVersion },
+        data: { notifiedVersion: task.notifyVersion, notifyError: null },
+      });
+    const tasks = await this.prisma.voiceTask.findMany({
+      where: {
+        ...pendingNotice,
+        notifyAfter: { lte: now },
+        OR: [
+          { status: { in: ['queued', 'in_progress', 'cancelled'] } },
+          { kind: 'call', status: 'completed' },
+        ],
+        voicer: {
+          role: 'voice',
+          voiceProfile: { telegramId: { not: null } },
+        },
+      },
+      orderBy: [{ priority: 'desc' }, { id: 'asc' }],
+      take: 5,
+      include: { voicer: { include: { voiceProfile: true } } },
+    });
+    for (const task of tasks) {
+      try {
+        await this.deliver(task, task.voicer!.voiceProfile!.telegramId!);
+        await this.prisma.voiceTask.updateMany({
+          where: { id: task.id, notifyVersion: task.notifyVersion },
+          data: { notifiedVersion: task.notifyVersion, notifyError: null },
+        });
+      } catch (e) {
+        if (e?.code === 403) {
+          await this.prisma.voiceTask.updateMany({
+            where: { ...pendingNotice, voicerId: task.voicerId },
+            data: {
+              notifyAfter: now + BLOCKED_RETRY,
+              notifyError:
+                'Бот заблокирован войсером. Откройте бот и нажмите /start',
+            },
+          });
+          continue;
+        }
+        await this.prisma.voiceTask.update({
+          where: { id: task.id },
+          data: {
+            notifyAfter: now + Math.max(60, e?.retryAfter ?? 60),
+            notifyError: 'Telegram временно недоступен. Повторим автоматически',
+          },
+        });
+      }
     }
   }
 }
