@@ -1,3 +1,4 @@
+import { personaLabel } from '../../utils/persona';
 import { PanelUX } from '../../ui/PanelUX';
 import { useEffect, useRef, useState } from 'react';
 import { getAccountPrivacy, setAccountPrivacy, updateAccount, updateAccountProfile, uploadAccountAvatar } from '../../api/accounts';
@@ -157,7 +158,7 @@ export default function EditAccountDialog({ account, personas, onClose }) {
             )}
             {personas.map((p) => (
               <option key={p.slug} value={p.slug} disabled={!p.enabled}>
-                {p.name} ({p.slug}){p.enabled ? '' : ' — выключена'}
+                {personaLabel(p)} ({p.slug}){p.enabled ? '' : ' — выключена'}
               </option>
             ))}
           </select>

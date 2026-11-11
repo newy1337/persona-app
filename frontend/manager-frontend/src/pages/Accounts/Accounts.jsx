@@ -1,5 +1,6 @@
 import TableSkeleton from '../../components/TableSkeleton/TableSkeleton';
 import { AccountsTable } from '../../ui/ManagerRegion';
+import { personaLabel } from '../../utils/persona';
 import { PanelUX } from '../../ui/PanelUX';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -155,7 +156,7 @@ export function AddForm({ personas, onDone, onCancel }) {
         <select className={s.select} value={f.persona_id} onChange={(e) => set({ persona_id: e.target.value })}>
           {!personas.some((p) => p.slug === f.persona_id) && <option value={f.persona_id}>{f.persona_id}</option>}
           {personas.filter((p) => p.enabled).map((p) => (
-            <option key={p.slug} value={p.slug}>{p.name} ({p.slug})</option>
+            <option key={p.slug} value={p.slug}>{personaLabel(p)} ({p.slug})</option>
           ))}
         </select>
       </label>

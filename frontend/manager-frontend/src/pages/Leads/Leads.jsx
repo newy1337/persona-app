@@ -1,4 +1,5 @@
 import { CreateLeadForm, LeadsTable } from '../../ui/ManagerRegion';
+import { personaLabel } from '../../utils/persona';
 import { PanelUX } from '../../ui/PanelUX';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -54,7 +55,7 @@ export function PersonaSelect({ personas, value, onChange, className, channel = 
         const none = p.by_channel && !c.accounts;
         return (
           <option key={p.slug} value={p.slug} disabled={none && p.slug !== value}>
-            {p.name}
+            {personaLabel(p)}
             {c.ready ? ` · ${c.ready} акк.${tag} в сети` : none ? ` · нет аккаунтов${tag}` : ` · нет аккаунтов${tag} в сети`}
           </option>
         );
