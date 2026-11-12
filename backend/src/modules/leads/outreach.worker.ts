@@ -457,8 +457,7 @@ export class OutreachWorker implements OnModuleInit {
           where: { id: candidate.id },
           data: {
             status: 'dead',
-            lastError:
-              'холодный лид: в Telegram не заходил больше недели — диалог не начинали',
+            lastError: 'Контакт давно не заходил в тг (неделя)',
             attempts: { increment: 1 },
           },
         });
