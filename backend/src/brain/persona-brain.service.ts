@@ -100,6 +100,7 @@ import { buildCharacterPrompt } from './character/prompt';
 import {
   dropRepeatedGreeting,
   enforceReplyRules,
+  isMetaReply,
   isPlaceholderReply,
   normalizeReply,
 } from './character/reply';
@@ -2884,7 +2885,8 @@ export class PersonaBrainService implements ReplyBrain {
           return '';
         throw e;
       });
-      if (!draft.trim()) {
+      // «(пусто)», «не буду отправлять…» — это отказ писать, а не реплика.
+      if (!draft.trim() || isPlaceholderReply(draft) || isMetaReply(draft)) {
         if (opts.author === 'morning') await this.skipMorning(chatId, persona);
         return false;
       }
@@ -2916,7 +2918,7 @@ export class PersonaBrainService implements ReplyBrain {
         ) && review.should_send === false;
       const raw = declined ? '' : review.final_text;
       const reply =
-        !raw.trim() || isPlaceholderReply(raw)
+        !raw.trim() || isPlaceholderReply(raw) || isMetaReply(raw)
           ? ''
           : enforceReplyRules(normalizeReply(raw));
 

@@ -1,4 +1,4 @@
-import { dropRepeatedGreeting } from './reply';
+import { dropRepeatedGreeting, isMetaReply, isPlaceholderReply } from './reply';
 import { greeting } from './snapshot';
 import { pacingAllowsAsk } from './judgment';
 import type { CharacterConfig, ConversationState } from '../kernel/types';
@@ -139,5 +139,44 @@ describe('темп анкеты из «Целей»', () => {
     expect(pacingAllowsAsk(c, { stage_id: 'knock', turns: 5 }, () => 0.5)).toBe(
       true,
     );
+  });
+});
+
+describe('служебный текст вместо реплики', () => {
+  it('рассуждение «писать ли» не считается сообщением', () => {
+    expect(
+      isMetaReply(
+        'Этот разговор уже закрыт: собеседник чётко сказал, что женат и не хочет знакомиться, а я с ним попрощалась. Писать снова нет смысла и неуместно.\nНе буду отправлять новое сообщение.',
+      ),
+    ).toBe(true);
+    for (const text of [
+      '(ничего не отправлено)',
+      '(пусто)',
+      '[пусто]',
+      '(пустая строка)',
+      '[пустая строка]',
+      '(пустой ответ, 0 символов)',
+      '(ничего не отправляется)',
+      '(пустая строка — писать неуместно, последний ответ прозвучал как отказ)',
+    ])
+      expect(isMetaReply(text)).toBe(true);
+    expect(isPlaceholderReply('(пусто)')).toBe(true);
+    expect(isPlaceholderReply('(пустая строка)')).toBe(true);
+    expect(isMetaReply('Сообщение не отправляю.')).toBe(true);
+  });
+
+  it('обычные реплики с «не буду» проходят', () => {
+    for (const text of [
+      'ладно, не буду надоедать) хорошего вечера',
+      'Ладно, не буду допытываться про работу)',
+      'Понимаю, если удивила такая инициатива. Не настаиваю',
+      'ты интересный собеседник, правда',
+      'не буду писать ночью, отдыхай)',
+      'Пустое сообщение ушло, извини',
+      'с моей стороны разговор закрыт',
+      'доказывать ничего не буду, фото тоже не буду слать по требованию',
+      'пусто как-то без тебя)',
+    ])
+      expect(isMetaReply(text)).toBe(false);
   });
 });
