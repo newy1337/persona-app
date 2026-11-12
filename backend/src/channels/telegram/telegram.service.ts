@@ -1574,6 +1574,7 @@ export class TelegramService
         userId: Number(user.id),
         username: user.username ?? null,
         deleted: Boolean(user.deleted),
+        presence: clientPresence(user.status),
       };
     if (result.retryContacts.length) return { kind: 'retry' };
     return { kind: 'not_found' };
@@ -1601,6 +1602,7 @@ export class TelegramService
         userId: Number(entity.id),
         username: entity.username ?? username,
         deleted: Boolean(entity.deleted),
+        presence: clientPresence(entity.status),
       };
     } catch (e) {
       const msg = String(e?.errorMessage ?? e?.message ?? '');
