@@ -1,3 +1,4 @@
+import { TtlCache } from 'src/shared/ttl-cache';
 import {
   Injectable,
   Logger,
@@ -119,17 +120,18 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
    * почти сразу — и сразу, если пришли через этот же сервис.
    */
   // Ленивая инициализация: в тестах сервис собирают без конструктора.
-  private rowCache?: Map<string, { until: number; value: unknown }>;
+  private rowCache?: TtlCache;
   private static readonly ROW_CACHE_MS = 2000;
+  // Строка личности — десятки килобайт JSON, а меняют её редко и через
+  // панель (та сбрасывает кеш сама): держим дольше остальных.
+  private static readonly PERSONA_ROW_CACHE_MS = 10_000;
 
-  private async cached<T>(key: string, load: () => Promise<T>): Promise<T> {
-    const cache = (this.rowCache ??= new Map());
-    const hit = cache.get(key);
-    const now = Date.now();
-    if (hit && hit.until > now) return hit.value as T;
-    const value = await load();
-    cache.set(key, { until: now + PersonaService.ROW_CACHE_MS, value });
-    return value;
+  private cached<T>(
+    key: string,
+    load: () => Promise<T>,
+    ttlMs = PersonaService.ROW_CACHE_MS,
+  ): Promise<T> {
+    return (this.rowCache ??= new TtlCache(20_000)).get(key, ttlMs, load);
   }
 
   /** Сбросить кеш после записи в personas / tg_accounts. */
@@ -491,7 +493,11 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
   }
 
   async bySlug(slug: string): Promise<LoadedPersona> {
-    const row = await this.prisma.persona.findUnique({ where: { slug } });
+    const row = await this.cached(
+      `slug:${slug}`,
+      () => this.prisma.persona.findUnique({ where: { slug } }),
+      PersonaService.PERSONA_ROW_CACHE_MS,
+    );
     if (!row) throw new NotFoundException(`личность «${slug}» не найдена`);
     return this.materialise(row);
   }
@@ -567,10 +573,13 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
     );
     if (!account?.personaId)
       throw new NotFoundException('У аккаунта не задана личность');
-    const row = await this.cached(`slug:${account.personaId}`, () =>
-      this.prisma.persona.findUnique({
-        where: { slug: account.personaId },
-      }),
+    const row = await this.cached(
+      `slug:${account.personaId}`,
+      () =>
+        this.prisma.persona.findUnique({
+          where: { slug: account.personaId },
+        }),
+      PersonaService.PERSONA_ROW_CACHE_MS,
     );
     if (!row)
       throw new NotFoundException(

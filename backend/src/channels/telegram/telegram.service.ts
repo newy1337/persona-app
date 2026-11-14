@@ -1399,32 +1399,24 @@ export class TelegramService
    */
   private async backfillInboundVideos(account: LiveAccount): Promise<void> {
     const since = this.clock.ts() - INBOUND_BACKFILL_DAYS * 86400;
-    const rows = await this.prisma.message.findMany({
-      where: {
-        role: 'user',
-        ts: { gte: since },
-        sourceMessageId: { not: null },
-        OR: [
-          { text: { startsWith: '[Кружок]' } },
-          { text: { startsWith: '[Видео]' } },
-          { text: { startsWith: '[GIF]' } },
-          // Загрузка сорвалась на входящем: в ленте осталась метка без файла.
-          { text: { startsWith: '[вложение:' } },
-        ],
-      },
-      select: { chatId: true, ts: true, sourceMessageId: true },
-    });
+    // Только чаты этого аккаунта и только сообщения без скачанного файла —
+    // одним запросом. Раньше каждый из сотен аккаунтов при подключении
+    // перебирал такие сообщения всех чатов и делал по два запроса на каждое:
+    // после перезапуска это были миллионы запросов.
+    const rows = await this.prisma.$queryRaw<
+      { chatId: bigint; ts: number; sourceMessageId: number }[]
+    >`SELECT m.chat_id AS "chatId", m.ts, m.source_message_id AS "sourceMessageId"
+      FROM contacts c JOIN messages m ON m.chat_id = c.chat_id
+      WHERE c.account_id = ${account.id}
+        AND m.role = 'user' AND m.ts >= ${since}
+        AND m.source_message_id IS NOT NULL
+        AND (m.text LIKE '[Кружок]%' OR m.text LIKE '[Видео]%'
+          OR m.text LIKE '[GIF]%' OR m.text LIKE '[вложение:%')
+        AND NOT EXISTS (SELECT 1 FROM inbound_media im
+          WHERE im.chat_id = m.chat_id AND im.msg_ts = m.ts)`;
     let saved = 0;
     for (const row of rows) {
       const chatId = Number(row.chatId);
-      if ((await this.history.chatOwnerAccount(chatId)) !== account.id)
-        continue;
-      if (
-        await this.prisma.inboundMedia.count({
-          where: { chatId: row.chatId, msgTs: row.ts },
-        })
-      )
-        continue;
       try {
         const [message] = await this.call(account, 'getMessages', () =>
           account.client.getMessages(chatId, { ids: [row.sourceMessageId!] }),
