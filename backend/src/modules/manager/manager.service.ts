@@ -6,6 +6,7 @@ import {
   type ContactLink,
 } from 'src/channels/contact';
 import { Inject, Injectable } from '@nestjs/common';
+import { TtlCache } from 'src/shared/ttl-cache';
 import { REPLY_BRAIN, type ReplyBrain } from 'src/brain/reply-brain.port';
 import type { NextBotAction } from 'src/brain/dialogue/forecast';
 import { Prisma } from '@prisma/client';
@@ -165,6 +166,28 @@ export class ManagerService {
    * ответ можно отдавать долго; пересчёт устаревших идёт в фоне.
    */
   private static readonly FORECAST_MAX_AGE_S = 120;
+  // Прогноз пересчитывается в фоне десятком запросов на чат. Свежим его
+  // держим только у верхних строк списка (там идёт переписка); остальным
+  // хватает редкого пересчёта — раньше вся тысяча строк каждого менеджера
+  // пересчитывалась раз в две минуты и грузила базу и процесс без остановки.
+  private static readonly FORECAST_FRESH_ROWS = 60;
+  private static readonly FORECAST_IDLE_MAX_AGE_S = 1800;
+
+  /** Опросы панели: одинаковые запросы подряд не ходят в базу заново. */
+  private readonly polls = new TtlCache();
+  /** Справочники (этапы личностей): действия в чатах их не меняют. */
+  private readonly refs = new TtlCache();
+
+  /** Забыть ответы опросов: в панели что-то изменили. Справочник этапов остаётся. */
+  forgetPolls(): void {
+    this.polls.clear();
+  }
+
+  private static scopeKey(accounts: number[] | null): string {
+    return accounts === null
+      ? 'all'
+      : [...accounts].sort((a, b) => a - b).join(',');
+  }
 
   private async withNextActions(
     rows: ManagerChatRow[],
@@ -174,10 +197,15 @@ export class ManagerService {
     // прогноза, он досчитается в фоне и придёт со следующим опросом.
     const peek = this.brain.peekNextAction?.bind(this.brain);
     if (peek)
-      return rows.map((row) => {
+      return rows.map((row, index) => {
         let next: NextBotAction | null = null;
         try {
-          next = peek(row.chat_id, ManagerService.FORECAST_MAX_AGE_S);
+          next = peek(
+            row.chat_id,
+            index < ManagerService.FORECAST_FRESH_ROWS
+              ? ManagerService.FORECAST_MAX_AGE_S
+              : ManagerService.FORECAST_IDLE_MAX_AGE_S,
+          );
         } catch {
           // прогноз — подсказка, без него строка остаётся
         }
@@ -203,7 +231,15 @@ export class ManagerService {
     }));
   }
 
-  private async stageResolver(): Promise<
+  private stageResolver(): Promise<
+    (accountId: number | null, facts: LeadFacts) => StageView | null
+  > {
+    return this.refs.get('stage-resolver', 30_000, () =>
+      this.loadStageResolver(),
+    );
+  }
+
+  private async loadStageResolver(): Promise<
     (accountId: number | null, facts: LeadFacts) => StageView | null
   > {
     const accounts = await this.prisma.channelAccount.findMany({
@@ -321,13 +357,19 @@ export class ManagerService {
   }
 
   /** Сколько диалогов всего: срез в списке не должен выглядеть как весь список. */
-  async conversationsTotal(accounts: number[] | null): Promise<number> {
-    const rows = await this.prisma.$queryRaw<{ n: bigint | number }[]>(
-      Prisma.sql`SELECT COUNT(*) AS n FROM contacts c
+  conversationsTotal(accounts: number[] | null): Promise<number> {
+    return this.polls.get(
+      `total:${ManagerService.scopeKey(accounts)}`,
+      30_000,
+      async () => {
+        const rows = await this.prisma.$queryRaw<{ n: bigint | number }[]>(
+          Prisma.sql`SELECT COUNT(*) AS n FROM contacts c
         LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
         WHERE 1 = 1 ${this.scopeSql(accounts)} ${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL}`,
+        );
+        return Number(rows[0]?.n ?? 0);
+      },
     );
-    return Number(rows[0]?.n ?? 0);
   }
 
   async conversations(
@@ -335,7 +377,22 @@ export class ManagerService {
     opts: { limit?: number; includeHidden?: boolean } = {},
   ): Promise<ManagerChatRow[]> {
     const limit = opts.limit ?? CONVERSATIONS_LIMIT;
-    const visible = opts.includeHidden
+    const listed = await this.polls.get(
+      `list:${ManagerService.scopeKey(accounts)}:${limit}:${opts.includeHidden ? 1 : 0}`,
+      3000,
+      () =>
+        this.listConversations(accounts, limit, Boolean(opts.includeHidden)),
+    );
+    // В архиве бот молчит: прогноз там не нужен, а стоил он десяток запросов на чат.
+    return opts.includeHidden ? listed : this.withNextActions(listed);
+  }
+
+  private async listConversations(
+    accounts: number[] | null,
+    limit: number,
+    includeHidden: boolean,
+  ): Promise<ManagerChatRow[]> {
+    const visible = includeHidden
       ? HAS_CLIENT_SQL
       : Prisma.sql`${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL}`;
     const rows = await this.prisma.$queryRaw<RawRow[]>`
@@ -357,7 +414,7 @@ export class ManagerService {
       WHERE 1 = 1 ${this.scopeSql(accounts)} ${visible}
       ORDER BY last_ts DESC NULLS LAST LIMIT ${limit}`;
     const stageOf = await this.stageResolver();
-    const listed = await this.withManagers(
+    return this.withManagers(
       rows.map((r) => {
         const facts = parseLeadFacts(r.facts);
         return this.row(
@@ -367,8 +424,6 @@ export class ManagerService {
         );
       }),
     );
-    // В архиве бот молчит: прогноз там не нужен, а стоил он десяток запросов на чат.
-    return opts.includeHidden ? listed : this.withNextActions(listed);
   }
 
   /** Этапы для плиток: за период — пройденные в эти дни, без периода — дошли всего. */
@@ -474,7 +529,11 @@ export class ManagerService {
   }
 
   queue(accounts: number[] | null): Promise<ManagerChatRow[]> {
-    return this.readAttentionQueue(accounts);
+    return this.polls.get(
+      `queue:${ManagerService.scopeKey(accounts)}`,
+      3000,
+      () => this.readAttentionQueue(accounts),
+    );
   }
 
   /**
@@ -484,7 +543,18 @@ export class ManagerService {
    * в эти дни. «Ждут менеджера», «активны сейчас» и аккаунты от периода не
    * зависят: это состояние на сейчас.
    */
-  async stats(
+  stats(
+    accounts: number[] | null,
+    period: { from?: string; to?: string } = {},
+  ) {
+    return this.polls.get(
+      `stats:${ManagerService.scopeKey(accounts)}:${period.from ?? ''}:${period.to ?? ''}`,
+      10_000,
+      () => this.loadStats(accounts, period),
+    );
+  }
+
+  private async loadStats(
     accounts: number[] | null,
     period: { from?: string; to?: string } = {},
   ) {
@@ -513,7 +583,7 @@ export class ManagerService {
     const leads = await one(Prisma.sql`
       SELECT COUNT(*) AS n FROM lead_handoff h JOIN contacts c ON c.chat_id = h.chat_id
       WHERE h.state IN ('analyst_assigned', 'contact_delivered', 'closed') ${scope} ${leadsInPeriod}`);
-    const queue = await this.readAttentionQueue(accounts);
+    const queue = await this.queue(accounts);
     const need = queue.filter((r) => r.queue_reason !== 'manual_mode').length;
     const stages = await this.stageTiles(accounts, range);
     return {

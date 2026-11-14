@@ -194,6 +194,7 @@ const DUE_SCAN_LIMIT = 200;
 const QUEUE_ALERT = 15;
 const FORECAST_STALE_SECONDS = 300;
 const FORECAST_REFRESH_LANES = 3;
+const INBOUND_RECOVERY_GAP_MS = process.env.NODE_ENV === 'test' ? 0 : 3000;
 
 const listenSeconds = (turn: InboundTurn): number =>
   turn.media?.kind === 'voice'
@@ -612,8 +613,17 @@ export class PersonaBrainService implements ReplyBrain {
     }
   }
 
+  private recoveredAt = 0;
+
   private async pumpOnce(): Promise<number> {
-    if (!this.recovering) {
+    // Насос дёргается на каждый освободившийся чат — по нескольку раз в
+    // секунду. Поиск необработанных входящих так часто не нужен.
+    const nowMs = Date.now();
+    if (
+      !this.recovering &&
+      nowMs - (this.recoveredAt ?? 0) >= INBOUND_RECOVERY_GAP_MS
+    ) {
+      this.recoveredAt = nowMs;
       this.recovering = true;
       // Без catch сбой базы здесь — необработанный reject, и Node роняет процесс.
       void this.recoverInbound()
@@ -1532,10 +1542,11 @@ export class PersonaBrainService implements ReplyBrain {
 
   private readonly refreshing = new Set<number>();
   private refreshQueue: number[] = [];
+  private readonly refreshQueued = new Set<number>();
 
   private refreshNextAction(chatId: number): void {
-    if (this.refreshing.has(chatId) || this.refreshQueue.includes(chatId))
-      return;
+    if (this.refreshing.has(chatId) || this.refreshQueued.has(chatId)) return;
+    this.refreshQueued.add(chatId);
     this.refreshQueue.push(chatId);
     if (this.refreshing.size >= FORECAST_REFRESH_LANES) return;
     void this.drainForecastQueue();
@@ -1547,6 +1558,7 @@ export class PersonaBrainService implements ReplyBrain {
       next !== undefined;
       next = this.refreshQueue.shift()
     ) {
+      this.refreshQueued.delete(next);
       if (this.refreshing.has(next)) continue;
       this.refreshing.add(next);
       try {

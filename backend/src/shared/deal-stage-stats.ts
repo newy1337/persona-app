@@ -5,6 +5,13 @@ import {
   DEAL_STAGE_EVENT,
 } from 'src/domain/deal-stage';
 import { dayKey } from 'src/modules/stats/range';
+import { TtlCache } from './ttl-cache';
+
+type ReachedRow = { chat_id: bigint; stages: string[]; archived: boolean };
+// Проход по всем карточкам с этапами: ~0,2 с и тысячи строк. Плитки дашборда
+// спрашивают его у каждого менеджера раз в 10 секунд — отдаём общий ответ.
+const reachedRows = new WeakMap<object, TtlCache>();
+const REACHED_TTL_MS = 30_000;
 
 export const zeroStages = (): Record<string, number> =>
   Object.fromEntries(DEAL_STAGES.map((s) => [s, 0]));
@@ -66,14 +73,18 @@ export async function stagesReachedEver(
 ): Promise<Record<string, number>> {
   // Дашборд опрашивает это раз в 10 секунд: один проход по таблице, и JSON
   // разбирается только у чатов, где этапы вообще были.
-  const rows = await prisma.$queryRaw<
-    { chat_id: bigint; stages: string[]; archived: boolean }[]
-  >`
+  let cache = reachedRows.get(prisma);
+  if (!cache) reachedRows.set(prisma, (cache = new TtlCache()));
+  const rows = await cache.get(
+    'rows',
+    REACHED_TTL_MS,
+    () => prisma.$queryRaw<ReachedRow[]>`
     SELECT p.chat_id,
       ARRAY(SELECT jsonb_object_keys(COALESCE(j.v->'deal_reached', '{}'::jsonb))) AS stages,
       COALESCE(j.v->>'deal_stage' = 'archive', false) AS archived
     FROM pinned_facts p, LATERAL (SELECT p.facts::jsonb AS v) j
-    WHERE p.facts LIKE '%"deal_%'`;
+    WHERE p.facts LIKE '%"deal_%'`,
+  );
   const out = zeroStages();
   let archive = 0;
   for (const r of rows) {

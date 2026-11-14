@@ -1,3 +1,4 @@
+import { TtlCache } from 'src/shared/ttl-cache';
 import {
   BadRequestException,
   ForbiddenException,
@@ -541,29 +542,21 @@ export class LeadsService {
     return out;
   }
 
+  private repliedCheckedAt = 0;
+
   private async markReplied(): Promise<void> {
-    const contacted = await this.prisma.lead.findMany({
-      where: { status: 'contacted', chatId: { not: null } },
-      select: { id: true, chatId: true },
-    });
-    if (!contacted.length) return;
-    const replied = await this.prisma.message.findMany({
-      where: {
-        role: 'user',
-        chatId: { in: contacted.map((c) => c.chatId) },
-      },
-      distinct: ['chatId'],
-      select: { chatId: true },
-    });
-    const ids = new Set(replied.map((r) => String(r.chatId)));
-    const hit = contacted
-      .filter((c) => ids.has(String(c.chatId)))
-      .map((c) => c.id);
-    if (hit.length)
-      await this.prisma.lead.updateMany({
-        where: { id: { in: hit } },
-        data: { status: 'replied' },
-      });
+    // Список лидов опрашивается каждые несколько секунд; сверка идёт по
+    // всем «написали» и стоит ~0,2 с — чаще раза в 10 секунд она не нужна.
+    const nowMs = Date.now();
+    if (TtlCache.keep && nowMs - this.repliedCheckedAt < 10_000) return;
+    this.repliedCheckedAt = nowMs;
+    // Одним запросом в базе: раньше на каждое открытие списка лидов сюда
+    // грузились все сообщения клиентов по всем «написали» (полсекунды).
+    await this.prisma.$executeRaw`
+      UPDATE leads l SET status = 'replied'
+      WHERE l.status = 'contacted' AND l.chat_id IS NOT NULL
+        AND EXISTS (SELECT 1 FROM messages m
+          WHERE m.chat_id = l.chat_id AND m.role = 'user')`;
   }
 
   async get(scope: LeadScope | null, id: number): Promise<Lead> {

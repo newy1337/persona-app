@@ -9,6 +9,7 @@ describe('кеш прогнозов для списка диалогов', () =>
       nextActionCache: new Map(),
       refreshing: new Set(),
       refreshQueue: [],
+      refreshQueued: new Set(),
     });
     svc.computeNextAction = async (chatId: number, at: number) => {
       computed += 1;
