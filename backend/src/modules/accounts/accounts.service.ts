@@ -57,6 +57,8 @@ export interface AccountSummary {
   chats: number;
   persona_name: string | null;
   flood_reason: string | null;
+  /** когда аккаунт загрузили в систему */
+  added_at: number;
   last_login_at: number | null;
   last_heartbeat_at: number | null;
   routing_weight: number;
@@ -138,6 +140,7 @@ export class AccountsService {
         a.floodUntil && a.floodUntil > this.clock.ts() ? a.floodUntil : null,
       flood_reason:
         a.floodUntil && a.floodUntil > this.clock.ts() ? a.floodReason : null,
+      added_at: a.addedAt,
       last_login_at: a.lastLoginAt,
       last_heartbeat_at: a.lastHeartbeatAt,
       routing_weight: a.routingWeight,

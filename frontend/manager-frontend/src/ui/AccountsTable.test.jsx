@@ -64,3 +64,16 @@ test('ограниченный аккаунт — причина и срок п�
   ));
   expect(host.querySelector('[data-testid="flood-reason"]').textContent).toBe('Ограничен: лимит импорта контактов: Telegram отложил номер +79001234567 (лид #11174) · до 30.10 14:00');
 });
+
+test('у аккаунта видна дата загрузки', async () => {
+  await act(async () => root.render(
+    <AccountsTable
+      rows={[{ id: 3, status: 'active', username: 'a3', added_at: 1700000000 }, { id: 4, status: 'active', username: 'a4' }]}
+      alive={{}}
+      onEdit={noop} onLogin={noop} onProxy={noop} onStatus={noop} onClearFlood={noop} onDelete={noop}
+      helpers={{ ...helpers, date: (ts) => `d${ts}` }}
+    />,
+  ));
+  expect(host.querySelector('[data-account-id="3"] [data-testid="account-added"]').textContent).toBe('Загружен: d1700000000');
+  expect(host.querySelector('[data-account-id="4"] [data-testid="account-added"]')).toBeNull();
+});
