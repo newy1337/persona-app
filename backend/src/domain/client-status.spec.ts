@@ -10,12 +10,12 @@ describe('inactiveOverWeek', () => {
   });
 
   it('был в сети больше недели назад — неактивен', () => {
-    expect(
-      inactiveOverWeek({ kind: 'offline', at: now - 8 * day }, now),
-    ).toBe(true);
-    expect(
-      inactiveOverWeek({ kind: 'offline', at: now - 6 * day }, now),
-    ).toBe(false);
+    expect(inactiveOverWeek({ kind: 'offline', at: now - 8 * day }, now)).toBe(
+      true,
+    );
+    expect(inactiveOverWeek({ kind: 'offline', at: now - 6 * day }, now)).toBe(
+      false,
+    );
   });
 
   it('в сети, недавно, на этой неделе или статуса нет — активен', () => {
