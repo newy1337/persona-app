@@ -732,19 +732,21 @@ export class TelegramService
   async refreshClientStatuses(): Promise<void> {
     if (!this.configured || this.stopping) return;
     const since = this.clock.ts() - CLIENT_STATUS_ACTIVE_DAYS * 86400;
-    const recent = await this.prisma.message.findMany({
-      where: { ts: { gte: since } },
-      distinct: ['chatId'],
-      select: { chatId: true },
-    });
+    // Одним запросом в базе: раньше сюда грузились все сообщения за 14 дней
+    // (distinct Prisma делает в памяти), а потом шёл запрос на каждый аккаунт.
+    const rows = await this.prisma.$queryRaw<
+      { chat_id: bigint; account_id: number }[]
+    >`SELECT c.chat_id, c.account_id FROM contacts c
+      WHERE c.account_id IS NOT NULL
+        AND EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.chat_id AND m.ts >= ${since})`;
+    const byAccount = new Map<number, { chatId: bigint }[]>();
+    for (const r of rows) {
+      const list = byAccount.get(Number(r.account_id));
+      if (list) list.push({ chatId: r.chat_id });
+      else byAccount.set(Number(r.account_id), [{ chatId: r.chat_id }]);
+    }
     for (const account of [...this.live.values()]) {
-      const contacts = await this.prisma.contact.findMany({
-        where: {
-          accountId: account.id,
-          chatId: { in: recent.map((m) => m.chatId) },
-        },
-        select: { chatId: true },
-      });
+      const contacts = byAccount.get(account.id) ?? [];
       for (let i = 0; i < contacts.length; i += 100) {
         const peers: Api.TypeInputUser[] = [];
         for (const c of contacts.slice(i, i + 100)) {
@@ -1574,6 +1576,7 @@ export class TelegramService
         userId: Number(user.id),
         username: user.username ?? null,
         deleted: Boolean(user.deleted),
+        presence: clientPresence(user.status),
       };
     if (result.retryContacts.length) return { kind: 'retry' };
     return { kind: 'not_found' };
@@ -1601,6 +1604,7 @@ export class TelegramService
         userId: Number(entity.id),
         username: entity.username ?? username,
         deleted: Boolean(entity.deleted),
+        presence: clientPresence(entity.status),
       };
     } catch (e) {
       const msg = String(e?.errorMessage ?? e?.message ?? '');

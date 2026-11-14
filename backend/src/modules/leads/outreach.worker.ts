@@ -25,6 +25,7 @@ import { toChatId } from 'src/utils/ids';
 import { isTelegramTimeout } from 'src/domain/timeout';
 import { classifyOutreachError } from 'src/domain/outreach-errors';
 import { ChannelRegistry } from 'src/channels/registry';
+import { inactiveOverWeek } from 'src/domain/client-status';
 
 const STALLED_ACCOUNT_PAUSE_S = 15 * 60;
 const TICK_STALE_S = 10 * 60;
@@ -443,6 +444,26 @@ export class OutreachWorker implements OnModuleInit {
             attempts: { increment: 1 },
           },
         });
+        return;
+      }
+      // Холодный лид, который больше недели не заходил в Telegram, —
+      // диалог не начинаем: писать в мёртвый аккаунт бесполезно.
+      if (
+        candidate.channel === 'telegram' &&
+        (candidate.cold || candidate.trafficSource === 'cold_leadgen') &&
+        inactiveOverWeek(resolved.presence, now)
+      ) {
+        await this.prisma.lead.update({
+          where: { id: candidate.id },
+          data: {
+            status: 'dead',
+            lastError: 'Контакт давно не заходил в тг (неделя)',
+            attempts: { increment: 1 },
+          },
+        });
+        this.log.log(
+          `outreach: cold lead #${candidate.id} skipped — last seen over a week ago (${resolved.presence?.kind})`,
+        );
         return;
       }
       const chatId = resolved.chatId;

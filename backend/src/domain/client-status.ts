@@ -16,6 +16,23 @@ export function presenceNow(p: ClientPresence, nowTs: number): ClientPresence {
   return p;
 }
 
+const WEEK_S = 7 * 86400;
+
+/**
+ * Собеседник не заходил в сеть больше недели. «Давно» и «в этом месяце» —
+ * точно дольше недели; «недавно» и «на этой неделе» — нет. Статуса нет
+ * (канал не показал) — не знаем, считаем активным.
+ */
+export function inactiveOverWeek(
+  p: ClientPresence | null | undefined,
+  nowTs: number,
+): boolean {
+  if (!p) return false;
+  if (p.kind === 'last_month' || p.kind === 'hidden') return true;
+  if (p.kind === 'offline') return p.at !== null && p.at < nowTs - WEEK_S;
+  return false;
+}
+
 export function accountLostOf(
   status: string | null,
   lostAt: number | null,

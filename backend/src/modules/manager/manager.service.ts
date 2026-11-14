@@ -28,7 +28,11 @@ import {
   MEDIA_REQUEST_KEY,
   PITCH_PHASE_KEY,
 } from 'src/domain/lead-facts';
-import { pauseReasonHead, TakeoverReason } from 'src/domain/pause';
+import {
+  PAUSE_REASON_SEP,
+  pauseReasonHead,
+  TakeoverReason,
+} from 'src/domain/pause';
 import { pausedBeforeKeyMove } from 'src/domain/attention-reasons';
 import {
   PresenceService,
@@ -131,6 +135,18 @@ const n = (v: unknown): number | null =>
 
 const HAS_CLIENT_SQL = Prisma.sql`AND EXISTS (SELECT 1 FROM messages mu WHERE mu.chat_id = c.chat_id AND mu.role = 'user')`;
 const NOT_HIDDEN_SQL = Prisma.sql`AND COALESCE((NULLIF(p.facts, '')::jsonb ->> '_manager_hidden')::boolean, false) = false`;
+// Очередь «ждут менеджера»: только чаты, у которых attentionReason может
+// дать причину. Без этого отбора подзапросы по сообщениям считались для всех
+// десятков тысяч контактов на каждый опрос панели.
+const ATTENTION_CANDIDATES_SQL = Prisma.sql`AND c.account_id IS NOT NULL AND (
+  h.state = 'hold_armed'
+  OR (c.pause_state = 'paused' AND split_part(c.pause_reason, ${PAUSE_REASON_SEP}, 1) = ${TakeoverReason.MANUAL_TAKEOVER})
+  OR (c.pause_state = 'paused' AND split_part(c.pause_reason, ${PAUSE_REASON_SEP}, 1) = ${TakeoverReason.HOLD}
+      AND EXISTS (SELECT 1 FROM messages mq
+        WHERE mq.chat_id = c.chat_id AND mq.role = 'user' AND mq.deleted_at IS NULL
+          AND mq.ts > COALESCE(c.manager_seen_ts, 0)
+          AND mq.ts > COALESCE((SELECT MAX(mx.ts) FROM messages mx
+                                WHERE mx.chat_id = c.chat_id AND mx.role = 'assistant' AND mx.text NOT LIKE '[Реакция%'), 0))))`;
 
 @Injectable()
 export class ManagerService {
@@ -405,7 +421,7 @@ export class ManagerService {
       LEFT JOIN lead_handoff h ON h.chat_id = c.chat_id
       LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
       LEFT JOIN channel_accounts a ON a.id = c.account_id
-      WHERE 1 = 1 ${this.scopeSql(accounts)} ${NOT_HIDDEN_SQL}`;
+      WHERE 1 = 1 ${this.scopeSql(accounts)} ${NOT_HIDDEN_SQL} ${ATTENTION_CANDIDATES_SQL}`;
 
     const out: ManagerChatRow[] = [];
     const stageOf = await this.stageResolver();

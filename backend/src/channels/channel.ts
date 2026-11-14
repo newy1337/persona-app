@@ -1,4 +1,5 @@
 import type { OutboundTransport } from 'src/brain/reply-brain.port';
+import type { ClientPresence } from 'src/domain/client-status';
 import type { Channel } from './ids';
 
 /**
@@ -13,6 +14,8 @@ export type ResolvedPeer =
       userId: number;
       username: string | null;
       deleted: boolean;
+      /** когда собеседник был в сети, если канал это показывает */
+      presence?: ClientPresence | null;
     }
   | { kind: 'not_found' }
   /** Канал сейчас не даёт искать (лимит импорта и т. п.) — повторить позже. */

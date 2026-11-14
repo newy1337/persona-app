@@ -163,6 +163,13 @@ test('строка лида: имя вместо номера, пол рядом
   expect(host.textContent).toContain('48 лет · муж. · Москва');
 });
 
+test('у лида видна дата загрузки', async () => {
+  await render(<LeadsTable rows={[{ id: 91, status: 'pending', first_name: 'Ира', inserted_at: 1700000000 }]} selected={new Set()} personas={[]}
+    onToggle={() => {}} onSelectVisible={() => {}} onClearSelection={() => {}} onChat={() => {}} onQueue={() => {}} onUnqueue={() => {}} onReassign={() => {}} onDelete={() => {}} onPersonaChange={() => {}}
+    helpers={{ PersonaSelect: () => null, statusLabels: {}, statusClasses: {}, date: (ts) => `d${ts}` }} />);
+  expect(host.querySelector('[data-testid="lead-inserted"]').textContent).toBe(' · Загружен: d1700000000');
+});
+
 test('имя и пол лида правятся прямо в строке: пол ушёл в запрос, «не указан» — unknown', async () => {
   const onEdit = vi.fn(async () => {});
   await render(<LeadsTable rows={[{ id: 90, status: 'contacted', first_name: 'Олег', gender: 'm', phone_e164: '+79261994455' }]} selected={new Set()} personas={[]}
