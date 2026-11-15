@@ -13,6 +13,7 @@ import { createOpenRouterClient } from './llm/openrouter';
 import {
   gatewayBaseUrl,
   watchGatewayCapacity,
+  gatewayActive,
   withGateway,
   withoutRouteKey,
 } from './llm/gateway';
@@ -179,6 +180,8 @@ export class PersonaService implements OnModuleInit, OnModuleDestroy {
         url: appConfig.llmGatewayUrl,
         apiKey: appConfig.llmGatewayApiKey,
         log: this.log,
+        // поле объявлено ниже — к моменту опроса оно уже есть
+        ownActive: () => gatewayActive(this.anthropic),
       })
     : null;
 
