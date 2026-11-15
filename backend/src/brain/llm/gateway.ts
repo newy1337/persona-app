@@ -445,9 +445,10 @@ export function withGateway(
 }
 
 /** Сколько наших запросов сейчас в шлюзе (клиент из withGateway). */
-export function gatewayActive(client: Anthropic): number {
-  const fn = (client as unknown as { gatewayActive?: () => number })
-    .gatewayActive;
+export function gatewayActive(client: Anthropic | undefined): number {
+  // Первый опрос ёмкости идёт, пока клиент ещё не создан, — наших запросов нет.
+  const fn = (client as unknown as { gatewayActive?: () => number } | undefined)
+    ?.gatewayActive;
   return typeof fn === 'function' ? fn() : 0;
 }
 
