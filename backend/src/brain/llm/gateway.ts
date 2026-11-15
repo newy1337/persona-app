@@ -31,14 +31,15 @@ export interface GatewayOptions {
    */
   capacity?: () => number | null;
   /**
-   * Таймаут или обрыв связи — признак перегрузки, а не смерти шлюза: пока
-   * шлюз за это время хоть раз ответил, такие отказы не ставят его на паузу.
+   * Шлюз жив, если ответил хоть кому-то не раньше чем за aliveMs до начала
+   * упавшего запроса. Тогда отказ — беда одного ключа или запроса (завис,
+   * ключ не авторизован): шлюз не ставим на паузу, а запрос повторяем.
    */
   aliveMs?: number;
   /**
-   * Чат, чей запрос ушёл в OpenRouter, столько остаётся там: кеш истории
-   * у каждого маршрута свой, и чат, прыгающий между ними, платит за запись
-   * кеша в OpenRouter, а читает его уже шлюз.
+   * Чат, которому шлюз не дал слота, столько остаётся в OpenRouter: кеш
+   * истории у каждого маршрута свой. Отказы одного запроса чат не держат —
+   * следующий снова идёт в бесплатный шлюз.
    */
   stickyMs?: number;
   now?: () => number;
@@ -140,44 +141,114 @@ export interface CapacityWatch {
   stop(): void;
 }
 
+/** Ответ шлюза `GET /v1/concurrency`: занято и свободно прямо сейчас. */
+interface GatewayConcurrency {
+  active_streams?: unknown;
+  available_slots?: unknown;
+  accepting_requests?: unknown;
+}
+
 /**
- * Раз в intervalMs спрашивает у шлюза его ключи (`/dashboard/api/keys`)
- * и помнит, сколько у готовых слотов. Ключи уходят на паузу по лимиту
- * подписки и возвращаются, поэтому ёмкость не постоянная. Не ответил —
- * остаётся прошлое значение.
+ * Сколько слотов шлюза доступно нам: свободные сейчас плюс те, что уже
+ * держат наши запросы. Шлюзом пользуются и другие (dev), поэтому сумма
+ * ключей не годится — чужие потоки тоже занимают слоты. Не принимает
+ * запросы — 0. Ответ не того вида — null.
+ */
+export function concurrencySlots(
+  body: GatewayConcurrency,
+  ownActive: number,
+): number | null {
+  const free = Number(body?.available_slots);
+  if (!Number.isFinite(free)) return null;
+  if (body.accepting_requests === false) return 0;
+  return Math.max(0, Math.floor(free)) + Math.max(0, ownActive);
+}
+
+/**
+ * Спрашивает у шлюза, сколько у него свободных слотов (`/v1/concurrency`,
+ * раз в intervalMs). Старый шлюз без этого запроса — сумма готовых ключей
+ * из `/dashboard/api/keys`. Не ответил — остаётся прошлое значение.
+ * ownActive — сколько наших запросов сейчас в шлюзе.
  */
 export function watchGatewayCapacity({
   url,
   apiKey,
   log,
-  intervalMs = 60_000,
+  ownActive = () => 0,
+  intervalMs = 5_000,
+  keysIntervalMs = 60_000,
   fetch: doFetch = fetch,
 }: {
   url: string;
   apiKey: string;
   log: GatewayLog;
+  ownActive?: () => number;
   intervalMs?: number;
+  keysIntervalMs?: number;
   fetch?: typeof fetch;
 }): CapacityWatch {
   const root = gatewayBaseUrl(url).replace(/\/v1$/, '');
+  const headers = { authorization: `Bearer ${apiKey}` };
   let slots: number | null = null;
   let warned = false;
+  /** шлюз без /v1/concurrency — опрашиваем ключи, и реже */
+  let legacy = false;
+  let keysAt = -Infinity;
+  /** сколько слотов всего (наши + свободные + чужие) — пишем в лог при смене */
+  let total: number | null = null;
+
+  async function viaConcurrency(): Promise<number | null> {
+    const ours = ownActive();
+    const res = await doFetch(`${root}/v1/concurrency`, {
+      headers,
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (res.status === 404) {
+      legacy = true;
+      return viaKeys();
+    }
+    const json = (await res.json()) as GatewayConcurrency;
+    const next = res.ok ? concurrencySlots(json, ours) : null;
+    if (next === null) throw new Error(`HTTP ${res.status}`);
+    const all =
+      json.accepting_requests === false
+        ? 0
+        : Number(json.available_slots) + Number(json.active_streams);
+    if (Number.isFinite(all) && all !== total) {
+      log.log(
+        json.accepting_requests === false
+          ? 'шлюз LLM не принимает запросы'
+          : `шлюз LLM: слотов ${all}, свободно ${Number(json.available_slots)}`,
+      );
+      total = all;
+    }
+    return next;
+  }
+
+  async function viaKeys(): Promise<number | null> {
+    if (Date.now() - keysAt < keysIntervalMs) return slots;
+    keysAt = Date.now();
+    const res = await doFetch(`${root}/dashboard/api/keys`, {
+      headers,
+      signal: AbortSignal.timeout(10_000),
+    });
+    const json: unknown = await res.json();
+    const keys = Array.isArray(json)
+      ? json
+      : ((json as { data?: unknown; keys?: unknown })?.data ??
+        (json as { keys?: unknown })?.keys);
+    if (!res.ok || !Array.isArray(keys)) throw new Error(`HTTP ${res.status}`);
+    const next = gatewaySlots(keys as GatewayKey[]);
+    if (next !== slots) log.log(`шлюз LLM: готовых слотов ${next}`);
+    return next;
+  }
+
+  let polling = false;
   async function poll() {
+    if (polling) return;
+    polling = true;
     try {
-      const res = await doFetch(`${root}/dashboard/api/keys`, {
-        headers: { authorization: `Bearer ${apiKey}` },
-        signal: AbortSignal.timeout(10_000),
-      });
-      const json: unknown = await res.json();
-      const keys = Array.isArray(json)
-        ? json
-        : ((json as { data?: unknown; keys?: unknown })?.data ??
-          (json as { keys?: unknown })?.keys);
-      if (!res.ok || !Array.isArray(keys))
-        throw new Error(`HTTP ${res.status}`);
-      const next = gatewaySlots(keys as GatewayKey[]);
-      if (next !== slots) log.log(`шлюз LLM: готовых слотов ${next}`);
-      slots = next;
+      slots = legacy ? await viaKeys() : await viaConcurrency();
       warned = false;
     } catch (e) {
       if (!warned)
@@ -185,6 +256,8 @@ export function watchGatewayCapacity({
           `шлюз LLM: не узнать ёмкость (${(e as Error)?.message ?? e}) — держимся прежней`,
         );
       warned = true;
+    } finally {
+      polling = false;
     }
   }
   void poll();
@@ -211,9 +284,11 @@ const BUSY_LOG_MS = 60_000;
  *   ключей (и не больше maxConcurrent), остальные ждут слота до waitMs;
  * - «занято» (429) — повтор через retryMs, пока не выйдет waitMs;
  * - лишняя метка кеша — повтор с одной меткой;
- * - таймаут и обрыв связи у отвечающего шлюза — только этот запрос в OpenRouter;
- * - настоящие отказы (сеть, 5xx, авторизация) failLimit раз подряд ставят
- *   шлюз на паузу pauseMs, чтобы не ждать мёртвый шлюз на каждом ответе.
+ * - шлюз отвечает другим запросам — сбой одного запроса не ставит его на
+ *   паузу: быстрый отказ (ключ, связь) повторяем в шлюзе, таймаут уходит
+ *   в OpenRouter один, чат к OpenRouter не прилипает;
+ * - шлюз никому не отвечает — failLimit отказов подряд ставят его на паузу
+ *   pauseMs, чтобы не ждать мёртвый шлюз на каждом ответе.
  */
 export function withGateway(
   gateway: Anthropic,
@@ -276,22 +351,24 @@ export function withGateway(
     params: Anthropic.MessageCreateParamsNonStreaming,
     options: { signal?: AbortSignal } | undefined,
     deadline: number,
-  ): Promise<Anthropic.Message | null> {
+  ): Promise<Anthropic.Message | 'busy' | 'error'> {
     if (limit() <= 0) {
       noteBusyFallback('все ключи шлюза на паузе');
-      return null;
+      return 'busy';
     }
     while (active >= limit()) {
       if (now() >= deadline) {
         noteBusyFallback(`все ${limit()} слота наши`);
-        return null;
+        return 'busy';
       }
       await sleep(Math.min(SLOT_POLL_MS, deadline - now()), options?.signal);
     }
     active += 1;
     let request = params;
+    let retried = false;
     try {
       for (;;) {
+        const started = now();
         try {
           const response = await gateway.messages.create(request, options);
           if (failures >= failLimit) log.log('шлюз LLM снова отвечает');
@@ -310,15 +387,23 @@ export function withGateway(
               continue;
             }
             noteBusyFallback(reason);
-            return null;
+            return 'busy';
           }
           if (cacheLimitError(e) && request === params) {
             request = lastCacheMarkOnly(params);
             continue;
           }
-          if (gatewayTransient(e) && now() - answeredAt < aliveMs) {
+          // Шлюз отвечает другим — сбой этого запроса, а не шлюза: на паузу
+          // не ставим. Быстрый отказ (ключ, связь) — ещё раз в шлюз, там
+          // другой ключ; таймаут уже съел время — в OpenRouter.
+          if (answeredAt >= started - aliveMs) {
+            if (!retried && !/нет ответа за/i.test(reason)) {
+              retried = true;
+              log.warn(`шлюз LLM: ${reason} — повтор в шлюзе`);
+              continue;
+            }
             log.warn(`шлюз LLM: ${reason} — запрос ушёл в OpenRouter`);
-            return null;
+            return 'error';
           }
           failures += 1;
           if (failures >= failLimit) {
@@ -329,7 +414,7 @@ export function withGateway(
           } else {
             log.warn(`шлюз LLM: ${reason} — запрос ушёл в OpenRouter`);
           }
-          return null;
+          return 'error';
         }
       }
     } finally {
@@ -347,13 +432,23 @@ export function withGateway(
       return fallback.messages.create(params, sendOptions);
     if (now() >= pausedUntil && !stuck(routeKey)) {
       const response = await viaGateway(params, sendOptions, now() + waitMs);
-      if (response) return response;
-      stick(routeKey);
+      if (typeof response === 'object') return response;
+      if (response === 'busy') stick(routeKey);
     }
     return fallback.messages.create(params, sendOptions);
   }
 
-  return { messages: { create } } as unknown as Anthropic;
+  return {
+    messages: { create },
+    gatewayActive: () => active,
+  } as unknown as Anthropic;
+}
+
+/** Сколько наших запросов сейчас в шлюзе (клиент из withGateway). */
+export function gatewayActive(client: Anthropic): number {
+  const fn = (client as unknown as { gatewayActive?: () => number })
+    .gatewayActive;
+  return typeof fn === 'function' ? fn() : 0;
 }
 
 /** Без шлюза ключ маршрута не нужен — до клиента модели он не доходит. */

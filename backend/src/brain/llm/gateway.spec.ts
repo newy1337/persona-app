@@ -3,6 +3,8 @@ import {
   GATEWAY_ROUTE,
   gatewayBaseUrl,
   cacheLimitError,
+  concurrencySlots,
+  gatewayActive,
   gatewayBusy,
   gatewaySlots,
   gatewayTransient,
@@ -112,18 +114,68 @@ describe('шлюз LLM с откатом на OpenRouter', () => {
 
   it('удачный ответ сбрасывает счётчик отказов', async () => {
     let fail = true;
-    const { client, gateway } = setup(async () => {
+    const { client, gateway, tick } = setup(async () => {
       if (fail) throw new Error('сбой');
       return reply('ok');
     });
     await client.messages.create(params);
     fail = false;
     await client.messages.create(params);
+    // Шлюз давно никому не отвечал — отказы считаются отказами шлюза.
+    tick(120_000);
     fail = true;
     await client.messages.create(params);
     await client.messages.create(params);
     // Пауза только после двух отказов подряд: четыре вызова дошли до шлюза.
     expect(gateway.messages.create).toHaveBeenCalledTimes(4);
+  });
+
+  it('шлюз отвечает другим — сбой одного ключа повторяем в шлюзе, не платим', async () => {
+    let calls = 0;
+    const { client, fallback, log } = setup(async () => {
+      calls += 1;
+      if (calls === 2)
+        throw new Error(
+          'OpenRouter 502: Failed to authenticate. API Error: 401',
+        );
+      return reply('шлюз');
+    });
+    await client.messages.create(params);
+    expect(text(await client.messages.create(params))).toBe('шлюз');
+    expect(fallback.messages.create).not.toHaveBeenCalled();
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining('повтор в шлюзе'),
+    );
+  });
+
+  it('таймаут в 90 с у живого шлюза — этот запрос в OpenRouter, без паузы и без липкости', async () => {
+    let hang = false;
+    const { client, gateway, fallback, tick } = setup(async () => {
+      if (hang) {
+        tick(90_000);
+        throw new Error('OpenRouter: нет ответа за 90 с');
+      }
+      return reply('шлюз');
+    });
+    const chat = { routeKey: 'chat:1' } as any;
+    await client.messages.create(params, chat);
+    hang = true;
+    // Таймауты длиннее aliveMs, но начались, когда шлюз отвечал.
+    for (let i = 0; i < 3; i++) {
+      expect(text(await client.messages.create(params, chat))).toBe(
+        'openrouter',
+      );
+      hang = false;
+      // ответ другому чату — шлюз жив
+      await client.messages.create(params, { routeKey: 'chat:2' } as any);
+      hang = true;
+    }
+    expect(fallback.messages.create).toHaveBeenCalledTimes(3);
+    // Таймаут не повторяем в шлюзе: 1 + 3 × (таймаут + ответ чату 2).
+    expect(gateway.messages.create).toHaveBeenCalledTimes(7);
+    // Чат 1 не прилип к OpenRouter и не встал на паузу.
+    hang = false;
+    expect(text(await client.messages.create(params, chat))).toBe('шлюз');
   });
 
   it('запрос отменили — в OpenRouter не идём', async () => {
@@ -406,18 +458,22 @@ describe('шлюз LLM: ёмкость, перегрузка и метки ке�
 });
 
 describe('ёмкость шлюза из его списка ключей', () => {
-  it('читает ответ вида { data: [...] } и считает готовые слоты', async () => {
-    const fetch = jest.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        data: [
-          { enabled: true, status: 'ready', max_concurrent: 5 },
-          { enabled: true, status: 'cooldown', max_concurrent: 4 },
-          { enabled: true, status: 'ready', max_concurrent: 4 },
-        ],
-      }),
-    }));
+  it('шлюз без /v1/concurrency — читает ключи { data: [...] } и считает готовые слоты', async () => {
+    const fetch = jest.fn(async (url: string) =>
+      url.endsWith('/v1/concurrency')
+        ? { ok: false, status: 404, json: async () => ({}) }
+        : {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [
+                { enabled: true, status: 'ready', max_concurrent: 5 },
+                { enabled: true, status: 'cooldown', max_concurrent: 4 },
+                { enabled: true, status: 'ready', max_concurrent: 4 },
+              ],
+            }),
+          },
+    );
     const log = { warn: jest.fn(), log: jest.fn() };
     const watch = watchGatewayCapacity({
       url: 'http://h:3000/v1',
@@ -426,11 +482,65 @@ describe('ёмкость шлюза из его списка ключей', () =
       fetch: fetch as any,
     });
     await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
     watch.stop();
-    expect((fetch.mock.calls[0] as any[])[0]).toBe(
+    expect((fetch.mock.calls[1] as any[])[0]).toBe(
       'http://h:3000/dashboard/api/keys',
     );
     expect(watch.current()).toBe(9);
     expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it('/v1/concurrency: нам доступны свободные слоты плюс уже наши', async () => {
+    const fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        active_streams: 10,
+        available_slots: 67,
+        configured_slots: 85,
+        accepting_requests: true,
+      }),
+    }));
+    const log = { warn: jest.fn(), log: jest.fn() };
+    const watch = watchGatewayCapacity({
+      url: 'http://h:3000',
+      apiKey: 'k',
+      log,
+      ownActive: () => 4,
+      fetch: fetch as any,
+    });
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    watch.stop();
+    expect((fetch.mock.calls[0] as any[])[0]).toBe(
+      'http://h:3000/v1/concurrency',
+    );
+    // 67 свободных + 4 наших; 6 чужих потоков нам не достаются
+    expect(watch.current()).toBe(71);
+    expect(log.log).toHaveBeenCalledWith('шлюз LLM: слотов 77, свободно 67');
+  });
+
+  it('свободные слоты: не принимает запросы — 0, кривой ответ — null', () => {
+    expect(
+      concurrencySlots({ available_slots: 5, accepting_requests: false }, 3),
+    ).toBe(0);
+    expect(concurrencySlots({ available_slots: 0 }, 2)).toBe(2);
+    expect(concurrencySlots({}, 2)).toBeNull();
+  });
+
+  it('клиент шлюза сообщает, сколько наших запросов сейчас в нём', async () => {
+    let release!: () => void;
+    const hold = new Promise<void>((r) => (release = r));
+    const { client } = setup(async () => {
+      await hold;
+      return reply('шлюз');
+    });
+    const a = client.messages.create(params);
+    await Promise.resolve();
+    expect(gatewayActive(client)).toBe(1);
+    release();
+    await a;
+    expect(gatewayActive(client)).toBe(0);
   });
 });
