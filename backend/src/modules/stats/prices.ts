@@ -116,6 +116,12 @@ export const DEFAULT_PRICES: PriceTable = {
       cache_write: 0.15,
       cache_read: 0.003,
     },
+    'abliteration-ai/abliterated-model-large-flash': {
+      input: 1,
+      output: 2,
+      cache_write: 1,
+      cache_read: 0.1,
+    },
     'gpt-4o-mini-transcribe': {
       input: 3,
       output: 5,

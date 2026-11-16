@@ -8,7 +8,7 @@ import ChatModels from './ChatModels';
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let host, root;
 const options = {
-  generator: [{ id: 'claude-sonnet-5', label: 'Claude Sonnet 5' }, { id: 'z-ai/glm-5.3', label: 'GLM 5.3' }],
+  generator: [{ id: 'claude-sonnet-5', label: 'Claude Sonnet 5' }, { id: 'google/gemini-4-argon', label: 'Gemini 4 Argon' }],
   judge: [{ id: 'claude-opus-5', label: 'Claude Opus 5' }],
   effort: [{ id: 'off', label: 'Без рассуждений' }, { id: 'high', label: 'Высокое' }],
   defaults: {},
@@ -32,9 +32,9 @@ test('модели диалога: выбор сохраняется, «как �
   await act(async () => root.render(<ChatModels chatId={42} value={{ generator_model: null }} />));
   expect(host.textContent).toContain('как у личности');
 
-  await pick('Модель ответов', 'z-ai/glm-5.3');
-  expect(put).toHaveBeenCalledWith('/api/conversations/42/models', { generator_model: 'z-ai/glm-5.3' });
-  expect(host.querySelector('[aria-label="Модель ответов"]').value).toBe('z-ai/glm-5.3');
+  await pick('Модель ответов', 'google/gemini-4-argon');
+  expect(put).toHaveBeenCalledWith('/api/conversations/42/models', { generator_model: 'google/gemini-4-argon' });
+  expect(host.querySelector('[aria-label="Модель ответов"]').value).toBe('google/gemini-4-argon');
   expect(host.textContent).toContain('своих: 1');
 
   await pick('Модель ответов', '');

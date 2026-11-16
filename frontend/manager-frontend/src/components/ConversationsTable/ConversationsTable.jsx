@@ -1,7 +1,7 @@
 import { DialogTable } from '../../ui/ManagerRegion';
 import TableSkeleton from '../TableSkeleton/TableSkeleton';
 import { useEffect, useMemo, useRef } from 'react';
-import { useViewState } from '../../utils/viewState';
+import { useViewState, rememberDialogOrder } from '../../utils/viewState';
 import { SearchIcon } from '../../assets/icons';
 import { useNavigate } from 'react-router-dom';
 import styles from './ConversationsTable.module.scss';
@@ -112,6 +112,12 @@ function ConversationsTable({
       return 0;
     })
     : filtered;
+
+  // Чат, открытый из списка, листает тот же список: с фильтрами и сортировкой.
+  const orderKey = sorted.map((c) => c.chat_id).join(',');
+  useEffect(() => {
+    if (ready) rememberDialogOrder(orderKey ? orderKey.split(',') : []);
+  }, [orderKey, ready]);
 
   const total = rows.total ?? rows.length;
   const truncated = total > rows.length;

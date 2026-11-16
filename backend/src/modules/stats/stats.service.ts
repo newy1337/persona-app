@@ -13,8 +13,6 @@ import {
   DEFAULT_PRICES,
   PRICES_KEY,
   ZERO_TOKENS,
-  cacheWrite1hExtra,
-  costOf,
   parseTable,
   resolvePrice,
   type ModelPrice,
@@ -30,6 +28,8 @@ import {
   dialogCost,
   stageCostSummary,
   type ModelTokens,
+  actualCost,
+  listCost,
 } from './dialog-cost';
 import {
   DEAL_REACHED_KEY as DEAL_REACHED_FACT,
@@ -110,6 +110,8 @@ interface UsageRow {
   createdAt: number;
   /** сколько вызов стоил по словам OpenRouter; для моделей без цены в таблице */
   providerEstimatedCostUsd?: number | null;
+  /** маршрут вызова: gateway — бесплатно */
+  provider?: string | null;
 }
 
 function tokensOf(u: UsageRow): Tokens {
@@ -160,20 +162,30 @@ interface UsageGroup extends UsageRow {
   manager: string;
 }
 
+/**
+ * Сложить вызовы в корзину. Цена — фактическая (шлюз бесплатен); list —
+ * по прайсу, как если бы платили: так считается LLMR.
+ */
 function add(
   b: Bucket,
   u: UsageRow | UsageGroup,
   price: ModelPrice | null,
+  list = false,
 ): void {
   const t = tokensOf(u);
   const group = 'calls' in u ? u : null;
   b.calls += group ? group.calls : 1;
   addTokens(b.tokens, t);
-  // Модели нет в таблице цен (Kimi, GLM через OpenRouter) — берём цену,
-  // которую назвал OpenRouter, а не ноль.
-  b.cost += price
-    ? costOf(price, t) + cacheWrite1hExtra(price, u.cacheWrite1hTokens ?? 0)
-    : (u.providerEstimatedCostUsd ?? 0);
+  const cw1h = u.cacheWrite1hTokens ?? 0;
+  b.cost += list
+    ? listCost(price, t, cw1h, u.providerEstimatedCostUsd ?? 0)
+    : actualCost({
+        provider: u.provider,
+        price,
+        tokens: t,
+        cacheWrite1h: cw1h,
+        estimated: u.providerEstimatedCostUsd,
+      });
   if (group) {
     b.latencySum += group.latencySum;
     b.latencyN += group.latencyN;
@@ -207,7 +219,10 @@ async function usageGroups(
   range: DayRange,
   keys: Array<UsageKey | 'manager'>,
 ): Promise<UsageGroup[]> {
-  const cols = [...new Set<UsageKey | 'manager'>(['model', ...keys])];
+  // Маршрут — всегда: от него зависит цена (шлюз бесплатный).
+  const cols = [
+    ...new Set<UsageKey | 'manager'>(['model', 'provider', ...keys]),
+  ];
   const select = cols.map((k) => `${USAGE_KEY_SQL[k]} AS k_${k}`).join(', ');
   const group = cols.map((k) => USAGE_KEY_SQL[k]).join(', ');
   const join = cols.includes('manager')
@@ -570,7 +585,6 @@ export class StatsService {
     const unpriced = new Set<string>();
     // Факт: сколько выставил OpenRouter. Шлюз (LLMR) бесплатный — его вызовы
     // считаем по прайсу отдельно: столько они стоили бы в OpenRouter.
-    let paid = 0;
     let llmCalls = 0;
     const gateway = bucket();
 
@@ -579,8 +593,7 @@ export class StatsService {
       const p = price(u.model);
       if (!p) unpriced.add(u.model);
       add(total, u, p);
-      if (PAID_ROUTES.has(u.provider)) paid += u.providerEstimatedCostUsd ?? 0;
-      if (u.provider === GATEWAY_ROUTE) add(gateway, u, p);
+      if (u.provider === GATEWAY_ROUTE) add(gateway, u, p, true);
       if (PAID_ROUTES.has(u.provider) || u.provider === GATEWAY_ROUTE)
         llmCalls += u.calls;
       const day = byDay.get(dayKey(u.createdAt));
@@ -625,8 +638,8 @@ export class StatsService {
           : 0,
         chats: byChat.size,
         ...messages.totals,
-        /** Фактически заплачено OpenRouter за период. */
-        paid_usd: usd(paid),
+        /** Фактически заплачено за период: шлюз бесплатный, провайдеры — их сумма. */
+        paid_usd: usd(total.cost),
         /** Шлюз LLMR: сколько стоили бы его вызовы в OpenRouter — сэкономлено. */
         gateway_saved_usd: usd(gateway.cost),
         gateway_calls: gateway.calls,
@@ -893,6 +906,7 @@ export class StatsService {
       Array<{
         chat_id: bigint;
         model: string;
+        provider: string | null;
         input: bigint;
         output: bigint;
         cache_write: bigint;
@@ -901,7 +915,7 @@ export class StatsService {
         estimated: number | null;
       }>
     >(Prisma.sql`
-      SELECT chat_id, model,
+      SELECT chat_id, model, provider,
         SUM(GREATEST(0, COALESCE(input_tokens, 0) - COALESCE(cached_tokens, 0) - COALESCE(cache_write_tokens, 0))) AS input,
         SUM(COALESCE(output_tokens, 0)) AS output,
         SUM(COALESCE(cache_write_tokens, 0)) AS cache_write,
@@ -910,7 +924,7 @@ export class StatsService {
         SUM(COALESCE(provider_estimated_cost_usd, 0)) AS estimated
       FROM model_usage
       WHERE chat_id = ANY(${[...new Set(chatIds)]}::bigint[])
-      GROUP BY chat_id, model`);
+      GROUP BY chat_id, model, provider`);
     for (const r of rows) {
       const key = String(r.chat_id);
       out.set(
@@ -926,6 +940,7 @@ export class StatsService {
                 cache_read: Number(r.cache_read),
                 cache_write_1h: Number(r.cache_write_1h),
                 estimated: Number(r.estimated ?? 0),
+                provider: r.provider,
               },
             ],
             price,
@@ -1476,6 +1491,7 @@ export class StatsService {
         elapsedMs: true,
         createdAt: true,
         providerEstimatedCostUsd: true,
+        provider: true,
       },
     })) as UsageRow[];
     const b = bucket();
@@ -1502,6 +1518,7 @@ export class StatsService {
           elapsedMs: true,
           createdAt: true,
           providerEstimatedCostUsd: true,
+          provider: true,
         },
       }) as Promise<UsageRow[]>,
       this.prisma.leadFacts.findUnique({
@@ -1540,6 +1557,7 @@ export class StatsService {
         chat_id: bigint;
         stage: string;
         model: string | null;
+        provider: string | null;
         input: bigint | null;
         output: bigint | null;
         cache_write: bigint | null;
@@ -1559,7 +1577,7 @@ export class StatsService {
         WHERE p.facts LIKE ${'%' + DEAL_REACHED_FACT + '%'}
           AND s.value ~ '^[0-9]+$'
       )
-      SELECT r.chat_id, r.stage, u.model,
+      SELECT r.chat_id, r.stage, u.model, u.provider,
         SUM(GREATEST(0, COALESCE(u.input_tokens, 0) - COALESCE(u.cached_tokens, 0) - COALESCE(u.cache_write_tokens, 0))) AS input,
         SUM(COALESCE(u.output_tokens, 0)) AS output,
         SUM(COALESCE(u.cache_write_tokens, 0)) AS cache_write,
@@ -1569,7 +1587,7 @@ export class StatsService {
       FROM reached r
       LEFT JOIN model_usage u ON u.chat_id = r.chat_id AND u.created_at <= r.ts
       WHERE r.ts >= ${range.start} AND r.ts < ${range.end}
-      GROUP BY r.chat_id, r.stage, u.model`);
+      GROUP BY r.chat_id, r.stage, u.model, u.provider`);
     const perChat = new Map<string, { stage: string; tokens: ModelTokens[] }>();
     for (const r of rows) {
       const key = `${r.chat_id}:${r.stage}`;
@@ -1583,6 +1601,7 @@ export class StatsService {
           cache_read: Number(r.cache_read ?? 0),
           cache_write_1h: Number(r.cache_write_1h ?? 0),
           estimated: Number(r.estimated ?? 0),
+          provider: r.provider,
         });
     }
     return {

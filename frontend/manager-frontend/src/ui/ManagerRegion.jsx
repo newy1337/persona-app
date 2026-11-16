@@ -30,6 +30,11 @@ export function Attribution({ value, compact = false, as: Tag = 'div' }) {
     h('span', null, h('span', { className: 'mr-caption' }, 'Регион: '), value.region_code || 'не задан'));
 }
 
+/** Дата добавления номера: 16.11.26, по Москве. */
+export function addedDate(ts) {
+  return new Date(Number(ts) * 1000).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
 export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, onOpen, onHide, onDealStage = null, helpers }) {
   const { Avatar, Stage, isNew, unreadLabel, presence, nextAction, time, date, accountLost, typingLabels } = helpers;
   const sortOptions = [
@@ -64,7 +69,7 @@ export function DialogTable({ rows, totalRows, archived, sort, onSort, setSort, 
                 fresh && h('span', { className: 'mr-dialog-new-badge', 'data-testid': 'new-badge', title: 'Клиент написал — ждёт ответа менеджера' }, unreadLabel(row.unread_count)),
                 h('div', { className: 'mr-dialog-muted' }, row.typing ? `${typingLabels[row.typing] || 'печатает'}…` : [row.age ? `${row.age} лет` : null, row.city].filter(Boolean).join(' · ') || 'Возраст и город не указаны'))),
             h('div', { className: 'mr-dialog-contact' }, row.phone || null, contact && link(contact), !row.phone && !contact && h('span', { className: 'mr-dialog-muted' }, 'Контакт не указан')),
-            h('div', { className: 'mr-dialog-muted mr-dialog-id' }, `ID ${row.chat_id}`),
+            h('div', { className: 'mr-dialog-muted mr-dialog-id' }, `ID ${row.chat_id}`, row.added_at ? h('span', { 'data-testid': 'added-at', title: 'Когда номер собеседника добавили в базу' }, ` · добавлен ${addedDate(row.added_at)}`) : null),
             row.blocked_by_client_at || row.cleared_by_client_at || row.likely_blocked_at ? h('div', { className: 'mr-dialog-warning', 'data-testid': 'blocked-mark', title: row.likely_blocked_at && !row.blocked_by_client_at ? 'Статус собеседника вдруг скрылся — так бывает, когда кидают в ЧС (или скрыли статус приватностью)' : undefined }, row.blocked_by_client_at ? 'ЧС: заблокировал(а) нас' : row.cleared_by_client_at ? 'Почистил(а) диалог' : 'Вероятно, ЧС') : online && h('div', { className: `mr-dialog-muted ${online.tone === 'online' ? 'mr-dialog-online' : ''}` }, online.text)),
           h('td', { className: 'mr-dialog-owner' }, h(Attribution, { value: row }),
             h('div', { className: 'mr-dialog-account' }, h('span', { className: 'mr-caption' }, 'Аккаунт: '), account ? link(account) : row.account_id ? `#${row.account_id}` : 'удалён'),

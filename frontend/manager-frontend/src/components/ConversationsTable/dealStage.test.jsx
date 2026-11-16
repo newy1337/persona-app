@@ -75,3 +75,11 @@ test('чипы этапов считают строки и фильтруют с
   await act(async () => chips[2].click());
   expect([...host.querySelectorAll('tbody tr')].map((tr) => tr.textContent).join(' ')).toContain('Третий');
 });
+
+test('дата добавления номера — под ID чата, без даты — ничего', async () => {
+  // 16.11.2026 10:00 МСК
+  await act(async () => root.render(<ConversationsTable rows={[row({ added_at: 1794812400 }), row({ chat_id: 2, id: 2 })]} />));
+  const marks = host.querySelectorAll('[data-testid="added-at"]');
+  expect(marks).toHaveLength(1);
+  expect(marks[0].textContent).toBe(' · добавлен 16.11.26');
+});

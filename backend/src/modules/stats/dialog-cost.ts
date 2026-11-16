@@ -1,5 +1,47 @@
 import { FUNNEL_STAGES, DEAL_STAGE_LABELS } from 'src/domain/deal-stage';
-import { cacheWrite1hExtra, costOf, type ModelPrice } from './prices';
+import {
+  cacheWrite1hExtra,
+  costOf,
+  type ModelPrice,
+  type Tokens,
+} from './prices';
+
+/** Маршрут шлюза (LLMR): его вызовы нам ничего не стоят. */
+export const FREE_ROUTE = 'gateway';
+/** Провайдеры, которые сами говорят, сколько списали за вызов. */
+const BILLED_ROUTES = new Set(['openrouter', 'nanogpt']);
+
+/**
+ * Фактическая цена вызовов: шлюз — 0; OpenRouter и NanoGPT — сколько
+ * выставили сами; остальное (и старые вызовы без суммы от провайдера) —
+ * по прайсу, а модель без цены — по сумме провайдера.
+ */
+export function actualCost(input: {
+  provider?: string | null;
+  price: ModelPrice | null;
+  tokens: Tokens;
+  cacheWrite1h: number;
+  estimated?: number | null;
+}): number {
+  const { provider, price, tokens, cacheWrite1h } = input;
+  const estimated = input.estimated ?? 0;
+  if (provider === FREE_ROUTE) return 0;
+  if (provider && BILLED_ROUTES.has(provider) && estimated > 0)
+    return estimated;
+  return listCost(price, tokens, cacheWrite1h, estimated);
+}
+
+/** Цена по прайсу — столько вызов стоил бы у платного провайдера. */
+export function listCost(
+  price: ModelPrice | null,
+  tokens: Tokens,
+  cacheWrite1h: number,
+  estimated = 0,
+): number {
+  return price
+    ? costOf(price, tokens) + cacheWrite1hExtra(price, cacheWrite1h)
+    : estimated;
+}
 
 /** Токены одной модели, сложенные по нескольким вызовам. */
 export interface ModelTokens {
@@ -11,6 +53,8 @@ export interface ModelTokens {
   cache_write_1h: number;
   /** цена по словам OpenRouter — для моделей без цены в таблице */
   estimated?: number;
+  /** маршрут: gateway — бесплатно, openrouter/nanogpt — их сумма */
+  provider?: string | null;
 }
 
 /** Цена суммы токенов: формула линейна, так что сумма по вызовам — сумма цен. */
@@ -19,20 +63,19 @@ export function costOfSums(
   price: (model: string) => ModelPrice | null,
 ): number {
   let total = 0;
-  for (const r of rows) {
-    const p = price(r.model);
-    if (!p) {
-      total += r.estimated ?? 0;
-      continue;
-    }
-    total +=
-      costOf(p, {
+  for (const r of rows)
+    total += actualCost({
+      provider: r.provider,
+      price: price(r.model),
+      tokens: {
         input: r.input,
         output: r.output,
         cache_write: r.cache_write,
         cache_read: r.cache_read,
-      }) + cacheWrite1hExtra(p, r.cache_write_1h);
-  }
+      },
+      cacheWrite1h: r.cache_write_1h,
+      estimated: r.estimated,
+    });
   return total;
 }
 
