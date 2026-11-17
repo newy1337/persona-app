@@ -545,9 +545,29 @@ export function ManagersPage() {
     finally { setOpening(null); }
   }
   async function remove(user) {
-    if (!await ux.confirm({ title: `Удалить ${user.username}?`, message: 'Учётка будет удалена. Закреплённые аккаунты освободятся.', confirmLabel: 'Удалить', danger: true })) return;
-    try { setData(await api.delete(`/api/managers/${user.user_id}`)); if (credentials?.user_id === user.user_id) setCredentials(null); }
-    catch (e) { setError(ux.readableError(e)); }
+    const typed = await ux.prompt({
+      title: `Удалить ${user.username}?`,
+      message: `Учётка удалится насовсем${user.role === 'manager' ? ', закреплённые аккаунты освободятся' : ''}. Чтобы подтвердить, введите логин: ${user.username}`,
+      placeholder: user.username,
+      confirmLabel: 'Удалить',
+      danger: true,
+    });
+    if (typed === null) return;
+    if (typed !== user.username) { setError(`Логин не совпал — ${user.username} не удалён`); return; }
+    const done = result => { setData(result); setError(''); if (credentials?.user_id === user.user_id) setCredentials(null); };
+    try { done(await api.delete(`/api/managers/${user.user_id}`)); }
+    catch (e) {
+      // Активные задания войсера: админ может удалить всё равно — задания закроются.
+      if (e.status !== 409 || !/задани/i.test(e.detail || '')) { setError(ux.readableError(e)); return; }
+      if (!await ux.confirm({
+        title: `У ${user.username} есть активные задания`,
+        message: `${e.detail.replace(/\.?\s*Сначала.*$/, '')}. Невзятые и в работе отменятся, ожидающие проверки доставки закроются. Удалить всё равно?`,
+        confirmLabel: 'Удалить с заданиями',
+        danger: true,
+      })) return;
+      try { done(await api.delete(`/api/managers/${user.user_id}?force=1`)); }
+      catch (err) { setError(ux.readableError(err)); }
+    }
   }
   async function regenerate(id) { setCredentials(await api.post(`/api/managers/${id}/password`, {})); }
   const state = ux.useActions(), pending = state.pending.some(key => key.includes('/api/managers'));

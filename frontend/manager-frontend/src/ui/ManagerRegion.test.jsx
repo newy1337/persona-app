@@ -257,3 +257,24 @@ test('форма лида: без источника трафика не доб�
   await act(async () => host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
   expect(post).toHaveBeenCalledWith('/api/leads', expect.objectContaining({ traffic_source: 'hot_leadgen' }));
 });
+
+test('удаление учётки: нужен логин, при активных заданиях — второе подтверждение и force', async () => {
+  const voicers = { roles: ['admin', 'voice'], items: [
+    { user_id: 1, username: 'admin', role: 'admin', account_ids: [] },
+    { user_id: 5, username: 'voice_test', role: 'voice', account_ids: [] },
+  ] };
+  api.get.mockImplementation(async path => path === '/api/managers' ? voicers : path === '/api/tg-accounts' ? [] : { user_id: 1, role: 'admin' });
+  const del = vi.spyOn(api, 'delete')
+    .mockRejectedValueOnce({ status: 409, detail: 'Активных заданий войсера: 2. Сначала завершите или отмените их' })
+    .mockResolvedValueOnce({ roles: [], items: [] });
+  const prompt = vi.spyOn(PanelUX, 'prompt').mockResolvedValueOnce('voice').mockResolvedValueOnce('voice_test');
+  const confirm = vi.spyOn(PanelUX, 'confirm').mockResolvedValue(true);
+  await render(<ManagersPage />);
+  await click('Удалить');
+  expect(del).not.toHaveBeenCalled();
+  expect(host.textContent).toContain('Логин не совпал');
+  await click('Удалить');
+  expect(prompt).toHaveBeenCalledTimes(2);
+  expect(confirm.mock.calls[0][0].message).toContain('Активных заданий войсера: 2');
+  expect(del.mock.calls.map(c => c[0])).toEqual(['/api/managers/5', '/api/managers/5?force=1']);
+});

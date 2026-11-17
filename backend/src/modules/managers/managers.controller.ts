@@ -162,17 +162,27 @@ export class ManagersController {
     );
   }
 
-  @ApiOperation({ summary: 'Delete a panel user (not yourself)' })
+  @ApiOperation({
+    summary:
+      'Delete a panel user (not yourself); ?force=1 also closes their active voice tasks',
+  })
   @Delete(':userId')
   @Roles(Role.ADMIN)
   @HttpCode(200)
   async remove(
     @Param('userId', ParseIntPipe) target: number,
     @CurrentUser('id') userId: number,
+    @Query('force') force?: string,
   ) {
+    const forced = force === '1' || force === 'true';
     return this.audit.wrap(
-      { userId, action: 'manager.delete', resource: `user:${target}` },
-      () => this.managers.remove(target, userId),
+      {
+        userId,
+        action: 'manager.delete',
+        resource: `user:${target}`,
+        payload: { force: forced },
+      },
+      () => this.managers.remove(target, userId, forced),
     );
   }
 }
