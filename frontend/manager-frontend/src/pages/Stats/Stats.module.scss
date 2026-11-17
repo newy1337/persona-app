@@ -94,6 +94,11 @@
 /* Restored panel readability and responsive controls. */
 .kpiTitle, .kpiHint, .chartHint, .legend { color:#b3c1d8; font-size:12px; line-height:1.5; }
 .tick { fill:#aebed5; font-size:12px; }
+.barValue { fill:#cfd9ea; font-size:11px; font-weight:600; }
+.dailyDetails {
+  margin-top: 12px;
+  summary { cursor: pointer; font-size: 13px; color: #b3c1d8; margin-bottom: 8px; }
+}
 .priceInput { min-height:34px; font-size:13px; }
 @media(max-width:600px) { .priceInput { min-height:40px; font-size:16px; } }
 
@@ -104,6 +109,19 @@
   margin: 14px 0 16px;
   padding: 3px;
   width: fit-content;
+  border-radius: $radius-md;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid $border-subtle;
+}
+
+.subTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 3px;
+  width: fit-content;
+  max-width: 100%;
   border-radius: $radius-md;
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid $border-subtle;
@@ -121,6 +139,10 @@
 }
 
 // Строка менеджера раскрывает дни — показываем, что по ней можно нажать.
+.teamRow td {
+  background: rgba(255, 255, 255, 0.025);
+}
+
 .rowClickable {
   cursor: pointer;
 

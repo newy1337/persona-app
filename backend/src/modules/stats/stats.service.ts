@@ -578,6 +578,8 @@ export class StatsService {
 
     const total = bucket();
     const byDay = new Map<string, Bucket>(range.days.map((d) => [d, bucket()]));
+    /** Фактический расход дня по маршрутам: сколько выставил каждый провайдер. */
+    const dayProviders = new Map<string, Map<string, Bucket>>();
     const byModel = new Map<string, Bucket>();
     const byStage = new Map<string, Bucket>();
     const byPersona = new Map<string, Bucket>();
@@ -597,7 +599,15 @@ export class StatsService {
       if (PAID_ROUTES.has(u.provider) || u.provider === GATEWAY_ROUTE)
         llmCalls += u.calls;
       const day = byDay.get(dayKey(u.createdAt));
-      if (day) add(day, u, p);
+      if (day) {
+        add(day, u, p);
+        const route = u.provider ?? '—';
+        if (!dayProviders.has(dayKey(u.createdAt)))
+          dayProviders.set(dayKey(u.createdAt), new Map());
+        const routes = dayProviders.get(dayKey(u.createdAt))!;
+        if (!routes.has(route)) routes.set(route, bucket());
+        add(routes.get(route)!, u, p);
+      }
       for (const [map, key] of [
         [byModel, u.model],
         [byStage, u.stage],
@@ -650,6 +660,13 @@ export class StatsService {
       by_day: range.days.map((day) => ({
         day,
         ...view(byDay.get(day)!),
+        by_provider: [...(dayProviders.get(day)?.entries() ?? [])]
+          .map(([provider, b]) => ({
+            provider,
+            calls: b.calls,
+            cost_usd: usd(b.cost),
+          }))
+          .sort((a, b) => b.cost_usd - a.cost_usd),
         messages_in: messages.byDay.get(day)?.in ?? 0,
         messages_out: messages.byDay.get(day)?.out ?? 0,
       })),
@@ -735,7 +752,7 @@ export class StatsService {
       b: { cost_usd: number; messages_out: number },
     ) => b.cost_usd - a.cost_usd || b.messages_out - a.messages_out;
 
-    const { users, teamOf } = await this.teamTree();
+    const { users, teamOf, directOf } = await this.teamTree();
     const roleRank: Record<string, number> = { head: 0, teamlead: 1 };
     const by_team = users
       .map((u) => {
@@ -748,6 +765,10 @@ export class StatsService {
           role: u.role,
           region_code: u.regionCode,
           members: members.length - 1,
+          /** руководитель команды (у тимлида — его хед), чтобы строить дерево */
+          lead_id: u.leadId,
+          /** прямые подчинённые: строки команды раскрываются ими */
+          direct: directOf(u.id),
           ...aggRow(agg, range),
         };
       })
@@ -841,6 +862,16 @@ export class StatsService {
       TRAFFIC_SOURCE_FILTERS.map((src) => [src, blank()]),
     );
     const total = blank();
+    // Один чат бывает у нескольких лидов (человека добавили снова): его
+    // расход и этапы считаем в строке один раз, иначе цифры удваиваются.
+    const counted = new Map<object, Set<string>>();
+    const firstTime = (row: object, chat: string) => {
+      if (!counted.has(row)) counted.set(row, new Set());
+      const seen = counted.get(row)!;
+      if (seen.has(chat)) return false;
+      seen.add(chat);
+      return true;
+    };
     for (const l of leads) {
       const region =
         (l.ownerUserId !== null ? regionOf.get(l.ownerUserId) : null) ??
@@ -851,9 +882,10 @@ export class StatsService {
       const own = bySource.get(l.trafficSource ?? 'none') ?? blank();
       for (const row of [regions.get(region)!, own, total]) {
         row.leads += 1;
-        if (costs && l.chatId) row.cost_usd += costs.get(String(l.chatId)) ?? 0;
         row.statuses[l.status] = (row.statuses[l.status] ?? 0) + 1;
         row.by_source[l.trafficSource ?? 'none'] += 1;
+        if (!l.chatId || !firstTime(row, String(l.chatId))) continue;
+        if (costs) row.cost_usd += costs.get(String(l.chatId)) ?? 0;
         for (const st of reached.get(String(l.chatId)) ?? [])
           if (st in row.stages) row.stages[st] += 1;
       }
@@ -982,7 +1014,13 @@ export class StatsService {
   private async teamTree() {
     const users = await this.prisma.dashboardUser.findMany({
       where: { role: { in: [Role.TEAMLEAD, Role.HEAD] } },
-      select: { id: true, username: true, role: true, regionCode: true },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        regionCode: true,
+        leadId: true,
+      },
     });
     const links = await this.prisma.dashboardUser.findMany({
       where: { leadId: { not: null } },
@@ -1005,7 +1043,10 @@ export class StatsService {
       }
       return [...seen];
     };
-    return { users, teamOf };
+    /** Прямые подчинённые: у хеда — тимлиды и его менеджеры, у тимлида — менеджеры. */
+    const directOf = (leadId: number): number[] =>
+      subordinates.get(leadId) ?? [];
+    return { users, teamOf, directOf };
   }
 
   /**
