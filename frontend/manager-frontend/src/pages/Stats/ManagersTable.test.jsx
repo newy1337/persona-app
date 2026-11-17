@@ -63,8 +63,9 @@ describe('таблица по менеджерам', () => {
     expect(row.textContent).toContain('83%');
     expect(row.textContent).toContain('150 ↑');
     expect(row.textContent).toContain('20%');
-    expect(row.textContent).toContain('40');
-    expect(row.textContent).toContain('80%');
+    // «Номеров» — валидные с долей от загруженных, сами загруженные — в подсказке.
+    expect(row.textContent).toContain('32 · 80%');
+    expect(row.querySelector('[title="из 40 загруженных"]')).not.toBeNull();
     expect(row.textContent).toContain('75%');
     expect(row.textContent).toContain('9');
   });
@@ -108,7 +109,7 @@ describe('итог и сортировка', () => {
     const total = rows[rows.length - 1];
     expect(total.textContent).toContain('Итого');
     expect(total.textContent).toContain('$15.00');
-    expect(total.textContent).toContain('450');
+    expect(total.textContent).toContain('158 ↑');
   });
 
   it('по расходу строки идут сверху вниз', () => {
@@ -131,22 +132,46 @@ describe('итог и сортировка', () => {
     const day = host.querySelector('[data-testid="manager-day-6-2026-09-28"]');
     expect(day.textContent).toContain('28.09');
     expect(day.textContent).toContain('$5.00');
-    expect(day.textContent).toContain('20');
-    expect(day.querySelectorAll('td').length).toBe(9);
+    expect(day.textContent).toContain('16 · 80%');
+    // имя, расход, номеров, ответили, переписок, сообщений и шесть этапов
+    expect(day.querySelectorAll('td').length).toBe(12);
   });
 });
 
 describe('таблица по командам', () => {
-  it('показывает роль, регион и размер команды под названием', () => {
+  const TEAMS = [
+    { ...ROWS[0], manager_id: 9, username: 'boss', role: 'head', region_code: '0101', members: 3, lead_id: null, direct: [10, 6] },
+    { ...ROWS[0], manager_id: 10, username: 'lead', role: 'teamlead', region_code: '0101', members: 1, lead_id: 9, direct: [] },
+  ];
+  const renderTeams = () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
-    act(() => createRoot(host).render(React.createElement(ManagersTable, {
-      rows: [{ ...ROWS[0], manager_id: 9, username: 'boss', role: 'head', region_code: '0101', members: 3 }],
-      title: 'По командам', nameHeader: 'Команда',
-    })));
+    act(() => createRoot(host).render(React.createElement(ManagersTable, { rows: ROWS, teams: TEAMS, title: 'По командам' })));
+    return host;
+  };
+
+  it('показывает роль, регион и размер команды под названием', () => {
+    const host = renderTeams();
     expect(host.querySelector('h3').textContent).toBe('По командам');
-    expect(host.querySelector('th').textContent).toBe('Команда');
+    expect(host.querySelector('th').textContent).toBe('Команда / менеджер');
     expect(host.querySelector('[data-testid="team-meta-9"]').textContent).toBe('хед · регион 0101 · команда: 3 чел.');
-    expect(host.querySelector('[data-testid="manager-row-9"]').textContent).toContain('boss');
+  });
+
+  it('тимлид с хедом не дублируется наверху, а раскрывается внутри команды хеда', () => {
+    const host = renderTeams();
+    expect(host.querySelector('[data-testid="team-row-10"]')).toBeNull();
+    expect(host.querySelector('[data-testid="manager-row-6"]')).toBeNull();
+    click(host.querySelector('[data-testid="team-row-9"]'));
+    expect(host.querySelector('[data-testid="team-row-10"]').textContent).toContain('lead');
+    expect(host.querySelector('[data-testid="manager-row-6"]').textContent).toContain('manager4');
+  });
+
+  it('менеджеры вне команд собраны в группу «Без команды»', () => {
+    const host = renderTeams();
+    const loose = host.querySelector('[data-testid="team-row-loose"]');
+    expect(loose.textContent).toContain('Без команды');
+    expect(loose.textContent).toContain('$2.50');
+    click(loose);
+    expect(host.querySelector('[data-testid="manager-row-none"]').textContent).toContain('Без менеджера');
   });
 });

@@ -42,7 +42,7 @@ describe('уровень рассуждения в запросе', () => {
     const high = deps();
     await generateDraft(
       {
-        model: 'z-ai/glm-5.3',
+        model: 'google/gemini-4-argon',
         system: { stable: 'P' },
         history: [],
         userText: 'привет',

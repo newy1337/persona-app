@@ -104,7 +104,7 @@ import {
 } from '../../assets/icons';
 import { DEAL_STAGES } from '../../data/dealStages';
 import { accountContact, channelBadge, clientContact } from '../../utils/channel';
-import { peekDialogAnchor, rememberDialog } from '../../utils/viewState';
+import { peekDialogAnchor, rememberDialog, dialogOrder } from '../../utils/viewState';
 import { useMe } from '../../components/AppLayout/me';
 import ChatCost from './ChatCost';
 import ChatModels from './ChatModels';
@@ -668,7 +668,7 @@ function ConversationPage() {
   const stage = data.goals?.stage;
   const cfg = stage?.title ? { ...stageColors(stage.index), label: stage.title } : {};
 
-  const chatIds = chats ? chats.map((c) => c.chat_id) : [];
+  const chatIds = chats ? dialogOrder(id, chats.map((c) => c.chat_id)) : [];
   const idx = chatIds.indexOf(Number(id));
   const goPrev = () => {
     if (idx > 0) navigate(`/conversation/${chatIds[idx - 1]}`);

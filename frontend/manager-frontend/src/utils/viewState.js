@@ -51,3 +51,20 @@ export function takeDialogAnchor() {
 export function peekDialogAnchor() {
   return read(ANCHOR_KEY, null);
 }
+
+const ORDER_KEY = 'dialogs.order';
+
+/** Список «Диалоги» как его видно сейчас — с фильтрами, поиском и сортировкой. */
+export function rememberDialogOrder(chatIds) {
+  write(ORDER_KEY, chatIds.map(Number));
+}
+
+/**
+ * Порядок для листания в чате: отфильтрованный список, если открытый чат в
+ * нём есть; иначе — весь список (чат открыли не из «Диалогов»).
+ */
+export function dialogOrder(chatId, allIds) {
+  const saved = read(ORDER_KEY, null);
+  const id = Number(chatId);
+  return Array.isArray(saved) && saved.includes(id) ? saved : allIds;
+}

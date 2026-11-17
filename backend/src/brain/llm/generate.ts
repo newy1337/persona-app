@@ -3,7 +3,7 @@ import type { HistoryMessage } from '../kernel/types';
 import { ModelResponseError } from '../kernel/errors';
 import { asText } from '../kernel/coerce';
 import { resolveModel, type ReasoningEffort } from '../config/models';
-import { normalizeReply } from '../character/reply';
+import { normalizeReply, stripLeakedText } from '../character/reply';
 import { completeText, type LlmDeps, type SplitPrompt } from './anthropic';
 import { cacheMark, windowStart } from './cache';
 import { withReplyQuote } from '../memory/reply-quote';
@@ -80,5 +80,14 @@ export async function generateDraft(
   });
   if (!text.trim())
     throw new ModelResponseError('Model returned an empty reply');
-  return normalizeReply(text);
+  // Хвост чужого текста отрезается до проверки: судья видит только реплику.
+  const clean = stripLeakedText(text);
+  if (clean.leaked) {
+    deps.logger.warn(
+      `generator: foreign text cut from the draft (${text.length} → ${clean.text.length} chars): ${JSON.stringify(text.slice(clean.text.length, clean.text.length + 160))}`,
+    );
+    if (!clean.text.trim())
+      throw new ModelResponseError('generator: reply is foreign text');
+  }
+  return normalizeReply(clean.text);
 }

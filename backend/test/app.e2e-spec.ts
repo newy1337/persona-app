@@ -812,7 +812,11 @@ describe('Manager panel API (e2e)', () => {
       role: 'teamlead',
       members: 1,
       messages_in: 1,
+      lead_id: head,
     });
+    // дерево команд: тимлид — прямой подчинённый хеда, менеджер — тимлида
+    expect(headRow.direct).toContain(lead);
+    expect(leadRow.direct).toContain(manager);
     expect(
       teams.body.by_manager.find((r: any) => r.manager_id === manager)
         .messages_in,
@@ -7330,6 +7334,11 @@ describe('Manager panel API (e2e)', () => {
       await prisma.lead.update({
         where: { id: base[0].id },
         data: { chatId: 777000801n, status: 'replied' },
+      });
+      // тот же человек добавлен вторым лидом: чат общий, считается один раз
+      await prisma.lead.update({
+        where: { id: base[1].id },
+        data: { chatId: 777000801n },
       });
       await prisma.leadFacts.create({
         data: {

@@ -363,6 +363,50 @@ describe('Voicer workflow against a real migrated database', () => {
     ).toBe(1);
   });
 
+  it('admin deletes a voicer with active tasks only after an explicit force; tasks are closed', async () => {
+    const victim = await createUser('voice_to_delete', 'voice');
+    const boss = await createUser('manager_of_deleted', 'manager', {
+      voicer_id: victim.id,
+    });
+    const taken = await task(boss.token);
+    const queued = await task(boss.token);
+    await act(victim.token, taken.id, 'claim').then((r) =>
+      expect(r.status).toBe(200),
+    );
+    const refused = await request(app.getHttpServer())
+      .delete(`/api/managers/${victim.id}`)
+      .set(auth(admin))
+      .expect(409);
+    expect(refused.body.message).toContain('Активных заданий войсера: 2');
+    await request(app.getHttpServer())
+      .delete(`/api/managers/${victim.id}?force=1`)
+      .set(auth(manager))
+      .expect(403);
+    await request(app.getHttpServer())
+      .delete(`/api/managers/${victim.id}?force=1`)
+      .set(auth(admin))
+      .expect(200);
+    expect(
+      await prisma.dashboardUser.findUnique({ where: { id: victim.id } }),
+    ).toBeNull();
+    const closed = await prisma.voiceTask.findMany({
+      where: { id: { in: [taken.id, queued.id] } },
+      select: { status: true, outcome: true, voicerId: true },
+    });
+    expect(closed).toEqual([
+      {
+        status: 'cancelled',
+        outcome: 'Учётка удалена администратором',
+        voicerId: null,
+      },
+      {
+        status: 'cancelled',
+        outcome: 'Учётка удалена администратором',
+        voicerId: null,
+      },
+    ]);
+  });
+
   it('stores one recording per Telegram message and revision, with scoped file access', async () => {
     const t = await task();
     expect((await act(voice, t.id, 'claim')).status).toBe(200);

@@ -19,6 +19,15 @@ import { CreateManagerDto, UpdateManagerDto } from './dto/manager.dto';
 import { CryptoService } from 'src/shared/crypto.service';
 
 /** Источники: без пустых и дублей, обрезанные; сравнение при раздаче без учёта регистра. */
+/** Задания войсера, которые ещё не закончены: учётку с ними без подтверждения не удалить. */
+const ACTIVE_TASK_STATUSES = [
+  'queued',
+  'in_progress',
+  'delivering',
+  'delivery_error',
+  'delivery_review',
+] as const;
+
 const cleanSources = (list: string[] | undefined): string[] => [
   ...new Set((list ?? []).map((s) => s.trim()).filter(Boolean)),
 ];
@@ -538,33 +547,55 @@ export class ManagersService {
     }
   }
 
+  private activeTasksWhere(userId: number) {
+    return {
+      OR: [{ managerId: userId }, { voicerId: userId }],
+      status: { in: [...ACTIVE_TASK_STATUSES] },
+    };
+  }
+
   private async ensureNoActiveTasks(
     userId: number,
     db: Prisma.TransactionClient = this.prisma,
   ) {
-    if (
-      await db.voiceTask.count({
-        where: {
-          OR: [{ managerId: userId }, { voicerId: userId }],
-          status: {
-            in: [
-              'queued',
-              'in_progress',
-              'delivering',
-              'delivery_error',
-              'delivery_review',
-            ],
-          },
-        },
-      })
-    ) {
+    const active = await db.voiceTask.count({
+      where: this.activeTasksWhere(userId),
+    });
+    if (active)
       throw new ConflictException(
-        'Сначала завершите или отмените активные задания войсера',
+        `Активных заданий войсера: ${active}. Сначала завершите или отмените их`,
       );
-    }
   }
 
-  async remove(userId: number, byUserId: number) {
+  /**
+   * Задания удаляемой учётки: невзятые и в работе отменяются, зависшие на
+   * проверке доставки закрываются. Голосовое, которое уже отправляется,
+   * не трогаем — оно уйдёт собеседнику.
+   */
+  private async closeTasksOf(userId: number, db: Prisma.TransactionClient) {
+    const now = this.clock.ts();
+    const mine = { OR: [{ managerId: userId }, { voicerId: userId }] };
+    await db.voiceTask.updateMany({
+      where: { ...mine, status: { in: ['queued', 'in_progress'] } },
+      data: {
+        status: 'cancelled',
+        outcome: 'Учётка удалена администратором',
+        updatedAt: now,
+        notifyVersion: { increment: 1 },
+        notifyAfter: 0,
+      },
+    });
+    await db.voiceTask.updateMany({
+      where: { ...mine, status: { in: ['delivery_error', 'delivery_review'] } },
+      data: { status: 'delivery_closed', updatedAt: now },
+    });
+  }
+
+  /**
+   * Удалить учётку. С активными заданиями — только явно (force): админ
+   * подтвердил, задания закрываются вместе с учёткой.
+   */
+  async remove(userId: number, byUserId: number, force = false) {
     if (userId === byUserId)
       throw new ConflictException('нельзя удалить самого себя');
     const target = await this.prisma.dashboardUser.findUnique({
@@ -572,7 +603,8 @@ export class ManagersService {
     });
     if (!target) throw new NotFoundException('нет такой учётки');
     await this.prisma.$transaction(async (tx) => {
-      await this.ensureNoActiveTasks(userId, tx);
+      if (force) await this.closeTasksOf(userId, tx);
+      else await this.ensureNoActiveTasks(userId, tx);
       await tx.dashboardUser.delete({ where: { id: userId } });
     });
     return this.list();

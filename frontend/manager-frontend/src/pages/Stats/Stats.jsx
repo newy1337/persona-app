@@ -180,7 +180,7 @@ export default function Stats() {
   }, [tab, range]);
 
   useEffect(() => {
-    if (tab !== 'managers' && tab !== 'teams') return undefined;
+    if (tab !== 'teams') return undefined;
     let alive = true;
     setManagersLoading(true);
     const pull = () => getManagerUsage({ from: range.from, to: range.to })
@@ -237,7 +237,7 @@ export default function Stats() {
           {showPrices && <PricesEditor onChanged={load} onError={setError} />}
 
           <div className={p.tabs} role="tablist">
-            {[['overview', 'Обзор'], ['managers', 'По менеджерам'], ['teams', 'По командам'], ['stages', 'Этапы'], ['cold', 'Холодка'], ['sources', 'Источники'], ['accounts', 'Аккаунты'], ['goals', 'Цели']].map(([id, label]) => (
+            {[['overview', 'Обзор'], ['teams', 'По командам'], ['stages', 'Этапы'], ['cold', 'Холодка'], ['sources', 'Источники'], ['accounts', 'Аккаунты'], ['goals', 'Цели']].map(([id, label]) => (
               <button
                 key={id}
                 role="tab"
@@ -264,22 +264,15 @@ export default function Stats() {
               {stages ? <StagesTable data={stages} /> : <TableSkeleton rows={5} label="Считаю этапы…" />}
               {stageCosts ? <StageCosts data={stageCosts} /> : <TableSkeleton rows={5} label="Считаю цену диалогов…" />}
             </>
-          ) : tab === 'managers' ? (
-            managersLoading || !managers ? (
-              <TableSkeleton rows={5} label="Считаю по менеджерам…" />
-            ) : (
-              <ManagersTable rows={managers} />
-            )
           ) : tab === 'teams' ? (
-            managersLoading || !teams ? (
+            managersLoading || !teams || !managers ? (
               <TableSkeleton rows={5} label="Считаю по командам…" />
             ) : (
               <ManagersTable
-                rows={teams}
+                rows={managers}
+                teams={teams}
                 title="По командам"
-                nameHeader="Команда"
-                hint="Хед — вся цепочка: тимлиды, их менеджеры и прямые менеджеры. Тимлид — его менеджеры. Цифры руководителя включены в команду. Нажмите на строку — раскроются дни."
-                empty="Тимлидов и хедов пока нет"
+                hint="Нажмите на команду — раскроются тимлиды и менеджеры, на менеджера — его дни. Заголовок столбца сортирует таблицу."
               />
             )
           ) : !data ? (
