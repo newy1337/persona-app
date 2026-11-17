@@ -25,10 +25,65 @@ export function isMetaReply(text: string): boolean {
   return META_REPLY_RX.some((rx) => rx.test(text));
 }
 
+/**
+ * Признаки чужого текста в ответе: модель иногда дописывает после реплики
+ * кусок веб-страницы (подвал сайта, «Powered by…», баннер cookie), служебные
+ * метки или вставки чат-приложения. Собеседнику это уходить не должно.
+ */
+const LEAK_MARKERS: readonly RegExp[] = [
+  /<\/?(?:html|head|body|div|span|p|a|nav|footer|header|section|main|article|script|style|br|ul|ol|li|button|meta|link|iframe|form|input|table|tr|td)\b[^>]*>/i,
+  /<\|[^|<>\s]{2,}\|>/,
+  /<\/?[a-z]+(?:_[a-z]+)+>/i,
+  /long_conversation_reminder/i,
+  /^[ \t]*powered by\b/im,
+  /scroll to top/i,
+  /claude exporter/i,
+  /поделиться этим чатом/i,
+  /share this (?:chat|conversation)/i,
+  /&(?:copy|nbsp|amp|lt|gt|quot);/i,
+  /©\s*\d{4}/,
+  /^[ \t]*```/m,
+];
+
+/** Реплика персоны за ход заметно короче: длиннее — модель понесло. */
+export const MAX_REPLY_CHARS = 1500;
+
+/**
+ * Отрезает чужой текст: всё со строки с первым признаком до конца. leaked —
+ * было что отрезать. Пустой text — ответ целиком чужой.
+ */
+export function stripLeakedText(reply: string): {
+  text: string;
+  leaked: boolean;
+} {
+  let at = -1;
+  for (const marker of LEAK_MARKERS) {
+    const match = marker.exec(reply);
+    if (match && (at < 0 || match.index < at)) at = match.index;
+  }
+  if (at < 0) return { text: reply, leaked: false };
+  // С начала строки: начало строки с меткой — тоже чужое.
+  const lineStart = reply.lastIndexOf('\n', at - 1) + 1;
+  return { text: reply.slice(0, lineStart).trim(), leaked: true };
+}
+
+/** Чужой текст отрезан; ничего не осталось или ответ слишком длинный — ошибка, ход пересоберётся. */
+export function dropLeakedText(reply: string, stage: string): string {
+  const { text } = stripLeakedText(reply);
+  if (!text.trim())
+    throw new ModelResponseError(`${stage}: reply is foreign text`);
+  if (text.length > MAX_REPLY_CHARS)
+    throw new ModelResponseError(
+      `${stage}: reply is too long (${text.length} chars)`,
+    );
+  return text;
+}
+
 export function enforceReplyRules(reply: string): string {
-  const text = reply.replace(/\r\n?/g, '\n').trim();
-  if (!text || isPlaceholderReply(text))
+  const raw = reply.replace(/\r\n?/g, '\n').trim();
+  if (!raw || isPlaceholderReply(raw))
     throw new ModelResponseError('Model returned an empty reply');
+  const text = dropLeakedText(raw, 'reply');
   return text
     .split('\n')
     .map((line) => line.replace(/\s+$/, ''))
