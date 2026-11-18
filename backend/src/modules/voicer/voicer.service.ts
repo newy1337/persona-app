@@ -110,6 +110,7 @@ export class VoicerService {
       where: {
         id: { in: team.filter((id) => id !== user.id) },
         role: 'manager',
+        deletedAt: null,
       },
       select: { id: true },
     });
@@ -192,7 +193,7 @@ export class VoicerService {
         : await this.prisma.dashboardUser.findMany({
             where:
               user.role === 'admin'
-                ? { role: 'manager' }
+                ? { role: 'manager', deletedAt: null }
                 : user.role === 'teamlead'
                   ? { id: { in: (await this.actsFor(user)) ?? [] } }
                   : { id: user.id },

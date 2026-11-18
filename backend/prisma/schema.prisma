@@ -27,6 +27,9 @@ model DashboardUser {
   leadPersonas      String[] @default([]) @map("lead_personas")
   /// получает холодку (лиды из /api/post/cold), если её принимает регион
   coldLeads         Boolean  @default(false) @map("cold_leads")
+  /// удалена из панели: не входит и нигде не показывается, но остаётся в
+  /// статистике (её чаты и показатели не теряются)
+  deletedAt         Int?     @map("deleted_at")
 
   voicerId            Int?            @map("voicer_id")
   voicer              DashboardUser?  @relation("ManagerVoicer", fields: [voicerId], references: [id], onDelete: SetNull)

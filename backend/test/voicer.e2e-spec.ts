@@ -391,25 +391,43 @@ describe('Voicer workflow against a real migrated database', () => {
       .delete(`/api/managers/${victim.id}?force=1`)
       .set(auth(admin))
       .expect(200);
-    expect(
-      await prisma.dashboardUser.findUnique({ where: { id: victim.id } }),
-    ).toBeNull();
+    // учётка не удалена из базы, а скрыта: статистика её помнит, а войти,
+    // увидеть её в списке или пользоваться её токеном нельзя
+    const hidden = await prisma.dashboardUser.findUnique({
+      where: { id: victim.id },
+    });
+    expect(hidden?.deletedAt).toEqual(expect.any(Number));
+    expect(hidden?.username).toBe(`voice_to_delete (удалена #${victim.id})`);
+    const list = await request(app.getHttpServer())
+      .get('/api/managers')
+      .set(auth(admin))
+      .expect(200);
+    expect(list.body.items.some((u: any) => u.user_id === victim.id)).toBe(
+      false,
+    );
+    await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ username: 'voice_to_delete', password: 'test-password-123' })
+      .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/voicer/tasks')
+      .set(auth(victim.token))
+      .expect(401);
+    // логин свободен — его можно выдать новому сотруднику
+    await createUser('voice_to_delete', 'voice');
     const closed = await prisma.voiceTask.findMany({
       where: { id: { in: [taken.id, queued.id] } },
-      select: { status: true, outcome: true, voicerId: true },
+      select: { status: true, outcome: true },
     });
     expect(closed).toEqual([
-      {
-        status: 'cancelled',
-        outcome: 'Учётка удалена администратором',
-        voicerId: null,
-      },
-      {
-        status: 'cancelled',
-        outcome: 'Учётка удалена администратором',
-        voicerId: null,
-      },
+      { status: 'cancelled', outcome: 'Учётка удалена администратором' },
+      { status: 'cancelled', outcome: 'Учётка удалена администратором' },
     ]);
+    // у менеджера войсер отвязан
+    expect(
+      (await prisma.dashboardUser.findUnique({ where: { id: boss.id } }))
+        ?.voicerId,
+    ).toBeNull();
   });
 
   it('stores one recording per Telegram message and revision, with scoped file access', async () => {

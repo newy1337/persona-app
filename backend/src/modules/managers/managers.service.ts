@@ -44,7 +44,9 @@ export class ManagersService {
     viewer: DashboardUser | null = null,
     period: { from?: string; to?: string } = {},
   ) {
+    // Удалённые из панели нигде не показываются (в статистике остаются).
     const users = await this.prisma.dashboardUser.findMany({
+      where: { deletedAt: null },
       orderBy: { id: 'asc' },
       include: {
         accounts: {
@@ -133,8 +135,11 @@ export class ManagersService {
         'Войсер назначается только менеджеру',
       );
     if (
-      (await this.prisma.dashboardUser.findUnique({ where: { id } }))?.role !==
-      Role.VOICE
+      (
+        await this.prisma.dashboardUser.findFirst({
+          where: { id, deletedAt: null },
+        })
+      )?.role !== Role.VOICE
     ) {
       throw new UnprocessableEntityException('Выберите учётку с ролью войсера');
     }
@@ -182,6 +187,7 @@ export class ManagersService {
       where: {
         role: Role.HEAD,
         regionCode: region,
+        deletedAt: null,
         ...(exceptId ? { id: { not: exceptId } } : {}),
       },
       select: { id: true, username: true },
@@ -225,7 +231,8 @@ export class ManagersService {
       throw new UnprocessableEntityException(
         'Нельзя быть руководителем самому себе',
       );
-    const lead = await this.prisma.dashboardUser.findUnique({ where: { id } });
+    const found = await this.prisma.dashboardUser.findUnique({ where: { id } });
+    const lead = found?.deletedAt ? null : found;
     // Хед региона тоже годится напрямую: так панель сохраняет менеджера, у
     // которого тимлида нет и руководитель уже подставлен автоматически.
     if (lead?.role !== Role.TEAMLEAD && lead?.role !== Role.HEAD)
@@ -332,7 +339,8 @@ export class ManagersService {
     const user = await this.prisma.dashboardUser.findUnique({
       where: { id: userId },
     });
-    if (!user) throw new NotFoundException('нет такой учётки');
+    if (!user || user.deletedAt)
+      throw new NotFoundException('нет такой учётки');
     // Хед правит только руководителя у менеджеров своего региона.
     if (viewer && viewer.role !== Role.ADMIN) {
       const allowed = ['lead_id'];
@@ -484,7 +492,8 @@ export class ManagersService {
     const user = await this.prisma.dashboardUser.findUnique({
       where: { id: userId },
     });
-    if (!user) throw new NotFoundException('нет такой учётки');
+    if (!user || user.deletedAt)
+      throw new NotFoundException('нет такой учётки');
     return {
       user_id: user.id,
       username: user.username,
@@ -507,7 +516,8 @@ export class ManagersService {
     const target = await this.prisma.dashboardUser.findUnique({
       where: { id: userId },
     });
-    if (!target) throw new NotFoundException('нет такой учётки');
+    if (!target || target.deletedAt)
+      throw new NotFoundException('нет такой учётки');
     if (target.role !== Role.MANAGER) {
       throw new UnprocessableEntityException(
         `«${target.username}» — ${target.role}, а не менеджер: аккаунты закрепляются только за менеджерами`,
@@ -602,11 +612,45 @@ export class ManagersService {
       where: { id: userId },
     });
     if (!target) throw new NotFoundException('нет такой учётки');
+    if (target.deletedAt) throw new NotFoundException('нет такой учётки');
     await this.prisma.$transaction(async (tx) => {
       if (force) await this.closeTasksOf(userId, tx);
       else await this.ensureNoActiveTasks(userId, tx);
-      await tx.dashboardUser.delete({ where: { id: userId } });
+      await this.hideUser(target, tx);
     });
     return this.list();
+  }
+
+  /**
+   * Учётка не удаляется из базы, а скрывается: её чаты и показатели остаются
+   * в статистике. Логин освобождается (имя становится «логин (удалена #id)»),
+   * пароль сбрасывается — войти нельзя, выданные токены не принимаются.
+   * Аккаунты остаются за ней, пока админ их не переназначит; подчинённые
+   * переходят к её руководителю; войсер отвязывается от менеджеров.
+   */
+  private async hideUser(
+    user: DashboardUser,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const now = this.clock.ts();
+    await tx.dashboardUser.updateMany({
+      where: { leadId: user.id },
+      data: { leadId: user.leadId },
+    });
+    await tx.dashboardUser.updateMany({
+      where: { voicerId: user.id },
+      data: { voicerId: null },
+    });
+    await tx.voicerProfile.deleteMany({ where: { userId: user.id } });
+    await tx.dashboardUser.update({
+      where: { id: user.id },
+      data: {
+        deletedAt: now,
+        username: `${user.username} (удалена #${user.id})`.slice(0, 120),
+        passwordHash: await argon2.hash(randomBytes(32).toString('hex')),
+        passwordEncrypted: null,
+        online: false,
+      },
+    });
   }
 }
