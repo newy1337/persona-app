@@ -15,6 +15,19 @@ export function fmtChatDate(ts) {
   });
 }
 
+/** Когда лида добавили в «Лиды», по Москве; чат без карточки лида — прочерк. */
+export function leadAddedLabel(ts) {
+  if (!ts) return '—';
+  return new Date(ts * 1000).toLocaleString('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 const readKey = (chatId) => `chutter_mgr_read_v1:${chatId}`;
 
 export function loadReadCursor(chatId) {

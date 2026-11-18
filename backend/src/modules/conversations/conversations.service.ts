@@ -214,8 +214,10 @@ export class ConversationsService {
       this.history.getLeadFacts(chatId),
       this.funnel.forChat(chatId),
       this.history.chatOwnerAccount(chatId),
+      // у чата может быть несколько карточек: берём самую раннюю
       this.prisma.lead.findFirst({
         where: { chatId: toChatId(chatId) },
+        orderBy: { insertedAt: 'asc' },
       }),
       this.persona.forChat(chatId),
       this.brainState.load(chatId),
@@ -340,6 +342,7 @@ export class ConversationsService {
       usernameKey?: string | null;
       telegramUsername?: string | null;
       trafficSource?: string | null;
+      insertedAt?: number | null;
     } | null = null,
     read: { outbox: number | null; inbox: number | null } = {
       outbox: null,
@@ -377,6 +380,8 @@ export class ConversationsService {
       client_gender: profile?.gender ?? null,
       /** источник трафика лида: base | hot_leadgen | cold_leadgen */
       traffic_source: profile?.trafficSource ?? null,
+      /** когда лид добавлен в «Лиды» (unix, сек); null — чат без карточки лида */
+      lead_added_at: profile?.insertedAt ?? null,
       is_paused: isPaused,
       archived: Boolean(facts[HIDDEN_FROM_DASHBOARD_KEY]),
       messages: messages.map((m) => ({

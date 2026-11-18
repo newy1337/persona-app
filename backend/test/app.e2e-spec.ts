@@ -7719,6 +7719,19 @@ describe('Manager panel API (e2e)', () => {
           outputTokens: 0,
         },
       });
+      // карточка в диалоге: когда лид добавлен — по первой карточке чата
+      const firstAdded = base[0].insertedAt - 60;
+      await prisma.lead.update({
+        where: { id: base[0].id },
+        data: { insertedAt: firstAdded },
+      });
+      const card = await request(app.getHttpServer())
+        .get('/api/conversations/777000801')
+        .set(h)
+        .expect(200);
+      expect(card.body.lead_added_at).toBe(firstAdded);
+      expect(card.body.traffic_source).toBe('base');
+
       const all = await request(app.getHttpServer())
         .get('/api/stats/sources')
         .set(h)
