@@ -7584,6 +7584,16 @@ describe('Manager panel API (e2e)', () => {
           }),
         },
       });
+      // этап считается по событию смены этапа — как его ставит менеджер
+      await prisma.funnelEvent.create({
+        data: {
+          personaId: 'nastya',
+          chatId: 777000801n,
+          eventType: 'deal_stage_set',
+          eventMeta: JSON.stringify({ from: null, to: 'vbros', note: '' }),
+          ts: 2,
+        },
+      });
       // расход модели на диалог лида: 1 млн входных токенов по $2
       await prisma.modelUsage.create({
         data: {
@@ -7630,6 +7640,7 @@ describe('Manager panel API (e2e)', () => {
 
       await prisma.modelUsage.deleteMany({ where: { chatId: 777000801n } });
       await prisma.leadFacts.deleteMany({ where: { chatId: 777000801n } });
+      await prisma.funnelEvent.deleteMany({ where: { chatId: 777000801n } });
       await prisma.lead.deleteMany({ where: { id: { in: ids } } });
       await request(app.getHttpServer())
         .delete(`/api/managers/${manager}`)
