@@ -2543,10 +2543,23 @@ describe('Manager panel API (e2e)', () => {
 
     it('creates a lead, normalising the phone', async () => {
       const h = { Authorization: `Bearer ${token}` };
+      // без источника трафика лид не принимается — ни поштучно, ни импортом
+      const noSource = await request(app.getHttpServer())
+        .post('/api/leads')
+        .set(h)
+        .send({ phone: '8 900 555-00-19' })
+        .expect(422);
+      expect(noSource.body.message).toContain('источник трафика');
+      await request(app.getHttpServer())
+        .post('/api/leads/import')
+        .set(h)
+        .send({ text: '+79005550019' })
+        .expect(422);
       const r = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
         .send({
+          traffic_source: 'base',
           phone: '8 900 555-00-11',
           first_name: 'Олег',
           city: 'Москва',
@@ -2563,12 +2576,12 @@ describe('Manager panel API (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ phone: '+79005550011' })
+        .send({ traffic_source: 'base', phone: '+79005550011' })
         .expect(422);
       await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ phone: '12345' })
+        .send({ traffic_source: 'base', phone: '12345' })
         .expect(422);
     });
 
@@ -2622,6 +2635,7 @@ describe('Manager panel API (e2e)', () => {
         .post('/api/leads/import')
         .set(h)
         .send({
+          traffic_source: 'base',
           text: '+79005550011;Олег\n+79005550022;Ира;Казань;28\n8 900 555 00 22\nabc\n+79005550033',
           queue: true,
         })
@@ -2818,12 +2832,12 @@ describe('Manager panel API (e2e)', () => {
       const leadIra = await request(app.getHttpServer())
         .post('/api/leads')
         .set(ira.h)
-        .send({ username: '@ira_lead' })
+        .send({ traffic_source: 'base', username: '@ira_lead' })
         .expect(200);
       const imported = await request(app.getHttpServer())
         .post('/api/leads/import')
         .set(lena.h)
-        .send({ text: '@lena_lead' })
+        .send({ traffic_source: 'base', text: '@lena_lead' })
         .expect(200);
       expect(imported.body.created).toBe(1);
       const leadLena = await prisma.lead.findUnique({
@@ -2870,7 +2884,7 @@ describe('Manager panel API (e2e)', () => {
       const dup = await request(app.getHttpServer())
         .post('/api/leads')
         .set(ira.h)
-        .send({ username: '@lena_lead' })
+        .send({ traffic_source: 'base', username: '@lena_lead' })
         .expect(422);
       expect(JSON.stringify(dup.body)).toMatch(/у другого пользователя/);
       expect(JSON.stringify(dup.body)).not.toMatch(/лид #/);
@@ -3056,6 +3070,7 @@ describe('Manager panel API (e2e)', () => {
         .post('/api/leads')
         .set(hh)
         .send({
+          traffic_source: 'base',
           phone: '@add_for_m1',
           owner_user_id: m1,
           preferred_account_id: acc1.body.id,
@@ -3070,6 +3085,7 @@ describe('Manager panel API (e2e)', () => {
         .post('/api/leads')
         .set(hh)
         .send({
+          traffic_source: 'base',
           phone: '@add_for_m2',
           owner_user_id: m2,
           preferred_account_id: acc1.body.id,
@@ -3082,7 +3098,11 @@ describe('Manager panel API (e2e)', () => {
       const forHead = await request(app.getHttpServer())
         .post('/api/leads')
         .set(hh)
-        .send({ phone: '@add_for_head', preferred_account_id: acc1.body.id })
+        .send({
+          traffic_source: 'base',
+          phone: '@add_for_head',
+          preferred_account_id: acc1.body.id,
+        })
         .expect(200);
       expect(
         (await prisma.lead.findUnique({
@@ -3093,12 +3113,20 @@ describe('Manager panel API (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/leads')
         .set(hh)
-        .send({ phone: '@add_for_out', owner_user_id: outsider })
+        .send({
+          traffic_source: 'base',
+          phone: '@add_for_out',
+          owner_user_id: outsider,
+        })
         .expect(403);
       await request(app.getHttpServer())
         .post('/api/leads')
         .set(hm)
-        .send({ phone: '@add_m1_to_m2', owner_user_id: m2 })
+        .send({
+          traffic_source: 'base',
+          phone: '@add_m1_to_m2',
+          owner_user_id: m2,
+        })
         .expect(403);
       // менеджер видит лид, который хед записал на него
       const seen = (
@@ -3448,7 +3476,11 @@ describe('Manager panel API (e2e)', () => {
       const lead = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ phone: '+7 900 555-66-77', first_name: 'Антон' })
+        .send({
+          traffic_source: 'base',
+          phone: '+7 900 555-66-77',
+          first_name: 'Антон',
+        })
         .expect(200);
       await request(app.getHttpServer())
         .post('/api/leads/start')
@@ -3672,7 +3704,11 @@ describe('Manager panel API (e2e)', () => {
       const bad = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ phone: '+7 900 555-77-01', persona_id: 'nope' })
+        .send({
+          traffic_source: 'base',
+          phone: '+7 900 555-77-01',
+          persona_id: 'nope',
+        })
         .expect(422);
       expect(JSON.stringify(bad.body)).toMatch(/личности «nope» нет/);
 
@@ -3680,6 +3716,7 @@ describe('Manager panel API (e2e)', () => {
         .post('/api/leads')
         .set(h)
         .send({
+          traffic_source: 'base',
           phone: '+7 900 555-77-02',
           first_name: 'Игорь',
           persona_id: 'lena-outreach',
@@ -3725,7 +3762,7 @@ describe('Manager panel API (e2e)', () => {
       const any = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ phone: '+7 900 555-77-03' })
+        .send({ traffic_source: 'base', phone: '+7 900 555-77-03' })
         .expect(200);
       await request(app.getHttpServer())
         .post('/api/leads/start')
@@ -3850,7 +3887,7 @@ describe('Manager panel API (e2e)', () => {
         const result = await request(app.getHttpServer())
           .post('/api/leads')
           .set(mh)
-          .send({ username, ...extra })
+          .send({ traffic_source: 'base', username, ...extra })
           .expect(200);
         created.push(result.body.id);
         return result.body;
@@ -3871,7 +3908,11 @@ describe('Manager panel API (e2e)', () => {
           request(app.getHttpServer())
             .post('/api/leads')
             .set(mh)
-            .send({ username: '@sender_validation', ...data });
+            .send({
+              traffic_source: 'base',
+              username: '@sender_validation',
+              ...data,
+            });
         await post({ preferred_account_id: foreign }).expect(422);
         await post({ preferred_account_id: 999999 }).expect(422);
         await post({ preferred_account_id: -1 }).expect(400);
@@ -3902,6 +3943,7 @@ describe('Manager panel API (e2e)', () => {
           .post('/api/leads/import')
           .set(mh)
           .send({
+            traffic_source: 'base',
             items: [
               {
                 username: '@sender_import_foreign',
@@ -4044,12 +4086,16 @@ describe('Manager panel API (e2e)', () => {
       const leadNastya = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ phone: '+7 900 555-88-01', persona_id: 'nastya' })
+        .send({
+          traffic_source: 'base',
+          phone: '+7 900 555-88-01',
+          persona_id: 'nastya',
+        })
         .expect(200);
       const leadAny = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ phone: '+7 900 555-88-02' })
+        .send({ traffic_source: 'base', phone: '+7 900 555-88-02' })
         .expect(200);
       await prisma.lead.updateMany({
         where: { id: { in: [leadNastya.body.id, leadAny.body.id] } },
@@ -4135,7 +4181,11 @@ describe('Manager panel API (e2e)', () => {
       const lead = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ phone: '+7 900 555-99-01', first_name: 'Антон' })
+        .send({
+          traffic_source: 'base',
+          phone: '+7 900 555-99-01',
+          first_name: 'Антон',
+        })
         .expect(200);
       await prisma.lead.update({
         where: { id: lead.body.id },
@@ -4267,12 +4317,12 @@ describe('Manager panel API (e2e)', () => {
       const a = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ phone: '+7 900 555-99-02' })
+        .send({ traffic_source: 'base', phone: '+7 900 555-99-02' })
         .expect(200);
       const b = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ phone: '+7 900 555-99-03' })
+        .send({ traffic_source: 'base', phone: '+7 900 555-99-03' })
         .expect(200);
       await prisma.lead.updateMany({
         where: { id: { in: [a.body.id, b.body.id] } },
@@ -4342,7 +4392,11 @@ describe('Manager panel API (e2e)', () => {
       const lead = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ username: '@aladin_test', first_name: 'Саша' })
+        .send({
+          traffic_source: 'base',
+          username: '@aladin_test',
+          first_name: 'Саша',
+        })
         .expect(200);
       await prisma.lead.update({
         where: { id: lead.body.id },
@@ -4412,7 +4466,11 @@ describe('Manager panel API (e2e)', () => {
       const live = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ username: '@live_test', first_name: 'Лёша' })
+        .send({
+          traffic_source: 'base',
+          username: '@live_test',
+          first_name: 'Лёша',
+        })
         .expect(200);
       await request(app.getHttpServer())
         .post('/api/leads/start')
@@ -4451,7 +4509,11 @@ describe('Manager panel API (e2e)', () => {
       const twin = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ username: '@live_twin', first_name: 'Лёша' })
+        .send({
+          traffic_source: 'base',
+          username: '@live_twin',
+          first_name: 'Лёша',
+        })
         .expect(200);
       await request(app.getHttpServer())
         .post('/api/leads/start')
@@ -6593,7 +6655,11 @@ describe('Manager panel API (e2e)', () => {
       const lead = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ username: '@ira_timeout', first_name: 'Ира' })
+        .send({
+          traffic_source: 'base',
+          username: '@ira_timeout',
+          first_name: 'Ира',
+        })
         .expect(200);
       await prisma.lead.updateMany({
         where: { status: 'queued' },
@@ -7120,7 +7186,7 @@ describe('Manager panel API (e2e)', () => {
         const lead = await request(app.getHttpServer())
           .post('/api/leads')
           .set(h)
-          .send({ username })
+          .send({ traffic_source: 'base', username })
           .expect(200);
         await prisma.lead.update({
           where: { id: lead.body.id },
@@ -7206,7 +7272,7 @@ describe('Manager panel API (e2e)', () => {
       const lead = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ phone: '+7 900 555-66-88' })
+        .send({ traffic_source: 'base', phone: '+7 900 555-66-88' })
         .expect(200);
       // Так лид выглядел на проде: привязан к аккаунту и ждёт 6 часов.
       await prisma.lead.update({
@@ -7251,7 +7317,11 @@ describe('Manager panel API (e2e)', () => {
       const r = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ username: '@Test_User_1', first_name: 'Тест' })
+        .send({
+          traffic_source: 'base',
+          username: '@Test_User_1',
+          first_name: 'Тест',
+        })
         .expect(200);
       expect(r.body).toMatchObject({
         phone_e164: null,
@@ -7261,12 +7331,15 @@ describe('Manager panel API (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ phone: 'https://t.me/test_user_1' })
+        .send({ traffic_source: 'base', phone: 'https://t.me/test_user_1' })
         .expect(422);
       const imp = await request(app.getHttpServer())
         .post('/api/leads/import')
         .set(h)
-        .send({ text: '@test_user_1\n@Another_One;Аня\n+79005550099' })
+        .send({
+          traffic_source: 'base',
+          text: '@test_user_1\n@Another_One;Аня\n+79005550099',
+        })
         .expect(200);
       expect(imp.body).toMatchObject({ created: 2, duplicates: 1, errors: [] });
       const list = await request(app.getHttpServer())
@@ -7412,7 +7485,10 @@ describe('Manager panel API (e2e)', () => {
       const h = { Authorization: `Bearer ${token}` };
       const prisma = app.get(PrismaService);
       const post = (body: object) =>
-        request(app.getHttpServer()).post('/api/leads').set(h).send(body);
+        request(app.getHttpServer())
+          .post('/api/leads')
+          .set(h)
+          .send({ traffic_source: 'base', ...body });
       const vk = await post({ phone: 'https://vk.com/Ivan.Petrov' }).expect(
         200,
       );
@@ -7442,6 +7518,7 @@ describe('Manager panel API (e2e)', () => {
         .post('/api/leads/import')
         .set(h)
         .send({
+          traffic_source: 'base',
           text: 'petr.ivanov;Пётр\nvk.com/id777\nt.me/tg_from_vk_list',
           channel: 'vk',
         })
@@ -7536,13 +7613,23 @@ describe('Manager panel API (e2e)', () => {
       const bad = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ phone: '+79005550222', first_name: 'Олег', city: '38' })
+        .send({
+          traffic_source: 'base',
+          phone: '+79005550222',
+          first_name: 'Олег',
+          city: '38',
+        })
         .expect(422);
       expect(bad.body.message).toContain('не может быть цифр');
       const ok = await request(app.getHttpServer())
         .post('/api/leads')
         .set(h)
-        .send({ phone: '+79005550222', city: 'Пермь', age: 38 })
+        .send({
+          traffic_source: 'base',
+          phone: '+79005550222',
+          city: 'Пермь',
+          age: 38,
+        })
         .expect(200);
       await request(app.getHttpServer())
         .put(`/api/leads/${ok.body.id}`)
@@ -7552,7 +7639,10 @@ describe('Manager panel API (e2e)', () => {
       const imp = await request(app.getHttpServer())
         .post('/api/leads/import')
         .set(h)
-        .send({ text: '+79005550223;Ира;35\n+79005550224;Аня;Омск;30' })
+        .send({
+          traffic_source: 'base',
+          text: '+79005550223;Ира;35\n+79005550224;Аня;Омск;30',
+        })
         .expect(200);
       expect(imp.body.created).toBe(1);
       expect(imp.body.errors[0]).toContain('не может быть цифр');
@@ -8242,6 +8332,7 @@ describe('Manager panel API (e2e)', () => {
         .post('/api/leads')
         .set(h)
         .send({
+          traffic_source: 'base',
           phone: '+7 900 777-11-22',
           first_name: 'Олег',
           city: 'Омск',
