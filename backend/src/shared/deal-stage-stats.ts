@@ -4,8 +4,8 @@ import { dayKey } from 'src/modules/stats/range';
 import { TtlCache } from './ttl-cache';
 
 type ReachedRow = { chat_id: bigint; stages: string[]; archived: boolean };
-// Проход по всем карточкам с этапами: ~0,2 с и тысячи строк. Плитки дашборда
-// спрашивают его у каждого менеджера раз в 10 секунд — отдаём общий ответ.
+// Проход по всем сменам этапов: тысячи строк. Плитки дашборда спрашивают его
+// у каждого менеджера раз в 10 секунд — отдаём общий ответ.
 const reachedRows = new WeakMap<object, TtlCache>();
 const REACHED_TTL_MS = 30_000;
 
@@ -16,6 +16,8 @@ export interface StageMove {
   day: string;
   stage: string;
   chatId: bigint;
+  /** когда этап поставили */
+  ts: number;
 }
 
 /** Сколько секунд даём на исправление: этап, сменённый быстрее, — ошибочный клик. */
@@ -84,7 +86,7 @@ export function actualStageMoves(
       const key = `${e.to}:${String(e.chatId)}:${e.to === 'archive' ? day : ''}`;
       if (seen.has(key)) return;
       seen.add(key);
-      out.push({ day, stage: e.to, chatId: e.chatId });
+      out.push({ day, stage: e.to, chatId: e.chatId, ts: e.ts });
     });
   }
   return out.sort((a, b) => a.day.localeCompare(b.day));
@@ -128,27 +130,23 @@ export async function stageMovesInRange(
 }
 
 /**
- * Какие этапы чатам фактически ставили за всё время: тем же правилом, что и
- * за период, — без «пройденных по пути» и ошибочных кликов. Архив — если чат
- * в архиве сейчас (из архива возвращают, и прошлый архив итог не меняет).
+ * Когда каждому чату впервые фактически поставили каждый этап воронки (без
+ * «пройденных по пути» и ошибочных кликов): чат → { этап: ts }. Архив сюда не
+ * входит — он не этап воронки.
  */
-export async function actualStagesEver(
+export async function actualStageTimes(
   prisma: PrismaService,
   chatIds: bigint[],
-): Promise<Map<string, string[]>> {
-  const out = new Map<string, string[]>();
+): Promise<Map<string, Record<string, number>>> {
+  const out = new Map<string, Record<string, number>>();
   for (let i = 0; i < chatIds.length; i += 5000) {
-    const chunk = chatIds.slice(i, i + 5000);
-    const [rows, facts] = await Promise.all([
-      prisma.funnelEvent.findMany({
-        where: { eventType: DEAL_STAGE_EVENT, chatId: { in: chunk } },
-        select: { id: true, chatId: true, eventMeta: true, ts: true },
-      }),
-      prisma.leadFacts.findMany({
-        where: { chatId: { in: chunk }, facts: { contains: '"archive"' } },
-        select: { chatId: true, facts: true },
-      }),
-    ]);
+    const rows = await prisma.funnelEvent.findMany({
+      where: {
+        eventType: DEAL_STAGE_EVENT,
+        chatId: { in: chatIds.slice(i, i + 5000) },
+      },
+      select: { id: true, chatId: true, eventMeta: true, ts: true },
+    });
     const events: StageSetEvent[] = [];
     for (const r of rows) {
       let meta: Record<string, unknown> = {};
@@ -168,10 +166,36 @@ export async function actualStagesEver(
     for (const m of actualStageMoves(events, 0, Number.MAX_SAFE_INTEGER)) {
       if (m.stage === 'archive') continue;
       const key = String(m.chatId);
-      const got = out.get(key) ?? [];
-      if (!got.includes(m.stage)) got.push(m.stage);
+      const got = out.get(key) ?? {};
+      if (got[m.stage] === undefined || m.ts < got[m.stage])
+        got[m.stage] = m.ts;
       out.set(key, got);
     }
+  }
+  return out;
+}
+
+/**
+ * Какие этапы чатам фактически ставили за всё время: тем же правилом, что и
+ * за период. Архив — если чат в архиве сейчас (из архива возвращают, и
+ * прошлый архив итог не меняет).
+ */
+export async function actualStagesEver(
+  prisma: PrismaService,
+  chatIds: bigint[],
+): Promise<Map<string, string[]>> {
+  const times = await actualStageTimes(prisma, chatIds);
+  const out = new Map<string, string[]>(
+    [...times.entries()].map(([chat, t]) => [chat, Object.keys(t)]),
+  );
+  for (let i = 0; i < chatIds.length; i += 5000) {
+    const facts = await prisma.leadFacts.findMany({
+      where: {
+        chatId: { in: chatIds.slice(i, i + 5000) },
+        facts: { contains: '"archive"' },
+      },
+      select: { chatId: true, facts: true },
+    });
     for (const f of facts) {
       try {
         if (JSON.parse(f.facts)['deal_stage'] !== 'archive') continue;
@@ -185,24 +209,70 @@ export async function actualStagesEver(
   return out;
 }
 
-/** Сколько чатов за всё время дошло до каждого этапа; архив — сколько в архиве сейчас. */
+/**
+ * Этапы каждого чата за всё время по тому же правилу, что и за период: только
+ * фактически поставленные, без «пройденных по пути» и ошибочных кликов. Архив —
+ * в архиве ли чат сейчас. Все смены этапов разом — поля JSON достаёт база.
+ */
+async function actualReachedRows(prisma: PrismaService): Promise<ReachedRow[]> {
+  const [sets, archived] = await Promise.all([
+    prisma.$queryRaw<
+      Array<{
+        id: number;
+        chat_id: bigint;
+        ts: number;
+        to: string | null;
+        note: string | null;
+      }>
+    >`
+      SELECT id, chat_id, ts,
+        NULLIF(event_meta, '')::jsonb ->> 'to' AS "to",
+        NULLIF(event_meta, '')::jsonb ->> 'note' AS note
+      FROM funnel_events
+      WHERE event_type = ${DEAL_STAGE_EVENT} AND chat_id IS NOT NULL`,
+    prisma.$queryRaw<Array<{ chat_id: bigint }>>`
+      SELECT chat_id FROM pinned_facts
+      WHERE facts LIKE '%"archive"%'
+        AND NULLIF(facts, '')::jsonb ->> 'deal_stage' = 'archive'`,
+  ]);
+  const byChat = new Map<string, ReachedRow>();
+  const rowOf = (chatId: bigint) => {
+    const key = String(chatId);
+    let row = byChat.get(key);
+    if (!row)
+      byChat.set(key, (row = { chat_id: chatId, stages: [], archived: false }));
+    return row;
+  };
+  const moves = actualStageMoves(
+    sets.map((e) => ({
+      chatId: e.chat_id,
+      ts: Number(e.ts),
+      id: Number(e.id),
+      to: e.to ?? '',
+      note: e.note ?? '',
+    })),
+    0,
+    Number.MAX_SAFE_INTEGER,
+  );
+  for (const m of moves) {
+    if (m.stage === 'archive') continue;
+    const row = rowOf(m.chatId);
+    if (!row.stages.includes(m.stage)) row.stages.push(m.stage);
+  }
+  for (const a of archived) rowOf(a.chat_id).archived = true;
+  return [...byChat.values()];
+}
+
+/** Сколько чатов за всё время дошло до каждого этапа (фактически поставленные); архив — сколько в архиве сейчас. */
 export async function stagesReachedEver(
   prisma: PrismaService,
   chatIds: Set<string> | null = null,
 ): Promise<Record<string, number>> {
-  // Дашборд опрашивает это раз в 10 секунд: один проход по таблице, и JSON
-  // разбирается только у чатов, где этапы вообще были.
+  // Дашборд опрашивает это раз в 10 секунд: считаем раз в 30 секунд на всех.
   let cache = reachedRows.get(prisma);
   if (!cache) reachedRows.set(prisma, (cache = new TtlCache()));
-  const rows = await cache.get(
-    'rows',
-    REACHED_TTL_MS,
-    () => prisma.$queryRaw<ReachedRow[]>`
-    SELECT p.chat_id,
-      ARRAY(SELECT jsonb_object_keys(COALESCE(j.v->'deal_reached', '{}'::jsonb))) AS stages,
-      COALESCE(j.v->>'deal_stage' = 'archive', false) AS archived
-    FROM pinned_facts p, LATERAL (SELECT p.facts::jsonb AS v) j
-    WHERE p.facts LIKE '%"deal_%'`,
+  const rows = await cache.get('rows', REACHED_TTL_MS, () =>
+    actualReachedRows(prisma),
   );
   const out = zeroStages();
   let archive = 0;
