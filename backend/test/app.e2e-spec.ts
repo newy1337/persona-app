@@ -23,6 +23,7 @@ useTestDatabase('app');
 
 import { AppModule } from './../src/app.module';
 import { PrismaService } from './../src/prisma.service';
+import { inflateRawSync } from 'zlib';
 import { HistoryService } from './../src/shared/history.service';
 import { PROMPT_KEYS } from '../src/brain/config/prompts';
 import { DEFAULT_RHYTHM } from '../src/brain/config/rhythm';
@@ -5584,6 +5585,49 @@ describe('Manager panel API (e2e)', () => {
       // Фото с путём вне каталога данных: подпись вместо файла, содержимого чужого файла нет.
       expect(html).not.toContain('root:');
       expect(html).toContain('>Фото<');
+
+      // массовая выгрузка: тот же HTML внутри ZIP
+      const zip = await request(app.getHttpServer())
+        .post('/api/conversations/export')
+        .set(h)
+        .send({ chat_ids: [chatId], format: 'html_zip' })
+        .buffer(true)
+        .parse((r, done) => {
+          const parts: Buffer[] = [];
+          r.on('data', (c: Buffer) => parts.push(c));
+          r.on('end', () => done(null, Buffer.concat(parts)));
+        })
+        .expect(200);
+      expect(zip.headers['content-type']).toBe('application/zip');
+      const body = zip.body as Buffer;
+      expect(body.subarray(0, 4)).toEqual(
+        Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+      );
+      const nameLen = body.readUInt16LE(26);
+      expect(body.subarray(30, 30 + nameLen).toString('utf8')).toMatch(
+        /^001_.*\.html$/,
+      );
+      const packed = body.readUInt32LE(18);
+      const inner = inflateRawSync(
+        body.subarray(30 + nameLen, 30 + nameLen + packed),
+      ).toString('utf8');
+      expect(inner).toContain('Привет) это Настя');
+      // несуществующий чат не ломает архив: вместо него — файл с причиной
+      const broken = await request(app.getHttpServer())
+        .post('/api/conversations/export')
+        .set(h)
+        .send({ chat_ids: [999999123], format: 'html_zip' })
+        .buffer(true)
+        .parse((r, done) => {
+          const parts: Buffer[] = [];
+          r.on('data', (c: Buffer) => parts.push(c));
+          r.on('end', () => done(null, Buffer.concat(parts)));
+        })
+        .expect(200);
+      const bad = broken.body as Buffer;
+      expect(bad.subarray(30, 30 + bad.readUInt16LE(26)).toString('utf8')).toBe(
+        '001_chat_999999123_ошибка.txt',
+      );
 
       await app.get(TelegramService)['history'].wipeChat(chatId);
       rmSync(mediaDir, { recursive: true, force: true });

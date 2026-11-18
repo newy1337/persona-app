@@ -68,6 +68,8 @@ export class ChatExportService {
   async html(
     chatId: number,
     exportedBy: string | null = null,
+    /** сколько байт медиа встроить в файл; при массовой выгрузке — меньше */
+    mediaBytes = MAX_TOTAL_BYTES,
   ): Promise<{ filename: string; content: string }> {
     const id = toChatId(chatId);
     const contact = await this.prisma.contact.findUnique({
@@ -92,7 +94,7 @@ export class ChatExportService {
         })
       : null;
 
-    const budget = { left: MAX_TOTAL_BYTES, skipped: 0 };
+    const budget = { left: mediaBytes, skipped: 0 };
     const embed = (path: string | null): string | null => {
       if (!path) return null;
       const abs = this.safePath(path);

@@ -1,5 +1,6 @@
 import { DialogTable } from '../../ui/ManagerRegion';
 import TableSkeleton from '../TableSkeleton/TableSkeleton';
+import ExportButton from './ExportButton';
 import { useEffect, useMemo, useRef } from 'react';
 import { useViewState, rememberDialogOrder } from '../../utils/viewState';
 import { SearchIcon } from '../../assets/icons';
@@ -154,6 +155,7 @@ function ConversationsTable({
               ? `ВСЕГО: ${total}${truncated ? ` · показаны последние ${rows.length}` : ''}`
               : `НАЙДЕНО: ${filtered.length} из ${rows.length}`}
           </button>
+          <ExportButton chatIds={filtered.map((r) => r.chat_id)} />
         </div>
 
         <div className={styles.filters}>

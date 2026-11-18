@@ -17,6 +17,12 @@ import { Response } from 'express';
 import { DashboardUser } from '@prisma/client';
 import { ConversationsService } from './conversations.service';
 import { ChatExportService } from './chat-export.service';
+import { ZipStream } from './zip-stream';
+
+/** Массовая выгрузка с медиа: сколько диалогов за раз и сколько медиа. */
+const MAX_ZIP_CHATS = 300;
+const ZIP_MEDIA_PER_CHAT = 15 * 1024 * 1024;
+const ZIP_MEDIA_TOTAL = 600 * 1024 * 1024;
 import { Auth } from 'src/decorators/auth.decorator';
 import { Roles } from 'src/decorators/roles.decorator';
 import { Role } from 'src/enums/roles.enum';
@@ -243,7 +249,8 @@ export class ConversationsController {
   }
 
   @ApiOperation({
-    summary: 'Bulk export of selected chats as one json/txt file',
+    summary:
+      'Bulk export of selected chats: one json/txt file or a ZIP of HTML chats with media',
   })
   @Post('export')
   @HttpCode(200)
@@ -254,16 +261,65 @@ export class ConversationsController {
     @Res() res: Response,
   ) {
     const chatIds = [...new Set(dto.chat_ids)];
+    if (dto.format === 'html_zip' && chatIds.length > MAX_ZIP_CHATS)
+      throw new UnprocessableEntityException(
+        `с медиа за раз — не больше ${MAX_ZIP_CHATS} диалогов; сузьте фильтр или выгрузите текстом`,
+      );
     for (const id of chatIds) await this.scope.requireChatOwned(user, id);
     const head =
       chatIds.slice(0, 5).join(',') + (chatIds.length > 5 ? '...' : '');
+    if (dto.format === 'html_zip') {
+      await this.audit.wrap(
+        {
+          userId: user.id,
+          action: 'conversation.export_zip',
+          resource: `chats:${head}`,
+          payload: { count: chatIds.length },
+        },
+        async () => undefined,
+      );
+      const day = new Date(Date.now() + 3 * 3600 * 1000)
+        .toISOString()
+        .slice(0, 10);
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="dialogs_${day}.zip"`,
+      );
+      // Архив уходит по файлу: всё сразу в памяти не держим. Медиа на диалог
+      // ограничены, а после общего предела дальше идёт только текст.
+      const zip = new ZipStream(res);
+      let mediaLeft = ZIP_MEDIA_TOTAL;
+      for (const [i, id] of chatIds.entries()) {
+        try {
+          const out = await this.chatExport.html(
+            id,
+            user.username,
+            Math.min(ZIP_MEDIA_PER_CHAT, Math.max(0, mediaLeft)),
+          );
+          mediaLeft -= Buffer.byteLength(out.content);
+          zip.add(
+            `${String(i + 1).padStart(3, '0')}_${out.filename}`,
+            out.content,
+          );
+        } catch (e) {
+          zip.add(
+            `${String(i + 1).padStart(3, '0')}_chat_${id}_ошибка.txt`,
+            `Диалог ${id} не выгружен: ${(e as Error)?.message ?? e}`,
+          );
+        }
+      }
+      zip.finish();
+      return;
+    }
     const out = await this.audit.wrap(
       {
         userId: user.id,
         action: 'conversation.export',
         resource: `chats:${head}`,
       },
-      () => this.conversations.exportChats(chatIds, dto.format),
+      () =>
+        this.conversations.exportChats(chatIds, dto.format as 'json' | 'txt'),
     );
     res.setHeader('Content-Type', out.mediaType);
     res.setHeader(
