@@ -43,6 +43,7 @@ import {
   TRAFFIC_SOURCE_LABELS,
 } from 'src/domain/traffic-source';
 import {
+  actualStagesEver,
   stageMovesInRange,
   stagesReachedEver,
   zeroStages,
@@ -996,29 +997,12 @@ export class StatsService {
     return out;
   }
 
-  /** До каких этапов дошёл каждый чат (deal_reached) и архив — по текущему этапу. */
-  private async reachedByChat(chatIds: bigint[]) {
-    const out = new Map<string, string[]>();
-    for (let i = 0; i < chatIds.length; i += 5000) {
-      const rows = await this.prisma.leadFacts.findMany({
-        where: { chatId: { in: chatIds.slice(i, i + 5000) } },
-        select: { chatId: true, facts: true },
-      });
-      for (const r of rows) {
-        if (!r.facts.includes('"deal_')) continue;
-        try {
-          const f = JSON.parse(r.facts) as Record<string, unknown>;
-          const got = Object.keys(
-            (f[DEAL_REACHED_FACT] as Record<string, unknown>) ?? {},
-          );
-          if (f['deal_stage'] === 'archive') got.push('archive');
-          out.set(String(r.chatId), got);
-        } catch {
-          continue;
-        }
-      }
-    }
-    return out;
+  /**
+   * Какие этапы фактически ставили каждому чату (без перескоков и ошибочных
+   * кликов — как в статистике по командам) и архив — по текущему этапу.
+   */
+  private reachedByChat(chatIds: bigint[]) {
+    return actualStagesEver(this.prisma, chatIds);
   }
 
   /**

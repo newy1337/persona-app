@@ -127,6 +127,64 @@ export async function stageMovesInRange(
   return actualStageMoves(events, start, end);
 }
 
+/**
+ * Какие этапы чатам фактически ставили за всё время: тем же правилом, что и
+ * за период, — без «пройденных по пути» и ошибочных кликов. Архив — если чат
+ * в архиве сейчас (из архива возвращают, и прошлый архив итог не меняет).
+ */
+export async function actualStagesEver(
+  prisma: PrismaService,
+  chatIds: bigint[],
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  for (let i = 0; i < chatIds.length; i += 5000) {
+    const chunk = chatIds.slice(i, i + 5000);
+    const [rows, facts] = await Promise.all([
+      prisma.funnelEvent.findMany({
+        where: { eventType: DEAL_STAGE_EVENT, chatId: { in: chunk } },
+        select: { id: true, chatId: true, eventMeta: true, ts: true },
+      }),
+      prisma.leadFacts.findMany({
+        where: { chatId: { in: chunk }, facts: { contains: '"archive"' } },
+        select: { chatId: true, facts: true },
+      }),
+    ]);
+    const events: StageSetEvent[] = [];
+    for (const r of rows) {
+      let meta: Record<string, unknown> = {};
+      try {
+        meta = JSON.parse(r.eventMeta ?? '{}');
+      } catch {
+        continue;
+      }
+      events.push({
+        chatId: r.chatId!,
+        ts: r.ts,
+        id: r.id,
+        to: String(meta.to ?? ''),
+        note: String(meta.note ?? ''),
+      });
+    }
+    for (const m of actualStageMoves(events, 0, Number.MAX_SAFE_INTEGER)) {
+      if (m.stage === 'archive') continue;
+      const key = String(m.chatId);
+      const got = out.get(key) ?? [];
+      if (!got.includes(m.stage)) got.push(m.stage);
+      out.set(key, got);
+    }
+    for (const f of facts) {
+      try {
+        if (JSON.parse(f.facts)['deal_stage'] !== 'archive') continue;
+      } catch {
+        continue;
+      }
+      const key = String(f.chatId);
+      out.set(key, [...(out.get(key) ?? []), 'archive']);
+    }
+  }
+  return out;
+}
+
 /** Сколько чатов за всё время дошло до каждого этапа; архив — сколько в архиве сейчас. */
 export async function stagesReachedEver(
   prisma: PrismaService,
