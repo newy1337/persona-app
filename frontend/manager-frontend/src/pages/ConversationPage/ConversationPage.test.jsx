@@ -800,6 +800,18 @@ describe('left block: lead card folded into the top card', () => {
     expect(select.selectedOptions[0].textContent).toBe('Мужской');
   });
 
+  it('дата добавления лида в карточке', async () => {
+    withPins({ name: 'Андрей' }, { lead_added_at: Date.UTC(2026, 10, 12, 11, 5) / 1000 });
+    await renderPage();
+    expect(container.querySelector('[data-testid="lead-added-at"]').textContent).toBe('Добавлен12 ноября 2026 г. в 14:05');
+  });
+
+  it('дата добавления: чата нет в «Лидах» — прочерк', async () => {
+    withPins({ name: 'Андрей' });
+    await renderPage();
+    expect(container.querySelector('[data-testid="lead-added-at"]').textContent).toBe('Добавлен—');
+  });
+
   it('пол не указан — «не указан»', async () => {
     withPins({ name: 'Андрей' }, { client_gender: 'unknown' });
     await renderPage();

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { authorClass, genderLabel, fmtChatDate, loadReadCursor, mediaUrl, saveReadCursor, telegramReadMark, withToken } from './chat';
+import { authorClass, genderLabel, fmtChatDate, leadAddedLabel, loadReadCursor, mediaUrl, saveReadCursor, telegramReadMark, withToken } from './chat';
 
 const D1 = Math.floor(new Date(2026, 7, 20, 12).getTime() / 1000);
 
@@ -75,5 +75,13 @@ describe('genderLabel', () => {
     expect(genderLabel('f', true)).toBe('жен.');
     expect(genderLabel('unknown')).toBeNull();
     expect(genderLabel(null)).toBeNull();
+  });
+});
+
+describe('leadAddedLabel', () => {
+  it('дата и время добавления лида по Москве, без карточки — прочерк', () => {
+    // 2026-11-12 11:05 UTC = 14:05 МСК
+    expect(leadAddedLabel(Date.UTC(2026, 10, 12, 11, 5) / 1000)).toBe('12 ноября 2026 г. в 14:05');
+    expect(leadAddedLabel(null)).toBe('—');
   });
 });

@@ -46,6 +46,7 @@ import {
   saveReadCursor,
   liveRows,
   genderLabel,
+  leadAddedLabel,
 } from '../../utils/chat';
 import {
   getConversationById,
@@ -101,6 +102,7 @@ import {
   ChevronNextIcon,
   AccountIcon,
   StatusIcon,
+  ClockIcon,
 } from '../../assets/icons';
 import { DEAL_STAGES } from '../../data/dealStages';
 import { accountContact, channelBadge, clientContact } from '../../utils/channel';
@@ -843,6 +845,10 @@ function ConversationPage() {
                   <span className={styles.metaRow} data-testid="traffic-source">
                     <span className={styles.metaIcon}><StatusIcon color="currentColor" />Трафик</span>
                     {trafficSourceLabel(data.traffic_source) || 'не отмечен'}
+                  </span>
+                  <span className={styles.metaRow} data-testid="lead-added-at">
+                    <span className={styles.metaIcon}><ClockIcon />Добавлен</span>
+                    {leadAddedLabel(data.lead_added_at)}
                   </span>
                   <span className={styles.metaRow}>
                     <span className={styles.metaIcon}><LocationIcon />Город</span>
