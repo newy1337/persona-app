@@ -316,19 +316,35 @@ describe('Manager panel API (e2e)', () => {
       .expect(200);
   });
 
-  it('stage tiles count reached stages and archive in one pass', async () => {
+  it('stage tiles count stages actually set and archive in one pass', async () => {
     const h = { Authorization: `Bearer ${token}` };
     const prisma = app.get(PrismaService);
     const tiles = async () =>
       (await request(app.getHttpServer()).get('/api/manager/stats').set(h))
         .body as Record<string, number>;
     const before = await tiles();
+    // этапы — по событиям смены: вброс → соглас; вброс и сейчас в архиве;
+    // только архив; без этапов; неизвестный этап не считается
+    const sets: Array<[number, string, number]> = [
+      [9300001, 'vbros', 1],
+      [9300001, 'soglas', 1000],
+      [9300002, 'vbros', 1],
+      [9300005, 'unknown_stage', 1],
+    ];
+    await prisma.funnelEvent.createMany({
+      data: sets.map(([chatId, to, ts]) => ({
+        personaId: 'nastya',
+        chatId: BigInt(chatId),
+        eventType: 'deal_stage_set',
+        eventMeta: JSON.stringify({ from: null, to, note: '' }),
+        ts,
+      })),
+    });
     const facts = {
-      9300001: { deal_reached: { vbros: 1, soglas: 2 }, deal_stage: 'soglas' },
-      9300002: { deal_reached: { vbros: 1 }, deal_stage: 'archive' },
+      9300001: { deal_stage: 'soglas' },
+      9300002: { deal_stage: 'archive' },
       9300003: { deal_stage: 'archive' },
       9300004: { name: 'без этапов' },
-      9300005: { deal_reached: { unknown_stage: 1 } },
     };
     for (const [chatId, f] of Object.entries(facts))
       await prisma.leadFacts.upsert({
@@ -336,14 +352,17 @@ describe('Manager panel API (e2e)', () => {
         create: { chatId: BigInt(chatId), facts: JSON.stringify(f) },
         update: { facts: JSON.stringify(f) },
       });
-    const after = await tiles();
-    expect(after.stage_vbros - before.stage_vbros).toBe(2);
-    expect(after.stage_soglas - before.stage_soglas).toBe(1);
-    expect(after.stage_predloga - before.stage_predloga).toBe(0);
-    expect(after.stage_archive - before.stage_archive).toBe(2);
-    await prisma.leadFacts.deleteMany({
-      where: { chatId: { in: Object.keys(facts).map(BigInt) } },
-    });
+    const ids = [9300001, 9300002, 9300003, 9300004, 9300005].map(BigInt);
+    try {
+      const after = await tiles();
+      expect(after.stage_vbros - before.stage_vbros).toBe(2);
+      expect(after.stage_soglas - before.stage_soglas).toBe(1);
+      expect(after.stage_predloga - before.stage_predloga).toBe(0);
+      expect(after.stage_archive - before.stage_archive).toBe(2);
+    } finally {
+      await prisma.leadFacts.deleteMany({ where: { chatId: { in: ids } } });
+      await prisma.funnelEvent.deleteMany({ where: { chatId: { in: ids } } });
+    }
   });
 
   it('restored auto-password and region work with the real database and login', async () => {

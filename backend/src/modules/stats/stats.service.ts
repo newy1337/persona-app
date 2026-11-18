@@ -31,11 +31,7 @@ import {
   actualCost,
   listCost,
 } from './dialog-cost';
-import {
-  DEAL_REACHED_KEY as DEAL_REACHED_FACT,
-  DEAL_STAGES,
-  DEAL_STAGE_LABELS,
-} from 'src/domain/deal-stage';
+import { DEAL_STAGES, DEAL_STAGE_LABELS } from 'src/domain/deal-stage';
 import { LEAD_STATUSES } from 'src/domain/leads';
 import {
   TRAFFIC_SOURCES,
@@ -44,6 +40,7 @@ import {
 } from 'src/domain/traffic-source';
 import {
   actualStagesEver,
+  actualStageTimes,
   stageMovesInRange,
   stagesReachedEver,
   zeroStages,
@@ -1590,7 +1587,8 @@ export class StatsService {
   /** Сколько стоит диалог сейчас и сколько стоил на каждом этапе сделки. */
   async chatCost(chatId: number) {
     const price = memoPrice(await this.prices());
-    const [rows, facts] = await Promise.all([
+    // Этапы — фактически поставленные, как во всей статистике.
+    const [rows, times] = await Promise.all([
       this.prisma.modelUsage.findMany({
         where: { chatId: BigInt(chatId) },
         select: {
@@ -1609,18 +1607,9 @@ export class StatsService {
           provider: true,
         },
       }) as Promise<UsageRow[]>,
-      this.prisma.leadFacts.findUnique({
-        where: { chatId: BigInt(chatId) },
-        select: { facts: true },
-      }),
+      actualStageTimes(this.prisma, [BigInt(chatId)]),
     ]);
-    let reached: Record<string, unknown> = {};
-    try {
-      const parsed = JSON.parse(facts?.facts || '{}');
-      reached = parsed?.[DEAL_REACHED_FACT] ?? {};
-    } catch {
-      reached = {};
-    }
+    const reached: Record<string, unknown> = times.get(String(chatId)) ?? {};
     const calls = rows.map((u) => {
       const b = bucket();
       add(b, u, price(u.model));
@@ -1640,6 +1629,11 @@ export class StatsService {
   async stageCosts(query: { from?: string; to?: string }) {
     const range = resolveRange(query, this.clock.ts());
     const price = memoPrice(await this.prices());
+    // Этапы, фактически поставленные в периоде (как в «По командам»): расход
+    // чата от начала диалога до момента, когда этап поставили.
+    const moves = (
+      await stageMovesInRange(this.prisma, range.start, range.end)
+    ).filter((m) => m.stage !== 'archive');
     const rows = await this.prisma.$queryRaw<
       Array<{
         chat_id: bigint;
@@ -1655,15 +1649,11 @@ export class StatsService {
       }>
     >(Prisma.sql`
       WITH reached AS (
-        SELECT p.chat_id, s.key AS stage, s.value::bigint AS ts
-        FROM pinned_facts p,
-          LATERAL jsonb_each_text(
-            CASE WHEN left(ltrim(p.facts), 1) = '{'
-              THEN COALESCE(p.facts::jsonb -> ${DEAL_REACHED_FACT}, '{}'::jsonb)
-              ELSE '{}'::jsonb END
-          ) s
-        WHERE p.facts LIKE ${'%' + DEAL_REACHED_FACT + '%'}
-          AND s.value ~ '^[0-9]+$'
+        SELECT * FROM unnest(
+          ${moves.map((m) => m.chatId)}::bigint[],
+          ${moves.map((m) => m.stage)}::text[],
+          ${moves.map((m) => m.ts)}::bigint[]
+        ) AS r(chat_id, stage, ts)
       )
       SELECT r.chat_id, r.stage, u.model, u.provider,
         SUM(GREATEST(0, COALESCE(u.input_tokens, 0) - COALESCE(u.cached_tokens, 0) - COALESCE(u.cache_write_tokens, 0))) AS input,
@@ -1674,7 +1664,6 @@ export class StatsService {
         SUM(COALESCE(u.provider_estimated_cost_usd, 0)) AS estimated
       FROM reached r
       LEFT JOIN model_usage u ON u.chat_id = r.chat_id AND u.created_at <= r.ts
-      WHERE r.ts >= ${range.start} AND r.ts < ${range.end}
       GROUP BY r.chat_id, r.stage, u.model, u.provider`);
     const perChat = new Map<string, { stage: string; tokens: ModelTokens[] }>();
     for (const r of rows) {
