@@ -496,10 +496,11 @@ describe('Manager panel API (e2e)', () => {
       .get('/api/stats/stages')
       .set(h)
       .expect(200);
-    // соглас → лид: вброс и предлога пройдены по пути, каждый этап — один раз
+    // за период считаются этапы, которые поставили: вброс и предлогу
+    // перескочили — их нет; «пройденные» видны только в reached
     expect(stats.body.totals).toMatchObject({
-      vbros: 1,
-      predloga: 1,
+      vbros: 0,
+      predloga: 0,
       soglas: 1,
       lead: 1,
       archive: 0,

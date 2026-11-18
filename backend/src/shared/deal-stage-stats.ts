@@ -1,9 +1,5 @@
 import { PrismaService } from 'src/prisma.service';
-import {
-  DEAL_REACHED_EVENT,
-  DEAL_STAGES,
-  DEAL_STAGE_EVENT,
-} from 'src/domain/deal-stage';
+import { DEAL_STAGES, DEAL_STAGE_EVENT } from 'src/domain/deal-stage';
 import { dayKey } from 'src/modules/stats/range';
 import { TtlCache } from './ttl-cache';
 
@@ -23,9 +19,11 @@ export interface StageMove {
 }
 
 /**
- * События этапов за период в виде (день, этап, чат): воронка — по первому
- * достижению этапа, архив — по отправке в архив, не чаще раза в день на чат.
- * Одна логика для общей статистики, таблицы по менеджерам и плиток дашборда.
+ * Этапы, фактически поставленные за период, в виде (день, этап, чат): чат
+ * считается в том этапе, который ему поставили, один раз за период. Пройденные
+ * «по пути» этапы не засчитываются — чат, переведённый сразу в «Депозит», не
+ * становится «Лидом». Архив — по отправке в архив, не чаще раза в день на чат.
+ * Одна логика для общей статистики, таблицы по командам и плиток дашборда.
  */
 export async function stageMovesInRange(
   prisma: PrismaService,
@@ -34,11 +32,11 @@ export async function stageMovesInRange(
 ): Promise<StageMove[]> {
   const events = await prisma.funnelEvent.findMany({
     where: {
-      eventType: { in: [DEAL_REACHED_EVENT, DEAL_STAGE_EVENT] },
+      eventType: DEAL_STAGE_EVENT,
       chatId: { not: null },
       ts: { gte: start, lt: end },
     },
-    select: { chatId: true, eventType: true, eventMeta: true, ts: true },
+    select: { chatId: true, eventMeta: true, ts: true },
     orderBy: { ts: 'asc' },
   });
   const out: StageMove[] = [];
@@ -50,13 +48,8 @@ export async function stageMovesInRange(
     } catch {
       continue;
     }
-    const stage =
-      e.eventType === DEAL_REACHED_EVENT
-        ? String(meta.stage ?? '')
-        : meta.to === 'archive'
-          ? 'archive'
-          : '';
-    if (!stage || !(DEAL_STAGES as readonly string[]).includes(stage)) continue;
+    const stage = String(meta.to ?? '');
+    if (!(DEAL_STAGES as readonly string[]).includes(stage)) continue;
     const day = dayKey(e.ts);
     const key = `${stage}:${String(e.chatId)}:${stage === 'archive' ? day : ''}`;
     if (seen.has(key)) continue;
