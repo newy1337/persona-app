@@ -417,7 +417,7 @@ export class PhotoSetsService {
       return { region_code: null, can_assign: false, rows: [], sets: [] };
     const [staff, assigned, sets, names] = await Promise.all([
       this.prisma.dashboardUser.findMany({
-        where: { regionCode: region, accounts: { some: {} } },
+        where: { regionCode: region, accounts: { some: {} }, deletedAt: null },
         orderBy: { username: 'asc' },
         select: {
           id: true,

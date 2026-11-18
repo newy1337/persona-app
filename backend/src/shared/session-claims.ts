@@ -1,6 +1,10 @@
 import { createHmac } from 'crypto';
 
-type Credentials = { id: number; passwordHash: string };
+type Credentials = {
+  id: number;
+  passwordHash: string;
+  deletedAt?: number | null;
+};
 
 export function credentialTag(
   user: Credentials,
@@ -20,6 +24,8 @@ export function currentSession(
 ): boolean {
   return Boolean(
     user &&
+    // удалённая из панели учётка не входит, выданные ей токены не действуют
+    !user.deletedAt &&
     claims?.kind === kind &&
     claims.id === user.id &&
     claims.credential === credentialTag(user, secret),

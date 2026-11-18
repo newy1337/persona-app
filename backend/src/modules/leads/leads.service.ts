@@ -241,9 +241,14 @@ export class LeadsService {
       where:
         teamIds === null
           ? {
+              deletedAt: null,
               OR: [{ id: user.id }, { role: { in: [...MANAGER_ROLES] } }],
             }
-          : { id: { in: teamIds }, role: { in: [...MANAGER_ROLES] } },
+          : {
+              id: { in: teamIds },
+              role: { in: [...MANAGER_ROLES] },
+              deletedAt: null,
+            },
       select: {
         id: true,
         username: true,
@@ -273,8 +278,8 @@ export class LeadsService {
     requested: number | undefined,
   ): Promise<number> {
     if (requested === undefined || requested === user.id) return user.id;
-    const target = await this.prisma.dashboardUser.findUnique({
-      where: { id: requested },
+    const target = await this.prisma.dashboardUser.findFirst({
+      where: { id: requested, deletedAt: null },
       select: { role: true },
     });
     const inTeam = scope === null || (scope.userIds ?? []).includes(requested);

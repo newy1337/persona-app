@@ -67,7 +67,7 @@ export class InboundService {
     db: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<{ list: Recipient[]; names: Map<number, string> }> {
     const users = await db.dashboardUser.findMany({
-      where: { role: { in: [...MANAGER_ROLES] } },
+      where: { role: { in: [...MANAGER_ROLES] }, deletedAt: null },
       select: {
         id: true,
         username: true,

@@ -16,7 +16,7 @@ export class SourcesService {
     const [rows, users] = await Promise.all([
       this.prisma.leadSource.findMany({ orderBy: { name: 'asc' } }),
       this.prisma.dashboardUser.findMany({
-        where: { role: { in: [...MANAGER_ROLES] } },
+        where: { role: { in: [...MANAGER_ROLES] }, deletedAt: null },
         select: { leadSources: true },
       }),
     ]);

@@ -316,6 +316,100 @@ describe('Manager panel API (e2e)', () => {
       .expect(200);
   });
 
+  it('удалённая учётка скрыта из панели, но остаётся в статистике; её менеджеры — у её руководителя', async () => {
+    const h = { Authorization: `Bearer ${token}` };
+    const prisma = app.get(PrismaService);
+    const make = async (body: object) =>
+      (
+        await request(app.getHttpServer())
+          .post('/api/managers')
+          .set(h)
+          .send(body)
+          .expect(200)
+      ).body.created_user_id as number;
+    const head = await make({
+      username: 'sd-head',
+      role: 'head',
+      region_code: '0909',
+    });
+    const lead = await make({
+      username: 'sd-lead',
+      role: 'teamlead',
+      region_code: '0909',
+      lead_id: head,
+    });
+    const man = await make({
+      username: 'sd-man',
+      role: 'manager',
+      region_code: '0909',
+      lead_id: lead,
+    });
+    const acc = await request(app.getHttpServer())
+      .post('/api/tg-accounts')
+      .set(h)
+      .send({ phone_e164: '+79009090909', persona_id: 'nastya' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .put(`/api/managers/accounts/${acc.body.id}`)
+      .set(h)
+      .send({ user_id: man })
+      .expect(200);
+    const chat = 909090n;
+    await prisma.contact.create({
+      data: { chatId: chat, accountId: acc.body.id, createdAt: 1 },
+    });
+    await prisma.message.create({
+      data: {
+        chatId: chat,
+        ts: Math.floor(Date.now() / 1000),
+        role: 'user',
+        text: 'привет',
+      },
+    });
+    try {
+      // тимлид удалён: его менеджер переходит к хеду
+      await request(app.getHttpServer())
+        .delete(`/api/managers/${lead}`)
+        .set(h)
+        .expect(200);
+      expect(
+        (await prisma.dashboardUser.findUnique({ where: { id: man } }))?.leadId,
+      ).toBe(head);
+      // менеджер удалён: из списка пропал, в статистике его переписка осталась
+      await request(app.getHttpServer())
+        .delete(`/api/managers/${man}`)
+        .set(h)
+        .expect(200);
+      const list = await request(app.getHttpServer())
+        .get('/api/managers')
+        .set(h)
+        .expect(200);
+      expect(list.body.items.some((u: any) => u.user_id === man)).toBe(false);
+      const stats = await request(app.getHttpServer())
+        .get('/api/stats/managers')
+        .set(h)
+        .expect(200);
+      const row = stats.body.by_manager.find((r: any) => r.manager_id === man);
+      expect(row).toMatchObject({ messages_in: 1, active_chats: 1 });
+      expect(row.username).toBe(`sd-man (удалена #${man})`);
+      // повторно удалить скрытую нельзя — её «нет»
+      await request(app.getHttpServer())
+        .delete(`/api/managers/${man}`)
+        .set(h)
+        .expect(404);
+    } finally {
+      await prisma.message.deleteMany({ where: { chatId: chat } });
+      await prisma.contact.deleteMany({ where: { chatId: chat } });
+      await prisma.managerAccount.deleteMany({
+        where: { accountId: acc.body.id },
+      });
+      await prisma.channelAccount.deleteMany({ where: { id: acc.body.id } });
+      await prisma.dashboardUser.deleteMany({
+        where: { id: { in: [head, lead, man] } },
+      });
+    }
+  });
+
   it('stage tiles count stages actually set and archive in one pass', async () => {
     const h = { Authorization: `Bearer ${token}` };
     const prisma = app.get(PrismaService);

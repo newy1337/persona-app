@@ -48,7 +48,10 @@ export class AuthService implements OnModuleInit {
     const user = await this.prisma.dashboardUser.findUnique({
       where: { username: dto.username },
     });
-    const ok = user && (await argon2.verify(user.passwordHash, dto.password));
+    const ok =
+      user &&
+      !user.deletedAt &&
+      (await argon2.verify(user.passwordHash, dto.password));
     if (!ok) {
       await this.audit.log({
         userId: user?.id ?? null,

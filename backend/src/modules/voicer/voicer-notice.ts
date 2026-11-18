@@ -9,6 +9,7 @@ export async function voiceNotice(
 ) {
   const users = await tx.dashboardUser.findMany({
     where: {
+      deletedAt: null,
       OR: [
         { role: 'admin' },
         ...(task.managerId ? [{ id: task.managerId, role: 'manager' }] : []),

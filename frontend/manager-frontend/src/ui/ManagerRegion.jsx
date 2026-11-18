@@ -547,7 +547,7 @@ export function ManagersPage() {
   async function remove(user) {
     const typed = await ux.prompt({
       title: `Удалить ${user.username}?`,
-      message: `Учётка удалится насовсем${user.role === 'manager' ? ', закреплённые аккаунты освободятся' : ''}. Чтобы подтвердить, введите логин: ${user.username}`,
+      message: `Учётка пропадёт из панели и не сможет войти, но её чаты и показатели останутся в статистике.${user.role === 'manager' ? ' Аккаунты останутся за ней — переназначьте их в «Аккаунтах».' : ''} Чтобы подтвердить, введите логин: ${user.username}`,
       placeholder: user.username,
       confirmLabel: 'Удалить',
       danger: true,
