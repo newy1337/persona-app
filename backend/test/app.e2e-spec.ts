@@ -513,7 +513,12 @@ describe('Manager panel API (e2e)', () => {
     expect(stats.body.days.length).toBe(1);
     expect(stats.body.days[0].counts.lead).toBe(1);
 
-    // откат назад ничего не снимает и второй раз не считает
+    // откат назад ничего не снимает и второй раз не считает. Откат в те же
+    // две минуты был бы ошибочным кликом — сдвигаем прежние смены на 5 минут.
+    await app.get(PrismaService).funnelEvent.updateMany({
+      where: { chatId: BigInt(chatId), eventType: 'deal_stage_set' },
+      data: { ts: { decrement: 300 } },
+    });
     await request(app.getHttpServer())
       .post(`/api/conversations/${chatId}/deal-stage`)
       .set(h)
