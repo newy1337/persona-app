@@ -1,4 +1,5 @@
 import { useTestDatabase } from './database';
+import { stopSchedules } from './scheduler';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
@@ -58,7 +59,11 @@ describe('Manager panel API (e2e)', () => {
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
-    await app.init();
+    // Свой порт на весь набор: иначе supertest на каждый запрос открывает и
+    // закрывает случайный порт, а его может занять сервер соседнего набора —
+    // запрос уходит в чужое приложение с чужой базой (404, «socket hang up»).
+    await app.listen(0, '127.0.0.1');
+    stopSchedules(app);
   });
 
   afterAll(async () => {
