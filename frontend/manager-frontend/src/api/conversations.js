@@ -10,6 +10,16 @@ export function getConversations() {
   });
 }
 
+/**
+ * Страница списка диалогов: отбор, сортировка и счётчики фильтров — на сервере,
+ * по всем чатам. Пустые параметры не отправляются.
+ */
+export function getConversationPage(params = {}) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '' && v !== false) q.set(k, v === true ? '1' : String(v));
+  return api.get(`/api/manager/conversations/page?${q}`);
+}
+
 export function getHiddenConversations() {
   return api.get('/api/manager/conversations?hidden=1').then((r) => r.items ?? []);
 }

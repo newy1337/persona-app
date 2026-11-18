@@ -1,15 +1,16 @@
 import { DialogTable } from '../../ui/ManagerRegion';
 import TableSkeleton from '../TableSkeleton/TableSkeleton';
 import ExportButton from './ExportButton';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useViewState, rememberDialogOrder } from '../../utils/viewState';
 import { SearchIcon } from '../../assets/icons';
 import { useNavigate } from 'react-router-dom';
 import styles from './ConversationsTable.module.scss';
-import { stageColors, stageFilters } from '../../data/stages';
-import { DEAL_STAGE_COLORS, DEAL_STAGE_FILTERS, matchesDealStage } from '../../data/dealStages';
-import { matchesQuery, matchesHeadFilters, matchesDateFilter } from '../../utils/search';
-import { CHANNEL_FILTERS, channelKey, matchesChannel } from '../../utils/channel';
+import { stageColors } from '../../data/stages';
+import { getConversationPage } from '../../api/conversations';
+import { rangeForFilter } from '../../utils/panelTime';
+import { DEAL_STAGE_COLORS, DEAL_STAGE_FILTERS } from '../../data/dealStages';
+import { CHANNEL_FILTERS } from '../../utils/channel';
 
 function fmtTime(ts) {
   return ts ? new Date(ts * 1000).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -52,9 +53,16 @@ export function newLabel(n) {
   return `${n} ${word}`;
 }
 
+/** Сортировка таблицы → параметры сервера: «время» там называется last. */
+const SORT_PARAM = { name: 'name', status: 'status', time: 'last' };
+
+/**
+ * Список диалогов. Отбор, сортировка, страницы и счётчики фильтров считает
+ * сервер по всем чатам — в браузере только текущая страница. reloadKey
+ * меняется при каждом опросе дашборда: страница обновляется вместе с ним.
+ */
 function ConversationsTable({
-  ready = true,
-  rows = [],
+  ready: parentReady = true,
   query = '',
   onQueryChange = null,
   headFilters = { lead: '', account: '' },
@@ -63,18 +71,18 @@ function ConversationsTable({
   onToggleShowHidden = null,
   onHide = null,
   onDealStage = null,
+  reloadKey = 0,
+  onFacets = null,
 }) {
   // Фильтры, сортировка и страница помнятся: вышли из чата — таблица та же.
   const [activeFilter, setActiveFilter] = useViewState('table.stage', null);
   const [dealStage, setDealStage] = useViewState('table.deal', null);
   const [onlyNew, setOnlyNew] = useViewState('table.new', false);
   const [channel, setChannel] = useViewState('table.channel', 'all');
-  // Фильтр канала — когда в списке больше одного мессенджера (или он уже выбран).
-  const channelCounts = CHANNEL_FILTERS.map(([key, label]) => [key, label, key === 'all' ? rows.length : rows.filter((c) => channelKey(c.channel) === key).length]);
-  const multiChannel = channelCounts.filter(([key, , n]) => key !== 'all' && n > 0).length > 1 || channel !== 'all';
   const [page, setPage] = useViewState('table.page', 1);
-  const newCount = rows.filter(waitsForManager).length;
   const [sort, setSort] = useViewState('table.sort', { col: null, dir: 'asc' });
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
   const navigate = useNavigate();
 
   function handleSort(col) {
@@ -85,48 +93,9 @@ function ConversationsTable({
     );
   }
 
-  const filtered = rows.filter(
-    (c) =>
-      matchesChannel(c, channel) &&
-      (!activeFilter || c.stage?.id === activeFilter) &&
-      matchesDealStage(c, dealStage) &&
-      (!onlyNew || waitsForManager(c)) &&
-      matchesQuery(c, query) &&
-      matchesHeadFilters(c, headFilters) &&
-      matchesDateFilter(c, dateFilter),
-  );
-
-  const sorted = sort.col
-    ? [...filtered].sort((a, b) => {
-      const aVal = sort.col === 'name' ? (a.name || '')
-        : sort.col === 'status' ? (a.stage?.index ?? 0)
-          : (a.last_message_ts || 0);
-      const bVal = sort.col === 'name' ? (b.name || '')
-        : sort.col === 'status' ? (b.stage?.index ?? 0)
-          : (b.last_message_ts || 0);
-      if (aVal < bVal) {
-        return sort.dir === 'asc' ? -1 : 1;
-      }
-      if (aVal > bVal) {
-        return sort.dir === 'asc' ? 1 : -1;
-      }
-      return 0;
-    })
-    : filtered;
-
-  // Чат, открытый из списка, листает тот же список: с фильтрами и сортировкой.
-  const orderKey = sorted.map((c) => c.chat_id).join(',');
-  useEffect(() => {
-    if (ready) rememberDialogOrder(orderKey ? orderKey.split(',') : []);
-  }, [orderKey, ready]);
-
-  const total = rows.total ?? rows.length;
-  const truncated = total > rows.length;
-  const pages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   // Условия отбора сменились — показываем сначала, иначе можно застрять на
-  // странице, которой больше нет.
-  // Сравнение с прошлым отбором, а не каждый запуск эффекта: при возврате из
-  // чата сохранённая страница не должна сбрасываться первой же отрисовкой.
+  // странице, которой больше нет. Сравнение с прошлым отбором, а не каждый
+  // запуск эффекта: при возврате из чата сохранённая страница не сбрасывается.
   const selection = JSON.stringify([query, headFilters.lead, headFilters.account, dateFilter, activeFilter, dealStage, onlyNew, showHidden, channel]);
   const lastSelection = useRef(selection);
   useEffect(() => {
@@ -134,11 +103,64 @@ function ConversationsTable({
     lastSelection.current = selection;
     setPage(1);
   }, [selection, setPage]);
-  const current = Math.min(page, pages);
-  const visible = useMemo(
-    () => sorted.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE),
-    [sorted, current],
-  );
+
+  const range = rangeForFilter(dateFilter);
+  const params = {
+    page,
+    size: PAGE_SIZE,
+    q: query.trim(),
+    channel: channel === 'all' ? '' : channel,
+    deal: dealStage,
+    stage: activeFilter,
+    new: onlyNew,
+    lead: headFilters.lead,
+    account: headFilters.account,
+    from: range.from,
+    to: range.to,
+    sort: sort.col ? SORT_PARAM[sort.col] : '',
+    dir: sort.col ? sort.dir : '',
+    archive: showHidden,
+  };
+  const paramsKey = JSON.stringify(params);
+  const onFacetsRef = useRef(onFacets);
+  onFacetsRef.current = onFacets;
+  useEffect(() => {
+    let alive = true;
+    getConversationPage(JSON.parse(paramsKey))
+      .then((r) => {
+        if (!alive) return;
+        setData(r);
+        setError(null);
+        onFacetsRef.current?.(r.facets, showHidden);
+      })
+      .catch((e) => alive && setError(e.detail || e.message));
+    return () => { alive = false; };
+  }, [paramsKey, reloadKey, showHidden]);
+
+  // Сервер мог ужать номер страницы (стало меньше чатов) — запоминаем его.
+  useEffect(() => {
+    if (data && data.page !== page) setPage(data.page);
+  }, [data, page, setPage]);
+
+  // Чат, открытый из списка, листает тот же список: с фильтрами и сортировкой.
+  const orderKey = (data?.order ?? []).join(',');
+  useEffect(() => {
+    if (data) rememberDialogOrder(orderKey ? orderKey.split(',') : []);
+  }, [orderKey, data]);
+
+  const ready = parentReady && data !== null;
+  const rows = data?.items ?? [];
+  const facets = data?.facets;
+  const all = data?.all ?? 0;
+  const found = data?.total ?? 0;
+  const pages = data?.pages ?? 1;
+  const current = data?.page ?? 1;
+  const filteredView = found !== all;
+  const newCount = facets?.new ?? 0;
+  const channelCounts = CHANNEL_FILTERS.map(([key, label]) => [key, label, facets?.channel?.[key] ?? 0]);
+  // Фильтр канала — когда в списке больше одного мессенджера (или он уже выбран).
+  const multiChannel = channelCounts.filter(([key, , n]) => key !== 'all' && n > 0).length > 1 || channel !== 'all';
+  const stageButtons = (facets?.stages ?? []).map((st) => ({ key: st.id, label: st.title, color: stageColors(st.index).color, count: st.count }));
 
   return (
     <section className={styles.section}>
@@ -148,14 +170,13 @@ function ConversationsTable({
           <h2 className={styles.title}>{showHidden ? 'Архив' : 'Мои диалоги'}</h2>
           <button
             className={`${styles.total} ${activeFilter || dealStage ? styles.totalActive : ''}`}
+            data-testid="dialogs-total"
             onClick={() => { setActiveFilter(null); setDealStage(null); }}
             title={activeFilter || dealStage ? 'Сбросить фильтры' : undefined}
           >
-            {filtered.length === rows.length
-              ? `ВСЕГО: ${total}${truncated ? ` · показаны последние ${rows.length}` : ''}`
-              : `НАЙДЕНО: ${filtered.length} из ${rows.length}`}
+            {filteredView ? `НАЙДЕНО: ${found} из ${all}` : `ВСЕГО: ${all}`}
           </button>
-          <ExportButton chatIds={filtered.map((r) => r.chat_id)} />
+          <ExportButton chatIds={data?.order ?? []} />
         </div>
 
         <div className={styles.filters}>
@@ -181,7 +202,7 @@ function ConversationsTable({
               Новые на ручном · {newCount}
             </button>
           )}
-          {stageFilters(rows).map((f) => (
+          {stageButtons.map((f) => (
             <button
               key={f.key}
               className={`${styles.filterPill} ${activeFilter === f.key ? styles.filterPillActive : ''}`}
@@ -189,7 +210,7 @@ function ConversationsTable({
               onClick={() => setActiveFilter(activeFilter === f.key ? null : f.key)}
             >
               <span className={styles.filterDot}></span>
-              {f.label}
+              {f.label} · {f.count}
             </button>
           ))}
         </div>
@@ -216,7 +237,7 @@ function ConversationsTable({
         <div className={styles.filters} data-testid="deal-stage-filters" aria-label="Этап сделки">
           <span className={styles.filtersLabel}>Этап:</span>
           {DEAL_STAGE_FILTERS.map((st) => {
-            const count = rows.filter((c) => matchesDealStage(c, st.id)).length;
+            const count = facets?.deal?.[st.id] ?? 0;
             if (!count && dealStage !== st.id) return null;
             return (
               <button
@@ -248,9 +269,10 @@ function ConversationsTable({
         </div>
       </div>
 
+      {error && <div className="loadError" role="alert">Не удалось загрузить список: {error}</div>}
       {!ready && rows.length === 0 && <TableSkeleton rows={8} label="Загружаем диалоги…" />}
 
-      {(ready || rows.length > 0) && <DialogTable rows={visible} totalRows={rows.length} archived={showHidden}
+      {(ready || rows.length > 0) && <DialogTable rows={rows} totalRows={found} archived={showHidden}
         sort={sort} onSort={handleSort} setSort={setSort}
         onOpen={id => navigate(`/conversation/${id}`)} onHide={onHide} onDealStage={onDealStage}
         helpers={{ Avatar: ClientAvatar, Stage: StatusBadge, isNew: waitsForManager,
@@ -267,7 +289,7 @@ function ConversationsTable({
             Назад
           </button>
           <span className={styles.pagerLabel} role="status">
-            {(current - 1) * PAGE_SIZE + 1}–{Math.min(current * PAGE_SIZE, sorted.length)} из {sorted.length}
+            {(current - 1) * PAGE_SIZE + 1}–{Math.min(current * PAGE_SIZE, found)} из {found}
           </span>
           <button
             className={styles.pagerButton}

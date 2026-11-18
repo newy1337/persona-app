@@ -24,6 +24,7 @@ useTestDatabase('app');
 
 import { AppModule } from './../src/app.module';
 import { PrismaService } from './../src/prisma.service';
+import { ManagerService } from './../src/modules/manager/manager.service';
 import { inflateRawSync } from 'zlib';
 import { HistoryService } from './../src/shared/history.service';
 import { PROMPT_KEYS } from '../src/brain/config/prompts';
@@ -561,11 +562,71 @@ describe('Manager panel API (e2e)', () => {
       .expect(200);
     expect(tilesOld.body).toMatchObject({ stage_lead: 0, total: 0 });
 
+    // список считает сервер по всем чатам и сходится с плитками дашборда
+    const listPage = await request(app.getHttpServer())
+      .get('/api/manager/conversations/page?size=1')
+      .set(h)
+      .expect(200);
+    expect(listPage.body.all).toBe(tilesAll.body.total);
+    expect(listPage.body.items.length).toBeLessThanOrEqual(1);
+    expect(listPage.body.facets.channel.all).toBe(listPage.body.all);
+    const liveList = await request(app.getHttpServer())
+      .get('/api/manager/conversations?active=1')
+      .set(h)
+      .expect(200);
+    expect(liveList.body.items.length).toBe(tilesAll.body.active_now);
+    const byDeal = await request(app.getHttpServer())
+      .get('/api/manager/conversations/page?deal=vbros')
+      .set(h)
+      .expect(200);
+    expect(byDeal.body.total).toBe(listPage.body.facets.deal.vbros);
+    expect(byDeal.body.items.every((r: any) => r.deal_stage === 'vbros')).toBe(
+      true,
+    );
+    await request(app.getHttpServer())
+      .get('/api/manager/conversations/page?deal=nope')
+      .set(h)
+      .expect(400);
+
     await request(app.getHttpServer())
       .post(`/api/conversations/${chatId}/deal-stage`)
       .set(h)
       .send({ stage: 'archive', note: 'перестал отвечать' })
       .expect(200);
+    // ушёл в архив: из «Всего диалогов» пропал, а в диалогах за сегодня остался
+    const db = app.get(PrismaService);
+    await db.contact.create({ data: { chatId: 777099n, createdAt: 1 } });
+    await db.message.create({
+      data: {
+        chatId: 777099n,
+        ts: Math.floor(Date.now() / 1000),
+        role: 'user',
+        text: 'привет',
+      },
+    });
+    // плитки кешируются на 10 секунд — перед каждым замером сбрасываем кеш
+    const tile = async (q = '') => {
+      (app.get(ManagerService) as any).polls.clear();
+      return (
+        await request(app.getHttpServer())
+          .get(`/api/manager/stats${q}`)
+          .set(h)
+          .expect(200)
+      ).body.total as number;
+    };
+    const allBefore = await tile();
+    const todayBefore = await tile(`?from=${today}&to=${today}`);
+    await request(app.getHttpServer())
+      .post('/api/conversations/777099/deal-stage')
+      .set(h)
+      .send({ stage: 'archive', note: 'проверка плиток' })
+      .expect(200);
+    expect(await tile()).toBe(allBefore - 1);
+    expect(await tile(`?from=${today}&to=${today}`)).toBe(todayBefore);
+    await db.message.deleteMany({ where: { chatId: 777099n } });
+    await db.funnelEvent.deleteMany({ where: { chatId: 777099n } });
+    await db.leadFacts.deleteMany({ where: { chatId: 777099n } });
+    await db.contact.deleteMany({ where: { chatId: 777099n } });
     const after = await request(app.getHttpServer())
       .get(`/api/conversations/${chatId}`)
       .set(h)
