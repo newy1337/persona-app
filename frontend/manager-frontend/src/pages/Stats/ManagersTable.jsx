@@ -14,11 +14,12 @@ const COLUMNS = [
   { id: 'leads_valid', title: 'Номеров', hint: 'Нашлись в Telegram из загруженных за период' },
   { id: 'leads_replied', title: 'Ответили', hint: 'Из валидных ответили на первое сообщение' },
   { id: 'active_chats', title: 'Переписок', hint: 'Диалоги, где собеседник писал в этот период' },
+  { id: 'active_dialogs', title: 'Активных', hint: 'Диалоги, ставшие активными: собеседник прислал 6-е сообщение после нашего первого (как в холодке). По дням — в день 6-го сообщения' },
   { id: 'messages_out', title: 'Сообщений', hint: 'Исходящие и входящие' },
   ...DEAL_STAGES.map((st) => ({ id: `stage:${st.id}`, title: st.label, hint: `Сколько чатов перешло в этап «${st.label}» за период` })),
 ];
 
-const SUM_KEYS = ['cost_usd', 'calls', 'leads_uploaded', 'leads_valid', 'leads_replied', 'active_chats', 'messages_in', 'messages_out'];
+const SUM_KEYS = ['cost_usd', 'calls', 'leads_uploaded', 'leads_valid', 'leads_replied', 'active_chats', 'active_dialogs', 'messages_in', 'messages_out'];
 
 const metric = (r, key) => (key.startsWith('stage:') ? r.stages?.[key.slice(6)] ?? 0 : r[key] ?? 0);
 
@@ -26,7 +27,7 @@ const metric = (r, key) => (key.startsWith('stage:') ? r.stages?.[key.slice(6)] 
 function sumRows(rows) {
   const acc = {
     cost_usd: 0, calls: 0, leads_uploaded: 0, leads_valid: 0, leads_replied: 0,
-    active_chats: 0, messages_in: 0, messages_out: 0, manual_share: 0,
+    active_chats: 0, active_dialogs: 0, messages_in: 0, messages_out: 0, manual_share: 0,
     stages: Object.fromEntries(DEAL_STAGES.map((st) => [st.id, 0])),
   };
   let manual = 0;
@@ -65,6 +66,7 @@ function Cells({ row, share }) {
         ) : dash}
       </td>
       <td className={p.numCell}>{num(row.active_chats)}</td>
+      <td className={p.numCell} data-testid="active-dialogs">{row.active_dialogs ? num(row.active_dialogs) : dash}</td>
       <td className={p.numCell}>
         {num(row.messages_out)} ↑<span className={s.muted}> / {num(row.messages_in)} ↓</span>
         {row.manual_share > 0 && <span className={s.muted}> · руками {pct(row.manual_share)}</span>}

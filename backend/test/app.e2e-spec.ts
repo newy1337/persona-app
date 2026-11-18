@@ -829,6 +829,52 @@ describe('Manager panel API (e2e)', () => {
     ).toBe(1);
     expect(teams.body.by_team.findIndex((r: any) => r.role === 'head')).toBe(0);
 
+    // активные диалоги — как в холодке: 6-е сообщение собеседника после нашего
+    // первого делает диалог активным; 5 сообщений — ещё нет, наши не считаются
+    const now = Math.floor(Date.now() / 1000);
+    const talk = async (chat: number, userMsgs: number) => {
+      await prisma.contact.create({
+        data: { chatId: BigInt(chat), accountId: acc.body.id, createdAt: 1 },
+      });
+      await prisma.message.createMany({
+        data: [
+          {
+            chatId: BigInt(chat),
+            ts: now - 100,
+            role: 'assistant',
+            text: 'привет',
+          },
+          ...Array.from({ length: userMsgs }, (_, i) => ({
+            chatId: BigInt(chat),
+            ts: now - 50 + i,
+            role: 'user',
+            text: `сообщение ${i + 1}`,
+          })),
+        ],
+      });
+    };
+    await talk(777011, 6);
+    await talk(777012, 5);
+    const active = await request(app.getHttpServer())
+      .get('/api/stats/managers')
+      .set(h)
+      .expect(200);
+    const mine = active.body.by_manager.find(
+      (r: any) => r.manager_id === manager,
+    );
+    expect(mine.active_dialogs).toBe(1);
+    expect(mine.days.at(-1).active_dialogs).toBe(1);
+    expect(
+      active.body.by_team.find((r: any) => r.manager_id === head)
+        .active_dialogs,
+    ).toBe(1);
+    await prisma.message.deleteMany({
+      where: { chatId: { in: [777011n, 777012n] } },
+    });
+    await prisma.contact.deleteMany({
+      where: { chatId: { in: [777011n, 777012n] } },
+    });
+
     // хед видит свой регион и правит только тимлида у менеджеров региона
     const team = await request(app.getHttpServer())
       .get('/api/managers')
