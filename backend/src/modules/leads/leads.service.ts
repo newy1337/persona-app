@@ -652,6 +652,11 @@ export class LeadsService {
     ownerUserId: number | null = null,
     scope: LeadScope | null = null,
   ): Promise<LeadView> {
+    // Без источника лид выпадает из статистики по источникам — не принимаем.
+    if (!dto.traffic_source)
+      throw new UnprocessableEntityException(
+        'укажите источник трафика: базовик или горячий лидген',
+      );
     const contact = this.contactOf(
       dto,
       await this.accountChannel(dto.preferred_account_id),
@@ -716,6 +721,11 @@ export class LeadsService {
     ownerUserId: number | null = null,
     scope: LeadScope | null = null,
   ): Promise<ImportResult> {
+    // Источник ставится всему импорту сразу — без него лиды не попадут в статистику.
+    if (!dto.traffic_source)
+      throw new UnprocessableEntityException(
+        'укажите источник трафика импорта: базовик или горячий лидген',
+      );
     let batchPersona = await this.personaOf(dto.persona_id);
     const drafts: Array<LeadDraft & { preferred_account_id?: number | null }> =
       [];

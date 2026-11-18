@@ -31,6 +31,7 @@ const ROWS = [
     leads_valid: 32,
     leads_replied: 24,
     active_chats: 9,
+    active_dialogs: 4,
     days: [
       { day: '2026-09-27', cost_usd: 7.5, calls: 250, tokens: { input: 600, output: 300, cache_read: 5000, cache_write: 0 }, messages_in: 70, messages_out: 90, manual_share: 0.1, leads_uploaded: 20, leads_valid: 16, leads_replied: 12, active_chats: 5 },
       { day: '2026-09-28', cost_usd: 5, calls: 150, tokens: { input: 400, output: 200, cache_read: 4000, cache_write: 0 }, messages_in: 50, messages_out: 60, manual_share: 0, leads_uploaded: 20, leads_valid: 16, leads_replied: 12, active_chats: 4 },
@@ -97,6 +98,13 @@ describe('таблица по менеджерам', () => {
     expect(host.querySelector('[data-testid="manager-day-none-none"]')).not.toBeNull();
   });
 
+  it('активные диалоги — отдельный столбец, в итоге складываются', () => {
+    const host = render(ROWS);
+    expect(host.querySelector('[data-testid="manager-row-6"] [data-testid="active-dialogs"]').textContent).toBe('4');
+    const rows = [...host.querySelectorAll('tbody tr')];
+    expect(rows[rows.length - 1].querySelector('[data-testid="active-dialogs"]').textContent).toBe('4');
+  });
+
   it('за пустой период таблица не рисуется', () => {
     expect(render([]).textContent).toContain('За период работы не было');
   });
@@ -133,8 +141,8 @@ describe('итог и сортировка', () => {
     expect(day.textContent).toContain('28.09');
     expect(day.textContent).toContain('$5.00');
     expect(day.textContent).toContain('16 · 80%');
-    // имя, расход, номеров, ответили, переписок, сообщений и шесть этапов
-    expect(day.querySelectorAll('td').length).toBe(12);
+    // имя, расход, номеров, ответили, переписок, активных, сообщений и шесть этапов
+    expect(day.querySelectorAll('td').length).toBe(13);
   });
 });
 

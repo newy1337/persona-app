@@ -14,6 +14,7 @@ describe('ScopeService', () => {
     managerAccount: { findMany: jest.fn() },
     // подчинённых нет: область видимости менеджера — только его аккаунты
     dashboardUser: { findMany: jest.fn(async () => []) },
+    contact: { findMany: jest.fn() },
   };
   const history = { chatOwnerAccount: jest.fn() };
 
@@ -94,5 +95,27 @@ describe('ScopeService', () => {
     await expect(service.requireChatOwned(admin, 5)).resolves.toMatchObject({
       isAdmin: true,
     });
+  });
+
+  it('выгрузка списка: одна проверка на все чаты, чужой или несуществующий — 404', async () => {
+    prisma.contact.findMany.mockResolvedValue([
+      { chatId: 1n, accountId: 10 },
+      { chatId: 2n, accountId: 11 },
+      { chatId: 3n, accountId: 99 },
+    ]);
+    await expect(
+      service.requireChatsOwned(manager, [1, 2]),
+    ).resolves.toBeTruthy();
+    expect(prisma.contact.findMany).toHaveBeenCalledTimes(1);
+    await expect(
+      service.requireChatsOwned(manager, [1, 3]),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      service.requireChatsOwned(manager, [1, 4]),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.requireChatsOwned(admin, [4])).resolves.toBeTruthy();
+    await expect(service.requireChatsOwned(voice, [1])).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 });

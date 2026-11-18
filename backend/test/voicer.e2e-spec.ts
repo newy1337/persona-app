@@ -1,4 +1,5 @@
 import { useTestDatabase } from './database';
+import { stopSchedules } from './scheduler';
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
@@ -156,7 +157,11 @@ describe('Voicer workflow against a real migrated database', () => {
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
-    await app.init();
+    // Свой порт на весь набор: иначе supertest на каждый запрос открывает и
+    // закрывает случайный порт, а его может занять сервер соседнего набора —
+    // запрос уходит в чужое приложение с чужой базой (404, «socket hang up»).
+    await app.listen(0, '127.0.0.1');
+    stopSchedules(app);
     for (const job of module.get(SchedulerRegistry).getCronJobs().values())
       job.stop();
     prisma = module.get(PrismaService);

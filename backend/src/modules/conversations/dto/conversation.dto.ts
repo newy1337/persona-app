@@ -136,13 +136,16 @@ export class ExportDto {
   @ApiProperty({ type: [Number] })
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(100)
+  @ArrayMaxSize(5000)
   @IsInt({ each: true })
   chat_ids: number[];
 
-  @ApiProperty({ enum: ['json', 'txt'] })
-  @IsIn(['json', 'txt'])
-  format: 'json' | 'txt';
+  @ApiProperty({
+    enum: ['json', 'txt', 'html_zip'],
+    description: 'html_zip — ZIP с HTML-перепиской каждого чата, медиа внутри',
+  })
+  @IsIn(['json', 'txt', 'html_zip'])
+  format: 'json' | 'txt' | 'html_zip';
 }
 
 export class EditMessageDto {

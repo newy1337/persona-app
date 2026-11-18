@@ -306,6 +306,8 @@ interface ManagerAgg {
     total: Record<string, number>;
     byDay: Map<string, Record<string, number>>;
   };
+  /** Диалоги, ставшие активными за период (как в холодке): итог и по дням. */
+  active: { total: Set<string>; byDay: Map<string, Set<string>> };
 }
 
 const emptyAgg = (): ManagerAgg => ({
@@ -315,6 +317,7 @@ const emptyAgg = (): ManagerAgg => ({
   talk: { in: 0, out: 0, manual: 0, chats: new Set(), byDay: new Map() },
   leads: { uploaded: 0, valid: 0, replied: 0, byDay: new Map() },
   stages: { total: zeroStages(), byDay: new Map() },
+  active: { total: new Set(), byDay: new Map() },
 });
 
 function mergeAgg(into: ManagerAgg, from: ManagerAgg): ManagerAgg {
@@ -354,6 +357,11 @@ function mergeAgg(into: ManagerAgg, from: ManagerAgg): ManagerAgg {
     for (const [stage, n] of Object.entries(counts))
       t[stage] = (t[stage] ?? 0) + n;
   }
+  for (const c of from.active.total) into.active.total.add(c);
+  for (const [day, set] of from.active.byDay) {
+    if (!into.active.byDay.has(day)) into.active.byDay.set(day, new Set());
+    for (const c of set) into.active.byDay.get(day)!.add(c);
+  }
   return into;
 }
 
@@ -372,6 +380,7 @@ function aggRow(agg: ManagerAgg, range: DayRange) {
     leads_valid: agg.leads.valid,
     leads_replied: agg.leads.replied,
     active_chats: agg.talk.chats.size,
+    active_dialogs: agg.active.total.size,
     stages: agg.stages.total,
     days: range.days
       .map((day) => {
@@ -388,11 +397,13 @@ function aggRow(agg: ManagerAgg, range: DayRange) {
           leads_valid: leadDay?.valid ?? 0,
           leads_replied: leadDay?.replied ?? 0,
           active_chats: talkDay?.chats.size ?? 0,
+          active_dialogs: agg.active.byDay.get(day)?.size ?? 0,
         };
       })
       .filter(
         (d) =>
           d.calls ||
+          d.active_dialogs ||
           d.messages_in ||
           d.messages_out ||
           d.leads_uploaded ||
@@ -733,11 +744,13 @@ export class StatsService {
     const messages = await this.messages(range, true);
     const leads = await this.leadFunnel(range);
     const stages = await this.stageMoves(range, owners);
+    const active = await this.activations(range, owners);
     const ids = new Set([
       ...spend.keys(),
       ...messages.byManager.keys(),
       ...leads.keys(),
       ...stages.keys(),
+      ...active.keys(),
     ]);
     const aggOf = (id: string): ManagerAgg => ({
       spend: spend.get(id) ?? bucket(),
@@ -746,6 +759,7 @@ export class StatsService {
       talk: messages.byManager.get(id) ?? emptyAgg().talk,
       leads: leads.get(id) ?? emptyAgg().leads,
       stages: stages.get(id) ?? emptyAgg().stages,
+      active: active.get(id) ?? emptyAgg().active,
     });
     const order = (
       a: { cost_usd: number; messages_out: number },
@@ -1176,6 +1190,7 @@ export class StatsService {
       leads_valid: managers.reduce((n, r) => n + r.leads_valid, 0),
       leads_replied: managers.reduce((n, r) => n + r.leads_replied, 0),
       active_chats: managers.reduce((n, r) => n + r.active_chats, 0),
+      active_dialogs: managers.reduce((n, r) => n + r.active_dialogs, 0),
       messages_in: managers.reduce((n, r) => n + r.messages_in, 0),
       messages_out: managers.reduce((n, r) => n + r.messages_out, 0),
     };
@@ -1362,6 +1377,54 @@ export class StatsService {
       row.total[m.stage] += 1;
       if (!row.byDay.has(m.day)) row.byDay.set(m.day, zeroStages());
       row.byDay.get(m.day)![m.stage] += 1;
+    }
+    return out;
+  }
+
+  /**
+   * Диалоги, ставшие активными за период, по менеджеру и дню. Логика холодки:
+   * активный — собеседник написал больше ACTIVE_AFTER сообщений после нашего
+   * первого. Диалог становится активным в день, когда пришло сообщение номер
+   * ACTIVE_AFTER + 1; наши сообщения активность не накручивают.
+   */
+  private async activations(
+    range: DayRange,
+    owners: { manager: (chatId: bigint | number | null) => string },
+  ): Promise<Map<string, ManagerAgg['active']>> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ chat_id: bigint; ts: number }>
+    >(Prisma.sql`
+      WITH touched AS (
+        SELECT DISTINCT chat_id FROM messages
+        WHERE role = 'user' AND deleted_at IS NULL
+          AND ts >= ${range.start} AND ts < ${range.end}
+      ),
+      firsts AS (
+        SELECT m.chat_id, MIN(m.ts) AS t0 FROM messages m
+        JOIN touched t ON t.chat_id = m.chat_id
+        WHERE m.role = 'assistant' AND m.deleted_at IS NULL
+        GROUP BY m.chat_id
+      ),
+      numbered AS (
+        SELECT m.chat_id, m.ts,
+               ROW_NUMBER() OVER (PARTITION BY m.chat_id ORDER BY m.ts, m.id) AS n
+        FROM messages m JOIN firsts f ON f.chat_id = m.chat_id
+        WHERE m.role = 'user' AND m.deleted_at IS NULL AND m.ts >= f.t0
+      )
+      SELECT chat_id, ts::int AS ts FROM numbered
+      WHERE n = ${ACTIVE_AFTER + 1}
+        AND ts >= ${range.start} AND ts < ${range.end}`);
+    const out = new Map<string, ManagerAgg['active']>();
+    for (const r of rows) {
+      const manager = owners.manager(r.chat_id);
+      if (!out.has(manager))
+        out.set(manager, { total: new Set(), byDay: new Map() });
+      const row = out.get(manager)!;
+      const chat = String(r.chat_id);
+      row.total.add(chat);
+      const day = dayKey(Number(r.ts));
+      if (!row.byDay.has(day)) row.byDay.set(day, new Set());
+      row.byDay.get(day)!.add(chat);
     }
     return out;
   }

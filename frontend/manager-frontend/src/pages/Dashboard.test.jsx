@@ -5,23 +5,25 @@ import React, { act } from 'react';
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 import { createRoot } from 'react-dom/client';
 import { HeaderToolsContext } from '../components/AppLayout/headerTools';
+import { fakeConversationPage } from '../test/fakeConversationPage';
 
 const DAY = 24 * 3600;
 const now = () => Math.floor(Date.now() / 1000);
 
-const { conversations, queue, hidden, stats } = vi.hoisted(() => ({
-  conversations: vi.fn(),
+const { live, page, queue, stats } = vi.hoisted(() => ({
+  live: vi.fn(),
+  page: vi.fn(),
   queue: vi.fn(),
-  hidden: vi.fn(),
   stats: vi.fn(),
 }));
 
 vi.mock('../api/conversations', () => ({
-  getConversations: conversations,
+  getLiveConversations: live,
+  getConversationPage: page,
   getNeedManagerAssist: queue,
-  getHiddenConversations: hidden,
-  getStats: stats,
   setConversationHidden: vi.fn(),
+  setDealStage: vi.fn(),
+  downloadChats: vi.fn(),
 }));
 
 // Плитки живут в своём модуле: без этой заглушки загрузка падала целиком и
@@ -55,10 +57,12 @@ function Shell({ children }) {
 }
 
 beforeEach(async () => {
-  conversations.mockResolvedValue([row(1, 60), row(2, 3 * 3600), row(3, DAY + 3600)]);
+  sessionStorage.clear();
+  // Активные за сутки сервер отдаёт все, без предела списка в тысячу.
+  live.mockResolvedValue(Array.from({ length: 1185 }, (_, i) => row(i + 1, 60)));
+  page.mockImplementation(fakeConversationPage([row(1, 60), row(2, 3 * 3600), row(3, DAY + 3600)]));
   queue.mockResolvedValue([]);
-  hidden.mockResolvedValue([]);
-  stats.mockResolvedValue({ total: 3, active_now: 2, leads: 0, accounts: 1 });
+  stats.mockResolvedValue({ total: 3346, active_now: 1185, leads: 0, accounts: 1 });
   ({ default: Dashboard } = await import('./Dashboard'));
 });
 
@@ -72,17 +76,24 @@ async function draw() {
   return { host, root };
 }
 
-describe('главная панель: один список вместо двух', () => {
-  it('тяжёлый список запрашивается ровно один раз за загрузку', async () => {
+describe('главная панель: показатели не упираются в предел списка', () => {
+  it('за загрузку — одна страница таблицы и один список активных', async () => {
     const { root } = await draw();
-    expect(conversations).toHaveBeenCalledTimes(1);
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(live).toHaveBeenCalledTimes(1);
     await act(async () => root.unmount());
   });
 
-  it('живые берутся из того же списка: граница — сутки', async () => {
-    const { root } = await draw();
-    // Третья строка старше суток, значит в живых остаются две.
-    expect(published.tools?.liveCount).toBe(2);
+  it('LIVE — все активные за сутки с сервера и совпадает с плиткой «Активны сейчас»', async () => {
+    const { host, root } = await draw();
+    expect(published.tools?.liveCount).toBe(1185);
+    expect(host.textContent).toContain('1185');
+    await act(async () => root.unmount());
+  });
+
+  it('счётчик таблицы — все чаты, а не загруженная страница', async () => {
+    const { host, root } = await draw();
+    expect(host.querySelector('[data-testid="dialogs-total"]').textContent).toBe('ВСЕГО: 3');
     await act(async () => root.unmount());
   });
 });

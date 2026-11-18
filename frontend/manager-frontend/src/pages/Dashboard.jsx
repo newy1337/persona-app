@@ -6,17 +6,14 @@ import LiveConversations from '../components/LiveConversations/LiveConversations
 import StatsBar from '../components/StatsBar/StatsBar';
 import ConversationsTable from '../components/ConversationsTable/ConversationsTable';
 import {
-  getConversations,
-  getHiddenConversations,
+  getLiveConversations,
   getNeedManagerAssist,
   setConversationHidden,
   setDealStage,
 } from '../api/conversations';
 import { getStats } from '../api/stats';
-import { liveRows } from '../utils/chat';
 import { moscowDay, rangeForFilter } from '../utils/panelTime';
-import { rememberReminder, shouldRemind } from '../utils/stageReminder';
-import { withArchive } from '../utils/search';
+import { rememberReminder, shouldRemindFor } from '../utils/stageReminder';
 import { rememberDialog, takeDialogAnchor, useViewState } from '../utils/viewState';
 
 const STAT_TILES = [
@@ -38,7 +35,9 @@ const POLL_MS = 10000;
 function Dashboard() {
   const [liveAgents, setLiveAgents] = useState([]);
   const [managerAgents, setManagerAgents] = useState([]);
-  const [rows, setRows] = useState([]);
+  // Счётчики списка с сервера: аккаунты для фильтра в шапке, чаты без этапа.
+  const [facets, setFacets] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [stats, setStats] = useState([]);
   const [error, setError] = useState(null);
   // Поиск и фильтры помнятся до закрытия вкладки: вышли из чата — список тот же.
@@ -53,10 +52,7 @@ function Dashboard() {
   const [ready, setReady] = useState(false);
 
   const inFlight = useRef(false);
-  const [archiveRows, setArchiveRows] = useState([]);
-  const searching = query.trim() !== '';
-  const searchRef = useRef(searching);
-  searchRef.current = searching;
+  const loads = useRef(0);
   // Период для плиток: фильтр дат должен менять и статистику, не только списки.
   const dateRef = useRef(dateFilter);
   dateRef.current = dateFilter;
@@ -65,21 +61,18 @@ function Dashboard() {
     // иначе при медленном сервере запросы копятся и панель «подвисает».
     if (inFlight.current) return;
     inFlight.current = true;
-    // Поиск должен находить и архивные диалоги: пока в строке поиска что-то
-    // есть, архив подтягивается вместе с основным списком.
-    const wantArchive = searchRef.current && !showHidden;
+    // Список с фильтрами грузит таблица сама (страницами с сервера); здесь —
+    // очередь, все активные за сутки и плитки. reloadKey — сигнал таблице
+    // обновиться; при первой загрузке она и так запрашивает страницу сама.
+    if (loads.current++ > 0) setReloadKey((k) => k + 1);
     Promise.all([
       getNeedManagerAssist(),
-      showHidden ? getHiddenConversations() : getConversations(),
+      getLiveConversations(),
       getStats(rangeForFilter(dateRef.current)),
-      showHidden ? getConversations() : null,
-      wantArchive ? getHiddenConversations().catch(() => []) : null,
     ])
-      .then(([queue, all, raw, visible, archive]) => {
-        setLiveAgents(liveRows(visible ?? all));
+      .then(([queue, live, raw]) => {
+        setLiveAgents(live);
         setManagerAgents(queue);
-        setRows(all);
-        setArchiveRows(archive ?? []);
         setStats(STAT_TILES.map((t) => ({
           id: t.key,
           label: raw?.period && t.periodLabel ? t.periodLabel : t.label,
@@ -92,7 +85,7 @@ function Dashboard() {
         inFlight.current = false;
         setReady(true);
       });
-  }, [showHidden]);
+  }, []);
 
   const changeDealStage = useCallback(
     async (chatId, stage, row) => {
@@ -113,10 +106,10 @@ function Dashboard() {
 
   const [reminder, setReminder] = useState(null);
   useEffect(() => {
-    if (!ready || showHidden) return;
-    const r = shouldRemind(rows, moscowDay());
+    if (!facets || showHidden) return;
+    const r = shouldRemindFor(facets.no_deal, moscowDay());
     setReminder(r.show ? r : null);
-  }, [rows, ready, showHidden]);
+  }, [facets, showHidden]);
   const dismissReminder = () => {
     if (reminder) rememberReminder(reminder.signature, moscowDay());
     setReminder(null);
@@ -132,7 +125,6 @@ function Dashboard() {
       } else {
         request = setConversationHidden(chatId, false);
       }
-      setRows((prev) => prev.filter((r) => r.chat_id !== chatId));
       request
         .then(load)
         .catch((e) => {
@@ -142,11 +134,6 @@ function Dashboard() {
     },
     [load],
   );
-
-  // Начали искать — сразу дотянуть архив, не дожидаясь следующего опроса.
-  useEffect(() => {
-    if (searching && !showHidden) load();
-  }, [searching, showHidden, load]);
 
   // Сменили период — плитки пересчитываются сразу.
   useEffect(() => {
@@ -195,10 +182,10 @@ function Dashboard() {
     rememberDialog(chat);
   };
 
-  const accounts = useMemo(
-    () => [...new Set(rows.map((r) => r.account_id).filter((a) => a != null))].sort(),
-    [rows],
-  );
+  const accounts = useMemo(() => facets?.accounts ?? [], [facets]);
+  const onFacets = useCallback((f, archive) => {
+    if (!archive) setFacets(f);
+  }, []);
   usePublishHeaderTools({
     liveCount: liveAgents.length,
     filters: headFilters,
@@ -221,7 +208,8 @@ function Dashboard() {
           <StatsBar stats={stats} dateFilter={dateFilter} onDateFilterChange={setDateFilter} />
           <div data-anchor-zone="table"><ConversationsTable
             ready={ready}
-            rows={searching && !showHidden ? withArchive(rows, archiveRows) : rows}
+            reloadKey={reloadKey}
+            onFacets={onFacets}
             query={query}
             onQueryChange={setQuery}
             headFilters={headFilters}

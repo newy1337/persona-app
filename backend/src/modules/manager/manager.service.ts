@@ -1,4 +1,5 @@
 import type { Channel } from 'src/channels/ids';
+import { type ConversationFilter, pageOf } from './conversation-filter';
 import {
   accountContact,
   chatChannel,
@@ -52,8 +53,10 @@ import {
 
 export const ACTIVE_WINDOW_S = 24 * 3600;
 
-/** Предел выдачи списка: панель фильтрует и листает на своей стороне. */
+/** Предел старой выдачи списка целиком (карточки чата листают по нему). */
 const CONVERSATIONS_LIMIT = 1000;
+/** Страница списка с фильтрами считается по всем чатам без предела. */
+const NO_LIMIT = 1_000_000;
 
 export interface StageView {
   id: string;
@@ -391,6 +394,56 @@ export class ManagerService {
     return opts.includeHidden ? listed : this.withNextActions(listed);
   }
 
+  /**
+   * Страница списка: отбор, сортировка и счётчики фильтров — на сервере, по
+   * всем чатам пользователя. Прогноз бота — только для строк страницы.
+   * Архив: только скрытые; поиск в основном списке ищет и в архиве.
+   */
+  async conversationPage(
+    accounts: number[] | null,
+    opts: {
+      archive: boolean;
+      filter: ConversationFilter;
+      page: number;
+      size: number;
+    },
+  ) {
+    const full = (includeHidden: boolean) =>
+      this.polls.get(
+        `list:${ManagerService.scopeKey(accounts)}:all:${includeHidden ? 1 : 0}`,
+        3000,
+        () => this.listConversations(accounts, NO_LIMIT, includeHidden),
+      );
+    let rows: ManagerChatRow[];
+    if (opts.archive) rows = (await full(true)).filter((r) => r.hidden);
+    else if (opts.filter.q?.trim()) {
+      const visible = await full(false);
+      const seen = new Set(visible.map((r) => r.chat_id));
+      rows = [
+        ...visible,
+        ...(await full(true)).filter((r) => r.hidden && !seen.has(r.chat_id)),
+      ];
+    } else rows = await full(false);
+    const out = pageOf(rows, opts.filter, opts.page, opts.size);
+    return {
+      ...out,
+      items: opts.archive ? out.items : await this.withNextActions(out.items),
+    };
+  }
+
+  /** Активные за сутки — все, без предела списка: столько же, сколько в плитке. */
+  async activeConversations(accounts: number[] | null) {
+    const since = this.clock.ts() - ACTIVE_WINDOW_S;
+    const rows = await this.polls.get(
+      `list:${ManagerService.scopeKey(accounts)}:all:0`,
+      3000,
+      () => this.listConversations(accounts, NO_LIMIT, false),
+    );
+    return this.withNextActions(
+      rows.filter((r) => (r.last_message_ts ?? 0) >= since),
+    );
+  }
+
   private async listConversations(
     accounts: number[] | null,
     limit: number,
@@ -575,9 +628,12 @@ export class ManagerService {
     const inPeriod = range
       ? Prisma.sql`AND EXISTS (SELECT 1 FROM messages mp WHERE mp.chat_id = c.chat_id AND mp.role = 'user' AND mp.ts >= ${range.start} AND mp.ts < ${range.end})`
       : Prisma.empty;
+    // Без периода — текущий список (без архива), столько же строк в таблице.
+    // За период — все чаты, где клиент писал, и ушедшие потом в архив: так же
+    // считает «Переписок» в статистике по командам.
     const total = await one(Prisma.sql`
       SELECT COUNT(*) AS n FROM contacts c LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
-      WHERE 1 = 1 ${scope} ${HAS_CLIENT_SQL} ${NOT_HIDDEN_SQL} ${inPeriod}`);
+      WHERE 1 = 1 ${scope} ${HAS_CLIENT_SQL} ${range ? Prisma.empty : NOT_HIDDEN_SQL} ${inPeriod}`);
     const active = await one(Prisma.sql`
       SELECT COUNT(*) AS n FROM contacts c LEFT JOIN pinned_facts p ON p.chat_id = c.chat_id
       WHERE EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.chat_id AND m.ts >= ${activeSince})

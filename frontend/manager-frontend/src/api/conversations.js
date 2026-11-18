@@ -10,6 +10,16 @@ export function getConversations() {
   });
 }
 
+/**
+ * Страница списка диалогов: отбор, сортировка и счётчики фильтров — на сервере,
+ * по всем чатам. Пустые параметры не отправляются.
+ */
+export function getConversationPage(params = {}) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '' && v !== false) q.set(k, v === true ? '1' : String(v));
+  return api.get(`/api/manager/conversations/page?${q}`);
+}
+
 export function getHiddenConversations() {
   return api.get('/api/manager/conversations?hidden=1').then((r) => r.items ?? []);
 }
@@ -154,4 +164,33 @@ export function sendReaction(chatId, messageId, emoji) {
 /** Модели и рассуждение для диалога (админ); null — как у личности. */
 export function setChatModels(chatId, patch) {
   return api.put(`/api/conversations/${chatId}/models`, patch);
+}
+
+/**
+ * Массовая выгрузка выбранных диалогов: txt — одним файлом текстом,
+ * html_zip — ZIP, в нём переписка каждого чата HTML-файлом с медиа.
+ */
+export async function downloadChats(chatIds, format) {
+  const res = await fetch('/api/conversations/export', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ chat_ids: chatIds, format }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(Array.isArray(data.message) ? data.message.join('; ') : data.message || `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const header = res.headers.get('content-disposition') || '';
+  const plain = /filename="([^"]+)"/i.exec(header);
+  const name = plain ? plain[1] : format === 'html_zip' ? 'dialogs.zip' : `dialogs.${format}`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return name;
 }

@@ -1,4 +1,5 @@
 import { useTestDatabase } from './database';
+import { stopSchedules } from './scheduler';
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
@@ -154,6 +155,7 @@ describe('Browser calls: authorization, MTProto flow and live socket lifecycle',
       new ValidationPipe({ whitelist: true, transform: true }),
     );
     await app.listen(0);
+    stopSchedules(app);
     for (const job of module.get(SchedulerRegistry).getCronJobs().values())
       job.stop();
     prisma = module.get(PrismaService);
