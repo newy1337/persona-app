@@ -20,7 +20,9 @@ import { ChatExportService } from './chat-export.service';
 import { ZipStream } from './zip-stream';
 
 /** Массовая выгрузка с медиа: сколько диалогов за раз и сколько медиа. */
-const MAX_ZIP_CHATS = 300;
+const MAX_ZIP_CHATS = 5000;
+/** Текстом — одной строкой в памяти: больше за раз не собираем. */
+const MAX_TEXT_CHATS = 1000;
 const ZIP_MEDIA_PER_CHAT = 15 * 1024 * 1024;
 const ZIP_MEDIA_TOTAL = 600 * 1024 * 1024;
 import { Auth } from 'src/decorators/auth.decorator';
@@ -261,11 +263,15 @@ export class ConversationsController {
     @Res() res: Response,
   ) {
     const chatIds = [...new Set(dto.chat_ids)];
+    if (dto.format !== 'html_zip' && chatIds.length > MAX_TEXT_CHATS)
+      throw new UnprocessableEntityException(
+        `текстом за раз — не больше ${MAX_TEXT_CHATS} диалогов; выгрузите архивом HTML`,
+      );
     if (dto.format === 'html_zip' && chatIds.length > MAX_ZIP_CHATS)
       throw new UnprocessableEntityException(
         `с медиа за раз — не больше ${MAX_ZIP_CHATS} диалогов; сузьте фильтр или выгрузите текстом`,
       );
-    for (const id of chatIds) await this.scope.requireChatOwned(user, id);
+    await this.scope.requireChatsOwned(user, chatIds);
     const head =
       chatIds.slice(0, 5).join(',') + (chatIds.length > 5 ? '...' : '');
     if (dto.format === 'html_zip') {

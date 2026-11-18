@@ -152,6 +152,31 @@ export class ScopeService {
     }
   }
 
+  /**
+   * Все чаты списка — в области пользователя: одна проверка на весь список
+   * (выгрузка тысяч диалогов), а не набор запросов на каждый чат.
+   */
+  async requireChatsOwned(user: DashboardUser, chatIds: number[]) {
+    this.requireManager(user);
+    const scope = await this.scopeOf(user);
+    if (scope.isAdmin) return scope;
+    const allowed = new Set(scope.accountIds);
+    const owners = new Map<string, number | null>();
+    for (let i = 0; i < chatIds.length; i += 5000) {
+      const rows = await this.prisma.contact.findMany({
+        where: { chatId: { in: chatIds.slice(i, i + 5000).map(BigInt) } },
+        select: { chatId: true, accountId: true },
+      });
+      for (const r of rows) owners.set(String(r.chatId), r.accountId);
+    }
+    for (const id of chatIds) {
+      const owner = owners.get(String(id));
+      if (owner == null || !allowed.has(owner))
+        throw new NotFoundException('чат не найден');
+    }
+    return scope;
+  }
+
   async requireChatOwned(
     user: DashboardUser,
     chatId: number,

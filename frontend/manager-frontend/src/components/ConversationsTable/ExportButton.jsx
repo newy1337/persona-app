@@ -3,7 +3,7 @@ import { downloadChats } from '../../api/conversations';
 import styles from './ConversationsTable.module.scss';
 
 /** Сколько диалогов за раз выгружает сервер: текстом и с медиа. */
-export const EXPORT_LIMITS = { txt: 1000, html_zip: 300 };
+export const EXPORT_LIMITS = { txt: 1000, html_zip: 5000 };
 
 const word = (n) => {
   const m10 = n % 10, m100 = n % 100;
@@ -73,7 +73,7 @@ export default function ExportButton({ chatIds }) {
       {open && (
         <span className={styles.exportMenu} role="menu">
           {option('txt', 'Текстом (.txt)')}
-          {option('html_zip', 'С фото и голосовыми (.zip)')}
+          {option('html_zip', 'HTML с фото и голосовыми (.zip)')}
         </span>
       )}
       {error && <span className={styles.exportError} role="alert">{error}</span>}

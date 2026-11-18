@@ -22,18 +22,20 @@ test('выгружает отобранные диалоги текстом ил
   const btn = host.querySelector('[data-testid="export-dialogs"]');
   expect(btn.textContent).toBe('Выгрузить 3 диалога');
   await click(btn);
-  await click(item('С фото'));
+  await click(item('HTML'));
   expect(downloadChats).toHaveBeenCalledWith([1, 2, 3], 'html_zip');
   await click(btn);
   await click(item('Текстом'));
   expect(downloadChats).toHaveBeenLastCalledWith([1, 2, 3], 'txt');
 });
 
-test('сверх лимита архив с медиа недоступен, текстом — можно', async () => {
-  await render(Array.from({ length: 301 }, (_, i) => i + 1));
+test('все диалоги (3337) — архивом HTML можно, текстом сверх 1000 — нет', async () => {
+  await render(Array.from({ length: 3337 }, (_, i) => i + 1));
   await click(host.querySelector('[data-testid="export-dialogs"]'));
-  expect(item('С фото').disabled).toBe(true);
-  expect(item('Текстом').disabled).toBe(false);
+  expect(item('HTML').disabled).toBe(false);
+  expect(item('Текстом').disabled).toBe(true);
+  await click(item('HTML'));
+  expect(downloadChats).toHaveBeenCalledWith(expect.arrayContaining([1, 3337]), 'html_zip');
 });
 
 test('без диалогов кнопки нет', async () => {

@@ -136,7 +136,7 @@ export class ExportDto {
   @ApiProperty({ type: [Number] })
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(1000)
+  @ArrayMaxSize(5000)
   @IsInt({ each: true })
   chat_ids: number[];
 
