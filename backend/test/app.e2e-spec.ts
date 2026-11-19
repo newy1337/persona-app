@@ -2841,6 +2841,36 @@ describe('Manager panel API (e2e)', () => {
         .set(h)
         .expect(200);
       expect(none.body.items.map((l) => l.id)).not.toContain(leadId);
+      // счётчики этапов — с учётом поиска и статуса; страницы — на сервере
+      const searched = await request(app.getHttpServer())
+        .get('/api/leads?q=Олег')
+        .set(h)
+        .expect(200);
+      expect(searched.body.total).toBe(1);
+      expect(searched.body.stages).toMatchObject({ soglas: 1, none: 0 });
+      expect(searched.body.counts).toMatchObject({ total: 1, pending: 1 });
+      expect(searched.body.chat_ids).toEqual([chatId]);
+      const otherStatus = await request(app.getHttpServer())
+        .get('/api/leads?status=dead')
+        .set(h)
+        .expect(200);
+      expect(otherStatus.body.stages.soglas).toBe(0);
+      const second = await prisma.lead.create({
+        data: { phoneE164: '+79005550012', insertedAt: 1 },
+      });
+      const paged = await request(app.getHttpServer())
+        .get('/api/leads?size=1&page=2')
+        .set(h)
+        .expect(200);
+      expect(paged.body).toMatchObject({
+        page: 2,
+        size: 1,
+        total: 2,
+        pages: 2,
+      });
+      // свежие сверху: на второй странице — более ранний лид
+      expect(paged.body.items.map((l) => l.id)).toEqual([leadId]);
+      await prisma.lead.delete({ where: { id: second.id } });
       await request(app.getHttpServer())
         .get('/api/leads?deal_stage=nope')
         .set(h)

@@ -112,6 +112,8 @@ export interface LeadFilter {
   status?: string;
   q?: string;
   limit?: number;
+  page?: number;
+  size?: number;
   deal_stage?: DealStageFilter;
 }
 
@@ -447,89 +449,118 @@ export class LeadsService {
   private async listLeads(scope: LeadScope | null, filter: LeadFilter) {
     await this.markReplied();
     const q = filter.q?.trim();
-    const where: Prisma.LeadWhereInput = {
-      AND: [
-        this.scopeWhere(scope),
-        filter.status ? { status: filter.status } : {},
-        q ? { OR: leadSearchClauses(q) } : {},
-        await this.stageWhere(scope, filter.deal_stage),
-      ],
-    };
-    const rows = await this.prisma.lead.findMany({
-      where,
-      orderBy: { id: 'desc' },
-      take: filter.limit ?? 200,
-    });
-    const [names, personas, managers, stages] = await Promise.all([
-      this.accountNames(),
-      this.personaNames(),
-      this.attribution.directory(),
-      this.stagesByChat(rows.map((r) => r.chatId)),
+    // Отбор и счётчики считаем по лёгким строкам всех лидов области, а
+    // полные строки грузим только для страницы.
+    const [all, stages] = await Promise.all([
+      this.prisma.lead.findMany({
+        where: {
+          AND: [this.scopeWhere(scope), q ? { OR: leadSearchClauses(q) } : {}],
+        },
+        select: { id: true, status: true, chatId: true },
+        orderBy: { id: 'desc' },
+      }),
+      this.allStages(),
     ]);
+    const stageOf = (r: { chatId: bigint | null }) =>
+      (r.chatId === null ? undefined : stages.get(String(r.chatId))) ?? 'none';
+    const byStatus = filter.status
+      ? all.filter((r) => r.status === filter.status)
+      : all;
+    const byStage = filter.deal_stage
+      ? all.filter((r) => stageOf(r) === filter.deal_stage)
+      : all;
+    const matched = filter.deal_stage
+      ? byStatus.filter((r) => stageOf(r) === filter.deal_stage)
+      : byStatus;
+
+    // счётчик каждой группы кнопок — с учётом поиска и другой группы
+    const counts: Record<string, number> = Object.fromEntries(
+      LEAD_STATUSES.map((st) => [st, 0]),
+    );
+    for (const r of byStage) counts[r.status] = (counts[r.status] ?? 0) + 1;
+    counts['total'] = byStage.length;
+    const stageCounts: Record<string, number> = Object.fromEntries(
+      DEAL_STAGE_FILTERS.map((st) => [st, 0]),
+    );
+    for (const r of byStatus) stageCounts[stageOf(r)] += 1;
+
+    const size = filter.size ?? filter.limit ?? 200;
+    const pages = Math.max(1, Math.ceil(matched.length / size));
+    const page = Math.min(Math.max(1, filter.page ?? 1), pages);
+    const ids = matched.slice((page - 1) * size, page * size).map((r) => r.id);
+    const [rows, names, personas, managers, pending, exportable] =
+      await Promise.all([
+        this.prisma.lead.findMany({
+          where: { id: { in: ids } },
+          orderBy: { id: 'desc' },
+        }),
+        this.accountNames(),
+        this.personaNames(),
+        this.attribution.directory(),
+        this.prisma.lead.count({
+          where: { AND: [this.scopeWhere(scope), { status: 'pending' }] },
+        }),
+        this.exportableChats(scope, matched),
+      ]);
     return {
       items: rows.map((r) => this.toView(r, names, personas, managers, stages)),
-      counts: await this.counts(scope),
-      stages: await this.stageCounts(scope),
+      total: matched.length,
+      page,
+      pages,
+      size,
+      counts,
+      stages: stageCounts,
+      /** «Запустить прозвон» ставит в очередь всех ожидающих, без фильтров */
+      pending_all: pending,
+      /** чаты отобранных лидов, которые пользователь может выгрузить */
+      chat_ids: exportable,
     };
+  }
+
+  /** Текущий этап сделки всех чатов, где он задан. */
+  private allStages(): Promise<Map<string, DealStage>> {
+    return this.stageCache.get('stages', 3000, async () => {
+      const rows = await this.prisma.$queryRaw<
+        Array<{ chat_id: bigint; stage: string }>
+      >`SELECT chat_id, stage FROM (
+          SELECT chat_id, NULLIF(facts, '')::jsonb->>'deal_stage' AS stage
+          FROM pinned_facts) f
+        WHERE stage IS NOT NULL`;
+      const out = new Map<string, DealStage>();
+      for (const r of rows)
+        if ((DEAL_STAGES as readonly string[]).includes(r.stage))
+          out.set(String(r.chat_id), r.stage as DealStage);
+      return out;
+    });
   }
 
   /**
-   * Этап сделки живёт в карточке чата, а не в лиде: читаем его по chat_id
-   * связанных чатов. Лиды без чата этапа не имеют.
+   * Чаты отобранных лидов без повторов, в порядке списка. Руководителю — только
+   * чаты его аккаунтов: выгрузка проверяет владельца каждого чата.
    */
-  private async stagesByChat(
-    chatIds: Array<bigint | null>,
-  ): Promise<Map<string, DealStage>> {
-    const ids = chatIds.filter((id): id is bigint => id !== null);
-    const out = new Map<string, DealStage>();
-    if (!ids.length) return out;
-    const rows = await this.prisma.$queryRaw<
-      Array<{ chat_id: bigint; stage: string | null }>
-    >`SELECT chat_id, facts::jsonb->>'deal_stage' AS stage
-      FROM pinned_facts WHERE chat_id IN (${Prisma.join(ids)})`;
-    for (const r of rows)
-      if (r.stage && (DEAL_STAGES as readonly string[]).includes(r.stage))
-        out.set(String(r.chat_id), r.stage as DealStage);
-    return out;
-  }
-
-  private async chatIdsInScope(scope: LeadScope | null): Promise<bigint[]> {
-    const rows = await this.prisma.lead.findMany({
-      where: {
-        AND: [this.scopeWhere(scope), { chatId: { not: null } }],
-      },
-      select: { chatId: true },
-    });
-    return rows.map((r) => r.chatId).filter((id): id is bigint => id !== null);
-  }
-
-  private async stageWhere(
+  private async exportableChats(
     scope: LeadScope | null,
-    stage: DealStageFilter | undefined,
-  ): Promise<Prisma.LeadWhereInput> {
-    if (!stage) return {};
-    const stages = await this.stagesByChat(await this.chatIdsInScope(scope));
-    const withStage = [...stages.entries()]
-      .filter(([, s]) => s === stage)
-      .map(([id]) => BigInt(id));
-    if (stage === 'none') {
-      const any = [...stages.keys()].map((id) => BigInt(id));
-      return any.length ? { chatId: { notIn: any } } : {};
+    rows: Array<{ chatId: bigint | null }>,
+  ): Promise<number[]> {
+    let allowed: Set<string> | null = null;
+    if (scope !== null) {
+      const own = scope.accounts.length
+        ? await this.prisma.contact.findMany({
+            where: { accountId: { in: scope.accounts } },
+            select: { chatId: true },
+          })
+        : [];
+      allowed = new Set(own.map((c) => String(c.chatId)));
     }
-    return withStage.length ? { chatId: { in: withStage } } : { id: -1 };
-  }
-
-  /** Сколько лидов на каждом этапе; none — без этапа (включая лидов без чата). */
-  async stageCounts(scope: LeadScope | null): Promise<Record<string, number>> {
-    const out: Record<string, number> = Object.fromEntries(
-      DEAL_STAGE_FILTERS.map((s) => [s, 0]),
-    );
-    const stages = await this.stagesByChat(await this.chatIdsInScope(scope));
-    for (const s of stages.values()) out[s] += 1;
-    const total = await this.prisma.lead.count({
-      where: this.scopeWhere(scope),
-    });
-    out['none'] = total - stages.size;
+    const out: number[] = [];
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (r.chatId === null) continue;
+      const key = String(r.chatId);
+      if (seen.has(key) || (allowed && !allowed.has(key))) continue;
+      seen.add(key);
+      out.push(Number(r.chatId));
+    }
     return out;
   }
 
@@ -548,6 +579,7 @@ export class LeadsService {
   }
 
   private repliedCheckedAt = 0;
+  private readonly stageCache = new TtlCache(4);
 
   private async markReplied(): Promise<void> {
     // Список лидов опрашивается каждые несколько секунд; сверка идёт по

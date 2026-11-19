@@ -113,8 +113,15 @@ function compare(a: FilterableRow, b: FilterableRow, f: ConversationFilter) {
  * Счётчики кнопок фильтров — по всему набору, а не по странице: сколько чатов
  * в каждом канале, этапе сделки и этапе бота, сколько ждут менеджера.
  */
-export function facets(rows: FilterableRow[]) {
-  const channel = { all: rows.length, tg: 0, vk: 0 };
+export function facets(rows: FilterableRow[], f: ConversationFilter = {}) {
+  // Счётчики группы — по чатам, прошедшим все прочие фильтры: «Лид 5» при
+  // выбранном периоде и поиске значит, что по кнопке откроются ровно 5.
+  const except = (key: keyof ConversationFilter) =>
+    rows.filter((r) => matches(r, { ...f, [key]: undefined }));
+  const byChannel = except('channel');
+  const byDeal = except('deal');
+  const byStage = except('stage');
+  const channel = { all: byChannel.length, tg: 0, vk: 0 };
   const deal: Record<string, number> = Object.fromEntries(
     [...DEAL_STAGES, 'none'].map((s) => [s, 0]),
   );
@@ -125,15 +132,19 @@ export function facets(rows: FilterableRow[]) {
   const accounts = new Set<number>();
   const noDeal: number[] = [];
   let fresh = 0;
-  for (const r of rows) {
-    channel[channelKey(r.channel)] += 1;
+  for (const r of byChannel) channel[channelKey(r.channel)] += 1;
+  for (const r of byDeal) {
     const d = r.deal_stage ?? 'none';
     if (d in deal) deal[d] += 1;
+  }
+  for (const r of byStage) {
     if (r.stage?.id) {
       const s = stages.get(r.stage.id) ?? { ...r.stage, count: 0 };
       s.count += 1;
       stages.set(r.stage.id, s);
     }
+  }
+  for (const r of rows) {
     if (r.account_id !== null) accounts.add(r.account_id);
     if (waitsForManager(r)) fresh += 1;
     if (!r.deal_stage && !r.hidden) noDeal.push(r.chat_id);
@@ -155,7 +166,7 @@ export function facets(rows: FilterableRow[]) {
   };
 }
 
-/** Отбор, сортировка и страница; счётчики — по всему набору до отбора. */
+/** Отбор, сортировка и страница; счётчик группы — с учётом прочих фильтров. */
 export function pageOf<T extends FilterableRow>(
   rows: T[],
   f: ConversationFilter,
@@ -175,6 +186,6 @@ export function pageOf<T extends FilterableRow>(
     page: current,
     pages,
     size,
-    facets: facets(rows),
+    facets: facets(rows, f),
   };
 }

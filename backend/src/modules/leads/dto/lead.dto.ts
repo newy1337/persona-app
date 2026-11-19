@@ -222,4 +222,17 @@ export class ListLeadsQuery {
   @Min(1)
   @Max(2000)
   limit?: number;
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+  @ApiPropertyOptional({ default: 200, description: 'лидов на странице' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  size?: number;
 }

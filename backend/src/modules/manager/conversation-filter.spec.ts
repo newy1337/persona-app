@@ -78,7 +78,7 @@ describe('список диалогов: отбор на сервере как �
     ).toBe(false);
   });
 
-  it('страница, общий итог и счётчики — по всем чатам, а не по странице', () => {
+  it('страница, общий итог и счётчики — по всем отобранным чатам, а не по странице', () => {
     const rows = Array.from({ length: 130 }, (_, i) =>
       row(i + 1, {
         channel: i % 3 === 0 ? 'vk' : 'telegram',
@@ -94,8 +94,9 @@ describe('список диалогов: отбор на сервере как �
     expect(p.items).toHaveLength(20);
     expect(p.items.every((r) => r.channel === 'vk')).toBe(true);
     expect(p.facets.channel).toEqual({ all: 130, tg: 86, vk: 44 });
-    expect(p.facets.deal.deposit).toBe(10);
-    expect(p.facets.deal.none).toBe(120);
+    // этапы считаются среди VK-чатов (i % 3 === 0): deposit — i = 0, 3, 6, 9
+    expect(p.facets.deal.deposit).toBe(4);
+    expect(p.facets.deal.none).toBe(40);
     expect(p.facets.new).toBe(2);
     expect(p.facets.no_deal.count).toBe(120);
     expect(p.facets.no_deal.signature).toMatch(/^[0-9a-f]{40}$/);
@@ -119,6 +120,21 @@ describe('список диалогов: отбор на сервере как �
         (r) => r.name,
       ),
     ).toEqual(['Вера', 'Борис', 'Анна']);
+  });
+
+  it('счётчик группы — с учётом прочих фильтров, но не своего', () => {
+    const rows = [
+      row(1, { deal_stage: 'lead', last_message_ts: 100 }),
+      row(2, { deal_stage: 'lead', last_message_ts: 500, channel: 'vk' }),
+      row(3, { deal_stage: 'deposit', last_message_ts: 500 }),
+      row(4, { last_message_ts: 500 }),
+    ];
+    const p = pageOf(rows, { deal: 'lead', since: 400 }, 1, 10);
+    expect(p.total).toBe(1);
+    // период отсекает чат 1: «Лид» — 1, а не 2; свой выбор этапа не сужает
+    expect(p.facets.deal).toMatchObject({ lead: 1, deposit: 1, none: 1 });
+    // канал считается среди лидов за период
+    expect(p.facets.channel).toEqual({ all: 1, tg: 0, vk: 1 });
   });
 
   it('номер страницы за пределами — последняя существующая', () => {

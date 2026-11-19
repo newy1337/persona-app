@@ -1,7 +1,7 @@
 import { CreateLeadForm, LeadsTable } from '../../ui/ManagerRegion';
 import { personaLabel } from '../../utils/persona';
 import { PanelUX } from '../../ui/PanelUX';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   deleteLead,
@@ -18,6 +18,11 @@ import { getAccounts } from '../../api/accounts';
 import s from '../../styles/AdminPage.module.scss';
 import { DEAL_STAGE_FILTERS, dealStageLabel } from '../../data/dealStages';
 import { MANUAL_TRAFFIC_SOURCES } from '../../utils/trafficSource';
+import ExportButton from '../../components/ConversationsTable/ExportButton';
+import pager from '../../components/ConversationsTable/ConversationsTable.module.scss';
+
+/** Лидов на странице. */
+export const LEADS_PAGE_SIZE = 100;
 
 const STATUS = [
   { key: '', label: 'Все' },
@@ -247,6 +252,8 @@ export default function Leads() {
   const [status, setStatus] = useState('');
   const [dealStage, setDealStage] = useState('');
   const [q, setQ] = useState('');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
   const [outreach, setOutreach] = useState(null);
   const [error, setError] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -260,12 +267,25 @@ export default function Leads() {
     getLeadPersonas().then((r) => setPersonas(r.items ?? [])).catch(() => setPersonas([]));
   }, []);
 
+  // поиск идёт на сервере: ждём, пока перестанут печатать
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+  useEffect(() => setPage(1), [status, query, dealStage]);
+
+  // чаты выбранных лидов: выделение живёт и на других страницах
+  const chatOf = useRef(new Map());
+  useEffect(() => {
+    for (const l of data.items) chatOf.current.set(l.id, l.telegram_user_id ?? null);
+  }, [data.items]);
+
   const load = useCallback(() => {
-    Promise.all([getLeads({ status, q, deal_stage: dealStage }), getOutreachStatus().catch(() => null)])
+    Promise.all([getLeads({ status, q: query, deal_stage: dealStage, page, size: LEADS_PAGE_SIZE }), getOutreachStatus().catch(() => null)])
       .then(([d, o]) => { setData(d); setOutreach(o); })
       .catch((e) => setError(e.detail || e.message))
       .finally(() => setReady(true));
-  }, [status, q, dealStage]);
+  }, [status, query, dealStage, page]);
 
   useEffect(() => {
     load();
@@ -293,6 +313,17 @@ export default function Leads() {
   const ids = [...selected];
   const counts = data.counts ?? {};
   const stageCounts = data.stages ?? {};
+  const pendingAll = data.pending_all ?? counts.pending ?? 0;
+  const found = data.total ?? data.items.length;
+  const pages = data.pages ?? 1;
+  const current = data.page ?? 1;
+  const size = data.size ?? LEADS_PAGE_SIZE;
+  // выгружаем выбранных лидов, а без выбора — всех отобранных; сервер отдаёт
+  // только те чаты, что пользователю можно выгрузить
+  const exportable = data.chat_ids ?? [];
+  const exportIds = selected.size
+    ? [...new Set(ids.map((id) => chatOf.current.get(id)))].filter((id) => exportable.includes(id))
+    : exportable;
 
   return (
     <div className="mr-leads">
@@ -307,8 +338,8 @@ export default function Leads() {
                   <button className={s.btn} onClick={() => run(() => stopOutreach(ids))}>Снять ({ids.length})</button>
                 </>
               ) : (
-                <button className={s.btnPrimary} disabled={!counts.pending} onClick={() => run(() => startOutreach())}>
-                  Запустить прозвон ({counts.pending ?? 0})
+                <button className={s.btnPrimary} disabled={!pendingAll} onClick={() => run(() => startOutreach())}>
+                  Запустить прозвон ({pendingAll})
                 </button>
               )}
             </div>
@@ -358,7 +389,14 @@ export default function Leads() {
             ))}
           </div>
 
-          <LeadsTable ready={ready} rows={data.items} query={q} status={status || dealStage} selected={selected}
+          <div className={s.actions} style={{ margin: '0 0 12px', alignItems: 'center' }} data-testid="lead-export">
+            <span className={s.muted} style={{ fontSize: 12 }}>
+              Найдено: {found.toLocaleString('ru-RU')}{selected.size ? ` · выбрано ${selected.size}` : ''}
+            </span>
+            <ExportButton key={selected.size ? 'selected' : 'all'} chatIds={exportIds} />
+          </div>
+
+          <LeadsTable ready={ready} rows={data.items} query={query} status={status || dealStage} selected={selected}
             onToggle={toggle} onSelectVisible={checked => setSelected(previous => {
               const next = new Set(previous);
               for (const row of data.items) { if (checked) next.add(row.id); else next.delete(row.id); }
@@ -370,6 +408,15 @@ export default function Leads() {
             onPersonaChange={(id, persona_id) => run(() => updateLead(id, { persona_id }))}
             onEdit={(id, patch) => run(() => updateLead(id, patch))}
             personas={personas} helpers={{ PersonaSelect, statusLabels: LABEL, statusClasses: BADGE, date: fmtTs, dealStage: dealStageLabel }} />
+          {pages > 1 && (
+            <nav className={pager.pager} aria-label="Страницы лидов">
+              <button className={pager.pagerButton} onClick={() => setPage(current - 1)} disabled={current === 1}>Назад</button>
+              <span className={pager.pagerLabel} role="status">
+                {(current - 1) * size + 1}–{Math.min(current * size, found)} из {found.toLocaleString('ru-RU')}
+              </span>
+              <button className={pager.pagerButton} onClick={() => setPage(current + 1)} disabled={current === pages}>Вперёд</button>
+            </nav>
+          )}
       {importing && <ImportDialog personas={personas} onClose={() => { setImporting(false); load(); }} />}
       {deleting && (
         <DeleteLeadDialog
