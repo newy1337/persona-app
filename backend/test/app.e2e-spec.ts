@@ -7904,8 +7904,8 @@ describe('Manager panel API (e2e)', () => {
           .cost_usd,
       ).toBe(0);
       expect(all.body.sources.map((x: any) => x.label)).toEqual([
-        'Базовик',
-        'Горячий лидген',
+        'Базовики и свой трафик',
+        'Beboo Bot',
         'Холодный лидген',
       ]);
       const onlyBase = await request(app.getHttpServer())

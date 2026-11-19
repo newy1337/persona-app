@@ -248,7 +248,7 @@ test('форма лида: без источника трафика не доб�
   const post = vi.spyOn(api, 'post').mockResolvedValue({ ok: true });
   await render(<CreateLeadForm personas={[{ slug: 'nastya', name: 'Настя' }]} PersonaSelect={() => null} onDone={() => {}} onCancel={() => {}} />);
   const source = host.querySelector('select[aria-label="Источник трафика"]');
-  expect([...source.options].map(o => o.textContent)).toEqual(['— выберите —', 'Базовик', 'Горячий лидген']);
+  expect([...source.options].map(o => o.textContent)).toEqual(['— выберите —', 'Базовики и свой трафик', 'Beboo Bot']);
   await input(host.querySelector('input'), '+79001234567');
   const submit = host.querySelector('button[type=submit]');
   expect(submit.disabled).toBe(true);

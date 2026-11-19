@@ -1,7 +1,8 @@
 /**
- * Источник трафика лида: откуда номер. Базовик и горячий лидген выбирает
- * менеджер при добавлении, холодный лидген ставится сам — так приходит
- * холодка (/api/post/cold), горячий — так приходят лиды по /api/post.
+ * Источник трафика лида: откуда номер. «Базовики и свой трафик» (base) и
+ * «Beboo Bot» (hot_leadgen) выбирает менеджер при добавлении; холодный лидген
+ * ставится сам — так приходит холодка (/api/post/cold), hot_leadgen — так
+ * приходят лиды по /api/post.
  */
 export const TRAFFIC_SOURCES = ['base', 'hot_leadgen', 'cold_leadgen'] as const;
 export type TrafficSource = (typeof TRAFFIC_SOURCES)[number];
@@ -10,8 +11,8 @@ export type TrafficSource = (typeof TRAFFIC_SOURCES)[number];
 export const MANUAL_TRAFFIC_SOURCES = ['base', 'hot_leadgen'] as const;
 
 export const TRAFFIC_SOURCE_LABELS: Readonly<Record<TrafficSource, string>> = {
-  base: 'Базовик',
-  hot_leadgen: 'Горячий лидген',
+  base: 'Базовики и свой трафик',
+  hot_leadgen: 'Beboo Bot',
   cold_leadgen: 'Холодный лидген',
 };
 

@@ -82,12 +82,12 @@ export class CreateLeadDto {
   source_type?: string;
   @ApiPropertyOptional({
     enum: MANUAL_TRAFFIC_SOURCES,
-    description: 'источник трафика: базовик или горячий лидген',
+    description: 'источник трафика: базовики и свой трафик или Beboo Bot',
   })
   @IsOptional()
   @IsIn(MANUAL_TRAFFIC_SOURCES, {
     message:
-      'источник трафика: base (базовик) или hot_leadgen (горячий лидген)',
+      'источник трафика: base (базовики и свой трафик) или hot_leadgen (Beboo Bot)',
   })
   traffic_source?: string;
   @ApiPropertyOptional()
@@ -137,7 +137,7 @@ export class ImportLeadsDto {
   @IsOptional()
   @IsIn(MANUAL_TRAFFIC_SOURCES, {
     message:
-      'источник трафика: base (базовик) или hot_leadgen (горячий лидген)',
+      'источник трафика: base (базовики и свой трафик) или hot_leadgen (Beboo Bot)',
   })
   traffic_source?: string;
 
@@ -183,7 +183,7 @@ export class UpdateLeadDto {
   @IsOptional()
   @IsIn(MANUAL_TRAFFIC_SOURCES, {
     message:
-      'источник трафика: base (базовик) или hot_leadgen (горячий лидген)',
+      'источник трафика: base (базовики и свой трафик) или hot_leadgen (Beboo Bot)',
   })
   traffic_source?: string;
   @ApiPropertyOptional({ nullable: true })

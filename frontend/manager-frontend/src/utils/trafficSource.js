@@ -1,7 +1,7 @@
 /** Источник трафика лида: откуда номер. Холодку ставит сервис — руками не выбирают. */
 export const TRAFFIC_SOURCES = [
-  { id: 'base', label: 'Базовик' },
-  { id: 'hot_leadgen', label: 'Горячий лидген' },
+  { id: 'base', label: 'Базовики и свой трафик' },
+  { id: 'hot_leadgen', label: 'Beboo Bot' },
   { id: 'cold_leadgen', label: 'Холодный лидген' },
 ];
 

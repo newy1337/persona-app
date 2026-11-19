@@ -742,7 +742,7 @@ export class LeadsService {
     // Без источника лид выпадает из статистики по источникам — не принимаем.
     if (!dto.traffic_source)
       throw new UnprocessableEntityException(
-        'укажите источник трафика: базовик или горячий лидген',
+        'укажите источник трафика: «Базовики и свой трафик» или «Beboo Bot»',
       );
     const contact = this.contactOf(
       dto,
@@ -811,7 +811,7 @@ export class LeadsService {
     // Источник ставится всему импорту сразу — без него лиды не попадут в статистику.
     if (!dto.traffic_source)
       throw new UnprocessableEntityException(
-        'укажите источник трафика импорта: базовик или горячий лидген',
+        'укажите источник трафика импорта: «Базовики и свой трафик» или «Beboo Bot»',
       );
     let batchPersona = await this.personaOf(dto.persona_id);
     const drafts: Array<LeadDraft & { preferred_account_id?: number | null }> =

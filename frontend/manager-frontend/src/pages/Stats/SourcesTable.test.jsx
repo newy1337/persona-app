@@ -23,12 +23,12 @@ test('админ: регионы с итогом, разбивка по исто
   const onSource = vi.fn();
   await act(async () => root.render(<SourcesByRegion data={data} source="" onSource={onSource} />));
   const head = [...host.querySelectorAll('thead th')].map((th) => th.textContent);
-  expect(head).toEqual(['Регион', 'Лидов', 'Базовик', 'Горячий лидген', 'Холодный лидген', 'Не отмечен', 'Написали', 'Ответил', 'Недоступен', 'Вброс']);
+  expect(head).toEqual(['Регион', 'Лидов', 'Базовики и свой трафик', 'Beboo Bot', 'Холодный лидген', 'Не отмечен', 'Написали', 'Ответил', 'Недоступен', 'Вброс']);
   const rows = [...host.querySelectorAll('tbody tr')].map((r) => r.firstChild.textContent);
   expect(rows).toEqual(['Регион 0737', 'Без региона', 'Итого']);
   const select = host.querySelector('select[aria-label="Источник трафика"]');
   await act(async () => { select.value = 'base'; select.dispatchEvent(new Event('change', { bubbles: true })); });
   expect(onSource).toHaveBeenCalledWith('base');
   await act(async () => root.render(<SourcesByRegion data={data} source="base" onSource={onSource} />));
-  expect([...host.querySelectorAll('thead th')].map((th) => th.textContent)).not.toContain('Базовик');
+  expect([...host.querySelectorAll('thead th')].map((th) => th.textContent)).not.toContain('Базовики и свой трафик');
 });
