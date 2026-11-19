@@ -372,7 +372,7 @@ export default function Leads() {
                 </button>
               ))}
             </div>
-            <input className={s.field} placeholder="поиск: телефон, @username, имя, город" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 240 }} />
+            <input className={s.field} placeholder="поиск: телефон, @username, имя, город, менеджер" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 240 }} />
           </div>
           <div className={s.actions} style={{ margin: '0 0 12px', alignItems: 'center' }} data-testid="lead-stage-filters" aria-label="Этап сделки">
             <span className={s.muted} style={{ fontSize: 12 }}>Этап:</span>

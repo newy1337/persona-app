@@ -454,7 +454,17 @@ export class LeadsService {
     const [all, stages] = await Promise.all([
       this.prisma.lead.findMany({
         where: {
-          AND: [this.scopeWhere(scope), q ? { OR: leadSearchClauses(q) } : {}],
+          AND: [
+            this.scopeWhere(scope),
+            q
+              ? {
+                  OR: [
+                    ...leadSearchClauses(q),
+                    ...(await this.managerClauses(q)),
+                  ],
+                }
+              : {},
+          ],
         },
         select: { id: true, status: true, chatId: true },
         orderBy: { id: 'desc' },
@@ -515,6 +525,34 @@ export class LeadsService {
       /** чаты отобранных лидов, которые пользователь может выгрузить */
       chat_ids: exportable,
     };
+  }
+
+  /**
+   * Поиск по менеджеру: логин или код региона. Лид менеджера — тот, что
+   * пишут с его аккаунта, или тот, что он добавил.
+   */
+  private async managerClauses(q: string): Promise<Prisma.LeadWhereInput[]> {
+    const needle = q.replace(/^@/, '');
+    const users = await this.prisma.dashboardUser.findMany({
+      where: {
+        OR: [
+          { username: { contains: needle, mode: 'insensitive' } },
+          { regionCode: needle },
+        ],
+      },
+      select: { id: true, accounts: { select: { accountId: true } } },
+    });
+    if (!users.length) return [];
+    const accounts = users.flatMap((u) => u.accounts.map((a) => a.accountId));
+    return [
+      { ownerUserId: { in: users.map((u) => u.id) } },
+      ...(accounts.length
+        ? [
+            { assignedAccountId: { in: accounts } },
+            { preferredAccountId: { in: accounts } },
+          ]
+        : []),
+    ];
   }
 
   /** Текущий этап сделки всех чатов, где он задан. */

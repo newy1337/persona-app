@@ -7749,6 +7749,18 @@ describe('Manager panel API (e2e)', () => {
           outputTokens: 0,
         },
       });
+      // поиск по логину менеджера и коду региона
+      const byManager = await request(app.getHttpServer())
+        .get('/api/leads?q=TS-MAN')
+        .set(h)
+        .expect(200);
+      expect(byManager.body.total).toBe(3);
+      const byRegion = await request(app.getHttpServer())
+        .get('/api/leads?q=0707')
+        .set(h)
+        .expect(200);
+      expect(byRegion.body.total).toBe(3);
+
       // карточка в диалоге: когда лид добавлен — по первой карточке чата
       const firstAdded = base[0].insertedAt - 60;
       await prisma.lead.update({
