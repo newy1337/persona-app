@@ -3183,6 +3183,52 @@ describe('Manager panel API (e2e)', () => {
       expect(await seen(h)).toEqual(
         expect.arrayContaining(['ira_lead', 'lena_lead']),
       );
+      // Этап: менеджеру — текущий этап чата, админу — дошёл ли чат до этапа
+      // (как в статистике). Лид Иры был «Лидом», теперь «Депозит».
+      const stageChat = 424399n;
+      await prisma.lead.update({
+        where: { id: leadIra.body.id },
+        data: { chatId: stageChat },
+      });
+      await prisma.leadFacts.create({
+        data: {
+          chatId: stageChat,
+          facts: JSON.stringify({ deal_stage: 'deposit' }),
+        },
+      });
+      await prisma.funnelEvent.createMany({
+        data: [
+          { to: 'lead', ts: now - 3600 },
+          { to: 'deposit', ts: now - 600 },
+        ].map((e) => ({
+          personaId: 'nastya',
+          chatId: stageChat,
+          eventType: 'deal_stage_set',
+          eventMeta: JSON.stringify({ from: null, to: e.to, note: '' }),
+          ts: e.ts,
+        })),
+      });
+      const stagesOf = async (hh, q = '') =>
+        (
+          await request(app.getHttpServer())
+            .get(`/api/leads?q=ira_lead${q}`)
+            .set(hh)
+            .expect(200)
+        ).body;
+      expect((await stagesOf(ira.h)).stages).toMatchObject({
+        lead: 0,
+        deposit: 1,
+      });
+      expect((await stagesOf(ira.h, '&deal_stage=lead')).total).toBe(0);
+      expect((await stagesOf(h)).stages).toMatchObject({ lead: 1, deposit: 1 });
+      expect((await stagesOf(h, '&deal_stage=lead')).total).toBe(1);
+      await prisma.funnelEvent.deleteMany({ where: { chatId: stageChat } });
+      await prisma.leadFacts.deleteMany({ where: { chatId: stageChat } });
+      await prisma.lead.update({
+        where: { id: leadIra.body.id },
+        data: { chatId: null },
+      });
+
       // Чужой лид нельзя ни изменить, ни поставить в очередь, ни удалить; дубль — без номера и статуса чужого лида.
       await request(app.getHttpServer())
         .put(`/api/leads/${leadLena!.id}`)

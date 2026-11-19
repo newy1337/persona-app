@@ -471,13 +471,16 @@ export class LeadsService {
         orderBy: { id: 'desc' },
       }),
       this.allStages(),
-      stageHistories(this.prisma),
+      // админу — как в статистике, остальным — текущий этап
+      scope === null ? stageHistories(this.prisma) : null,
     ]);
-    // Этап — как в статистике: лид на «Лиде», если его чат дошёл до лида
-    // (даже если потом депозит или архив). «Без этапа» — этапа нет сейчас.
+    // Админу этап — как в статистике: лид на «Лиде», если его чат дошёл до
+    // лида (даже если потом депозит или архив). Остальным — этап сейчас.
+    // «Без этапа» — этапа нет сейчас.
     const inStage = (r: { chatId: bigint | null }, stage: string) => {
       const chat = r.chatId === null ? null : String(r.chatId);
       if (stage === 'none') return chat === null || !stages.has(chat);
+      if (!histories) return chat !== null && stages.get(chat) === stage;
       const h = chat === null ? undefined : histories.get(chat);
       return h ? reachedStage(h, stage) : false;
     };

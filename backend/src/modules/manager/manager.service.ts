@@ -13,6 +13,7 @@ import type { NextBotAction } from 'src/brain/dialogue/forecast';
 import { Prisma } from '@prisma/client';
 import { resolveRange, type DayRange } from '../stats/range';
 import {
+  type ChatStageHistory,
   NO_STAGE_HISTORY,
   stageHistories,
   stageMovesInRange,
@@ -416,17 +417,22 @@ export class ManagerService {
         3000,
         () => this.listConversations(accounts, NO_LIMIT, includeHidden),
       );
-    // Этап сделки — кто до него дошёл, как в статистике: архивные чаты тоже
-    // считаются и по кнопке этапа показываются.
+    // Админу этап сделки — кто до него дошёл, как в статистике: архивные чаты
+    // тоже считаются и по кнопке этапа показываются (выгрузка по этапам).
+    // Остальным — текущий этап чата.
+    const reachedMode = accounts === null;
     const [everything, histories] = await Promise.all([
       full(true),
-      stageHistories(this.prisma),
+      reachedMode ? stageHistories(this.prisma) : null,
     ]);
-    const all = everything.map((r) => ({
-      ...r,
-      reached: histories.get(String(r.chat_id)) ?? NO_STAGE_HISTORY,
-    }));
-    const deal = opts.filter.deal && opts.filter.deal !== 'none';
+    const all: Array<ManagerChatRow & { reached?: ChatStageHistory }> =
+      histories
+        ? everything.map((r) => ({
+            ...r,
+            reached: histories.get(String(r.chat_id)) ?? NO_STAGE_HISTORY,
+          }))
+        : everything;
+    const deal = reachedMode && opts.filter.deal && opts.filter.deal !== 'none';
     const rows = opts.archive
       ? all.filter((r) => r.hidden)
       : opts.filter.q?.trim() || deal
@@ -437,7 +443,7 @@ export class ManagerService {
       opts.filter,
       opts.page,
       opts.size,
-      opts.archive ? rows : all,
+      opts.archive || !reachedMode ? rows : all,
     );
     // история этапов — только для отбора, в ответ не идёт
     const items: ManagerChatRow[] = out.items.map(
