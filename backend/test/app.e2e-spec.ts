@@ -696,6 +696,51 @@ describe('Manager panel API (e2e)', () => {
     expect(byDeal.body.items.every((r: any) => r.deal_stage === 'vbros')).toBe(
       true,
     );
+    // этап сделки — кто дошёл до него, как в статистике: чат сейчас на
+    // «Вбросе», но лидом был — он и под «Лидом». В списке только чаты, где
+    // клиент писал: даём ему сообщение на время проверки.
+    const hadContact = await app
+      .get(PrismaService)
+      .contact.findUnique({ where: { chatId: BigInt(chatId) } });
+    if (!hadContact)
+      await app
+        .get(PrismaService)
+        .contact.create({ data: { chatId: BigInt(chatId), createdAt: 1 } });
+    const clientMsg = await app.get(PrismaService).message.create({
+      data: {
+        chatId: BigInt(chatId),
+        ts: Math.floor(Date.now() / 1000),
+        role: 'user',
+        text: 'привет',
+      },
+    });
+    (app.get(ManagerService) as any).polls.clear();
+    const withClient = await request(app.getHttpServer())
+      .get('/api/manager/conversations/page')
+      .set(h)
+      .expect(200);
+    expect(withClient.body.facets.deal.lead).toBe(tilesAll.body.stage_lead);
+    const reachedLead = await request(app.getHttpServer())
+      .get('/api/manager/conversations/page?deal=lead')
+      .set(h)
+      .expect(200);
+    expect(reachedLead.body.items.map((r: any) => r.chat_id)).toContain(chatId);
+    expect(reachedLead.body.items[0].reached).toBeUndefined();
+    const leadToday = await request(app.getHttpServer())
+      .get(`/api/manager/conversations/page?from=${today}&to=${today}`)
+      .set(h)
+      .expect(200);
+    expect(leadToday.body.facets.deal).toMatchObject({
+      lead: tilesToday.body.stage_lead,
+      vbros: tilesToday.body.stage_vbros,
+    });
+    const leadOld = await request(app.getHttpServer())
+      .get(
+        '/api/manager/conversations/page?deal=lead&from=2020-01-01&to=2020-01-02',
+      )
+      .set(h)
+      .expect(200);
+    expect(leadOld.body.total).toBe(0);
     await request(app.getHttpServer())
       .get('/api/manager/conversations/page?deal=nope')
       .set(h)
@@ -706,6 +751,26 @@ describe('Manager panel API (e2e)', () => {
       .set(h)
       .send({ stage: 'archive', note: 'перестал отвечать' })
       .expect(200);
+    // архивный чат из основного списка скрыт, но по кнопке «Архив» — есть
+    (app.get(ManagerService) as any).polls.clear();
+    const byArchive = await request(app.getHttpServer())
+      .get('/api/manager/conversations/page?deal=archive')
+      .set(h)
+      .expect(200);
+    expect(byArchive.body.items.map((r: any) => r.chat_id)).toContain(chatId);
+    const mainList = await request(app.getHttpServer())
+      .get('/api/manager/conversations/page')
+      .set(h)
+      .expect(200);
+    expect(mainList.body.facets.deal.archive).toBe(byArchive.body.total);
+    await app
+      .get(PrismaService)
+      .message.delete({ where: { id: clientMsg.id } });
+    if (!hadContact)
+      await app
+        .get(PrismaService)
+        .contact.delete({ where: { chatId: BigInt(chatId) } });
+    (app.get(ManagerService) as any).polls.clear();
     // ушёл в архив: из «Всего диалогов» пропал, а в диалогах за сегодня остался
     const db = app.get(PrismaService);
     await db.contact.create({ data: { chatId: 777099n, createdAt: 1 } });

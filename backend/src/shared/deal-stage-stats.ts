@@ -3,7 +3,13 @@ import { DEAL_STAGES, DEAL_STAGE_EVENT } from 'src/domain/deal-stage';
 import { dayKey } from 'src/modules/stats/range';
 import { TtlCache } from './ttl-cache';
 
-type ReachedRow = { chat_id: bigint; stages: string[]; archived: boolean };
+type ReachedRow = {
+  chat_id: bigint;
+  stages: string[];
+  archived: boolean;
+  /** все фактически поставленные этапы (и архив) с моментом */
+  sets: Array<{ stage: string; ts: number }>;
+};
 // Проход по всем сменам этапов: тысячи строк. Плитки дашборда спрашивают его
 // у каждого менеджера раз в 10 секунд — отдаём общий ответ.
 const reachedRows = new WeakMap<object, TtlCache>();
@@ -240,7 +246,10 @@ async function actualReachedRows(prisma: PrismaService): Promise<ReachedRow[]> {
     const key = String(chatId);
     let row = byChat.get(key);
     if (!row)
-      byChat.set(key, (row = { chat_id: chatId, stages: [], archived: false }));
+      byChat.set(
+        key,
+        (row = { chat_id: chatId, stages: [], archived: false, sets: [] }),
+      );
     return row;
   };
   const moves = actualStageMoves(
@@ -259,8 +268,88 @@ async function actualReachedRows(prisma: PrismaService): Promise<ReachedRow[]> {
     const row = rowOf(m.chatId);
     if (!row.stages.includes(m.stage)) row.stages.push(m.stage);
   }
+  for (const e of actualStageSets(
+    sets.map((e) => ({
+      chatId: e.chat_id,
+      ts: Number(e.ts),
+      id: Number(e.id),
+      to: e.to ?? '',
+      note: e.note ?? '',
+    })),
+  ))
+    rowOf(e.chatId).sets.push({ stage: e.to, ts: e.ts });
   for (const a of archived) rowOf(a.chat_id).archived = true;
   return [...byChat.values()];
+}
+
+/** Все смены этапа, кроме ошибочных кликов, по порядку. */
+function actualStageSets(events: StageSetEvent[]): StageSetEvent[] {
+  const byChat = new Map<string, StageSetEvent[]>();
+  for (const e of events) {
+    const key = String(e.chatId);
+    if (!byChat.has(key)) byChat.set(key, []);
+    byChat.get(key)!.push(e);
+  }
+  const out: StageSetEvent[] = [];
+  for (const list of byChat.values()) {
+    list.sort((a, b) => a.ts - b.ts || a.id - b.id);
+    list.forEach((e, i) => {
+      if (!(DEAL_STAGES as readonly string[]).includes(e.to)) return;
+      if (!isMisclick(e, list[i + 1])) out.push(e);
+    });
+  }
+  return out;
+}
+
+/** Этапы чата для фильтров панели: что фактически ставили и в архиве ли он. */
+export interface ChatStageHistory {
+  sets: Array<{ stage: string; ts: number }>;
+  archived: boolean;
+}
+
+export const NO_STAGE_HISTORY: ChatStageHistory = { sets: [], archived: false };
+
+/**
+ * Дошёл ли чат до этапа — как в статистике. Без периода: этап хоть раз
+ * фактически ставили, архив — чат в архиве сейчас. С периодом [since, until) —
+ * этап поставили в этот период (архив тоже).
+ */
+export function reachedStage(
+  h: ChatStageHistory,
+  stage: string,
+  since?: number,
+  until?: number,
+): boolean {
+  if (since === undefined && until === undefined)
+    return stage === 'archive'
+      ? h.archived
+      : h.sets.some((x) => x.stage === stage);
+  return h.sets.some(
+    (x) =>
+      x.stage === stage &&
+      (since === undefined || x.ts >= since) &&
+      (until === undefined || x.ts < until),
+  );
+}
+
+async function cachedReachedRows(prisma: PrismaService) {
+  // Дашборд опрашивает это раз в 10 секунд: считаем раз в 30 секунд на всех.
+  let cache = reachedRows.get(prisma);
+  if (!cache) reachedRows.set(prisma, (cache = new TtlCache()));
+  return cache.get('rows', REACHED_TTL_MS, () => actualReachedRows(prisma));
+}
+
+/** Этапы всех чатов, где их ставили или где чат в архиве: chat_id → история. */
+export async function stageHistories(
+  prisma: PrismaService,
+): Promise<Map<string, ChatStageHistory>> {
+  const rows = await cachedReachedRows(prisma);
+  return new Map(
+    rows.map((r) => [
+      String(r.chat_id),
+      { sets: r.sets, archived: r.archived },
+    ]),
+  );
 }
 
 /** Сколько чатов за всё время дошло до каждого этапа (фактически поставленные); архив — сколько в архиве сейчас. */
@@ -268,12 +357,7 @@ export async function stagesReachedEver(
   prisma: PrismaService,
   chatIds: Set<string> | null = null,
 ): Promise<Record<string, number>> {
-  // Дашборд опрашивает это раз в 10 секунд: считаем раз в 30 секунд на всех.
-  let cache = reachedRows.get(prisma);
-  if (!cache) reachedRows.set(prisma, (cache = new TtlCache()));
-  const rows = await cache.get('rows', REACHED_TTL_MS, () =>
-    actualReachedRows(prisma),
-  );
+  const rows = await cachedReachedRows(prisma);
   const out = zeroStages();
   let archive = 0;
   for (const r of rows) {

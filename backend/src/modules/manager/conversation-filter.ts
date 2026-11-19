@@ -1,5 +1,9 @@
 import { createHash } from 'crypto';
 import { DEAL_STAGES } from 'src/domain/deal-stage';
+import {
+  type ChatStageHistory,
+  reachedStage,
+} from 'src/shared/deal-stage-stats';
 
 /** Поля строки списка, по которым фильтрует и считает панель. */
 export interface FilterableRow {
@@ -19,6 +23,11 @@ export interface FilterableRow {
   unread_count: number;
   last_message_ts: number;
   hidden: boolean;
+  /**
+   * Фактически поставленные этапы — фильтр «этап сделки» считает, как
+   * статистика: кто дошёл до этапа. Без истории — по текущему этапу.
+   */
+  reached?: ChatStageHistory;
 }
 
 export interface ConversationFilter {
@@ -74,20 +83,42 @@ export function matchesQuery(row: FilterableRow, query?: string): boolean {
     .some((v) => String(v).toLowerCase().includes(q));
 }
 
+/**
+ * Дошёл ли чат до этапа сделки. С периодом — поставили ли этап в период:
+ * так считает статистика.
+ */
+export function reachedDeal(
+  row: FilterableRow,
+  deal: string,
+  since?: number,
+  until?: number,
+): boolean {
+  if (row.reached) return reachedStage(row.reached, deal, since, until);
+  // без истории — текущий этап и период по последнему сообщению
+  const ts = row.last_message_ts;
+  return (
+    row.deal_stage === deal &&
+    (since === undefined || (ts > 0 && ts >= since)) &&
+    (until === undefined || (ts > 0 && ts < until))
+  );
+}
+
+/** Выбран этап, до которого доходят: период тогда — когда этап поставили. */
+const byReached = (f: ConversationFilter) =>
+  Boolean(f.deal && f.deal !== 'none');
+
 export function matches(row: FilterableRow, f: ConversationFilter): boolean {
   if (f.channel && f.channel !== 'all' && channelKey(row.channel) !== f.channel)
     return false;
-  if (
-    f.deal &&
-    (f.deal === 'none' ? row.deal_stage : row.deal_stage !== f.deal)
-  )
+  if (f.deal === 'none' && row.deal_stage) return false;
+  if (byReached(f) && !reachedDeal(row, f.deal!, f.since, f.until))
     return false;
   if (f.stage && row.stage?.id !== f.stage) return false;
   if (f.only_new && !waitsForManager(row)) return false;
   if (f.lead && (f.lead === 'manager' ? !row.is_paused : row.is_paused))
     return false;
   if (f.account && String(row.account_id) !== f.account) return false;
-  if (f.since !== undefined || f.until !== undefined) {
+  if (!byReached(f) && (f.since !== undefined || f.until !== undefined)) {
     const ts = row.last_message_ts;
     if (!ts) return false;
     if (f.since !== undefined && ts < f.since) return false;
@@ -113,13 +144,21 @@ function compare(a: FilterableRow, b: FilterableRow, f: ConversationFilter) {
  * Счётчики кнопок фильтров — по всему набору, а не по странице: сколько чатов
  * в каждом канале, этапе сделки и этапе бота, сколько ждут менеджера.
  */
-export function facets(rows: FilterableRow[], f: ConversationFilter = {}) {
+export function facets(
+  rows: FilterableRow[],
+  f: ConversationFilter = {},
+  dealRows: FilterableRow[] = rows,
+) {
   // Счётчики группы — по чатам, прошедшим все прочие фильтры: «Лид 5» при
   // выбранном периоде и поиске значит, что по кнопке откроются ровно 5.
   const except = (key: keyof ConversationFilter) =>
     rows.filter((r) => matches(r, { ...f, [key]: undefined }));
   const byChannel = except('channel');
-  const byDeal = except('deal');
+  // этапы сделки — кто дошёл до этапа (в период, если он выбран), как в
+  // статистике; архивные чаты тоже считаются
+  const dealBase = dealRows.filter((r) =>
+    matches(r, { ...f, deal: undefined, since: undefined, until: undefined }),
+  );
   const byStage = except('stage');
   const channel = { all: byChannel.length, tg: 0, vk: 0 };
   const deal: Record<string, number> = Object.fromEntries(
@@ -133,10 +172,11 @@ export function facets(rows: FilterableRow[], f: ConversationFilter = {}) {
   const noDeal: number[] = [];
   let fresh = 0;
   for (const r of byChannel) channel[channelKey(r.channel)] += 1;
-  for (const r of byDeal) {
-    const d = r.deal_stage ?? 'none';
-    if (d in deal) deal[d] += 1;
+  for (const r of dealBase) {
+    for (const d of DEAL_STAGES)
+      if (reachedDeal(r, d, f.since, f.until)) deal[d] += 1;
   }
+  deal.none = rows.filter((r) => matches(r, { ...f, deal: 'none' })).length;
   for (const r of byStage) {
     if (r.stage?.id) {
       const s = stages.get(r.stage.id) ?? { ...r.stage, count: 0 };
@@ -172,6 +212,7 @@ export function pageOf<T extends FilterableRow>(
   f: ConversationFilter,
   page: number,
   size: number,
+  dealRows: FilterableRow[] = rows,
 ) {
   const filtered = rows.filter((r) => matches(r, f));
   const sorted = [...filtered].sort((a, b) => compare(a, b, f));
@@ -186,6 +227,6 @@ export function pageOf<T extends FilterableRow>(
     page: current,
     pages,
     size,
-    facets: facets(rows, f),
+    facets: facets(rows, f, dealRows),
   };
 }

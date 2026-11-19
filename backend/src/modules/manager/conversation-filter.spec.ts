@@ -137,6 +137,60 @@ describe('список диалогов: отбор на сервере как �
     expect(p.facets.channel).toEqual({ all: 1, tg: 0, vk: 1 });
   });
 
+  it('этап сделки — кто дошёл до этапа, как в статистике; период — когда этап поставили', () => {
+    const rows = [
+      // дошёл до лида в 200, сейчас депозит (поставлен в 600)
+      row(1, {
+        deal_stage: 'deposit',
+        last_message_ts: 700,
+        reached: {
+          sets: [
+            { stage: 'lead', ts: 200 },
+            { stage: 'deposit', ts: 600 },
+          ],
+          archived: false,
+        },
+      }),
+      // лид в 500, потом архив — скрыт из основного списка
+      row(2, {
+        deal_stage: 'archive',
+        hidden: true,
+        last_message_ts: 510,
+        reached: {
+          sets: [
+            { stage: 'lead', ts: 500 },
+            { stage: 'archive', ts: 505 },
+          ],
+          archived: true,
+        },
+      }),
+      row(3, { last_message_ts: 550, reached: { sets: [], archived: false } }),
+    ];
+    const visible = rows.filter((r) => !r.hidden);
+    const ever = pageOf(visible, {}, 1, 10, rows);
+    expect(ever.facets.deal).toMatchObject({
+      lead: 2,
+      deposit: 1,
+      archive: 1,
+      none: 1,
+    });
+    const lead = pageOf(rows, { deal: 'lead' }, 1, 10);
+    expect(lead.items.map((r) => r.chat_id).sort()).toEqual([1, 2]);
+    // период 400–650: лид поставили только чату 2, депозит — чату 1
+    const period = { since: 400, until: 650 };
+    const inPeriod = pageOf(visible, period, 1, 10, rows);
+    expect(inPeriod.facets.deal).toMatchObject({
+      lead: 1,
+      deposit: 1,
+      archive: 1,
+    });
+    expect(
+      pageOf(rows, { ...period, deal: 'lead' }, 1, 10).items.map(
+        (r) => r.chat_id,
+      ),
+    ).toEqual([2]);
+  });
+
   it('номер страницы за пределами — последняя существующая', () => {
     const p = pageOf([row(1), row(2)], {}, 9, 1);
     expect(p.page).toBe(2);

@@ -1,4 +1,5 @@
 import { TtlCache } from 'src/shared/ttl-cache';
+import { reachedStage, stageHistories } from 'src/shared/deal-stage-stats';
 import {
   BadRequestException,
   ForbiddenException,
@@ -451,7 +452,7 @@ export class LeadsService {
     const q = filter.q?.trim();
     // Отбор и счётчики считаем по лёгким строкам всех лидов области, а
     // полные строки грузим только для страницы.
-    const [all, stages] = await Promise.all([
+    const [all, stages, histories] = await Promise.all([
       this.prisma.lead.findMany({
         where: {
           AND: [
@@ -470,17 +471,23 @@ export class LeadsService {
         orderBy: { id: 'desc' },
       }),
       this.allStages(),
+      stageHistories(this.prisma),
     ]);
-    const stageOf = (r: { chatId: bigint | null }) =>
-      (r.chatId === null ? undefined : stages.get(String(r.chatId))) ?? 'none';
+    // Этап — как в статистике: лид на «Лиде», если его чат дошёл до лида
+    // (даже если потом депозит или архив). «Без этапа» — этапа нет сейчас.
+    const inStage = (r: { chatId: bigint | null }, stage: string) => {
+      const chat = r.chatId === null ? null : String(r.chatId);
+      if (stage === 'none') return chat === null || !stages.has(chat);
+      const h = chat === null ? undefined : histories.get(chat);
+      return h ? reachedStage(h, stage) : false;
+    };
     const byStatus = filter.status
       ? all.filter((r) => r.status === filter.status)
       : all;
-    const byStage = filter.deal_stage
-      ? all.filter((r) => stageOf(r) === filter.deal_stage)
-      : all;
-    const matched = filter.deal_stage
-      ? byStatus.filter((r) => stageOf(r) === filter.deal_stage)
+    const stage = filter.deal_stage;
+    const byStage = stage ? all.filter((r) => inStage(r, stage)) : all;
+    const matched = stage
+      ? byStatus.filter((r) => inStage(r, stage))
       : byStatus;
 
     // счётчик каждой группы кнопок — с учётом поиска и другой группы
@@ -492,7 +499,9 @@ export class LeadsService {
     const stageCounts: Record<string, number> = Object.fromEntries(
       DEAL_STAGE_FILTERS.map((st) => [st, 0]),
     );
-    for (const r of byStatus) stageCounts[stageOf(r)] += 1;
+    for (const r of byStatus)
+      for (const st of DEAL_STAGE_FILTERS)
+        if (inStage(r, st)) stageCounts[st] += 1;
 
     const size = filter.size ?? filter.limit ?? 200;
     const pages = Math.max(1, Math.ceil(matched.length / size));
