@@ -1,7 +1,9 @@
 import { api } from './client';
 
-export function getLeads({ status, q, deal_stage, page, size } = {}) {
+export function getLeads({ status, q, deal_stage, page, size, from, to } = {}) {
   const p = new URLSearchParams();
+  if (from) p.set('from', from);
+  if (to) p.set('to', to);
   if (page && page > 1) p.set('page', String(page));
   if (size) p.set('size', String(size));
   if (status) p.set('status', status);

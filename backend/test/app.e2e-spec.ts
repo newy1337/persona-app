@@ -3222,6 +3222,37 @@ describe('Manager panel API (e2e)', () => {
       expect((await stagesOf(ira.h, '&deal_stage=lead')).total).toBe(0);
       expect((await stagesOf(h)).stages).toMatchObject({ lead: 1, deposit: 1 });
       expect((await stagesOf(h, '&deal_stage=lead')).total).toBe(1);
+      // период: менеджеру — когда лида загрузили; админу с этапом — когда
+      // чат дошёл до этапа
+      const day = (ts: number) =>
+        new Date((ts + 3 * 3600) * 1000).toISOString().slice(0, 10);
+      const today = day(now);
+      await prisma.lead.update({
+        where: { id: leadIra.body.id },
+        data: { insertedAt: now - 40 * 86400 },
+      });
+      expect((await stagesOf(ira.h, `&from=${today}&to=${today}`)).total).toBe(
+        0,
+      );
+      const old = day(now - 40 * 86400);
+      expect((await stagesOf(ira.h, `&from=${old}&to=${old}`)).total).toBe(1);
+      expect(
+        (await stagesOf(h, `&deal_stage=lead&from=${today}&to=${today}`)).total,
+      ).toBe(1);
+      expect(
+        (await stagesOf(h, `&deal_stage=lead&from=${old}&to=${old}`)).total,
+      ).toBe(0);
+      expect(
+        (await stagesOf(h, `&from=${today}&to=${today}`)).stages,
+      ).toMatchObject({ lead: 1, deposit: 1 });
+      await request(app.getHttpServer())
+        .get('/api/leads?from=2026-13-01')
+        .set(h)
+        .expect(422);
+      await request(app.getHttpServer())
+        .get('/api/leads?from=1.11.2026')
+        .set(h)
+        .expect(400);
       await prisma.funnelEvent.deleteMany({ where: { chatId: stageChat } });
       await prisma.leadFacts.deleteMany({ where: { chatId: stageChat } });
       await prisma.lead.update({

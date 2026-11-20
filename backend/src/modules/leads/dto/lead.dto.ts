@@ -6,6 +6,7 @@ import {
   IsIn,
   IsInt,
   IsOptional,
+  Matches,
   IsString,
   Max,
   MaxLength,
@@ -235,4 +236,12 @@ export class ListLeadsQuery {
   @Min(1)
   @Max(500)
   size?: number;
+  @ApiPropertyOptional({ description: 'период с, день МСК YYYY-MM-DD' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  from?: string;
+  @ApiPropertyOptional({ description: 'период по, день МСК YYYY-MM-DD' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  to?: string;
 }

@@ -1,4 +1,5 @@
 import { TtlCache } from 'src/shared/ttl-cache';
+import { resolveRange } from '../stats/range';
 import { reachedStage, stageHistories } from 'src/shared/deal-stage-stats';
 import {
   BadRequestException,
@@ -116,6 +117,9 @@ export interface LeadFilter {
   page?: number;
   size?: number;
   deal_stage?: DealStageFilter;
+  /** период, дни МСК YYYY-MM-DD */
+  from?: string;
+  to?: string;
 }
 
 export interface ImportResult {
@@ -467,44 +471,58 @@ export class LeadsService {
               : {},
           ],
         },
-        select: { id: true, status: true, chatId: true },
+        select: { id: true, status: true, chatId: true, insertedAt: true },
         orderBy: { id: 'desc' },
       }),
       this.allStages(),
       // админу — как в статистике, остальным — текущий этап
       scope === null ? stageHistories(this.prisma) : null,
     ]);
+    // Период — когда лида загрузили. Админу с выбранным этапом — когда чат
+    // дошёл до этапа, как в статистике.
+    const range =
+      filter.from || filter.to
+        ? resolveRange({ from: filter.from, to: filter.to }, this.clock.ts())
+        : null;
+    type Row = (typeof all)[number];
+    const added = (r: Row) =>
+      !range || (r.insertedAt >= range.start && r.insertedAt < range.end);
     // Админу этап — как в статистике: лид на «Лиде», если его чат дошёл до
     // лида (даже если потом депозит или архив). Остальным — этап сейчас.
     // «Без этапа» — этапа нет сейчас.
-    const inStage = (r: { chatId: bigint | null }, stage: string) => {
+    const inStage = (r: Row, stage: string) => {
       const chat = r.chatId === null ? null : String(r.chatId);
-      if (stage === 'none') return chat === null || !stages.has(chat);
-      if (!histories) return chat !== null && stages.get(chat) === stage;
+      if (stage === 'none')
+        return (chat === null || !stages.has(chat)) && added(r);
+      if (!histories)
+        return chat !== null && stages.get(chat) === stage && added(r);
       const h = chat === null ? undefined : histories.get(chat);
-      return h ? reachedStage(h, stage) : false;
+      return h ? reachedStage(h, stage, range?.start, range?.end) : false;
     };
-    const byStatus = filter.status
-      ? all.filter((r) => r.status === filter.status)
-      : all;
+    const pass = (r: Row, status?: string, stage?: string) =>
+      (!status || r.status === status) &&
+      (stage ? inStage(r, stage) : added(r));
     const stage = filter.deal_stage;
-    const byStage = stage ? all.filter((r) => inStage(r, stage)) : all;
-    const matched = stage
-      ? byStatus.filter((r) => inStage(r, stage))
-      : byStatus;
+    const matched = all.filter((r) => pass(r, filter.status, stage));
 
-    // счётчик каждой группы кнопок — с учётом поиска и другой группы
+    // счётчик каждой группы кнопок — с учётом поиска, периода и другой группы
     const counts: Record<string, number> = Object.fromEntries(
       LEAD_STATUSES.map((st) => [st, 0]),
     );
-    for (const r of byStage) counts[r.status] = (counts[r.status] ?? 0) + 1;
-    counts['total'] = byStage.length;
+    let total = 0;
+    for (const r of all)
+      if (pass(r, undefined, stage)) {
+        counts[r.status] = (counts[r.status] ?? 0) + 1;
+        total += 1;
+      }
+    counts['total'] = total;
     const stageCounts: Record<string, number> = Object.fromEntries(
       DEAL_STAGE_FILTERS.map((st) => [st, 0]),
     );
-    for (const r of byStatus)
-      for (const st of DEAL_STAGE_FILTERS)
-        if (inStage(r, st)) stageCounts[st] += 1;
+    for (const r of all)
+      if (!filter.status || r.status === filter.status)
+        for (const st of DEAL_STAGE_FILTERS)
+          if (inStage(r, st)) stageCounts[st] += 1;
 
     const size = filter.size ?? filter.limit ?? 200;
     const pages = Math.max(1, Math.ceil(matched.length / size));

@@ -89,13 +89,19 @@ function Month({ monthDay, from, to, today, onPick }) {
   );
 }
 
-export default function DateRangePicker({ from, to, firstDay = null, onChange }) {
+/**
+ * allowAll — первым пунктом «Всё время» без границ: onChange({ from: null, to: null }).
+ */
+export default function DateRangePicker({ from, to, firstDay = null, onChange, allowAll = false }) {
   const today = mskToday();
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState(null);
   const [leftMonth, setLeftMonth] = useState(monthStart(to || today));
   const box = useRef(null);
-  const list = useMemo(() => presets(today, firstDay), [today, firstDay]);
+  const list = useMemo(
+    () => [...(allowAll ? [{ key: 'any', label: 'Всё время', from: null, to: null }] : []), ...presets(today, firstDay)],
+    [today, firstDay, allowAll],
+  );
   const active = list.find((p) => p.from === from && p.to === to);
 
   useEffect(() => {

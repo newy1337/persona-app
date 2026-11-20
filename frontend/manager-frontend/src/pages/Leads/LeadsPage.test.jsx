@@ -74,6 +74,21 @@ describe('страница лидов: страницы, поиск и выгр�
     }
   });
 
+  it('период: по умолчанию всё время; выбранный уходит на сервер, «Всё время» сбрасывает', async () => {
+    const host = await render();
+    const button = host.querySelector('[data-testid="leads-range"] [data-testid="range-button"]');
+    expect(button.textContent).toContain('Всё время');
+    expect(getLeads).toHaveBeenLastCalledWith(expect.objectContaining({ from: null, to: null }));
+    await act(async () => button.click());
+    const preset = (label) => [...host.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent === label);
+    await act(async () => preset('Сегодня').click());
+    const today = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
+    expect(getLeads).toHaveBeenLastCalledWith(expect.objectContaining({ from: today, to: today, page: 1 }));
+    await act(async () => button.click());
+    await act(async () => preset('Всё время').click());
+    expect(getLeads).toHaveBeenLastCalledWith(expect.objectContaining({ from: null, to: null }));
+  });
+
   it('выбрали лидов — выгружаются только их диалоги', async () => {
     const host = await render();
     const box = host.querySelector('input[aria-label="Выбрать лид: Лид 3"]');

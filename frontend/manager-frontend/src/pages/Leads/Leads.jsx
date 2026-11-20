@@ -19,6 +19,7 @@ import s from '../../styles/AdminPage.module.scss';
 import { DEAL_STAGE_FILTERS, dealStageLabel } from '../../data/dealStages';
 import { MANUAL_TRAFFIC_SOURCES } from '../../utils/trafficSource';
 import ExportButton from '../../components/ConversationsTable/ExportButton';
+import DateRangePicker from '../../components/DateRangePicker/DateRangePicker';
 import pager from '../../components/ConversationsTable/ConversationsTable.module.scss';
 
 /** Лидов на странице. */
@@ -254,6 +255,7 @@ export default function Leads() {
   const [q, setQ] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [range, setRange] = useState({ from: null, to: null });
   const [outreach, setOutreach] = useState(null);
   const [error, setError] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -272,7 +274,7 @@ export default function Leads() {
     const t = setTimeout(() => setQuery(q.trim()), 300);
     return () => clearTimeout(t);
   }, [q]);
-  useEffect(() => setPage(1), [status, query, dealStage]);
+  useEffect(() => setPage(1), [status, query, dealStage, range]);
 
   // чаты выбранных лидов: выделение живёт и на других страницах
   const chatOf = useRef(new Map());
@@ -281,11 +283,11 @@ export default function Leads() {
   }, [data.items]);
 
   const load = useCallback(() => {
-    Promise.all([getLeads({ status, q: query, deal_stage: dealStage, page, size: LEADS_PAGE_SIZE }), getOutreachStatus().catch(() => null)])
+    Promise.all([getLeads({ status, q: query, deal_stage: dealStage, page, size: LEADS_PAGE_SIZE, from: range.from, to: range.to }), getOutreachStatus().catch(() => null)])
       .then(([d, o]) => { setData(d); setOutreach(o); })
       .catch((e) => setError(e.detail || e.message))
       .finally(() => setReady(true));
-  }, [status, query, dealStage, page]);
+  }, [status, query, dealStage, page, range]);
 
   useEffect(() => {
     load();
@@ -372,7 +374,12 @@ export default function Leads() {
                 </button>
               ))}
             </div>
-            <input className={s.field} placeholder="поиск: телефон, @username, имя, город, менеджер" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 240 }} />
+            <div className={s.actions} style={{ alignItems: 'center' }}>
+              <span data-testid="leads-range" title="Когда лида загрузили; у админа с выбранным этапом — когда чат дошёл до этапа">
+                <DateRangePicker allowAll from={range.from} to={range.to} onChange={setRange} />
+              </span>
+              <input className={s.field} placeholder="поиск: телефон, @username, имя, город, менеджер" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 240 }} />
+            </div>
           </div>
           <div className={s.actions} style={{ margin: '0 0 12px', alignItems: 'center' }} data-testid="lead-stage-filters" aria-label="Этап сделки">
             <span className={s.muted} style={{ fontSize: 12 }}>Этап:</span>
